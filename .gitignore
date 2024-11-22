@@ -1,0 +1,8 @@
+Result/
+__pycache__/
+temp/
+test/
+.vs/
+
+*.xlsx
+test.py
