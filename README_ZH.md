@@ -54,10 +54,12 @@ python app.py
 翻译完成后，您可以在 Download Translated File 处下载翻译后的文件。翻译结果也会保存在 ~/result 文件夹中。  
 
 ### 示例
-![excel_sample](img/excel.png)
-![ppt_sample](img/ppt.png)
+- Excel 文件: 英文到日文  
+![excel_sample](img/excel.png)  
+- PPT 文件: 英文到日文  
+![ppt_sample](img/ppt.png)  
+- Word 文件: 英文到日文  
 ![word_sample](img/word.png)
-
 默认访问地址为：
 ```bash
 http://127.0.0.1:9980

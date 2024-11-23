@@ -57,8 +57,11 @@ When the translation is completed, the translated file will be returned at Downl
 You can also view the translation results in the ~/result folder.  
 
 ### Example 
-![excel_sample](img/excel.png)
-![ppt_sample](img/ppt.png)
+- Excel File: English to Japanese  
+![excel_sample](img/excel.png)  
+- PPT File: English to Japanese  
+![ppt_sample](img/ppt.png)  
+- Word File: English to Japanese  
 ![word_sample](img/word.png)
 
 The default access address is
