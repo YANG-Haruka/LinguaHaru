@@ -41,7 +41,8 @@ def populate_sum_model():
     try:
         models = ollama.list()
         if models and 'models' in models:
-            model_names = [model['name'] for model in models['models']]
+            model_names = [model['model'] for model in models['models']]
+            # model_names = [model['name'] for model in models['models']]
             return model_names
         else:
             return None

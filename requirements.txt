@@ -1,6 +1,6 @@
 gradio
 pandas
-python-docx
 openpyxl
 ollama
-exceptions
+lxml
+tiktoken
