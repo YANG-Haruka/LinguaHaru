@@ -79,3 +79,12 @@ iface.launch(share=True)
 ## To be updated
 - Support more models and more file types
 - More Language support
+
+## Software Disclaimer  
+The software code is completely open-source and can be freely used in accordance with the GPL-3.0 license.  
+The software only provides AI translation services, and any content translated using this software is unrelated to its creators.  
+Users are expected to comply with the law and engage in legal translation activities. 
+
+Qwen Model Disclaimer  
+The code and model weights are fully open for academic research and support commercial use.  
+Please refer to the Qwen LICENSE for detailed information on the specific open-source agreement. 

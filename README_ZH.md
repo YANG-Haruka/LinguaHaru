@@ -42,6 +42,9 @@ python app.py
 ### 使用说明
 ![APP](img/app.png)
 
+使用示例可见Bilibili：  
+https://www.bilibili.com/video/BV12zByYzECQ/?share_source=copy_web&vd_source=93b449eba1686337d8198856a26fe2f9  
+
 - 选择语言  
 选择源语言（源文件的语言）和目标语言（要翻译成的语言）。  
 - 选择模型  
@@ -75,3 +78,8 @@ iface.launch(share=True)
 ## 待更新
 - Support more models and more file types
 - More Language support
+
+## 软件声明
+软件代码完全开源，可以随意取用，请遵守GPL-3.0 license，软件只提供AI翻译服务，所有由本软件制成的翻译内容，与制作人无关，请各位遵守法律，合法翻译。 
+Qwen模型相关声明  
+代码和模型权重对学术研究完全开放，并支持商用。请查看通义千问LICENSE了解具体的开源协议细节。
