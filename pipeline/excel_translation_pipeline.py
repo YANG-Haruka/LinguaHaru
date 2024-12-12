@@ -1,8 +1,9 @@
 import os
+import re
 import json
 from lxml import etree
 from zipfile import ZipFile
-from .skip_pipeline import should_translate
+from skip_pipeline import should_translate
 
 
 def extract_excel_content_to_json(file_path):
@@ -55,6 +56,16 @@ def extract_excel_content_to_json(file_path):
 
     return json_path
 
+def modify_json(data_list):
+    cleaned_json_objects = []
+    for entry in data_list:
+        if not entry.startswith("```json\n"):
+            entry = "```json\n" + entry
+        if not entry.endswith("\n```"):
+            entry = entry + "\n```"
+        cleaned_json_objects.append(entry)
+    return cleaned_json_objects
+
 def write_translated_content_to_excel(file_path, original_json_path, translated_json_path):
     """
     Write translated content back to the Excel file while preserving the format and structure.
@@ -64,6 +75,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         original_data = json.load(original_file)
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_data = json.load(translated_file)
+        translated_data_new = modify_json(translated_data)
 
     translations = {str(item['count']): item['value'] for item in translated_data}
 
@@ -102,3 +114,10 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                     result_xlsx.write(file_path, arcname)
 
     return result_path
+
+
+if __name__=="__main__":
+    file_path = "test\PJ Tower List with Price with color code.xlsx"
+    original_json_path = "temp\src.json"
+    translated_json_path = "temp\dst_translated.json"
+    write_translated_content_to_excel(file_path, original_json_path, translated_json_path)

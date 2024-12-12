@@ -44,6 +44,15 @@ def extract_ppt_content_to_json(file_path):
 
     return json_path
 
+def modify_json(data_list):
+    cleaned_json_objects = []
+    for entry in data_list:
+        if not entry.startswith("```json\n"):
+            entry = "```json\n" + entry
+        if not entry.endswith("\n```"):
+            entry = entry + "\n```"
+        cleaned_json_objects.append(entry)
+    return cleaned_json_objects
 
 def write_translated_content_to_ppt(file_path, original_json_path, translated_json_path):
     """
