@@ -45,6 +45,24 @@ def extract_word_content_to_json(file_path):
 
     return json_path
 
+def modify_json(data_list):
+    combined_data = {}
+    for entry in data_list:
+        if entry.startswith("```json"):
+            entry = entry[len("```json"):].strip()
+        if entry.endswith("```"):
+            entry = entry[:-len("```")].strip()
+        
+        try:
+            json_data = json.loads(entry)
+            if isinstance(json_data, dict):
+                combined_data.update(json_data)
+        except json.JSONDecodeError:
+            print(f"Warning: Skipping invalid JSON entry: {entry}")
+            continue
+    
+    return combined_data
+
 def write_translated_content_to_word(file_path, original_json_path, translated_json_path):
     """
     Write translated content back to the Word document while preserving the format and structure.
@@ -65,16 +83,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     # Load translated JSON
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_raw = json.load(translated_file)
-        translated_data = {}
-        for json_string in translated_raw:
-            if json_string.startswith("```json") and json_string.endswith("```"):
-                clean_json = json_string.strip("```json").strip("```").strip()
-                try:
-                    translated_data.update(json.loads(clean_json))
-                except json.JSONDecodeError as e:
-                    print(f"Error parsing JSON string: {e}")
-            else:
-                print("Unexpected format in translated JSON data.")
+        translated_data = modify_json(translated_raw)
 
     # Create a mapping of translations
     translations = {str(key): value for key, value in translated_data.items()}

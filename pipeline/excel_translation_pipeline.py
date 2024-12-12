@@ -3,7 +3,7 @@ import re
 import json
 from lxml import etree
 from zipfile import ZipFile
-from skip_pipeline import should_translate
+from .skip_pipeline import should_translate
 
 
 def extract_excel_content_to_json(file_path):

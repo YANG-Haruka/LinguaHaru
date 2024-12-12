@@ -45,14 +45,22 @@ def extract_ppt_content_to_json(file_path):
     return json_path
 
 def modify_json(data_list):
-    cleaned_json_objects = []
+    combined_data = {}
     for entry in data_list:
-        if not entry.startswith("```json\n"):
-            entry = "```json\n" + entry
-        if not entry.endswith("\n```"):
-            entry = entry + "\n```"
-        cleaned_json_objects.append(entry)
-    return cleaned_json_objects
+        if entry.startswith("```json"):
+            entry = entry[len("```json"):].strip()
+        if entry.endswith("```"):
+            entry = entry[:-len("```")].strip()
+        
+        try:
+            json_data = json.loads(entry)
+            if isinstance(json_data, dict):
+                combined_data.update(json_data)
+        except json.JSONDecodeError:
+            print(f"Warning: Skipping invalid JSON entry: {entry}")
+            continue
+    
+    return combined_data
 
 def write_translated_content_to_ppt(file_path, original_json_path, translated_json_path):
     """
@@ -64,16 +72,7 @@ def write_translated_content_to_ppt(file_path, original_json_path, translated_js
     # Load translated JSON
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_raw = json.load(translated_file)
-        translated_data = {}
-        for json_string in translated_raw:
-            if json_string.startswith("```json") and json_string.endswith("```"):
-                clean_json = json_string.strip("```json").strip("```").strip()
-                try:
-                    translated_data.update(json.loads(clean_json))
-                except json.JSONDecodeError as e:
-                    print(f"Error parsing JSON string: {e}")
-            else:
-                print("Unexpected format in translated JSON data.")
+        translated_data = modify_json(translated_raw)
 
     # Create a mapping of translations
     translations = {str(key): value for key, value in translated_data.items()}

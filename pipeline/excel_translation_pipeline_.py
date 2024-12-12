@@ -6,7 +6,7 @@ import json
 from datetime import datetime
 from .skip_pipeline import should_translate
 
-def extract_cells_to_json(file_path):
+def extract_excel_content_to_json(file_path):
     workbook = load_workbook(file_path)
     cell_data = []
     count = 0
@@ -49,22 +49,32 @@ def extract_cells_to_json(file_path):
         json.dump(cell_data, json_file, ensure_ascii=False, indent=4)
 
     return json_path
+
+def modify_json(data_list):
+    combined_data = {}
+    for entry in data_list:
+        if entry.startswith("```json"):
+            entry = entry[len("```json"):].strip()
+        if entry.endswith("```"):
+            entry = entry[:-len("```")].strip()
+        
+        try:
+            json_data = json.loads(entry)
+            if isinstance(json_data, dict):
+                combined_data.update(json_data)
+        except json.JSONDecodeError:
+            print(f"Warning: Skipping invalid JSON entry: {entry}")
+            continue
     
-def write_translated_json_to_excel(file_path, original_json_path, translated_json_path):
+    return combined_data
+
+def write_translated_content_to_excel(file_path, original_json_path, translated_json_path):
     workbook = load_workbook(file_path)
     with open(original_json_path, "r", encoding="utf-8") as original_file:
         original_data = json.load(original_file)
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_raw = json.load(translated_file)
-
-    translated_data = {}
-    for json_string in translated_raw:
-        if json_string.startswith("```json") and json_string.endswith("```"):
-            clean_json = json_string.strip("```json").strip("```").strip()
-            try:
-                translated_data.update(json.loads(clean_json))
-            except json.JSONDecodeError as e:
-                print(f"Error parsing JSON string: {e}")
+        translated_data = modify_json(translated_raw)
 
     # Write translated content back to Excel
     for cell_info in original_data:

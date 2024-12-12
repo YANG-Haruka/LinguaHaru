@@ -23,7 +23,7 @@ def should_translate(text_value):
         return False
 
     # Skip identifiers or codes
-    if re.match(r'^[a-zA-Z0-9-_]+$', text_value):
+    if re.match(r'^[0-9-_]+$', text_value):
         return False
 
     # Skip placeholders
