@@ -28,7 +28,7 @@ def extract_excel_content_to_json(file_path):
                         is_merged_cell = True
                         break
                 # Convert datetime values to string
-                cell_value = cell.value
+                cell_value = str(cell.value).replace("\n", "␊").replace("\r", "␍")
                 if isinstance(cell_value, datetime):
                     cell_value = cell_value.isoformat()
                 count += 1
@@ -86,6 +86,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
 
         # Get translated value
         value = translated_data.get(str(count), "")
+        value = value.replace("␊", "\n").replace("␍", "\r")
         if sheet_name not in workbook.sheetnames:
             print(f"Sheet '{sheet_name}' not found in workbook.")
             continue

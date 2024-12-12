@@ -24,6 +24,7 @@ def extract_ppt_content_to_json(file_path):
             text_nodes = slide_tree.xpath('.//a:t', namespaces=namespaces)
             for text_node_index, text_node in enumerate(text_nodes, start=1):
                 text_value = text_node.text if text_node.text else ""
+                text_value = text_value.replace("\n", "␊").replace("\r", "␍")
                 if should_translate(text_value):
                     count += 1
                     # Record empty text nodes as well
@@ -100,6 +101,7 @@ def write_translated_content_to_ppt(file_path, original_json_path, translated_js
                     count = next((item['count'] for item in original_data if item['slide_index'] == slide_index and item['text_node_index'] == text_node_index), None)
                     if count:
                         translated_text = translations.get(str(count), None)
+                        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
                         if translated_text is not None:
                             text_node.text = translated_text
 

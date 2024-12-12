@@ -1,14 +1,8 @@
 import json
 
-LANGUAGE_MAP = {
-    "日本語": "ja",
-    "中文": "zh",
-    "English": "en",
-}
-
 def load_prompt(src_lang,dst_lang):
     """Load the translation prompt from a JSON file based on the target language."""
-    lang_code = LANGUAGE_MAP.get(dst_lang, "en")
+    lang_code = dst_lang
     prompt_path = f"prompts/{lang_code}.json"
     
     with open(prompt_path, "r", encoding="utf-8") as file:
