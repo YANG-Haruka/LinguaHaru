@@ -1,6 +1,6 @@
-gradio
-pandas
-openpyxl
-ollama
-lxml
-tiktoken
+gradio==5.6.0
+pandas==2.2.3
+openpyxl==3.0.10
+ollama==0.4.0
+lxml==5.3.0
+tiktoken==0.8.0
