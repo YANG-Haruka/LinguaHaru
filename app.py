@@ -11,7 +11,7 @@ LANGUAGE_MAP = {
     "English": "en",
 }
 
-def translate_file(file, model, src_lang, dst_lang, max_token=1024, progress=gr.Progress(track_tqdm=True)):
+def translate_file(file, model, src_lang, dst_lang, max_token=2048, progress=gr.Progress(track_tqdm=True)):
     """Handles the translation process with a progress bar."""
     def progress_callback(progress_value, desc=None):
         progress(progress_value, desc=desc)
@@ -60,7 +60,7 @@ with gr.Blocks() as demo:
             label="Model (QWen series models are recommended)",
             value=available_models[0] if available_models else None,
         )
-        max_token = gr.Number(label="Max Tokens", value=1024)
+        max_token = gr.Number(label="Max Tokens", value=2048)
 
     file_input = gr.File(
         label="Upload Office File (.docx, .pptx, .xlsx)",
