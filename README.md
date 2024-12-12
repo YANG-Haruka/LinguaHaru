@@ -88,3 +88,7 @@ Users are expected to comply with the law and engage in legal translation activi
 Qwen Model Disclaimer  
 The code and model weights are fully open for academic research and support commercial use.  
 Please refer to the Qwen LICENSE for detailed information on the specific open-source agreement. 
+
+## Changelog
+- 2024/12/12  
+Updated the handling of line breaks. Fixed some bugs
