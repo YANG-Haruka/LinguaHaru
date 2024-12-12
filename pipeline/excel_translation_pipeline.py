@@ -77,7 +77,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         translated_data = json.load(translated_file)
         translated_data_new = modify_json(translated_data)
 
-    translations = {str(item['count']): item['value'] for item in translated_data}
+    translations = {str(item['count']): item['value'] for item in translated_data_new}
 
     with ZipFile(file_path, 'r') as xlsx:
         # Prepare a temporary folder for modifications
