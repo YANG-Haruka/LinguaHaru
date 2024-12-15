@@ -17,7 +17,7 @@ def translate_text(segments, previous_text, model, system_prompt, user_prompt, p
         response = ollama.chat(
             model=model,
             messages=messages,
-            options=Options(num_ctx=4096, num_predict=-1)
+            options=Options(num_ctx=10240, num_predict=-1)
         )
         print("API Response:", response)
     except Exception as e:

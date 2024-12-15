@@ -18,13 +18,20 @@ def clean_json(text):
     return re.sub(r'^```json\n|\n```$', '', text)
 
 def compare_translation(original_text, translated_text):
-    original_json = json.loads(clean_json(original_text))
-    translated_json = json.loads(clean_json(translated_text))
+    try:
+        original_json = json.loads(clean_json(original_text))
+        translated_json = json.loads(clean_json(translated_text))
 
-    original_count = len(original_json)
-    translated_count = len(translated_json)
-    if original_count == translated_count:
-        print("Wraning! The translation is inconsistent. Please reduce MAX_Tokens")
+        original_count = len(original_json)
+        translated_count = len(translated_json)
+        if original_count != translated_count:
+            raise ValueError("The translation is inconsistent. Please reduce MAX_Tokens")
+        for key, value in translated_json.items():
+            if value == "":
+                raise ValueError(f"Translated JSON contains empty value at key: {key}")
+    except (json.JSONDecodeError, ValueError) as e:
+        print(f"compare_translation error: {e}")
+        raise
 
 class DocumentTranslator:
     def __init__(self, input_file_path, model, src_lang, dst_lang, max_token, previous_text=None):
@@ -67,26 +74,39 @@ class DocumentTranslator:
         translated_data = []
         combined_previous_texts = []
         for segment, segment_progress in stream_generator():
-            translated_text = translate_text(
-                segment, 
-                self.previous_text, 
-                self.model, 
-                self.system_prompt, 
-                self.user_prompt, 
-                self.previous_prompt
-            )
-            
-            if not translated_text:
-                print(f"Failed to translate segment.")
-                break
+            retry_count = 0
+            success = False
 
-            translated_text = modify_json(translated_text)
-            compare_translation(segment,translated_text)
-            translated_data.append({"translated_text": translated_text})
-            # Get the last translated information as context information input
-            last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
-            self.previous_text = {"\n".join(last_3_entries)}
-            combined_previous_texts.append(translated_text)
+            while retry_count < 2 and not success:
+                try:
+                    translated_text = translate_text(
+                        segment, 
+                        self.previous_text, 
+                        self.model, 
+                        self.system_prompt, 
+                        self.user_prompt, 
+                        self.previous_prompt
+                    )
+
+                    if not translated_text:
+                        raise RuntimeError("Translation returned empty text.")
+
+                    translated_text = modify_json(translated_text)
+                    compare_translation(segment, translated_text)
+                    success = True
+                    print(f"Segment translated successfully.")
+
+                    translated_data.append({"translated_text": translated_text})
+                    last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
+                    self.previous_text = "\n".join(last_3_entries)
+                    combined_previous_texts.append(translated_text)
+
+                except (json.JSONDecodeError, ValueError, RuntimeError) as e:
+                    retry_count += 1
+                    print(f"Error encountered: {e}. Retrying for round {retry_count + 1}")
+
+            if not success:
+                print(f"Failed to translate segment after 2 attempts. Skipping segment.")
 
             if progress_callback:
                 progress_callback(segment_progress, desc="Translating...Please wait.")
@@ -128,5 +148,6 @@ class DocumentTranslator:
         self.write_translated_json_to_file(json_path, translated_json_path)
 
         result_folder = "result" 
-        final_output_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_name))[0]}_translated"+ file_extension)
+        base_name = os.path.basename(file_name)
+        final_output_path = os.path.join(result_folder, f"{base_name}_translated{file_extension}")
         return final_output_path

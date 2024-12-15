@@ -44,5 +44,9 @@ def should_translate(text_value):
     # if len(text_value) <= 2:
     #     return False
 
+    # Skip single letters (a-Z)
+    if re.match(r'^[a-zA-Z]$', text_value):
+        return False
+
     # Otherwise, translate
     return True

@@ -103,10 +103,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             if should_translate(text_value):  # Only replace translatable content
                 # Check if there is a translation for this count
                 translated_text = translations.get(str(count), None)
-                translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
                 if translated_text:
                     # Replace text without altering any formatting
-                    # print(f"Replacing text: '{text_node.text}' -> '{translated_text}'")
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
                     text_node.text = translated_text
 
     # Replace text in the main document tree

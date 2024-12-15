@@ -101,8 +101,8 @@ def write_translated_content_to_ppt(file_path, original_json_path, translated_js
                     count = next((item['count'] for item in original_data if item['slide_index'] == slide_index and item['text_node_index'] == text_node_index), None)
                     if count:
                         translated_text = translations.get(str(count), None)
-                        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
                         if translated_text is not None:
+                            translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
                             text_node.text = translated_text
 
             # Save modified slide
