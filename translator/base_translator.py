@@ -4,7 +4,27 @@ from llmWrapper.ollama_wrapper import translate_text
 from textProcessing.text_separator import stream_segment_json
 from prompts.load_prompt import load_prompt
 import json
+import re
 
+def modify_json(entry):
+    if not entry.startswith("```json\n"):
+        entry = "```json\n" + entry
+    if not entry.endswith("\n```"):
+        entry = entry + "\n```"
+    return entry
+
+def clean_json(text):
+    """delete ```json\n and \n``` """
+    return re.sub(r'^```json\n|\n```$', '', text)
+
+def compare_translation(original_text, translated_text):
+    original_json = json.loads(clean_json(original_text))
+    translated_json = json.loads(clean_json(translated_text))
+
+    original_count = len(original_json)
+    translated_count = len(translated_json)
+    if original_count == translated_count:
+        print("Wraning! The translation is inconsistent. Please reduce MAX_Tokens")
 
 class DocumentTranslator:
     def __init__(self, input_file_path, model, src_lang, dst_lang, max_token, previous_text=None):
@@ -60,8 +80,12 @@ class DocumentTranslator:
                 print(f"Failed to translate segment.")
                 break
 
+            translated_text = modify_json(translated_text)
+            compare_translation(segment,translated_text)
             translated_data.append({"translated_text": translated_text})
-            self.previous_text = "\n".join(translated_text.splitlines()[-3:])
+            # Get the last translated information as context information input
+            last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
+            self.previous_text = {"\n".join(last_3_entries)}
             combined_previous_texts.append(translated_text)
 
             if progress_callback:

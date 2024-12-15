@@ -30,20 +30,19 @@ def translate_file(file, model, src_lang, dst_lang, max_token=1024, progress=gr.
     if not translator_class:
         return "Unsupported file type. Please upload a .docx, .pptx, or .xlsx file."
 
-    try:
-        # Initialize translator and progress
-        translator = translator_class(file.name, model, src_lang_code, dst_lang_code, max_token=max_token)
-        progress(0, desc="Initializing translation...")
 
-        # Start translation and get result file path
-        translated_file_path = translator.process(file_name, file_extension, progress_callback=progress_callback)
-        progress(1, desc="Completed! Thanks for using ^_^")
+    # Initialize translator and progress
+    translator = translator_class(file.name, model, src_lang_code, dst_lang_code, max_token=max_token)
+    progress(0, desc="Initializing translation...")
 
-        # Return the file path for download
-        return translated_file_path
+    # Start translation and get result file path
+    translated_file_path = translator.process(file_name, file_extension, progress_callback=progress_callback)
+    progress(1, desc="Completed! Thanks for using ^_^")
 
-    except Exception as e:
-        return f"An error occurred during translation: {str(e)}"
+    # Return the file path for download
+    return translated_file_path
+
+
 
 # Load available models
 available_models = populate_sum_model()
