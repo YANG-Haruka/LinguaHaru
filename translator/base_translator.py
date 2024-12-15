@@ -76,6 +76,7 @@ class DocumentTranslator:
         for segment, segment_progress in stream_generator():
             retry_count = 0
             success = False
+            last_valid_translated_text = None
 
             while retry_count < 2 and not success:
                 try:
@@ -95,6 +96,7 @@ class DocumentTranslator:
                     compare_translation(segment, translated_text)
                     success = True
                     print(f"Segment translated successfully.")
+                    last_valid_translated_text = translated_text
 
                     translated_data.append({"translated_text": translated_text})
                     last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
@@ -104,9 +106,12 @@ class DocumentTranslator:
                 except (json.JSONDecodeError, ValueError, RuntimeError) as e:
                     retry_count += 1
                     print(f"Error encountered: {e}. Retrying for round {retry_count + 1}")
+                    last_valid_translated_text = translated_text
 
-            if not success:
-                print(f"Failed to translate segment after 2 attempts. Skipping segment.")
+            if not success and last_valid_translated_text:
+                print("Saving last valid translation despite errors.")
+                translated_data.append({"translated_text": last_valid_translated_text})
+                combined_previous_texts.append(last_valid_translated_text)
 
             if progress_callback:
                 progress_callback(segment_progress, desc="Translating...Please wait.")
