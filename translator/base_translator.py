@@ -18,17 +18,30 @@ def clean_json(text):
     return re.sub(r'^```json\n|\n```$', '', text)
 
 def compare_translation(original_text, translated_text):
+    failed_json_path = "temp/dst_translated_failed.json"
+    missing_or_empty = {}
     try:
         original_json = json.loads(clean_json(original_text))
         translated_json = json.loads(clean_json(translated_text))
 
-        original_count = len(original_json)
-        translated_count = len(translated_json)
-        if original_count != translated_count:
-            raise ValueError("The translation is inconsistent. Please reduce MAX_Tokens")
-        for key, value in translated_json.items():
-            if value == "":
-                raise ValueError(f"Translated JSON contains empty value at key: {key}")
+        for key, value in original_json.items():
+            if key not in translated_json or translated_json[key] == "":
+                missing_or_empty[key] = value
+
+        if missing_or_empty:
+            os.makedirs("temp", exist_ok=True)
+            if os.path.exists(failed_json_path):
+                with open(failed_json_path, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            else:
+                existing_data = []
+            if missing_or_empty:
+                existing_data.append(missing_or_empty)
+            if existing_data:
+                with open(failed_json_path, "w", encoding="utf-8") as f:
+                    json.dump(existing_data, f, ensure_ascii=False, indent=4)
+                print(f"Appended missing or empty keys to {failed_json_path}")
+
     except (json.JSONDecodeError, ValueError) as e:
         print(f"compare_translation error: {e}")
         raise
@@ -71,58 +84,149 @@ class DocumentTranslator:
             return None
 
         print("Translating segments...")
-        translated_data = []
         combined_previous_texts = []
         for segment, segment_progress in stream_generator():
-            retry_count = 0
-            success = False
             last_valid_translated_text = None
 
-            while retry_count < 2 and not success:
+            for retry_count in range(2):
                 try:
                     translated_text = translate_text(
-                        segment, 
-                        self.previous_text, 
-                        self.model, 
-                        self.system_prompt, 
-                        self.user_prompt, 
-                        self.previous_prompt
+                        segment, self.previous_text, self.model, 
+                        self.system_prompt, self.user_prompt, self.previous_prompt
                     )
-
                     if not translated_text:
                         raise RuntimeError("Translation returned empty text.")
-
-                    translated_text = modify_json(translated_text)
+                    
                     compare_translation(segment, translated_text)
-                    success = True
-                    print(f"Segment translated successfully.")
-                    last_valid_translated_text = translated_text
-
-                    translated_data.append({"translated_text": translated_text})
+                    print("Segment translated successfully.")
+                    
                     last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
                     self.previous_text = "\n".join(last_3_entries)
                     combined_previous_texts.append(translated_text)
+                    break
 
                 except (json.JSONDecodeError, ValueError, RuntimeError) as e:
-                    retry_count += 1
-                    print(f"Error encountered: {e}. Retrying for round {retry_count + 1}")
+                    print(f"Error encountered: {e}. Retrying ({retry_count + 1}/2)...")
                     last_valid_translated_text = translated_text
 
-            if not success and last_valid_translated_text:
-                print("Saving last valid translation despite errors.")
-                translated_data.append({"translated_text": last_valid_translated_text})
-                combined_previous_texts.append(last_valid_translated_text)
+            else:
+                if last_valid_translated_text:
+                    print("Saving last valid translation despite errors.")
+                    combined_previous_texts.append(last_valid_translated_text)
 
             if progress_callback:
                 progress_callback(segment_progress, desc="Translating...Please wait.")
                 print(f"Progress: {segment_progress * 100:.2f}%")
+        
+        formatted_texts = []
+        for json_text in combined_previous_texts:
+            # Clean and remove unwanted newlines and spaces
+            cleaned_text = clean_json(json_text)
+            json_data = json.loads(cleaned_text)
+            for key, value in json_data.items():
+                formatted_texts.append(json.dumps({key: value}, ensure_ascii=False))
+
+        # Pass the formatted key-value lines to retranslate_failed_content
+        trans_result_texts = self.retranslate_failed_content(formatted_texts, progress_callback)
+        cleaned_translated_texts = [clean_json(text) for text in trans_result_texts]
 
         print("Saving translated JSON...")
         translated_json_path = "temp/dst_translated.json"
         with open(translated_json_path, "w", encoding="utf-8") as f:
-            json.dump(combined_previous_texts, f, ensure_ascii=False, indent=4)
+            json.dump(cleaned_translated_texts, f, ensure_ascii=False, indent=4)
 
         return translated_json_path
+
+    def retranslate_failed_content(self, combined_previous_texts, progress_callback):
+        failed_segments_path = "temp/dst_translated_failed.json"
+        try:
+            with open(failed_segments_path, "r", encoding="utf-8") as f:
+                failed_segments = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Failed to load failed segments: {e}")
+            return combined_previous_texts
+
+        if failed_segments:
+            print("Retrying translation for failed segments...")
+
+        remaining_failed_segments = []  # Store segments that still fail after retries
+        total_segments = len(failed_segments)
+
+        for idx, segment in enumerate(failed_segments):
+            progress = (idx + 1) / total_segments  # Calculate progress percentage
+            if progress_callback:
+                progress_callback(progress, desc="Detected translation errors, retrying translations...")
+            new_segment = {}  # Store individual keys that fail to update
+            for key, value in segment.items():
+                retry_segment = json.dumps({key: value}, ensure_ascii=False)
+                failed_translated_text = translate_text(
+                    retry_segment,
+                    self.previous_text,
+                    self.model,
+                    self.system_prompt,
+                    self.user_prompt,
+                    self.previous_prompt
+                )
+
+                if failed_translated_text:
+                    updated = False
+                    try:
+                        cleaned_json_str = clean_json(failed_translated_text)
+                        translated_content = json.loads(cleaned_json_str)
+
+                        # Find and update the key in combined_previous_texts
+                        for i, combined_text in enumerate(combined_previous_texts):
+                            combined_json = json.loads(clean_json(combined_text))
+                            if key in combined_json:
+                                # Update the existing key-value pair
+                                new_value = translated_content.get(key, "")
+                                if new_value:
+                                    combined_json[key] = new_value
+                                    combined_previous_texts[i] = json.dumps(combined_json, ensure_ascii=False, separators=(',', ': '))
+                                    updated = True
+                                    print(f"Updated value for key '{key}'")
+                                break
+
+                        # If the key is not found in any entry, add it as a new line in the first entry
+                        if not updated:
+                            new_value = translated_content.get(key, "")
+                            new_json_line = json.dumps({key: new_value}, ensure_ascii=False, separators=(',', ': '))
+                            inserted = False
+                            key_before = None
+
+                            # Iterate through combined_previous_texts to find the correct insertion point
+                            for i, combined_text in enumerate(combined_previous_texts):
+                                combined_json = json.loads(clean_json(combined_text))
+                                existing_key = next(iter(combined_json))  # Extract the key
+
+                                if int(existing_key) > int(key):  # Insert before the first larger key
+                                    combined_previous_texts.insert(i, new_json_line)
+                                    inserted = True
+                                    key_before = existing_key
+                                    break
+
+                            # If no suitable position was found, append at the end
+                            if not inserted:
+                                combined_previous_texts.append(new_json_line)
+
+                            print(f"Segment '{key}' added as a new line after '{key_before}' if found.")
+
+                    except json.JSONDecodeError as e:
+                        print(f"Failed to decode translated content for key '{key}': {e}")
+                        new_segment[key] = value
+                else:
+                    new_segment[key] = value
+
+            # Store any remaining failed keys for this segment
+            if new_segment:
+                remaining_failed_segments.append(new_segment)
+
+        # Save the remaining failed segments back to the file
+        with open(failed_segments_path, "w", encoding="utf-8") as f:
+            json.dump(remaining_failed_segments, f, ensure_ascii=False, indent=4)
+
+        print("Updated remaining failed segments in temp/dst_translated_failed.json.")
+        return combined_previous_texts
 
     def _clear_temp_folder(self):
         """Clear the temp folder at the beginning of each process."""
