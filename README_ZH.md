@@ -1,5 +1,9 @@
 # AI-Office-Translator
 
+**基于PyQt-Fluent-Widgets的UI开发中...**
+**已测试超过100份文件**
+**如果觉得本项目对你有用，欢迎点一个Star ^ ^_**
+
 ## What's this
 这是一款**免费**、**完全本地化**、**用户友好**的翻译工具，能够帮助您在不同语言之间翻译 Office 文件（Word、PowerPoint 和 Excel）。
 功能特点如下：

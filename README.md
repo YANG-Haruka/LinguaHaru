@@ -1,6 +1,9 @@
 # AI-Office-Translator
 [简体中文](README_ZH.md)  
 
+**UI based on PyQt-Fluent-Widgets developing...**
+**Over 100 files have been tested**
+**If you find this project useful, please give it a star ^ ^_**
 
 ## What's this
 This software is a **Free**, **Fully Localized**, **User-friendly** translation tool that helps you translate Office files (Word, PowerPoint, and Excel) between different languages.  
