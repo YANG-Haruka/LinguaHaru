@@ -93,6 +93,8 @@ The code and model weights are fully open for academic research and support comm
 Please refer to the Qwen LICENSE for detailed information on the specific open-source agreement. 
 
 ## Changelog
+- 2025/01/03  
+Happy New Year! The logic has been revised, a review feature has been added, and logging has been enhanced.
 - 2024/12/16  
 Update Error detection and Re-translation
 - 2024/12/15  

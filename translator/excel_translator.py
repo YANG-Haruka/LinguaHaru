@@ -1,4 +1,4 @@
-from pipeline.excel_translation_pipeline_ import extract_excel_content_to_json, write_translated_content_to_excel
+from pipeline.excel_translation_pipeline import extract_excel_content_to_json, write_translated_content_to_excel
 from .base_translator import DocumentTranslator
 
 class ExcelTranslator(DocumentTranslator):

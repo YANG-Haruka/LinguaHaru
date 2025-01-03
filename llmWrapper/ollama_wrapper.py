@@ -1,5 +1,6 @@
 import ollama
 from ollama._types import Options
+from log_config import app_logger
 
 def translate_text(segments, previous_text, model, system_prompt, user_prompt, previous_prompt):
     """Translate text segments using the Ollama API."""
@@ -12,16 +13,16 @@ def translate_text(segments, previous_text, model, system_prompt, user_prompt, p
         {"role": "user", "content": f"{previous_prompt}\n###{previous_text}###\n{user_prompt}###\n{text_to_translate}"},
         {"role": "system", "content": system_prompt}
     ]
-    print("API messages:", messages)
+    app_logger.debug(f"API messages: {messages}")
     try:
         response = ollama.chat(
             model=model,
             messages=messages,
             options=Options(num_ctx=10240, num_predict=-1)
         )
-        print("API Response:", response)
+        app_logger.debug(f"API Response: {response}")
     except Exception as e:
-        print(f"Error during API call: {e}")
+        app_logger.error(f"Error during API call: {e}")
         return "An error occurred during API call."
     
     # Check and return translated text
@@ -30,10 +31,10 @@ def translate_text(segments, previous_text, model, system_prompt, user_prompt, p
             translated_text = response['message']['content']
             return translated_text
         else:
-            print("Failed to translate text.")
+            app_logger.error("Failed to translate text.")
             return None
     except Exception as e:
-        print(f"Error processing API response: {e}")
+        app_logger.error(f"Error processing API response: {e}")
         return "An error occurred while processing API response."
 
 def populate_sum_model():
@@ -47,7 +48,7 @@ def populate_sum_model():
         else:
             return None
     except Exception as e:
-        print(f"Error fetching Ollama models: {e}")
+        app_logger.error(f"Error fetching Ollama models: {e}")
         return None
     
 if __name__=="__main__":

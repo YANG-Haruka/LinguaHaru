@@ -3,6 +3,7 @@ import os
 from lxml import etree
 from zipfile import ZipFile
 from .skip_pipeline import should_translate
+from log_config import app_logger
 
 def extract_word_content_to_json(file_path):
     """
@@ -46,23 +47,6 @@ def extract_word_content_to_json(file_path):
 
     return json_path
 
-def modify_json(data_list):
-    combined_data = {}
-    for entry in data_list:
-        if entry.startswith("```json"):
-            entry = entry[len("```json"):].strip()
-        if entry.endswith("```"):
-            entry = entry[:-len("```")].strip()
-        
-        try:
-            json_data = json.loads(entry)
-            if isinstance(json_data, dict):
-                combined_data.update(json_data)
-        except json.JSONDecodeError:
-            print(f"Warning: Skipping invalid JSON entry: {entry}")
-            continue
-    
-    return combined_data
 
 def write_translated_content_to_word(file_path, original_json_path, translated_json_path):
     """
@@ -77,17 +61,12 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     namespaces = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
     document_tree = etree.fromstring(document_xml)
 
-    # Load original JSON
-    with open(original_json_path, "r", encoding="utf-8") as original_file:
-        original_data = json.load(original_file)
-
     # Load translated JSON
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
-        translated_raw = json.load(translated_file)
-        translated_data = modify_json(translated_raw)
+        translated_data = json.load(translated_file)
 
     # Create a mapping of translations
-    translations = {str(key): value for key, value in translated_data.items()}
+    translations = {str(item["count"]): item["translated"] for item in translated_data}
 
     # Replace text in paragraphs and tables
     count = 0
@@ -100,13 +79,18 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         for text_node in text_nodes:
             count += 1
             text_value = text_node.text.strip() if text_node.text else ""
-            if should_translate(text_value):  # Only replace translatable content
+            if should_translate(text_value):
                 # Check if there is a translation for this count
                 translated_text = translations.get(str(count), None)
                 if translated_text:
-                    # Replace text without altering any formatting
+                    # Replace text without altering formatting
                     translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
                     text_node.text = translated_text
+                else:
+                    # Log a warning for missing translations
+                    app_logger.warning(
+                        f"Translation missing for count {count}. Original text: '{text_value}'"
+                    )
 
     # Replace text in the main document tree
     replace_text_in_tree(document_tree)
@@ -135,6 +119,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             # Write the modified document.xml
             new_doc.write(modified_doc_path, 'word/document.xml')
 
+    app_logger.info(f"Translated Word document saved to: {result_path}")
     return result_path
 
 
