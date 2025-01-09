@@ -11,7 +11,7 @@ from .translation_checker import SRC_JSON_PATH, RESULT_JSON_PATH, FAILED_JSON_PA
 
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, src_lang, dst_lang, max_token, previous_text=None):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, max_token, previous_text=None):
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
@@ -19,6 +19,7 @@ class DocumentTranslator:
         self.max_token = max_token
         self.previous_text = previous_text
         self.use_online = use_online
+        self.api_key = api_key
 
         # Load translation prompts
         self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default = load_prompt(src_lang, dst_lang)
@@ -55,7 +56,7 @@ class DocumentTranslator:
             for retry_count in range(2):
                 try:
                     translated_text = translate_text(
-                        segment, self.previous_text, self.model, self.use_online,
+                        segment, self.previous_text, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt
                     )
 
@@ -108,6 +109,7 @@ class DocumentTranslator:
                         self.previous_text,
                         self.model,
                         self.use_online,
+                        self.api_key,
                         self.system_prompt,
                         self.user_prompt,
                         self.previous_prompt

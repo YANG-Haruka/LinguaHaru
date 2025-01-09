@@ -2,7 +2,7 @@ import ollama
 from ollama._types import Options
 from log_config import app_logger
 
-def translate_text(segments, previous_text, model, use_online, system_prompt, user_prompt, previous_prompt):
+def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt):
     """Translate text segments using the Ollama API."""
 
     
@@ -26,7 +26,12 @@ def translate_text(segments, previous_text, model, use_online, system_prompt, us
             app_logger.error(f"Error during API call: {e}")
             return "An error occurred during API call."
     else:
-        pass
+        try:
+            api_key = api_key
+            pass
+        except Exception as e:
+            app_logger.error(f"Error during API call: {e}")
+            return "An error occurred during API call."
     # Check and return translated text
     try:
         if response.get('done', False):
