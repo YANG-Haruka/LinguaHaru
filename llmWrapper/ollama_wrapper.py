@@ -2,7 +2,7 @@ import ollama
 from ollama._types import Options
 from log_config import app_logger
 
-def translate_text(segments, previous_text, model, system_prompt, user_prompt, previous_prompt):
+def translate_text(segments, previous_text, model, use_online, system_prompt, user_prompt, previous_prompt):
     """Translate text segments using the Ollama API."""
 
     
@@ -14,17 +14,19 @@ def translate_text(segments, previous_text, model, system_prompt, user_prompt, p
         {"role": "system", "content": system_prompt}
     ]
     app_logger.debug(f"API messages: {messages}")
-    try:
-        response = ollama.chat(
-            model=model,
-            messages=messages,
-            options=Options(num_ctx=10240, num_predict=-1)
-        )
-        app_logger.debug(f"API Response: {response}")
-    except Exception as e:
-        app_logger.error(f"Error during API call: {e}")
-        return "An error occurred during API call."
-    
+    if not use_online:
+        try:
+            response = ollama.chat(
+                model=model,
+                messages=messages,
+                options=Options(num_ctx=10240, num_predict=-1)
+            )
+            app_logger.debug(f"API Response: {response}")
+        except Exception as e:
+            app_logger.error(f"Error during API call: {e}")
+            return "An error occurred during API call."
+    else:
+        pass
     # Check and return translated text
     try:
         if response.get('done', False):
