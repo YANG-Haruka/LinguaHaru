@@ -84,6 +84,9 @@ class DocumentTranslator:
 
     def retranslate_failed_content(self, combined_previous_texts, progress_callback):
         app_logger.info("Retrying translation for failed segments...")
+        if not os.path.exists(FAILED_JSON_PATH) or os.stat(FAILED_JSON_PATH).st_size == 0:
+            app_logger.info("No failed segments to retranslate. Skipping this step.")
+            return
         stream_generator_failed = stream_segment_json(
             FAILED_JSON_PATH,
             self.max_token,

@@ -1,6 +1,7 @@
 import ollama
 from ollama._types import Options
 from log_config import app_logger
+from openai import OpenAI
 
 def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt):
     """Translate text segments using the Ollama API."""
@@ -25,24 +26,37 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         except Exception as e:
             app_logger.error(f"Error during API call: {e}")
             return "An error occurred during API call."
-    else:
         try:
-            api_key = api_key
-            pass
+            if response.get('done', False):
+                translated_text = response['message']['content']
+                return translated_text
+            else:
+                app_logger.error("Failed to translate text.")
+                return None
         except Exception as e:
             app_logger.error(f"Error during API call: {e}")
             return "An error occurred during API call."
-    # Check and return translated text
-    try:
-        if response.get('done', False):
-            translated_text = response['message']['content']
-            return translated_text
-        else:
-            app_logger.error("Failed to translate text.")
-            return None
-    except Exception as e:
-        app_logger.error(f"Error processing API response: {e}")
-        return "An error occurred while processing API response."
+    else:
+        try:
+            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+            response = client.chat.completions.create(
+                model="deepseek-chat",
+                messages=messages,
+                stream=False
+            )
+        except Exception as e:
+            app_logger.error(f"Error during API call: {e}")
+            return "An error occurred during API call."
+        try:
+            if response:
+                translated_text = response.choices[0].message.content
+                return translated_text
+            else:
+                app_logger.error("Failed to translate text.")
+                return None
+        except Exception as e:
+            app_logger.error(f"Error during API call: {e}")
+            return "An error occurred during API call."
 
 def populate_sum_model():
     """Check local Ollama models and return a list of model names."""

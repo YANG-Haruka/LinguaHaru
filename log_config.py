@@ -26,7 +26,7 @@ def setup_logger(name="app_logger"):
     if not logger.hasHandlers():
         console_handler = logging.StreamHandler(sys.stdout)
         # console_handler.setLevel(logging.DEBUG)
-        console_handler.setLevel(logging.INFO)
+        console_handler.setLevel(logging.DEBUG)
         
         formatter = SimpleColoredFormatter(fmt='%(message)s')
         console_handler.setFormatter(formatter)
