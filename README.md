@@ -58,6 +58,12 @@ Click Translate and the program will start translating.
 - Download Translated File  
 When the translation is completed, the translated file will be returned at Download Translated File.  
 You can also view the translation results in the ~/result folder.  
+![APP](img/app_online.png)
+Added Online mode, currently only supports Deepseek-v3 (Cheap and fast->0.1 CNY/million tokens)  
+After selecting Online mode, you will need to enter API-KEY. Please refer to the official website for how to obtain it  
+https://www.deepseek.com/
+![APP](img/app_completed.png)
+After the translation is completed, a download box will pop up.
 
 ### Example 
 - Excel File: English to Japanese  

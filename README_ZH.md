@@ -59,6 +59,12 @@ https://www.bilibili.com/video/BV12zByYzECQ/?share_source=copy_web&vd_source=93b
 点击 Translate 按钮，程序将开始翻译。  
 - 下载文件  
 翻译完成后，您可以在 Download Translated File 处下载翻译后的文件。翻译结果也会保存在 ~/result 文件夹中。  
+![APP](img/app_online.png)
+新增Online模式，目前只支持Deepseek-v3 （便宜/快速->0.1元/百万tokens）  
+勾选Online模式后，会需要输入API-KEY。获取方式参考官网  
+https://www.deepseek.com/
+![APP](img/app_completed.png)
+翻译完成后，会弹出下载框下载。
 
 ### 示例
 - Excel 文件: 英文到日文  
