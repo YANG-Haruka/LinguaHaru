@@ -78,6 +78,7 @@ iface.launch(share=True)
 
 ## 参考项目
 - [ollama-python](https://github.com/ollama/ollama-python)
+- [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 
 ## 待更新
 - Support more models and more file types
@@ -89,6 +90,8 @@ Qwen模型相关声明
 代码和模型权重对学术研究完全开放，并支持商用。请查看通义千问LICENSE了解具体的开源协议细节。
 
 ## 更新日志
+- 2025/01/11  
+增加对PDF的支持。参考：[PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 - 2025/01/10  
 增加对Deepseek-v3的支持。（建议电脑不好的兄弟们使用这个，真的是国产之光良心模型）。相对于本地模型翻译质量更高。  
 API获取: https://www.deepseek.com/

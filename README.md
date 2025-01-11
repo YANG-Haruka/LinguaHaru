@@ -78,6 +78,7 @@ iface.launch(share=True)
 
 ## Referenced Projects
 - [ollama-python](https://github.com/ollama/ollama-python)
+- [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 
 ## To be updated
 - Support more models and more file types
@@ -93,6 +94,8 @@ The code and model weights are fully open for academic research and support comm
 Please refer to the Qwen LICENSE for detailed information on the specific open-source agreement. 
 
 ## Changelog
+- 2025/01/11  
+Add support for PDF。Referenced Projects：[PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 - 2025/01/10    
 Add support for deepseek-v3. Now you can use the api for translation. (more stable)  
 API GET: https://www.deepseek.com/

@@ -3,6 +3,7 @@ import os
 from translator.excel_translator import ExcelTranslator
 from translator.ppt_translator import PptTranslator
 from translator.word_translator import WordTranslator
+from translator.pdf_translator import PdfTranslator
 from llmWrapper.ollama_wrapper import populate_sum_model
 
 LANGUAGE_MAP = {
@@ -31,6 +32,7 @@ def translate_file(file, model, src_lang, dst_lang, use_online, api_key, max_tok
         ".docx": WordTranslator,
         ".pptx": PptTranslator,
         ".xlsx": ExcelTranslator,
+        ".pdf":PdfTranslator,
     }.get(file_extension.lower())
 
     if not translator_class:
@@ -83,8 +85,8 @@ with gr.Blocks() as demo:
     max_token = gr.Number(label="Max Tokens", value=1024)
 
     file_input = gr.File(
-        label="Upload Office File (.docx, .pptx, .xlsx)",
-        file_types=[".docx", ".pptx", ".xlsx"]
+        label="Upload Office File (.docx, .pptx, .xlsx, .pdf)",
+        file_types=[".docx", ".pptx", ".xlsx", ".pdf"]
     )
     output_file = gr.File(label="Download Translated File", visible=False)  # Initially hidden
     error_message = gr.Textbox(label="Progress Bar", interactive=False, visible=True)

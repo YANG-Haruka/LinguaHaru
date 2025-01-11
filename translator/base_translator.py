@@ -152,7 +152,7 @@ class DocumentTranslator:
         app_logger.info("Extracting content to JSON...")
         if progress_callback:
             progress_callback(0, desc="Extracting text, please wait...")
-        json_path = self.extract_content_to_json()
+        json_path = self.extract_content_to_json(progress_callback)
 
         app_logger.info("Translating content...")
         if progress_callback:
@@ -166,7 +166,7 @@ class DocumentTranslator:
         app_logger.info("Writing translated content to file...")
         if progress_callback:
             progress_callback(0, desc="Translation completed, new file being generated...")
-        self.write_translated_json_to_file(json_path, RESULT_JSON_PATH)
+        self.write_translated_json_to_file(json_path, RESULT_JSON_PATH,progress_callback)
 
         result_folder = "result" 
         base_name = os.path.basename(file_name)
