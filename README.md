@@ -100,6 +100,8 @@ The code and model weights are fully open for academic research and support comm
 Please refer to the Qwen LICENSE for detailed information on the specific open-source agreement. 
 
 ## Changelog
+- 2025/01/15  
+Fixed a bug in PDF translation, added multi-language support, and petted a kitty.
 - 2025/01/11  
 Add support for PDF。Referenced Projects：[PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 - 2025/01/10    
