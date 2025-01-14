@@ -11,7 +11,7 @@ This software is a **Free**, **Fully Localized**, **User-friendly** translation 
 Here's what it offers:  
   
 - Supported File Types: Accepts .docx, .pptx, and .xlsx files.
-- Language Options: You can translate between English, Chinese, and Japanese. (More Language Updating...)  
+- Language Options: You can translate between English, Chinese, and Japanese. 
 
 ## Get Started
 ### CUDA
@@ -91,7 +91,6 @@ iface.launch(share=True)
 
 ## To be updated
 - Support more models and more file types
-- More Language support
 
 ## Software Disclaimer  
 The software code is completely open-source and can be freely used in accordance with the GPL-3.0 license.  

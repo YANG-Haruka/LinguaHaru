@@ -9,7 +9,7 @@
 功能特点如下：
   
 - 支持文件类型：支持 .docx、.pptx 和 .xlsx 文件。
-- 语言选项：可以在 英语、中文 和 日语之间进行翻译。（更多语言支持即将更新……）
+- 语言选项：可以在 英语、中文 和 日语之间进行翻译。
 
 ## 快速上手
 ### CUDA
@@ -92,7 +92,6 @@ iface.launch(share=True)
 
 ## 待更新
 - Support more models and more file types
-- More Language support
 
 ## 软件声明
 软件代码完全开源，可以随意取用，请遵守GPL-3.0 license，软件只提供AI翻译服务，所有由本软件制成的翻译内容，与制作人无关，请各位遵守法律，合法翻译。  
