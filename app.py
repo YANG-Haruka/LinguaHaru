@@ -10,6 +10,13 @@ LANGUAGE_MAP = {
     "日本語": "ja",
     "中文": "zh",
     "English": "en",
+    "Español": "es",
+    "Français": "fr",
+    "Deutsch": "de",
+    "Italiano": "it",
+    "Português": "pt",
+    "Русский": "ru",
+    "한국어": "ko"
 }
 
 def translate_file(file, model, src_lang, dst_lang, use_online, api_key, max_token=1024, progress=gr.Progress(track_tqdm=True)):
@@ -68,8 +75,17 @@ def update_model_list_and_api_input(use_online):
 # Build Gradio interface
 with gr.Blocks() as demo:
     with gr.Row():
-        src_lang = gr.Dropdown(["English", "中文", "日本語"], label="Source Language", value="English")
-        dst_lang = gr.Dropdown(["English", "中文", "日本語"], label="Target Language", value="English")
+        src_lang = gr.Dropdown(
+            ["English", "中文", "日本語", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "한국어"],
+            label="Source Language",
+            value="English"
+        )
+        dst_lang = gr.Dropdown(
+            ["English", "中文", "日本語", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "한국어"],
+            label="Target Language",
+            value="English"
+        )
+
 
     with gr.Row():
         use_online_model = gr.Checkbox(label="Use Online Model", value=False)
