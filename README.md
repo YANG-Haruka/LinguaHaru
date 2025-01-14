@@ -72,6 +72,8 @@ After the translation is completed, a download box will pop up.
 ![ppt_sample](img/ppt.png)  
 - Word File: English to Japanese  
 ![word_sample](img/word.png)
+- PDF File: English to Japanese  
+![pdf_sample](img/pdf.png)
 
 The default access address is
 ```bash

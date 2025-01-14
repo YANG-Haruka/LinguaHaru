@@ -73,6 +73,10 @@ https://www.deepseek.com/
 ![ppt_sample](img/ppt.png)  
 - Word 文件: 英文到日文  
 ![word_sample](img/word.png)
+- PDF 文件: 英文到日文  
+![pdf_sample](img/pdf.png)
+
+
 默认访问地址为：
 ```bash
 http://127.0.0.1:9980
