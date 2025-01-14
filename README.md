@@ -1,5 +1,6 @@
 # AI-Office-Translator
 [简体中文](README_ZH.md)  
+[日本語](README_JP.md)  
 
 **UI based on PyQt-Fluent-Widgets developing...**  
 **Over 100 files have been tested**  
