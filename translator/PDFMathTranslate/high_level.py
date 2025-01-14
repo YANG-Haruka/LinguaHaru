@@ -446,7 +446,7 @@ def extract_and_translate(
 def write_translated_result(
     input_file: str,
     output_dir: str = "result",
-    pages: Optional[list[int]] = None,
+    pages: Optional[List[int]] = None,
     lang_in: str = "",
     lang_out: str = "",
     service: str = "",
@@ -456,35 +456,20 @@ def write_translated_result(
     model: OnnxModel = None,
     envs: Dict = None,
     prompt: List = None,
+    **kwargs: Any,
 ):
     """
-    将翻译后的内容从JSON写回到PDF文件。
-
-    Args:
-        input_file: 输入的PDF文件路径。
-        output_dir: 输出的PDF文件目录。
-        pages: 要翻译的页面列表，默认为全部。
-        lang_in: 源语言。
-        lang_out: 目标语言。
-        service: 翻译服务。
-        thread: 线程数。
-        vfont: 自定义字体规则。
-        vchar: 自定义字符规则。
-        model: 识别模型。
-        envs: 翻译服务相关的环境变量。
-        prompt: 翻译提示模板。
+    和 translate() 处理方式一致：先将原始 PDF 重新保存成一份干净的 PDF，
+    再对其插入新字体、替换文本，最后输出翻译结果 PDF。
     """
-    # 确保输出目录存在
+
+    # 1) 确保输出目录存在
     os.makedirs(output_dir, exist_ok=True)
 
-    # 打开原始 PDF 文件
+    # 2) 读取原始 PDF
     with open(input_file, "rb") as doc_raw:
         s_raw = doc_raw.read()
 
-    # 创建文档对象
-    doc_zh = Document(stream=s_raw)
-
-    # 加载目标语言字体
     font_list = [("tiro", None)]
 
     font_path = download_remote_fonts(lang_out.lower())
@@ -492,43 +477,21 @@ def write_translated_result(
     noto = Font(noto_name, font_path)
     font_list.append((noto_name, font_path))
 
-
-    # 创建二进制流文件（fp）用于传递给 translate_patch
-    fp = io.BytesIO(s_raw)
-
-    # 调用 translate_patch 写入翻译内容
-    obj_patch = translate_patch(
-        inf=fp,
-        pages=pages,
-        vfont=vfont,
-        vchar=vchar,
-        thread=thread,
-        doc_zh=doc_zh,
-        lang_in=lang_in,
-        lang_out=lang_out,
-        service=service,
-        model=model,
-        envs=envs,
-        noto=noto,
-        noto_name=noto_name,
-        prompt=prompt,
-    )
-
-    # 更新 PDF 文档中的翻译结果
-    for obj_id, ops_new in obj_patch.items():
-        doc_zh.update_stream(obj_id, ops_new.encode())
-
-    # 调整字体以支持翻译内容
+    doc_en = Document(stream=s_raw)
+    stream = io.BytesIO()
+    doc_en.save(stream)
+    doc_zh = Document(stream=stream)
     page_count = doc_zh.page_count
-    # font_list = [("GoNotoKurrent-Regular.ttf", font_path), ("tiro", None)]
+
     font_id = {}
     for page in doc_zh:
         for font in font_list:
             font_id[font[0]] = page.insert_font(font[0], font[1])
+
     xreflen = doc_zh.xref_length()
     for xref in range(1, xreflen):
-        for label in ["Resources/", ""]:  # 可能是基于 xobj 的 res
-            try:  # xref 读写可能出错
+        for label in ["Resources/", ""]:
+            try:
                 font_res = doc_zh.xref_get_key(xref, f"{label}Font")
                 if font_res[0] == "dict":
                     for font in font_list:
@@ -542,11 +505,30 @@ def write_translated_result(
             except Exception:
                 pass
 
-    # 保存翻译后的 PDF 文件
-    output_file = os.path.join(output_dir, os.path.basename(input_file).replace(".pdf", "_translated.pdf"))
+    fp = io.BytesIO()
+    doc_zh.save(fp)
+    obj_patch: dict = translate_patch(fp, **locals())
+
+    for obj_id, ops_new in obj_patch.items():
+        # ops_old=doc_en.xref_stream(obj_id)
+        # print(obj_id)
+        # print(ops_old)
+        # print(ops_new.encode())
+        doc_zh.update_stream(obj_id, ops_new.encode())
+
+    doc_en.insert_file(doc_zh)
+    for id in range(page_count):
+        doc_en.move_page(page_count + id, id * 2 + 1)
+
+    doc_zh.subset_fonts(fallback=True)
+    doc_en.subset_fonts(fallback=True)
+
+    output_file = os.path.join(
+        output_dir,
+        os.path.basename(input_file).replace(".pdf", "_translated.pdf"),
+    )
 
     with open(output_file, "wb") as f:
         f.write(doc_zh.write(deflate=True, garbage=3, use_objstms=1))
 
-    # print(f"翻译完成，已保存至: {output_file}")
     return output_file

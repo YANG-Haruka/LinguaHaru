@@ -48,6 +48,9 @@ class BaseTranslator:
                 "model": model,
             },
         )
+        translation_json_path = "temp/dst_translated.json"
+        if os.path.exists(translation_json_path):
+            self.cache.update_translations_from_json(translation_json_path)
 
     def set_envs(self, envs):
         # Detach from self.__class__.envs
@@ -94,10 +97,10 @@ class BaseTranslator:
     
     def process_translation_cache(self):
         text_json_path = "temp/src.json"
-        translation_json_path = "temp/dst_translated.json"
+        # translation_json_path = "temp/dst_translated.json"
         self.cache.export_translation_to_json(text_json_path)
-        if os.path.exists(translation_json_path):
-            self.cache.update_translations_from_json(translation_json_path)
+        # if os.path.exists(translation_json_path):
+        #     self.cache.update_translations_from_json(translation_json_path)
 
     def prompt(self, text, prompt):
         if prompt:
