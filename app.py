@@ -9,6 +9,7 @@ from llmWrapper.ollama_wrapper import populate_sum_model
 LANGUAGE_MAP = {
     "日本語": "ja",
     "中文": "zh",
+    "繁體中文": "zh-Hant",
     "English": "en",
     "Español": "es",
     "Français": "fr",
@@ -76,12 +77,12 @@ def update_model_list_and_api_input(use_online):
 with gr.Blocks() as demo:
     with gr.Row():
         src_lang = gr.Dropdown(
-            ["English", "中文", "日本語", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "한국어"],
+            ["English", "中文", "繁體中文", "日本語", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "한국어"],
             label="Source Language",
             value="English"
         )
         dst_lang = gr.Dropdown(
-            ["English", "中文", "日本語", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "한국어"],
+            ["English", "中文", "繁體中文", "日本語", "Español", "Français", "Deutsch", "Italiano", "Português", "Русский", "한국어"],
             label="Target Language",
             value="English"
         )
