@@ -47,6 +47,7 @@ class DocumentTranslator:
         
         if stream_generator is None:
             app_logger.warning("Failed to generate segments.")
+            return
 
         app_logger.info("Translating segments...")
         combined_previous_texts = []
@@ -59,11 +60,23 @@ class DocumentTranslator:
                         segment, self.previous_text, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt
                     )
+                    
+                    if not translated_text:
+                        app_logger.error("translate_text returned empty or None.")
+                        raise ValueError("Empty translation result.")
 
                     process_translation_results(segment, translated_text)
                     
-                    last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
-                    self.previous_text = "\n".join(last_3_entries)
+                    cleaned_text = clean_json(translated_text)
+                    translated_lines = cleaned_text.splitlines()
+
+                    if len(translated_lines) >= 4:
+                        last_3_entries = translated_lines[-4:-1]
+                        self.previous_text = "\n".join(last_3_entries)
+                    else:
+                        app_logger.warning("Translated text does not have enough lines to update previous_text.")
+                        self.previous_text = self.previous_text_default
+
                     combined_previous_texts.append(translated_text)
                     break
 
@@ -75,6 +88,8 @@ class DocumentTranslator:
                 if last_valid_translated_text:
                     app_logger.warning("Saving last valid translation despite errors.")
                     combined_previous_texts.append(last_valid_translated_text)
+                else:
+                    app_logger.error("All translation attempts failed for this segment.")
 
             if progress_callback:
                 progress_callback(segment_progress, desc="Translating...Please wait.")

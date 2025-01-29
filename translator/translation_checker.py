@@ -15,22 +15,47 @@ def modify_json(entry):
     return entry
 
 def clean_json(text):
+    if text is None:
+        app_logger.warning("clean_json received None, returning empty string.")
+        return ""
+    if not isinstance(text, str):
+        app_logger.warning(f"Expected string, but got {type(text)}. Converting to string.")
+        text = str(text)
     return re.sub(r'^```json\n|\n```$', '', text)
 
 def process_translation_results(original_text, translated_text):
+    if not translated_text:
+        app_logger.error("No translated text received.")
+        return
+
     translated_json = {}
     successful_translations = []
     failed_translations = []
 
-    original_json = json.loads(clean_json(original_text))
-    translated_lines = clean_json(translated_text).splitlines()
-    
-    if translated_lines[0].strip() == "{" and translated_lines[-1].strip() == "}":
+    try:
+        original_json = json.loads(clean_json(original_text))
+    except json.JSONDecodeError as e:
+        app_logger.error(f"Failed to parse original JSON: {e}")
+        return
+
+    try:
+        cleaned_translated_text = clean_json(translated_text)
+        if not cleaned_translated_text.strip():
+            app_logger.error("Translated text is empty after cleaning.")
+            return
+        translated_lines = cleaned_translated_text.splitlines()
+    except Exception as e:
+        app_logger.error(f"Failed to clean and split translated text: {e}")
+        return
+
+    if translated_lines and translated_lines[0].strip() == "{" and translated_lines[-1].strip() == "}":
         translated_lines = translated_lines[1:-1]
 
     for line in translated_lines:
         try:
             clean_line = line.strip().rstrip(",")
+            if not clean_line:
+                continue
             line_json = json.loads("{" + clean_line + "}")
             translated_json.update(line_json)
         except json.JSONDecodeError as e:
