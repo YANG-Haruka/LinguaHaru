@@ -20,7 +20,7 @@ LANGUAGE_MAP = {
     "한국어": "ko"
 }
 
-def translate_file(file, model, src_lang, dst_lang, use_online, api_key, max_token=1024, progress=gr.Progress(track_tqdm=True)):
+def translate_file(file, model, src_lang, dst_lang, use_online, api_key, max_token=768, progress=gr.Progress(track_tqdm=True)):
     """Handles the translation process with a progress bar."""
     if file is None:
         return gr.update(value=None, visible=False), "Please select a file to translate."
@@ -99,7 +99,7 @@ with gr.Blocks() as demo:
 
     api_key_input = gr.Textbox(label="API Key", placeholder="Enter your API key here", visible=False)
 
-    max_token = gr.Number(label="Max Tokens", value=1024)
+    max_token = gr.Number(label="Max Tokens", value=768)
 
     file_input = gr.File(
         label="Upload Office File (.docx, .pptx, .xlsx, .pdf)",

@@ -7,93 +7,112 @@ SRC_JSON_PATH = "temp/src.json"
 RESULT_JSON_PATH = "temp/dst_translated.json"
 FAILED_JSON_PATH = "temp/dst_translated_failed.json"
 
-def modify_json(entry):
-    if not entry.startswith("```json\n"):
-        entry = "```json\n" + entry
-    if not entry.endswith("\n```"):
-        entry = entry + "\n```"
-    return entry
-
 def clean_json(text):
-    return re.sub(r'^```json\n|\n```$', '', text)
+    """Clean JSON text, remove markdown code blocks, handle BOM, and fix trailing commas."""
+    if not text:
+        return ""
+
+    text = text.strip().lstrip("\ufeff")  # Remove BOM if exists
+    text = re.sub(r'^```json\n|\n```$', '', text, flags=re.MULTILINE)  # Remove Markdown JSON markers
+
+    # Remove trailing commas inside JSON
+    text = re.sub(r',\s*}', '}', text)  # Fix ", }" issue
+    text = re.sub(r',\s*\]', ']', text)  # Fix ", ]" issue
+    return text
 
 def process_translation_results(original_text, translated_text):
-    translated_json = {}
+    """Process translation results and save successful and failed translations"""
     successful_translations = []
     failed_translations = []
 
-    original_json = json.loads(clean_json(original_text))
-    translated_lines = clean_json(translated_text).splitlines()
-    
-    if translated_lines[0].strip() == "{" and translated_lines[-1].strip() == "}":
-        translated_lines = translated_lines[1:-1]
+    # Parse original JSON
+    try:
+        original_json = json.loads(clean_json(original_text))
+    except json.JSONDecodeError as e:
+        app_logger.error(f"Failed to parse original JSON: {e}")
+        return
 
-    for line in translated_lines:
-        try:
-            clean_line = line.strip().rstrip(",")
-            line_json = json.loads("{" + clean_line + "}")
-            translated_json.update(line_json)
-        except json.JSONDecodeError as e:
-            app_logger.warning(f"Translation error, content: {line}, error details: {e}")
+    # Parse translated JSON
+    try:
+        translated_json = json.loads(clean_json(translated_text))
+    except json.JSONDecodeError as e:
+        app_logger.error(f"Failed to parse translated JSON: {e}")
+        return
 
     for key, value in original_json.items():
-        if key not in translated_json or translated_json[key] == "":
-            failed_translations.append({"count": int(key), "value": value})
-        else:
+        translated_value = translated_json.get(key, "").strip()
+        if translated_value:
             successful_translations.append({
                 "count": key,
                 "original": value,
-                "translated": translated_json[key]
+                "translated": translated_value
             })
+        else:
+            failed_translations.append({"count": int(key), "value": value})
 
-    if os.path.exists(RESULT_JSON_PATH):
-        with open(RESULT_JSON_PATH, "r", encoding="utf-8") as f:
-            existing_data = json.load(f)
+    # Save successful translations
+    save_json(RESULT_JSON_PATH, successful_translations)
+
+    # Save failed translations
+    if failed_translations:
+        save_json(FAILED_JSON_PATH, failed_translations)
+        app_logger.warning(f"Appended missing or empty keys to {FAILED_JSON_PATH}")
+
+def save_json(filepath, data):
+    """Save JSON data without overwriting existing content"""
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            try:
+                existing_data = json.load(f)
+                if not isinstance(existing_data, list):
+                    existing_data = []
+            except json.JSONDecodeError:
+                existing_data = []
     else:
         existing_data = []
 
-    existing_data.extend(successful_translations)
-    
-    with open(RESULT_JSON_PATH, "w", encoding="utf-8") as f:
-        json.dump(existing_data, f, ensure_ascii=False, indent=4)
-    app_logger.info(f"Successful translations saved to {RESULT_JSON_PATH}")
+    existing_data.extend(data)
 
-    if failed_translations:
-        if os.path.exists(FAILED_JSON_PATH):
-            with open(FAILED_JSON_PATH, "r", encoding="utf-8") as f:
-                existing_failed_data = json.load(f)
-        else:
-            existing_failed_data = []
-        
-        existing_failed_data.extend(failed_translations)
-        
-        with open(FAILED_JSON_PATH, "w", encoding="utf-8") as f:
-            json.dump(existing_failed_data, f, ensure_ascii=False, indent=4)
-        app_logger.warning(f"Appended missing or empty keys to {FAILED_JSON_PATH}")
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
 def check_and_sort_translations():
+    """Check for missing translations and sort results"""
     if not os.path.exists(SRC_JSON_PATH) or not os.path.exists(RESULT_JSON_PATH):
         app_logger.error("Source or result file not found.")
         return
-    
+
     with open(SRC_JSON_PATH, "r", encoding="utf-8") as src_file:
-        src_data = json.load(src_file)
+        try:
+            src_data = json.load(src_file)
+        except json.JSONDecodeError:
+            app_logger.error("Failed to load source JSON.")
+            return
 
     with open(RESULT_JSON_PATH, "r", encoding="utf-8") as result_file:
-        translated_data = json.load(result_file)
-    
+        try:
+            translated_data = json.load(result_file)
+        except json.JSONDecodeError:
+            app_logger.error("Failed to load translated JSON.")
+            return
+
+    # Ensure src_data is in list format
+    if isinstance(src_data, dict):
+        src_data = [{"count": int(k), "original": v} for k, v in src_data.items()]
+
     translated_counts = {int(item["count"]) for item in translated_data}
     src_counts = {int(item["count"]) for item in src_data}
     missing_counts = src_counts - translated_counts
 
     if missing_counts:
-        app_logger.warning("Missing counts detected:")
+        app_logger.warning(f"Missing translations for: {missing_counts}")
     else:
         app_logger.info("No missing counts detected. All segments are translated.")
 
+    # Sort results by count
     sorted_data = sorted(translated_data, key=lambda x: int(x["count"]))
 
     with open(RESULT_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted_data, f, ensure_ascii=False, indent=4)
-    
+
     app_logger.info("Translation results have been sorted by count.")
