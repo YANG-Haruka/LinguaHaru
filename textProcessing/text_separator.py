@@ -11,8 +11,16 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
     with open(json_file_path, "r", encoding="utf-8") as json_file:
         cell_data = json.load(json_file)
 
-    # Find the maximum count value
-    max_count = max(cell.get("count", 0) for cell in cell_data)
+    if not cell_data:
+        raise ValueError("cell_data is empty. Please check the input data.")
+
+    max_count = max((cell.get("count", 0) for cell in cell_data), default=0)
+
+    # Pre-calculate the initial token count from prompts and previous text
+    prompt_token_count = sum(
+        num_tokens_from_string(json.dumps(prompt, ensure_ascii=False))
+        for prompt in [system_prompt, user_prompt, previous_prompt, previous_text]
+    )
 
     # Iterator for JSON cells
     remaining_data = iter(cell_data)
@@ -24,58 +32,56 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
         """
         nonlocal remaining_data
 
-        # Calculate initial token count from prompts and previous text
-        previous_text_string = json.dumps(previous_text, ensure_ascii=False, indent=4)
-        prompt_token_count = (
-            num_tokens_from_string(json.dumps(system_prompt, ensure_ascii=False))
-            + num_tokens_from_string(json.dumps(user_prompt, ensure_ascii=False))
-            + num_tokens_from_string(json.dumps(previous_prompt, ensure_ascii=False))
-            + num_tokens_from_string(previous_text_string)
-        )
-
         current_segment_dict = {}
         current_token_count = prompt_token_count
-        segment_last_count = 0
 
         for cell in remaining_data:
             count = cell.get("count")
-            value = cell.get("value", "")
-            if count is None or not value.strip():
-                continue
+            value = cell.get("value", "").strip()
+            if count is None or not value:
+                continue  # Skip invalid or empty cells
 
-            # Simulate adding the current line to the segment
             line_dict = {str(count): value}
-            temp_segment_dict = current_segment_dict.copy()
-            temp_segment_dict.update(line_dict)
-            temp_output_str = f"```json\n{json.dumps(temp_segment_dict, ensure_ascii=False, indent=4)}\n```"
-            temp_token_count = prompt_token_count + num_tokens_from_string(temp_output_str)
+            new_segment_str = f"```json\n{json.dumps(current_segment_dict | line_dict, ensure_ascii=False, indent=4)}\n```"
+            new_token_count = prompt_token_count + num_tokens_from_string(new_segment_str)
 
-            # Check if adding the current line exceeds max_token
-            if temp_token_count > max_token:
-                # Yield current segment
-                output_str = f"```json\n{json.dumps(current_segment_dict, ensure_ascii=False, indent=4)}\n```"
-                segment_last_count = max(current_segment_dict.keys(), key=int)
-                progress = int(segment_last_count) / max_count if max_count > 0 else 1
-                # print(f"Segment token count with prompt: {current_token_count}")
-                yield output_str, progress
-
-                # Start a new segment
+            if new_token_count > max_token:
+                # If adding this line exceeds the max_token, yield the current segment
+                if current_segment_dict:
+                    yield create_segment_output(current_segment_dict), calculate_progress(current_segment_dict, max_count)
+                
+                # Start a new segment with the current line
                 current_segment_dict = line_dict
                 current_token_count = prompt_token_count + num_tokens_from_string(
                     f"```json\n{json.dumps(current_segment_dict, ensure_ascii=False, indent=4)}\n```"
                 )
             else:
-                # Add line to current segment
+                # Add the line to the current segment
                 current_segment_dict.update(line_dict)
-                current_token_count = temp_token_count
+                current_token_count = new_token_count
 
         # Yield the final segment
         if current_segment_dict:
-            output_str = f"```json\n{json.dumps(current_segment_dict, ensure_ascii=False, indent=4)}\n```"
-            progress = int(segment_last_count) / max_count if max_count > 0 else 1
-            yield output_str, progress
+            yield create_segment_output(current_segment_dict), calculate_progress(current_segment_dict, max_count)
 
     return get_next_segment
+
+
+def create_segment_output(segment_dict):
+    """
+    Create the formatted JSON segment output.
+    """
+    return f"```json\n{json.dumps(segment_dict, ensure_ascii=False, indent=4)}\n```"
+
+
+def calculate_progress(segment_dict, max_count):
+    """
+    Calculate the progress percentage based on the last count in the segment.
+    """
+    if not segment_dict:
+        return 1.0
+    last_count = max(int(key) for key in segment_dict.keys())
+    return last_count / max_count if max_count > 0 else 1.0
 
 
 def num_tokens_from_string(string):

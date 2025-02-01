@@ -123,19 +123,41 @@ class TranslationCache:
 def init_db(remove_exists=False):
     cache_folder = os.path.join(os.path.expanduser("~"), ".cache", "pdf2zh")
     os.makedirs(cache_folder, exist_ok=True)
-    # The current version does not support database migration, so add the version number to the file name.
+
+    # Add version number to the database file for future compatibility
     cache_db_path = os.path.join(cache_folder, "cache.v1.db")
+
+    # Check and delete old database file if needed
     if remove_exists and os.path.exists(cache_db_path):
-        os.remove(cache_db_path)
+        # Close database connections before removing the file
+        close_existing_db_connection()
+
+        try:
+            os.remove(cache_db_path)
+            print(f"Successfully removed old database: {cache_db_path}")
+        except PermissionError as e:
+            print(f"PermissionError: {e}. File may be locked.")
+
+    # Initialize new database
     db.init(
         cache_db_path,
         pragmas={
-            "journal_mode": "wal",
-            "busy_timeout": 1000,
+            "journal_mode": "wal",  # Enable write-ahead logging
+            "busy_timeout": 1000,   # Wait if database is busy
         },
     )
     db.create_tables([_TranslationCache], safe=True)
 
+def close_existing_db_connection():
+    """
+    Close any active database connections to avoid file locking issues.
+    """
+    try:
+        if not db.is_closed():
+            db.close()  # Close the database connection if it’s open
+            print("Database connection closed.")
+    except Exception as e:
+        print(f"Error while closing the database connection: {e}")
 
 def init_test_db():
     import tempfile

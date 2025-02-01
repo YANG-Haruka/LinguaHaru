@@ -31,7 +31,9 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
                 translated_text = response['message']['content']
                 return translated_text
             else:
-                app_logger.error("Failed to translate text.")
+                done_reason = response.get('done_reason', 'Unknown reason')
+                error_message = f"Translation failed: done=False. Reason: {done_reason}"
+                app_logger.warning(error_message)
                 return None
         except Exception as e:
             app_logger.error(f"Error during API call: {e}")
@@ -52,7 +54,9 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
                 translated_text = response.choices[0].message.content
                 return translated_text
             else:
-                app_logger.error("Failed to translate text.")
+                done_reason = response.get('done_reason', 'Unknown reason')
+                error_message = f"Translation failed: done=False. Reason: {done_reason}"
+                app_logger.warning(error_message)
                 return None
         except Exception as e:
             app_logger.error(f"Error during API call: {e}")

@@ -21,7 +21,7 @@ LANGUAGE_MAP = {
 }
 
 def translate_file(file, model, src_lang, dst_lang, use_online, api_key, max_token=768, progress=gr.Progress(track_tqdm=True)):
-    """Handles the translation process with a progress bar."""
+    """Handles the translation process with a progress bar and error handling."""
     if file is None:
         return gr.update(value=None, visible=False), "Please select a file to translate."
 
@@ -40,22 +40,36 @@ def translate_file(file, model, src_lang, dst_lang, use_online, api_key, max_tok
         ".docx": WordTranslator,
         ".pptx": PptTranslator,
         ".xlsx": ExcelTranslator,
-        ".pdf":PdfTranslator,
+        ".pdf": PdfTranslator,
     }.get(file_extension.lower())
 
     if not translator_class:
-        return gr.update(value=None, visible=False), "Unsupported file type. Please upload a .docx, .pptx, or .xlsx file."
+        return gr.update(value=None, visible=False), f"Unsupported file type '{file_extension}'. Please upload a .docx, .pptx, .xlsx, or .pdf file."
 
-    # Initialize translator and progress
-    translator = translator_class(file.name, model, use_online, api_key, src_lang_code, dst_lang_code, max_token=max_token)
-    progress(0, desc="Initializing translation...")
+    try:
+        # Initialize translator and progress
+        translator = translator_class(file.name, model, use_online, api_key, src_lang_code, dst_lang_code, max_token=max_token)
+        progress(0, desc="Initializing translation...")
 
-    # Start translation and get result file path
-    translated_file_path = translator.process(file_name, file_extension, progress_callback=progress_callback)
-    progress(1, desc="Completed! Thanks for using ^_^")
+        # Start translation and get result file path
+        translated_file_path, missing_counts = translator.process(file_name, file_extension, progress_callback=progress_callback)
+        progress(1, desc="Completed! Thanks for using ^_^")
 
-    # Return the file path for download and clear error message
-    return gr.update(value=translated_file_path, visible=True), ""
+        # Check for missing translations
+        if missing_counts:
+            warning_message = f"Warning: Some segments are missing translations for keys: {sorted(missing_counts)}"
+            return gr.update(value=translated_file_path, visible=True), warning_message
+
+        # Return the file path for download and a success message
+        return gr.update(value=translated_file_path, visible=True), "Translation completed successfully! You can now download the file."
+
+    except ValueError as e:
+        # Handle specific errors like empty JSON (cell_data is empty)
+        return gr.update(value=None, visible=False), f"Translation failed: {str(e)}\nFile: {file.name}"
+
+    except Exception as e:
+        # Catch any other unexpected errors and provide feedback
+        return gr.update(value=None, visible=False), f"An unexpected error occurred: {str(e)}\nFile: {file.name}"
 
 # Load available models
 local_models = populate_sum_model()
@@ -87,7 +101,6 @@ with gr.Blocks() as demo:
             value="English"
         )
 
-
     with gr.Row():
         use_online_model = gr.Checkbox(label="Use Online Model", value=False)
 
@@ -106,7 +119,7 @@ with gr.Blocks() as demo:
         file_types=[".docx", ".pptx", ".xlsx", ".pdf"]
     )
     output_file = gr.File(label="Download Translated File", visible=False)  # Initially hidden
-    error_message = gr.Textbox(label="Progress Bar", interactive=False, visible=True)
+    status_message = gr.Textbox(label="Status Message", interactive=False, visible=True)
 
     # Update model list and API key input visibility when checkbox changes
     use_online_model.change(
@@ -116,16 +129,17 @@ with gr.Blocks() as demo:
     )
 
     translate_button = gr.Button("Translate")
+
     translate_button.click(
         lambda *args: (gr.update(visible=False), None),  # Hide download button before translation starts
         inputs=[],
-        outputs=[output_file, error_message]
+        outputs=[output_file, status_message]  # Reset status message and download button
     )
 
     translate_button.click(
         translate_file,
         inputs=[file_input, model_choice, src_lang, dst_lang, use_online_model, api_key_input, max_token],
-        outputs=[output_file, error_message]
+        outputs=[output_file, status_message]  # Update status message and file output
     )
 
 # Launch Gradio app

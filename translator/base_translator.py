@@ -47,6 +47,7 @@ class DocumentTranslator:
         
         if stream_generator is None:
             app_logger.warning("Failed to generate segments.")
+            return
 
         app_logger.info("Translating segments...")
         combined_previous_texts = []
@@ -60,16 +61,32 @@ class DocumentTranslator:
                         self.system_prompt, self.user_prompt, self.previous_prompt
                     )
 
+                    if not translated_text:
+                        app_logger.warning("translate_text returned empty or None.")
+                        raise ValueError("Empty translation result.")
+                    
                     process_translation_results(segment, translated_text)
                     
-                    last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
-                    self.previous_text = "\n".join(last_3_entries)
+                    cleaned_text = clean_json(translated_text)
+                    translated_lines = cleaned_text.splitlines()
+
+                    if len(translated_lines) >= 4:
+                        last_3_entries = translated_lines[-4:-1]
+                        self.previous_text = "\n".join(last_3_entries)
+                    else:
+                        app_logger.warning("Translated text does not have enough lines to update previous_text,use Default ones")
+                        self.previous_text = self.previous_text_default
+
                     combined_previous_texts.append(translated_text)
                     break
 
                 except (json.JSONDecodeError, ValueError, RuntimeError) as e:
                     app_logger.warning(f"Error encountered: {e}. Retrying ({retry_count + 1}/2)...")
                     last_valid_translated_text = translated_text
+   
+                    if retry_count == 1:
+                        app_logger.warning(f"All retries failed for segment: {segment}. Marking it as failed.")
+                        self._mark_segment_as_failed(segment)
 
             else:
                 if last_valid_translated_text:
@@ -157,6 +174,33 @@ class DocumentTranslator:
             app_logger.info("Clearing temp folder...")
             shutil.rmtree(temp_folder)
         os.makedirs(temp_folder)
+    
+    def _mark_segment_as_failed(self, segment):
+        """将失败段落标记为 {count, value} 对并存入 FAILED_JSON_PATH。"""
+        
+        if not os.path.exists(FAILED_JSON_PATH):
+            with open(FAILED_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump([], f)
+
+        with open(FAILED_JSON_PATH, "r+", encoding="utf-8") as f:
+            try:
+                failed_segments = json.load(f)
+            except json.JSONDecodeError:
+                failed_segments = []
+
+            try:
+                clean_segment = clean_json(segment)
+                segment_dict = json.loads(clean_segment)
+            except json.JSONDecodeError as e:
+                app_logger.error(f"Failed to decode JSON segment: {segment}. Error: {e}")
+                return
+            for count, value in segment_dict.items():
+                failed_segments.append({
+                    "count": int(count),
+                    "value": value.strip()
+                })
+            f.seek(0)
+            json.dump(failed_segments, f, ensure_ascii=False, indent=4)
 
     def process(self, file_name, file_extension, progress_callback=None):
         self._clear_temp_folder()
@@ -173,7 +217,7 @@ class DocumentTranslator:
 
         if progress_callback:
             progress_callback(0, desc="Checking for errors...")
-        check_and_sort_translations()
+        missing_counts = check_and_sort_translations()
 
         app_logger.info("Writing translated content to file...")
         if progress_callback:
@@ -183,4 +227,4 @@ class DocumentTranslator:
         result_folder = "result" 
         base_name = os.path.basename(file_name)
         final_output_path = os.path.join(result_folder, f"{base_name}_translated{file_extension}")
-        return final_output_path
+        return final_output_path,missing_counts

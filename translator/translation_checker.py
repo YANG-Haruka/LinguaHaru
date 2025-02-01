@@ -9,8 +9,12 @@ FAILED_JSON_PATH = "temp/dst_translated_failed.json"
 
 def clean_json(text):
     """Clean JSON text, remove markdown code blocks, handle BOM, and fix trailing commas."""
-    if not text:
+    if text is None:
+        app_logger.warning("clean_json received None, returning empty string.")
         return ""
+    if not isinstance(text, str):
+        app_logger.warning(f"Expected string, but got {type(text)}. Converting to string.")
+        text = str(text)
 
     text = text.strip().lstrip("\ufeff")  # Remove BOM if exists
     text = re.sub(r'^```json\n|\n```$', '', text, flags=re.MULTILINE)  # Remove Markdown JSON markers
@@ -22,6 +26,11 @@ def clean_json(text):
 
 def process_translation_results(original_text, translated_text):
     """Process translation results and save successful and failed translations"""
+    if not translated_text:
+        app_logger.warning("No translated text received.")
+        _mark_all_as_failed(original_text)
+        return
+
     successful_translations = []
     failed_translations = []
 
@@ -29,14 +38,16 @@ def process_translation_results(original_text, translated_text):
     try:
         original_json = json.loads(clean_json(original_text))
     except json.JSONDecodeError as e:
-        app_logger.error(f"Failed to parse original JSON: {e}")
+        app_logger.warning(f"Failed to parse original JSON: {e}")
+        _mark_all_as_failed(original_text)
         return
 
     # Parse translated JSON
     try:
         translated_json = json.loads(clean_json(translated_text))
     except json.JSONDecodeError as e:
-        app_logger.error(f"Failed to parse translated JSON: {e}")
+        app_logger.warning(f"Failed to parse translated JSON: {e}")
+        _mark_all_as_failed(original_text)
         return
 
     for key, value in original_json.items():
@@ -58,6 +69,23 @@ def process_translation_results(original_text, translated_text):
         save_json(FAILED_JSON_PATH, failed_translations)
         app_logger.warning(f"Appended missing or empty keys to {FAILED_JSON_PATH}")
 
+def _mark_all_as_failed(original_text):
+    failed_segments = []
+
+    try:
+        original_json = json.loads(clean_json(original_text))
+        for key, value in original_json.items():
+            failed_segments.append({
+                "count": int(key),
+                "value": value.strip()
+            })
+    except json.JSONDecodeError as e:
+        app_logger.warning(f"Error parsing original JSON during failure marking: {e}")
+        return
+
+    save_json(FAILED_JSON_PATH, failed_segments)
+    app_logger.warning("All segments marked as failed due to translation errors.")
+
 def save_json(filepath, data):
     """Save JSON data without overwriting existing content"""
     if os.path.exists(filepath):
@@ -77,24 +105,26 @@ def save_json(filepath, data):
         json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
 def check_and_sort_translations():
-    """Check for missing translations and sort results"""
+    """Check for missing translations and sort results."""
+    missing_counts = set()
+
     if not os.path.exists(SRC_JSON_PATH) or not os.path.exists(RESULT_JSON_PATH):
         app_logger.error("Source or result file not found.")
-        return
+        return missing_counts  # Return empty set
 
     with open(SRC_JSON_PATH, "r", encoding="utf-8") as src_file:
         try:
             src_data = json.load(src_file)
         except json.JSONDecodeError:
             app_logger.error("Failed to load source JSON.")
-            return
+            return missing_counts
 
     with open(RESULT_JSON_PATH, "r", encoding="utf-8") as result_file:
         try:
             translated_data = json.load(result_file)
         except json.JSONDecodeError:
             app_logger.error("Failed to load translated JSON.")
-            return
+            return missing_counts
 
     # Ensure src_data is in list format
     if isinstance(src_data, dict):
@@ -116,3 +146,4 @@ def check_and_sort_translations():
         json.dump(sorted_data, f, ensure_ascii=False, indent=4)
 
     app_logger.info("Translation results have been sorted by count.")
+    return missing_counts

@@ -3,6 +3,8 @@ __pycache__/
 temp/
 test/
 .vs/
+.gradio/
+.qodo/
 
 *.xlsx
 test.py
