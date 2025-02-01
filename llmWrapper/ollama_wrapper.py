@@ -1,6 +1,6 @@
 import ollama
 from ollama._types import Options
-from log_config import app_logger
+from config.log_config import app_logger
 from openai import OpenAI
 
 def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt):

@@ -5,7 +5,7 @@ from openpyxl.utils import range_boundaries
 import json
 from datetime import datetime
 from .skip_pipeline import should_translate
-from log_config import app_logger
+from config.log_config import app_logger
 
 
 def extract_excel_content_to_json(file_path):

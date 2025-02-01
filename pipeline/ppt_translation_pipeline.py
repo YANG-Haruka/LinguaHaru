@@ -3,7 +3,7 @@ import os
 from lxml import etree
 from zipfile import ZipFile
 from .skip_pipeline import should_translate
-from log_config import app_logger
+from config.log_config import app_logger
 
 def extract_ppt_content_to_json(file_path):
     """

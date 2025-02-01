@@ -1,7 +1,7 @@
 import os
 import shutil
 import json
-from log_config import app_logger
+from config.log_config import app_logger
 
 
 from llmWrapper.ollama_wrapper import translate_text

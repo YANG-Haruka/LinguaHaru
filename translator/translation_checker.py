@@ -1,7 +1,7 @@
 import json
 import os
 import re
-from log_config import app_logger
+from config.log_config import app_logger
 
 SRC_JSON_PATH = "temp/src.json"
 RESULT_JSON_PATH = "temp/dst_translated.json"
