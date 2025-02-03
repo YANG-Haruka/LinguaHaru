@@ -243,4 +243,4 @@ with gr.Blocks() as demo:
         ]
     )
 
-demo.launch(server_port=9980, share=True)
+demo.launch(server_port=9980, share=False)
