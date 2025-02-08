@@ -1,5 +1,6 @@
 # AI-Office-Translator
 
+**第一次使用时请挂梯子 请挂梯子 请挂梯子**  
 **基于PyQt-Fluent-Widgets的UI开发中...**  
 **已测试超过100份文件**  
 **如果觉得本项目对你有用，欢迎点一个Star ^ ^_**
