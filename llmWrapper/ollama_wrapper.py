@@ -2,6 +2,7 @@ import ollama
 from ollama._types import Options
 from config.log_config import app_logger
 from openai import OpenAI
+import re
 
 def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt):
     """Translate text segments using the Ollama API."""
@@ -29,7 +30,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         try:
             if response.get('done', False):
                 translated_text = response['message']['content']
-                return translated_text
+                cleaned_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+                return cleaned_text
             else:
                 done_reason = response.get('done_reason', 'Unknown reason')
                 error_message = f"Translation failed: done=False. Reason: {done_reason}"
@@ -52,7 +54,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         try:
             if response:
                 translated_text = response.choices[0].message.content
-                return translated_text
+                cleaned_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+                return cleaned_text
             else:
                 done_reason = response.get('done_reason', 'Unknown reason')
                 error_message = f"Translation failed: done=False. Reason: {done_reason}"
