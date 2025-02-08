@@ -5,6 +5,7 @@ test/
 .vs/
 .gradio/
 .qodo/
+log/
 
 *.xlsx
 test.py
