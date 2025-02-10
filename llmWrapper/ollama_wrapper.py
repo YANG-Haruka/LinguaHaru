@@ -1,7 +1,7 @@
 import ollama
 from ollama._types import Options
 from config.log_config import app_logger
-from openai import OpenAI
+from llmWrapper.online_translation import translate_online
 import re
 
 def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt):
@@ -12,8 +12,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
     text_to_translate = segments
     
     messages = [
+        {"role": "system", "content": system_prompt},
         {"role": "user", "content": f"{previous_prompt}\n###{previous_text}###\n{user_prompt}###\n{text_to_translate}"},
-        {"role": "system", "content": system_prompt}
     ]
     app_logger.debug(f"API messages: {messages}")
     if not use_online:
@@ -41,29 +41,7 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             app_logger.error(f"Error during API call: {e}")
             return "An error occurred during API call."
     else:
-        try:
-            client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
-            response = client.chat.completions.create(
-                model="deepseek-chat",
-                messages=messages,
-                stream=False
-            )
-        except Exception as e:
-            app_logger.error(f"Error during API call: {e}")
-            return "An error occurred during API call."
-        try:
-            if response:
-                translated_text = response.choices[0].message.content
-                cleaned_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
-                return cleaned_text
-            else:
-                done_reason = response.get('done_reason', 'Unknown reason')
-                error_message = f"Translation failed: done=False. Reason: {done_reason}"
-                app_logger.warning(error_message)
-                return None
-        except Exception as e:
-            app_logger.error(f"Error during API call: {e}")
-            return "An error occurred during API call."
+        return translate_online(api_key, messages, model)
 
 def populate_sum_model():
     """Check local Ollama models and return a list of model names."""

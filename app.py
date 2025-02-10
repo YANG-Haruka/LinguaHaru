@@ -67,13 +67,19 @@ def translate_file(
 
 # 2) Load local and online models
 local_models = populate_sum_model() or []
-online_models = ["deepseekv3"]
+online_models = [
+    "(ChatGPT) gpt-4o",
+    "(ChatGPT) o1",
+    "(ChatGPT) gpt-4o-mini",
+    "(Deepseek) deepseek-chat",
+    "(Deepseek) deepseek-reasoner"
+]
 
 def update_model_list_and_api_input(use_online):
     """Switch model options and show/hide API Key."""
     if use_online:
         return (
-            gr.update(choices=online_models, value=online_models[0]),
+            gr.update(choices=online_models, value=online_models[3]),
             gr.update(visible=True)
         )
     else:
