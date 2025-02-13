@@ -68,6 +68,8 @@ def process_translation_results(original_text, translated_text):
     if failed_translations:
         save_json(FAILED_JSON_PATH, failed_translations)
         app_logger.warning(f"Appended missing or empty keys to {FAILED_JSON_PATH}")
+        return True
+    return False
 
 def _mark_all_as_failed(original_text):
     failed_segments = []

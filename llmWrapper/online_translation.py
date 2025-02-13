@@ -16,18 +16,25 @@ def translate_online(api_key, messages, model):
 
     # Map UI model names to API model names
     model_mapping = {
-        "(ChatGPT) gpt-4o": "gpt-4o",
-        "(ChatGPT) o1": "o1",
-        "(ChatGPT) gpt-4o-mini": "gpt-4o-mini",
-        "(Deepseek) deepseek-chat": "deepseek-chat",
-        "(Deepseek) deepseek-reasoner": "deepseek-reasoner"
+        "(ChatGPT) ChatGPT-4o": "gpt-4o",
+        "(ChatGPT) ChatGPT-o1": "o1",
+        "(ChatGPT) ChatGPT-4o-mini": "gpt-4o-mini",
+        "(Deepseek) DeepSeek-V3": "deepseek-chat",
+        "(Deepseek) DeepSeek-R1": "deepseek-reasoner",
+        # Siliconflow models
+        "(Siliconflow) DeepSeek-R1": "deepseek-ai/DeepSeek-R1",
+        "(Siliconflow) DeepSeek-V3": "deepseek-ai/DeepSeek-V3",
+        "(Siliconflow Pro) DeepSeek-R1": "Pro/deepseek-ai/DeepSeek-R1",
+        "(Siliconflow Pro) DeepSeek-V3": "Pro/deepseek-ai/DeepSeek-V3"
     }
 
     # Get the actual model name from the mapping, default to the input if not found
     api_model = model_mapping.get(model, model)
 
-    # Determine the provider based on the actual API model name
-    if "deepseek" in model.lower():
+    # Determine the provider based on the UI model name (新增Siliconflow判断)
+    if "siliconflow" in model.lower():
+        base_url = "https://api.siliconflow.cn/v1"
+    elif "deepseek" in model.lower():
         base_url = "https://api.deepseek.com/v1"
     elif "chatgpt" in model.lower():
         base_url = "https://api.openai.com/v1"

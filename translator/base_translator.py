@@ -20,6 +20,7 @@ class DocumentTranslator:
         self.previous_text = previous_text
         self.use_online = use_online
         self.api_key = api_key
+        self.failed_status = True
 
         # Load translation prompts
         self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default = load_prompt(src_lang, dst_lang)
@@ -97,13 +98,22 @@ class DocumentTranslator:
                 progress_callback(segment_progress, desc="Translating...Please wait.")
                 app_logger.info(f"Progress: {segment_progress * 100:.2f}%")
         
-        self.retranslate_failed_content(combined_previous_texts, progress_callback)
+        # Maximum number of retries
+        for _ in range(3):
+            if not self.failed_status:
+                break
+            self.failed_status = self.retranslate_failed_content(combined_previous_texts, progress_callback)
+        
+        # Line by line translate
+        if self.failed_status:
+            app_logger.warning("Final attempt: Retranslating failed segments line by line...")
+            self._retranslate_failed_lines(progress_callback)
 
     def retranslate_failed_content(self, combined_previous_texts, progress_callback):
         app_logger.info("Retrying translation for failed segments...")
         if not os.path.exists(FAILED_JSON_PATH):
             app_logger.info("No failed segments to retranslate. Skipping this step.")
-            return
+            return False
 
         # Check if file is empty or contains an empty JSON array
         with open(FAILED_JSON_PATH, 'r', encoding='utf-8') as f:
@@ -111,10 +121,10 @@ class DocumentTranslator:
                 data = json.load(f)
                 if not data:  # If the JSON is an empty list or dict
                     app_logger.info("No failed segments to retranslate. Skipping this step.")
-                    return
+                    return False
             except json.JSONDecodeError:
                 app_logger.error("Failed to decode JSON. Skipping this step.")
-                return
+                return False
 
         stream_generator_failed = stream_segment_json(
             FAILED_JSON_PATH,
@@ -126,12 +136,14 @@ class DocumentTranslator:
         )
         if stream_generator_failed is None:
             app_logger.info("All text has been translated.")
+            return False
 
         if os.path.exists(FAILED_JSON_PATH):
             with open(FAILED_JSON_PATH, "w", encoding="utf-8") as f:
                 f.write("[]")
             app_logger.info("Cleared temp/dst_translated_failed.json")
 
+        has_translated_success = False
         for segment, segment_progress in stream_generator_failed():
             last_valid_translated_text = None
             for retry_count in range(2):
@@ -147,7 +159,8 @@ class DocumentTranslator:
                         self.previous_prompt
                     )
 
-                    process_translation_results(segment, translated_text)
+                    if process_translation_results(segment, translated_text):
+                        has_translated_success = True
                     app_logger.info("Segment retranslated successfully.")
                     
                     last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
@@ -167,6 +180,80 @@ class DocumentTranslator:
             if progress_callback:
                 progress_callback(segment_progress, desc="Missing detected! Re-translating...")
                 app_logger.info(f"Progress: {segment_progress * 100:.2f}%")
+        return has_translated_success
+
+    def _retranslate_failed_lines(self, progress_callback):
+        """
+        Retranslate failed lines individually, with a max retry of 2 times.
+        """
+
+        if not os.path.exists(FAILED_JSON_PATH):
+            return
+        try:
+            with open(FAILED_JSON_PATH, "r", encoding="utf-8") as f:
+                failed_segments = json.load(f)
+        except (json.JSONDecodeError, OSError) as e:
+            app_logger.error(f"Failed to read or decode FAILED_JSON_PATH: {e}")
+            return
+        if not failed_segments:
+            app_logger.info("No failed segments left for line-by-line translation.")
+            return
+
+        open(FAILED_JSON_PATH, "w", encoding="utf-8").write("[]")
+
+        new_failed_segments = []
+
+        for entry in failed_segments:
+            count = entry["count"]
+            text_value = entry["value"]
+            text_failed = self._convert_failed_segments_to_json(entry)
+            last_valid_line_translation = None
+            for retry in range(2):
+                try:
+                    translated_line = translate_text(
+                        text_failed,
+                        self.previous_text,
+                        self.model,
+                        self.use_online,
+                        self.api_key,
+                        self.system_prompt,
+                        self.user_prompt,
+                        self.previous_prompt
+                    )
+
+                    process_translation_results(text_failed, translated_line)
+                    last_valid_line_translation = translated_line.strip()
+
+                    lines = last_valid_line_translation.splitlines()
+                    if len(lines) >= 3:
+                        self.previous_text = "\n".join(lines[-3:])
+                    else:
+                        self.previous_text = self.previous_text_default
+
+                    break
+                except (json.JSONDecodeError, ValueError, RuntimeError) as e:
+                    app_logger.warning(f"Error in line {count}: {e}. Retrying ({retry + 1}/2)...")
+
+            else:
+                if last_valid_line_translation:
+                    app_logger.info(f"Saving last valid translation.")
+                else:
+                    new_failed_segments.append({
+                        "count": count,
+                        "value": text_value
+                    })
+            if progress_callback:
+                progress_callback(0, desc=f"Line-by-line retranslation...")
+        if new_failed_segments:
+            with open(FAILED_JSON_PATH, "w", encoding="utf-8") as f:
+                json.dump(new_failed_segments, f, ensure_ascii=False, indent=4)
+            app_logger.warning("Some lines still failed after all retries. Check FAILED_JSON_PATH.")
+        else:
+            app_logger.info("All lines retranslated successfully in line-by-line mode!")
+
+    def _convert_failed_segments_to_json(self, failed_segments):
+        converted_json = {failed_segments["count"]: failed_segments["value"]}
+        return json.dumps(converted_json, indent=4, ensure_ascii=False)
 
     def _clear_temp_folder(self):
         temp_folder = "temp"

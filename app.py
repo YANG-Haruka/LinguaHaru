@@ -4,8 +4,10 @@ from translator.excel_translator import ExcelTranslator
 from translator.ppt_translator import PptTranslator
 from translator.word_translator import WordTranslator
 from translator.pdf_translator import PdfTranslator
+from translator.subtile_translator import SubtitlesTranslator
 from llmWrapper.ollama_wrapper import populate_sum_model
 from typing import List, Tuple
+from config.log_config import app_logger
 
 # Import language configs
 from config.languages_config import LANGUAGE_MAP, LABEL_TRANSLATIONS
@@ -33,7 +35,8 @@ def translate_file(
         ".docx": WordTranslator,
         ".pptx": PptTranslator,
         ".xlsx": ExcelTranslator,
-        ".pdf": PdfTranslator
+        ".pdf": PdfTranslator,
+        ".srt": SubtitlesTranslator
     }.get(file_extension.lower())
 
     if not translator_class:
@@ -68,11 +71,15 @@ def translate_file(
 # 2) Load local and online models
 local_models = populate_sum_model() or []
 online_models = [
-    "(ChatGPT) gpt-4o",
-    "(ChatGPT) o1",
-    "(ChatGPT) gpt-4o-mini",
-    "(Deepseek) deepseek-chat",
-    "(Deepseek) deepseek-reasoner"
+    "(ChatGPT) ChatGPT-4o",
+    "(ChatGPT) ChatGPT-o1",
+    "(ChatGPT) ChatGPT-4o-mini",
+    "(Deepseek) DeepSeek-V3",
+    "(Deepseek) DeepSeek-R1"
+    "(Siliconflow) DeepSeek-R1",
+    "(Siliconflow) DeepSeek-V3",
+    "(Siliconflow Pro) DeepSeek-R1",
+    "(Siliconflow Pro) DeepSeek-V3",
 ]
 
 def update_model_list_and_api_input(use_online):
@@ -208,8 +215,8 @@ with gr.Blocks() as demo:
     api_key_input = gr.Textbox(label="API Key", placeholder="Enter your API key here", visible=False)
     max_token = gr.Number(label="Max Tokens", value=768)
     file_input = gr.File(
-        label="Upload Office File (.docx, .pptx, .xlsx, .pdf)",
-        file_types=[".docx", ".pptx", ".xlsx", ".pdf"]
+        label="Upload Office File (.docx, .pptx, .xlsx, .pdf, .srt)",
+        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt"]
     )
     output_file = gr.File(label="Download Translated File", visible=False)
     status_message = gr.Textbox(label="Status Message", interactive=False, visible=True)
