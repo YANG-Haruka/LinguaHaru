@@ -75,7 +75,7 @@ online_models = [
     "(ChatGPT) ChatGPT-o1",
     "(ChatGPT) ChatGPT-4o-mini",
     "(Deepseek) DeepSeek-V3",
-    "(Deepseek) DeepSeek-R1"
+    "(Deepseek) DeepSeek-R1",
     "(Siliconflow) DeepSeek-R1",
     "(Siliconflow) DeepSeek-V3",
     "(Siliconflow Pro) DeepSeek-R1",
