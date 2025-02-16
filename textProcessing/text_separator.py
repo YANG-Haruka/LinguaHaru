@@ -1,6 +1,7 @@
 import json
 import tiktoken
-
+from tiktoken_ext import openai_public # For pyinstaller
+import tiktoken_ext # For pyinstaller
 
 def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, previous_text):
     """

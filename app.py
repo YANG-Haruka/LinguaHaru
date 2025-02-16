@@ -181,6 +181,7 @@ def init_ui(request: gr.Request):
 
 # 5) Build Gradio interface
 with gr.Blocks() as demo:
+    gr.Markdown("# AI-Office-Translator\n### Made by Haruka-YANG")
     session_lang = gr.State("en")
 
     with gr.Row():
@@ -256,4 +257,4 @@ with gr.Blocks() as demo:
         ]
     )
 
-demo.launch(server_port=9980, share=False)
+demo.launch(server_port=9980, share=False, inbrowser=True)
