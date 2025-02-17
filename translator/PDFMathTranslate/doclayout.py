@@ -6,21 +6,28 @@ import numpy as np
 import ast
 import onnx
 import onnxruntime
-from huggingface_hub import hf_hub_download
-
+import os
 
 class DocLayoutModel(abc.ABC):
     @staticmethod
-    def load_onnx():
-        model = OnnxModel.from_pretrained(
-            repo_id="wybxc/DocLayout-YOLO-DocStructBench-onnx",
-            filename="doclayout_yolo_docstructbench_imgsz1024.onnx",
-        )
+    def load_onnx(local_onnx_path: str):
+        """
+        Load the ONNX model from a local file.
+        
+        Args:
+            local_onnx_path (str): Path to the local ONNX model.
+        """
+        model = OnnxModel.from_local_file(local_onnx_path)
         return model
 
     @staticmethod
     def load_available():
-        return DocLayoutModel.load_onnx()
+        """
+        Default method to load a local model.
+        You can modify the path to match your local ONNX file location.
+        """
+        local_path = "./models/doclayout_yolo_docstructbench_imgsz1024.onnx"
+        return DocLayoutModel.load_onnx(local_path)
 
     @property
     @abc.abstractmethod
@@ -72,19 +79,14 @@ class OnnxModel(DocLayoutModel):
         self.model = onnxruntime.InferenceSession(model.SerializeToString())
 
     @staticmethod
-    def from_pretrained(repo_id: str, filename: str):
-        if os.environ.get("USE_MODELSCOPE", "0") == "1":
-            repo_mapping = {
-                # Edit here to add more models
-                "wybxc/DocLayout-YOLO-DocStructBench-onnx": "AI-ModelScope/DocLayout-YOLO-DocStructBench-onnx"
-            }
-            from modelscope import snapshot_download
-
-            model_dir = snapshot_download(repo_mapping[repo_id])
-            pth = os.path.join(model_dir, filename)
-        else:
-            pth = hf_hub_download(repo_id=repo_id, filename=filename, etag_timeout=1)
-        return OnnxModel(pth)
+    def from_local_file(local_path: str):
+        """
+        Load the ONNX model from a local file (no remote download).
+        
+        Args:
+            local_path (str): Local path to the ONNX model file.
+        """
+        return OnnxModel(local_path)
 
     @property
     def stride(self):

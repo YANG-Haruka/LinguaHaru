@@ -8,9 +8,20 @@ from translator.subtile_translator import SubtitlesTranslator
 from llmWrapper.ollama_wrapper import populate_sum_model
 from typing import List, Tuple
 from config.log_config import app_logger
+import socket
 
 # Import language configs
 from config.languages_config import LANGUAGE_MAP, LABEL_TRANSLATIONS
+
+def find_available_port(start_port=9980, max_attempts=20):
+    """Find an available port starting from `start_port`. Try up to `max_attempts`."""
+    for port in range(start_port, start_port + max_attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            if s.connect_ex(("127.0.0.1", port)) != 0:
+                return port
+    raise RuntimeError("No available port found.")
+
 
 # 1) Main file translation function
 def translate_file(
@@ -257,4 +268,6 @@ with gr.Blocks() as demo:
         ]
     )
 
-demo.launch(server_port=9980, share=False, inbrowser=True)
+available_port = find_available_port(start_port=9980)
+demo.launch(server_port=available_port, share=False, inbrowser=True)
+# demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=True)
