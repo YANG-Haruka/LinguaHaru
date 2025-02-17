@@ -11,4 +11,5 @@ dist/
 
 *.xlsx
 *.7z
+*.onnx
 test.py
