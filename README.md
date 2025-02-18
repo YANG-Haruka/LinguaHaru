@@ -6,6 +6,12 @@
 **Over 100 files have been tested**  
 **If you find this project useful, please give it a star ^ ^_**  
 
+**Model Download / Please save it in the "Models" folder after downloading**  
+**Model Download / Please save it in the "Models" folder after downloading**  
+**Model Download / Please save it in the "Models" folder after downloading**  
+- [Baidu Netdisk](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
+- [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
+
 ## What's this
 This software is a **Free**, **Fully Localized**, **User-friendly** translation tool that helps you translate Office files (Word, PowerPoint, and Excel) between different languages.  
 Here's what it offers:  

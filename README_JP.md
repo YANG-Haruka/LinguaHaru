@@ -2,7 +2,13 @@
 
 **PyQt-Fluent-Widgetsを基にしたUI開発中...**  
 **100件以上のファイルでテスト済み**  
-**このプロジェクトが役に立った場合、ぜひStarをクリックしてください ^ ^_**
+**このプロジェクトが役に立った場合、ぜひStarをクリックしてください ^ ^_**  
+
+**モデルのダウンロード / ダウンロード後は「Models」フォルダに保存してください**  
+**モデルのダウンロード / ダウンロード後は「Models」フォルダに保存してください**  
+**モデルのダウンロード / ダウンロード後は「Models」フォルダに保存してください**  
+- [Baidu Netdisk](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
+- [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
 
 ## What's this
 これは、**無料**、**完全ローカル**、**ユーザーフレンドリー**な翻訳ツールです。Word、PowerPoint、ExcelなどのOfficeファイルを異なる言語間で翻訳するのに役立ちます。  

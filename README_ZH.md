@@ -3,7 +3,13 @@
 **第一次使用时请挂梯子 请挂梯子 请挂梯子**  
 **基于PyQt-Fluent-Widgets的UI开发中...**  
 **已测试超过100份文件**  
-**如果觉得本项目对你有用，欢迎点一个Star ^ ^_**
+**如果觉得本项目对你有用，欢迎点一个Star ^ ^_**  
+
+**模型下载/请下载后放在Models文件夹**  
+**模型下载/请下载后放在Models文件夹**  
+**模型下载/请下载后放在Models文件夹**  
+- [百度网盘](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
+- [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
 
 ## What's this
 这是一款**免费**、**完全本地化**、**用户友好**的翻译工具，能够帮助您在不同语言之间翻译 Office 文件（Word、PowerPoint 和 Excel）。
