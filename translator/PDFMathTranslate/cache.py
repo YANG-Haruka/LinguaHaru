@@ -2,6 +2,8 @@ import os
 import json
 from peewee import Model, SqliteDatabase, AutoField, CharField, TextField, SQL
 from typing import Optional
+import glob
+import uuid
 
 # we don't init the database here
 db = SqliteDatabase(None)
@@ -120,23 +122,21 @@ class TranslationCache:
             _TranslationCache.update(translation=translated).where(_TranslationCache.id == count).execute()
         # display_database()
     
+def generate_db_name():
+    """Generate a unique database name with random UUID"""
+    random_id = str(uuid.uuid4())[:8]  # Use first 8 characters of UUID
+    return f"cache.v1.{random_id}.db"
+
 def init_db(remove_exists=False):
     cache_folder = os.path.join(os.path.expanduser("~"), ".cache", "pdf2zh")
     os.makedirs(cache_folder, exist_ok=True)
 
-    # Add version number to the database file for future compatibility
-    cache_db_path = os.path.join(cache_folder, "cache.v1.db")
+    # Generate new database name with random string
+    cache_db_path = os.path.join(cache_folder, generate_db_name())
 
-    # Check and delete old database file if needed
-    if remove_exists and os.path.exists(cache_db_path):
-        # Close database connections before removing the file
-        close_existing_db_connection()
-
-        try:
-            os.remove(cache_db_path)
-            print(f"Successfully removed old database: {cache_db_path}")
-        except PermissionError as e:
-            print(f"PermissionError: {e}. File may be locked.")
+    # If remove_exists is True, remove all existing database files
+    if remove_exists:
+        clean_all_dbs(cache_folder)
 
     # Initialize new database
     db.init(
@@ -147,7 +147,40 @@ def init_db(remove_exists=False):
         },
     )
     db.create_tables([_TranslationCache], safe=True)
+    return cache_db_path
 
+
+def clean_all_dbs(cache_folder):
+    """Clean all database files in the cache folder"""
+    # Close any existing connections
+    close_existing_db_connection()
+    
+    # Find and remove all database files and their associated WAL/SHM files
+    db_pattern = os.path.join(cache_folder, "cache.v1.*.db")
+    for db_file in glob.glob(db_pattern):
+        try:
+            # Remove main database file
+            if os.path.exists(db_file):
+                os.remove(db_file)
+                print(f"Removed database file: {db_file}")
+            
+            # Remove WAL file
+            wal_file = db_file + "-wal"
+            if os.path.exists(wal_file):
+                os.remove(wal_file)
+                print(f"Removed WAL file: {wal_file}")
+            
+            # Remove SHM file
+            shm_file = db_file + "-shm"
+            if os.path.exists(shm_file):
+                os.remove(shm_file)
+                print(f"Removed SHM file: {shm_file}")
+                
+        except PermissionError as e:
+            print(f"PermissionError while removing {db_file}: {e}")
+        except Exception as e:
+            print(f"Error while removing {db_file}: {e}")
+            
 def close_existing_db_connection():
     """
     Close any active database connections to avoid file locking issues.
