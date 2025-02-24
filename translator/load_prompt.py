@@ -3,7 +3,7 @@ import json
 def load_prompt(src_lang,dst_lang):
     """Load the translation prompt from a JSON file based on the target language."""
     lang_code = dst_lang
-    prompt_path = f"prompts/{lang_code}.json"
+    prompt_path = f"config/prompts/{lang_code}.json"
     
     with open(prompt_path, "r", encoding="utf-8") as file:
         prompt_data = json.load(file)

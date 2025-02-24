@@ -147,7 +147,7 @@ def init_db(remove_exists=False):
         },
     )
     db.create_tables([_TranslationCache], safe=True)
-    return cache_db_path
+    return cache_db_path,cache_folder
 
 
 def clean_all_dbs(cache_folder):

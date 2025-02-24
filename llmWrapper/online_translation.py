@@ -1,71 +1,80 @@
 import re
 import logging
+import json
+import os
 from openai import OpenAI
+from config.log_config import app_logger
 
-app_logger = logging.getLogger(__name__)
+CONFIG_DIR = "config/api_config"
 
-def translate_online(api_key, messages, model):
+
+def load_model_config(model):
     """
-    Perform translation using an online API, determined by the model name.
-
-    :param api_key: API key for authentication.
-    :param messages: List of messages for the chat model.
-    :param model: Model name (UI selection).
-    :return: Translated text or an error message.
+    Load the JSON config for the given model name.
     """
-
-    # Map UI model names to API model names
-    model_mapping = {
-        "(ChatGPT) ChatGPT-4o": "gpt-4o",
-        "(ChatGPT) ChatGPT-o1": "o1",
-        "(ChatGPT) ChatGPT-4o-mini": "gpt-4o-mini",
-        "(Deepseek) DeepSeek-V3": "deepseek-chat",
-        "(Deepseek) DeepSeek-R1": "deepseek-reasoner",
-        # Siliconflow models
-        "(Siliconflow) DeepSeek-R1": "deepseek-ai/DeepSeek-R1",
-        "(Siliconflow) DeepSeek-V3": "deepseek-ai/DeepSeek-V3",
-        "(Siliconflow Pro) DeepSeek-R1": "Pro/deepseek-ai/DeepSeek-R1",
-        "(Siliconflow Pro) DeepSeek-V3": "Pro/deepseek-ai/DeepSeek-V3"
-    }
-
-    # Get the actual model name from the mapping, default to the input if not found
-    api_model = model_mapping.get(model, model)
-
-    # Determine the provider based on the UI model name (新增Siliconflow判断)
-    if "siliconflow" in model.lower():
-        base_url = "https://api.siliconflow.cn/v1"
-    elif "deepseek" in model.lower():
-        base_url = "https://api.deepseek.com/v1"
-    elif "chatgpt" in model.lower():
-        base_url = "https://api.openai.com/v1"
-    else:
-        app_logger.error(f"Unsupported translation model: {api_model}")
-        return "Unsupported translation model."
+    json_path = os.path.join(CONFIG_DIR, f"{model}.json")
+    if not os.path.exists(json_path):
+        app_logger.error(f"Model config file not found: {json_path}")
+        return None
 
     try:
-        # Initialize the API client
+        with open(json_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        return config
+    except json.JSONDecodeError:
+        app_logger.error(f"Failed to parse JSON file: {json_path}")
+        return None
+    
+def translate_online(api_key, messages, model):
+    """
+    Perform translation using an online API with config from a JSON file.
+    :param api_key: API key.
+    :param messages: List of chat messages.
+    :param model: Selected model (same as JSON filename).
+    :return: Translated text or an error message.
+    """
+    # Load model config
+    model_config = load_model_config(model)
+    # Get API settings from the config
+    base_url = model_config.get("base_url")
+    api_model = model_config.get("model")
+    top_p = model_config.get("top_p", 0.95)
+    temperature = model_config.get("temperature", 0.75)
+    presence_penalty = model_config.get("presence_penalty", 0.0)
+    frequency_penalty = model_config.get("frequency_penalty", 0.0)
+
+    if not base_url or not api_model:
+        app_logger.error(f"Invalid model config: {model}")
+        return "Invalid model configuration."
+
+    try:
+        # Initialize API client
         client = OpenAI(api_key=api_key, base_url=base_url)
 
-        # Send request to the API
+        # Send request
         response = client.chat.completions.create(
-            model=api_model,  # Use mapped API model name
+            model=api_model,
             messages=messages,
+            top_p=top_p,
+            temperature=temperature,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
             stream=False
         )
     except Exception as e:
-        app_logger.error(f"API call failed for model {api_model}: {e}")
-        return "An error occurred during API call."
+        app_logger.error(f"API call failed: {e}")
+        return "API request failed."
 
     try:
         if response:
             app_logger.debug(f"API Response: {response}")
             translated_text = response.choices[0].message.content
-            # Remove unnecessary system-generated content
-            cleaned_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
-            return cleaned_text
+            # Remove unnecessary system content
+            clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+            return clean_translated_text
         else:
-            app_logger.warning(f"{api_model} returned an empty response")
+            app_logger.warning(f"Empty response from {api_model}")
             return None
     except Exception as e:
-        app_logger.error(f"Failed to parse response from {api_model}: {e}")
-        return "An error occurred during API call."
+        app_logger.error(f"Response parsing failed: {e}")
+        return "Error parsing API response."

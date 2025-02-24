@@ -22,7 +22,6 @@ def find_available_port(start_port=9980, max_attempts=20):
                 return port
     raise RuntimeError("No available port found.")
 
-
 # 1) Main file translation function
 def translate_file(
     file, model, src_lang, dst_lang, use_online, api_key, max_token=768,
@@ -78,19 +77,12 @@ def translate_file(
     except Exception as e:
         return gr.update(value=None, visible=False), f"Error: {str(e)}"
 
-
 # 2) Load local and online models
 local_models = populate_sum_model() or []
+config_dir = "config/api_config"
 online_models = [
-    "(ChatGPT) ChatGPT-4o",
-    "(ChatGPT) ChatGPT-o1",
-    "(ChatGPT) ChatGPT-4o-mini",
-    "(Deepseek) DeepSeek-V3",
-    "(Deepseek) DeepSeek-R1",
-    "(Siliconflow) DeepSeek-R1",
-    "(Siliconflow) DeepSeek-V3",
-    "(Siliconflow Pro) DeepSeek-R1",
-    "(Siliconflow Pro) DeepSeek-V3",
+    os.path.splitext(f)[0] for f in os.listdir(config_dir) 
+    if f.endswith(".json") and f != "Custom.json"
 ]
 
 def update_model_list_and_api_input(use_online):
@@ -106,7 +98,6 @@ def update_model_list_and_api_input(use_online):
             gr.update(choices=local_models, value=default_local_value),
             gr.update(visible=False)
         )
-
 
 # 3) Parse Accept-Language
 def parse_accept_language(accept_language: str) -> List[Tuple[str, float]]:
@@ -128,7 +119,6 @@ def parse_accept_language(accept_language: str) -> List[Tuple[str, float]]:
         languages.append((lang, q))
     
     return sorted(languages, key=lambda x: x[1], reverse=True)
-
 
 def get_user_lang(request: gr.Request) -> str:
     """Return the top user language code that matches LANGUAGE_MAP."""
@@ -166,7 +156,6 @@ def get_user_lang(request: gr.Request) -> str:
 
     return "en"
 
-
 # 4) Apply labels based on user language
 def set_labels(session_lang: str):
     """Update UI labels according to the chosen language."""
@@ -177,18 +166,16 @@ def set_labels(session_lang: str):
         use_online_model: gr.update(label=labels["Use Online Model"]),
         model_choice: gr.update(label=labels["Models"]),
         api_key_input: gr.update(label=labels["API Key"]),
-        max_token: gr.update(label=labels["Max Tokens"]),
         file_input: gr.update(label=labels["Upload File"]),
         output_file: gr.update(label=labels["Download Translated File"]),
         status_message: gr.update(label=labels["Status Message"]),
-        translate_button: gr.update(value=labels["Translate"]),  # Button uses 'value'
+        translate_button: gr.update(value=labels["Translate"]),
     }
 
 def init_ui(request: gr.Request):
     """Set user language and update labels on page load."""
     user_lang = get_user_lang(request)
     return [user_lang] + list(set_labels(user_lang).values())
-
 
 # 5) Build Gradio interface
 with gr.Blocks() as demo:
@@ -225,7 +212,6 @@ with gr.Blocks() as demo:
         value=default_local_value
     )
     api_key_input = gr.Textbox(label="API Key", placeholder="Enter your API key here", visible=False)
-    max_token = gr.Number(label="Max Tokens", value=768)
     file_input = gr.File(
         label="Upload Office File (.docx, .pptx, .xlsx, .pdf, .srt)",
         file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt"]
@@ -252,7 +238,7 @@ with gr.Blocks() as demo:
         translate_file,
         inputs=[
             file_input, model_choice, src_lang, dst_lang, 
-            use_online_model, api_key_input, max_token
+            use_online_model, api_key_input
         ],
         outputs=[output_file, status_message]
     )
@@ -263,7 +249,7 @@ with gr.Blocks() as demo:
         inputs=None,
         outputs=[
             session_lang, src_lang, dst_lang, use_online_model, 
-            model_choice, api_key_input, max_token, file_input, 
+            model_choice, api_key_input, file_input, 
             output_file, status_message, translate_button
         ]
     )
