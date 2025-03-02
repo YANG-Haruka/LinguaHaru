@@ -259,6 +259,8 @@ def get_user_lang(request: gr.Request) -> str:
         return "ru"
     elif highest_lang.startswith("ko"):
         return "ko"
+    elif highest_lang.startswith("th"):
+        return "th"
     elif highest_lang.startswith("en"):
         return "en"
 
@@ -304,7 +306,7 @@ with gr.Blocks() as demo:
             [
                 "English", "中文", "繁體中文", "日本語", "Español", 
                 "Français", "Deutsch", "Italiano", "Português", 
-                "Русский", "한국어"
+                "Русский", "한국어", "ภาษาไทย"
             ],
             label="Source Language",
             value="English"
@@ -313,7 +315,7 @@ with gr.Blocks() as demo:
             [
                 "English", "中文", "繁體中文", "日本語", "Español", 
                 "Français", "Deutsch", "Italiano", "Português", 
-                "Русский", "한국어"
+                "Русский", "한국어", "ภาษาไทย"
             ],
             label="Target Language",
             value="English"
