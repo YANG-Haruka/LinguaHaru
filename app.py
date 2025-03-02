@@ -1,5 +1,8 @@
 import gradio as gr
 import os
+import zipfile
+import tempfile
+import shutil
 from translator.excel_translator import ExcelTranslator
 from translator.ppt_translator import PptTranslator
 from translator.word_translator import WordTranslator
@@ -22,32 +25,56 @@ def find_available_port(start_port=9980, max_attempts=20):
                 return port
     raise RuntimeError("No available port found.")
 
-# 1) Main file translation function
-def translate_file(
-    file, model, src_lang, dst_lang, use_online, api_key, max_token=768,
-    progress=gr.Progress(track_tqdm=True)
-):
-    """Translate an uploaded file using the chosen model."""
-    if file is None:
-        return gr.update(value=None, visible=False), "Please select a file to translate."
-
-    if use_online and not api_key:
-        return gr.update(value=None, visible=False), "API key is required for online models."
-
-    def progress_callback(progress_value, desc=None):
-        progress(progress_value, desc=desc)
-
-    src_lang_code = LANGUAGE_MAP.get(src_lang, "en")
-    dst_lang_code = LANGUAGE_MAP.get(dst_lang, "en")
-
-    file_name, file_extension = os.path.splitext(file.name)
-    translator_class = {
+# Helper function to get translator class based on file extension
+def get_translator_class(file_extension):
+    return {
         ".docx": WordTranslator,
         ".pptx": PptTranslator,
         ".xlsx": ExcelTranslator,
         ".pdf": PdfTranslator,
         ".srt": SubtitlesTranslator
     }.get(file_extension.lower())
+
+# Main translation function
+def translate_files(
+    files, model, src_lang, dst_lang, use_online, api_key, max_token=768,
+    progress=gr.Progress(track_tqdm=True)
+):
+    """Translate one or multiple files using the chosen model."""
+    if not files:
+        return gr.update(value=None, visible=False), "Please select file(s) to translate."
+
+    if use_online and not api_key:
+        return gr.update(value=None, visible=False), "API key is required for online models."
+
+    src_lang_code = LANGUAGE_MAP.get(src_lang, "en")
+    dst_lang_code = LANGUAGE_MAP.get(dst_lang, "en")
+
+    # Common progress callback function
+    def progress_callback(progress_value, desc=None):
+        progress(progress_value, desc=desc)
+
+    # Check if multiple files or single file
+    if isinstance(files, list) and len(files) > 1:
+        return process_multiple_files(
+            files, model, src_lang_code, dst_lang_code, 
+            use_online, api_key, max_token, progress_callback
+        )
+    else:
+        # Handle single file case
+        single_file = files[0] if isinstance(files, list) else files
+        return process_single_file(
+            single_file, model, src_lang_code, dst_lang_code, 
+            use_online, api_key, max_token, progress_callback
+        )
+
+def process_single_file(
+    file, model, src_lang_code, dst_lang_code, 
+    use_online, api_key, max_token, progress_callback
+):
+    """Process a single file for translation."""
+    file_name, file_extension = os.path.splitext(file.name)
+    translator_class = get_translator_class(file_extension)
 
     if not translator_class:
         return (
@@ -60,12 +87,12 @@ def translate_file(
             file.name, model, use_online, api_key,
             src_lang_code, dst_lang_code, max_token=max_token
         )
-        progress(0, desc="Initializing translation...")
+        progress_callback(0, desc="Initializing translation...")
 
         translated_file_path, missing_counts = translator.process(
             file_name, file_extension, progress_callback=progress_callback
         )
-        progress(1, desc="Done!")
+        progress_callback(1, desc="Done!")
 
         if missing_counts:
             msg = f"Warning: Missing segments for keys: {sorted(missing_counts)}"
@@ -75,9 +102,90 @@ def translate_file(
     except ValueError as e:
         return gr.update(value=None, visible=False), f"Translation failed: {str(e)}"
     except Exception as e:
+        app_logger.exception("Error processing file")
         return gr.update(value=None, visible=False), f"Error: {str(e)}"
 
-# 2) Load local and online models
+def process_multiple_files(
+    files, model, src_lang_code, dst_lang_code, 
+    use_online, api_key, max_token, progress_callback
+):
+    """Process multiple files and return a zip archive."""
+    # Create a temporary directory for the translated files
+    temp_dir = tempfile.mkdtemp(prefix="translated_")
+    zip_path = os.path.join(temp_dir, "translated_files.zip")
+    
+    try:
+        valid_files = []
+        
+        # Validate all files
+        for file_obj in files:
+            _, ext = os.path.splitext(file_obj.name)
+            if get_translator_class(ext):
+                # Use filename as relative path
+                file_name = os.path.basename(file_obj.name)
+                valid_files.append((file_obj, file_name))
+        
+        if not valid_files:
+            shutil.rmtree(temp_dir)
+            return gr.update(value=None, visible=False), "No supported files found."
+        
+        # Create a zip file
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            total_files = len(valid_files)
+            
+            for i, (file_obj, rel_path) in enumerate(valid_files):
+                file_name, file_extension = os.path.splitext(file_obj.name)
+                base_name = os.path.basename(file_name)
+                
+                # Update progress with initial file info
+                progress_callback(i / total_files, desc=f"Starting to process {rel_path} (File {i+1}/{total_files})")
+                
+                # Create translator for this file
+                translator_class = get_translator_class(file_extension)
+                if not translator_class:
+                    continue  # Skip unsupported files (should not happen due to earlier validation)
+                
+                try:
+                    # Process file
+                    translator = translator_class(
+                        file_obj.name, model, use_online, api_key,
+                        src_lang_code, dst_lang_code, max_token=max_token
+                    )
+                    
+                    # Create output directory
+                    output_dir = os.path.join(temp_dir, "files")
+                    os.makedirs(output_dir, exist_ok=True)
+                    
+                    # Create progress callback that shows individual file progress and overall position
+                    def file_progress(value, desc=None):
+                        file_desc = desc if desc else ""
+                        overall_info = f" (File {i+1}/{total_files})"
+                        progress_callback(i / total_files + value / total_files, desc=f"{file_desc}{overall_info}")
+                    
+                    translated_file_path, _ = translator.process(
+                        os.path.join(output_dir, base_name),
+                        file_extension,
+                        progress_callback=file_progress
+                    )
+                    
+                    # Add to zip
+                    zipf.write(
+                        translated_file_path, 
+                        os.path.basename(translated_file_path)
+                    )
+                except Exception as e:
+                    app_logger.exception(f"Error processing file {rel_path}: {e}")
+                    # Continue with next file
+        
+        progress_callback(1, desc="Done!")
+        return gr.update(value=zip_path, visible=True), f"Translation completed. {total_files} files processed."
+    
+    except Exception as e:
+        app_logger.exception("Error processing files")
+        shutil.rmtree(temp_dir)
+        return gr.update(value=None, visible=False), f"Error processing files: {str(e)}"
+
+# Load local and online models
 local_models = populate_sum_model() or []
 config_dir = "config/api_config"
 online_models = [
@@ -89,7 +197,7 @@ def update_model_list_and_api_input(use_online):
     """Switch model options and show/hide API Key."""
     if use_online:
         return (
-            gr.update(choices=online_models, value=online_models[3]),
+            gr.update(choices=online_models, value=online_models[3] if online_models else None),
             gr.update(visible=True)
         )
     else:
@@ -99,7 +207,7 @@ def update_model_list_and_api_input(use_online):
             gr.update(visible=False)
         )
 
-# 3) Parse Accept-Language
+# Parse Accept-Language
 def parse_accept_language(accept_language: str) -> List[Tuple[str, float]]:
     """Parse Accept-Language into (language, q) pairs."""
     if not accept_language:
@@ -156,17 +264,26 @@ def get_user_lang(request: gr.Request) -> str:
 
     return "en"
 
-# 4) Apply labels based on user language
+# Apply labels based on user language
 def set_labels(session_lang: str):
     """Update UI labels according to the chosen language."""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    
+    # Update file upload label
+    file_upload_label = "Upload Files"
+    if "Upload Files" in labels:
+        file_upload_label = labels["Upload Files"]
+    elif "Upload File" in labels:
+        # Modify existing label for multiple files
+        file_upload_label = labels["Upload File"] + "s"
+    
     return {
         src_lang: gr.update(label=labels["Source Language"]),
         dst_lang: gr.update(label=labels["Target Language"]),
         use_online_model: gr.update(label=labels["Use Online Model"]),
         model_choice: gr.update(label=labels["Models"]),
         api_key_input: gr.update(label=labels["API Key"]),
-        file_input: gr.update(label=labels["Upload File"]),
+        file_input: gr.update(label=file_upload_label),
         output_file: gr.update(label=labels["Download Translated File"]),
         status_message: gr.update(label=labels["Status Message"]),
         translate_button: gr.update(value=labels["Translate"]),
@@ -177,7 +294,7 @@ def init_ui(request: gr.Request):
     user_lang = get_user_lang(request)
     return [user_lang] + list(set_labels(user_lang).values())
 
-# 5) Build Gradio interface
+# Build Gradio interface
 with gr.Blocks() as demo:
     gr.Markdown("# AI-Office-Translator\n### Made by Haruka-YANG")
     session_lang = gr.State("en")
@@ -213,13 +330,15 @@ with gr.Blocks() as demo:
     )
     api_key_input = gr.Textbox(label="API Key", placeholder="Enter your API key here", visible=False)
     file_input = gr.File(
-        label="Upload Office File (.docx, .pptx, .xlsx, .pdf, .srt)",
-        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt"]
+        label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt)",
+        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt"],
+        file_count="multiple"
     )
     output_file = gr.File(label="Download Translated File", visible=False)
     status_message = gr.Textbox(label="Status Message", interactive=False, visible=True)
     translate_button = gr.Button("Translate")
 
+    # Event handlers
     use_online_model.change(
         update_model_list_and_api_input,
         inputs=use_online_model,
@@ -235,7 +354,7 @@ with gr.Blocks() as demo:
 
     # Then translate
     translate_button.click(
-        translate_file,
+        translate_files,
         inputs=[
             file_input, model_choice, src_lang, dst_lang, 
             use_online_model, api_key_input
@@ -248,7 +367,7 @@ with gr.Blocks() as demo:
         fn=init_ui,
         inputs=None,
         outputs=[
-            session_lang, src_lang, dst_lang, use_online_model, 
+            session_lang, src_lang, dst_lang, use_online_model,
             model_choice, api_key_input, file_input, 
             output_file, status_message, translate_button
         ]
