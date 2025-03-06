@@ -3,6 +3,7 @@ import os
 import zipfile
 import tempfile
 import shutil
+import json
 from importlib import import_module
 from llmWrapper.offline_translation import populate_sum_model
 from typing import List, Tuple
@@ -20,6 +21,22 @@ TRANSLATOR_MODULES = {
     ".pdf": "translator.pdf_translator.PdfTranslator",
     ".srt": "translator.subtile_translator.SubtitlesTranslator"
 }
+
+def read_system_config():
+    """Read the system configuration from the config file."""
+    config_path = os.path.join("config", "system_config.json")
+    try:
+        with open(config_path, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"lan_mode": False}
+
+def write_system_config(config):
+    """Write the system configuration to the config file."""
+    config_path = os.path.join("config", "system_config.json")
+    os.makedirs(os.path.dirname(config_path), exist_ok=True)
+    with open(config_path, 'w') as f:
+        json.dump(config, f, indent=4)
 
 def find_available_port(start_port=9980, max_attempts=20):
     """Find an available port starting from `start_port`. Try up to `max_attempts`."""
@@ -282,6 +299,13 @@ def get_user_lang(request: gr.Request) -> str:
 
     return "en"
 
+def update_lan_mode(lan_mode):
+    """Update system config with new LAN mode setting."""
+    config = read_system_config()
+    config["lan_mode"] = lan_mode
+    write_system_config(config)
+    return config["lan_mode"]
+
 # Apply labels based on user language
 def set_labels(session_lang: str):
     """Update UI labels according to the chosen language."""
@@ -294,11 +318,12 @@ def set_labels(session_lang: str):
     elif "Upload File" in labels:
         # Modify existing label for multiple files
         file_upload_label = labels["Upload File"] + "s"
-    
+
     return {
         src_lang: gr.update(label=labels["Source Language"]),
         dst_lang: gr.update(label=labels["Target Language"]),
         use_online_model: gr.update(label=labels["Use Online Model"]),
+        lan_mode_checkbox: gr.update(label=labels["Local Network Mode (Restart to Apply)"]),
         model_choice: gr.update(label=labels["Models"]),
         api_key_input: gr.update(label=labels["API Key"]),
         file_input: gr.update(label=file_upload_label),
@@ -310,12 +335,18 @@ def set_labels(session_lang: str):
 def init_ui(request: gr.Request):
     """Set user language and update labels on page load."""
     user_lang = get_user_lang(request)
-    return [user_lang] + list(set_labels(user_lang).values())
+    config = read_system_config()
+    
+    lan_mode_state = config.get("lan_mode", False)
+    
+    label_updates = set_labels(user_lang)
+    return [user_lang, lan_mode_state] + list(label_updates.values())
 
 # Build Gradio interface
 with gr.Blocks(title="AI Office Translator") as demo:
     gr.Markdown("# AI-Office-Translator\n### Made by Haruka-YANG")
     session_lang = gr.State("en")
+    lan_mode_state = gr.State(False)
 
     with gr.Row():
         src_lang = gr.Dropdown(
@@ -339,6 +370,7 @@ with gr.Blocks(title="AI Office Translator") as demo:
 
     with gr.Row():
         use_online_model = gr.Checkbox(label="Use Online Model", value=False)
+        lan_mode_checkbox = gr.Checkbox(label="LAN Mode", value=False)
 
     default_local_value = local_models[0] if local_models else None
     model_choice = gr.Dropdown(
@@ -361,6 +393,13 @@ with gr.Blocks(title="AI Office Translator") as demo:
         update_model_list_and_api_input,
         inputs=use_online_model,
         outputs=[model_choice, api_key_input]
+    )
+    
+    # Add LAN mode
+    lan_mode_checkbox.change(
+        update_lan_mode,
+        inputs=lan_mode_checkbox,
+        outputs=lan_mode_state
     )
 
     # Hide download button and reset status first
@@ -385,12 +424,16 @@ with gr.Blocks(title="AI Office Translator") as demo:
         fn=init_ui,
         inputs=None,
         outputs=[
-            session_lang, src_lang, dst_lang, use_online_model,
-            model_choice, api_key_input, file_input, 
+            session_lang, lan_mode_state, src_lang, dst_lang, use_online_model,
+            lan_mode_checkbox, model_choice, api_key_input, file_input, 
             output_file, status_message, translate_button
         ]
     )
 
 available_port = find_available_port(start_port=9980)
-demo.launch(server_port=available_port, share=False, inbrowser=True)
-# demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=True)
+
+config = read_system_config()
+if config.get("lan_mode", False):
+    demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=True)
+else:
+    demo.launch(server_port=available_port, share=False, inbrowser=True)

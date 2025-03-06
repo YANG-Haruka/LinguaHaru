@@ -6,7 +6,7 @@ import subprocess
 import json
 import socket
 
-def get_host():
+def _get_host():
     # Get OLLAMA_HOST from environment variables or use default
     ollama_host = os.environ.get("OLLAMA_HOST", "localhost:11434")
     app_logger.info(f"Ollama running in {ollama_host}")
@@ -24,12 +24,11 @@ def get_host():
     
     return host_part, port_part
 
+OLLAMA_HOST, OLLAMA_PORT = _get_host()
 
 def translate_offline(messages, model):
     try:
-        host_part, port_part = get_host()
-        # Prepend protocol (http://) to the host
-        url = f"http://{host_part}:{port_part}/api/chat"
+        url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
         
         payload = {
             "model": model,
@@ -40,8 +39,6 @@ def translate_offline(messages, model):
             },
             "stream": False
         }
-        
-        app_logger.debug(f"Sending request to: {url}")
         response = requests.post(url, json=payload)
         response.raise_for_status()  # Raise exception for HTTP errors     
         response = response.text
@@ -69,14 +66,12 @@ def translate_offline(messages, model):
 
 def is_ollama_running(timeout=1):
     """Check if Ollama service is running by attempting to connect to its API port."""
-    host, port = get_host()
     try:
-        # Convert port from string to integer
-        port_int = int(port)
+        port_int = int(OLLAMA_PORT)
         
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.settimeout(timeout)
-        result = sock.connect_ex((host, port_int))
+        result = sock.connect_ex((OLLAMA_HOST, port_int))
         sock.close()
         return result == 0
     except Exception as e:
