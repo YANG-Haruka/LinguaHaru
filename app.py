@@ -342,11 +342,14 @@ def init_ui(request: gr.Request):
     label_updates = set_labels(user_lang)
     return [user_lang, lan_mode_state] + list(label_updates.values())
 
+config = read_system_config()
+initial_lan_mode = config.get("lan_mode", False)
+
 # Build Gradio interface
 with gr.Blocks(title="AI Office Translator") as demo:
     gr.Markdown("# AI-Office-Translator\n### Made by Haruka-YANG")
     session_lang = gr.State("en")
-    lan_mode_state = gr.State(False)
+    lan_mode_state = gr.State(initial_lan_mode)
 
     with gr.Row():
         src_lang = gr.Dropdown(
@@ -370,7 +373,7 @@ with gr.Blocks(title="AI Office Translator") as demo:
 
     with gr.Row():
         use_online_model = gr.Checkbox(label="Use Online Model", value=False)
-        lan_mode_checkbox = gr.Checkbox(label="LAN Mode", value=False)
+        lan_mode_checkbox = gr.Checkbox(label="Local Network Mode (Restart to Apply)", value=initial_lan_mode)
 
     default_local_value = local_models[0] if local_models else None
     model_choice = gr.Dropdown(
@@ -432,8 +435,7 @@ with gr.Blocks(title="AI Office Translator") as demo:
 
 available_port = find_available_port(start_port=9980)
 
-config = read_system_config()
-if config.get("lan_mode", False):
+if initial_lan_mode:
     demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=True)
 else:
     demo.launch(server_port=available_port, share=False, inbrowser=True)
