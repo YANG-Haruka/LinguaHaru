@@ -3,18 +3,23 @@ import os
 import zipfile
 import tempfile
 import shutil
-from translator.excel_translator import ExcelTranslator
-from translator.ppt_translator import PptTranslator
-from translator.word_translator import WordTranslator
-from translator.pdf_translator import PdfTranslator
-from translator.subtile_translator import SubtitlesTranslator
-from llmWrapper.ollama_wrapper import populate_sum_model
+from importlib import import_module
+from llmWrapper.offline_translation import populate_sum_model
 from typing import List, Tuple
 from config.log_config import app_logger
 import socket
 
 # Import language configs
 from config.languages_config import LANGUAGE_MAP, LABEL_TRANSLATIONS
+
+# Dictionary mapping file extensions to their corresponding translator module paths
+TRANSLATOR_MODULES = {
+    ".docx": "translator.word_translator.WordTranslator",
+    ".pptx": "translator.ppt_translator.PptTranslator",
+    ".xlsx": "translator.excel_translator.ExcelTranslator",
+    ".pdf": "translator.pdf_translator.PdfTranslator",
+    ".srt": "translator.subtile_translator.SubtitlesTranslator"
+}
 
 def find_available_port(start_port=9980, max_attempts=20):
     """Find an available port starting from `start_port`. Try up to `max_attempts`."""
@@ -25,15 +30,26 @@ def find_available_port(start_port=9980, max_attempts=20):
                 return port
     raise RuntimeError("No available port found.")
 
-# Helper function to get translator class based on file extension
+# Dynamic import function to load translator class only when needed
 def get_translator_class(file_extension):
-    return {
-        ".docx": WordTranslator,
-        ".pptx": PptTranslator,
-        ".xlsx": ExcelTranslator,
-        ".pdf": PdfTranslator,
-        ".srt": SubtitlesTranslator
-    }.get(file_extension.lower())
+    """Dynamically import and return the appropriate translator class for the file extension."""
+    module_path = TRANSLATOR_MODULES.get(file_extension.lower())
+    if not module_path:
+        return None
+    
+    try:
+        # Split into module path and class name
+        module_name, class_name = module_path.rsplit('.', 1)
+        
+        # Import the module
+        module = import_module(module_name)
+        
+        # Get the class
+        translator_class = getattr(module, class_name)
+        return translator_class
+    except (ImportError, AttributeError) as e:
+        app_logger.exception(f"Error importing translator for {file_extension}: {e}")
+        return None
 
 # Main translation function
 def translate_files(
@@ -297,7 +313,7 @@ def init_ui(request: gr.Request):
     return [user_lang] + list(set_labels(user_lang).values())
 
 # Build Gradio interface
-with gr.Blocks() as demo:
+with gr.Blocks(title="AI Office Translator") as demo:
     gr.Markdown("# AI-Office-Translator\n### Made by Haruka-YANG")
     session_lang = gr.State("en")
 

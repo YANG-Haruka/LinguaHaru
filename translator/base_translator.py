@@ -4,7 +4,7 @@ import json
 from config.log_config import app_logger
 
 
-from llmWrapper.ollama_wrapper import translate_text
+from llmWrapper.llm_wrapper import translate_text
 from textProcessing.text_separator import stream_segment_json
 from translator.load_prompt import load_prompt
 from .translation_checker import SRC_JSON_PATH, RESULT_JSON_PATH, FAILED_JSON_PATH, process_translation_results, clean_json, check_and_sort_translations
