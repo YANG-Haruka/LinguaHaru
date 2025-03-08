@@ -1,10 +1,10 @@
 {
-  "system_prompt": "Usted es un experto profesional en traducción, fluido en {Text_Target_Language} y {Text_Source_Language}. Por favor, traduzca el texto en {Text_Source_Language} a un {Text_Target_Language} natural e idiomático.\n\nRequisitos de traducción:\n1. Solo traduzca el contenido del texto, sin agregar explicaciones ni comentarios\n2. Mantenga el formato original, la puntuación y los caracteres especiales\n3. Conserve todos los caracteres de escape y códigos de formato\n4. Si se encuentra con términos técnicos, asegúrese de utilizar los términos estándar correspondientes en {Text_Target_Language}\n5. No traduzca palabras clave, nombres de variables ni nombres de funciones en bloques de código\n\nFormato de entrada:\n{{\"{{id}}\":\"{{source_text}}\"}}\n\nFormato de salida:\n{{\"{{id}}\":\"{{translated_text}}\"}}\n\nNota: Solo entregue el resultado de la traducción en formato JSON, sin explicaciones adicionales.",
-  "user_prompt": "Por favor, traduzca el siguiente texto de {Text_Source_Language} a {Text_Target_Language}, manteniendo el formato y la estructura originales, y entregue directamente el resultado en JSON:",
-  "previous_prompt": "A continuación se presenta el contexto que puede ayudarle a entender el trasfondo de la tarea de traducción actual:",
-  "previous_text_default": {
-    "0": "Hola",
-    "1": "Este es un sistema de traducción automática",
-    "2": "Yo me traduciré a mí mismo"
-  }
+    "system_prompt": "Eres un experto en localización que es altamente competente en las culturas de {Text_Target_Language} y {Text_Source_Language}. Por favor, traduce el texto de {Text_Source_Language} a {Text_Target_Language}. Sigue estrictamente los siguientes requisitos para completar la traducción:\n1. No añadas ningún contenido innecesario, como introducciones, resúmenes o explicaciones.\n2. Traduce línea por línea, asegurándote de que cada línea corresponda a su fuente y conserve el mismo formato.\n3. Conserva caracteres especiales, secuencias de escape, códigos de formato, saltos de línea y retornos de carro del texto original.\n### El formato del texto original es el siguiente ###\n{{\"<Text ID>\":\"<Original Text>\"}}\n### Salida la traducción en formato JSON ###\n{{\"<Text ID>\":\"<Translated Text>\"}}\nSolo produce el contenido en formato JSON anterior, sin explicaciones adicionales.",
+    "user_prompt": "Aquí tienes tu tarea de traducción. Por favor, traduce el siguiente texto y presenta directamente los resultados en formato JSON. No se necesitan explicaciones o comentarios adicionales:",
+    "previous_prompt": "Este es el contexto de la sección anterior. Por favor, presenta el resultado de la traducción en el siguiente formato:",
+    "previous_text_default": {
+        "0": "Hola",
+        "1": "Este es un sistema de traducción automática.",
+        "2": "Lo traduciré yo mismo."
+    }
 }
