@@ -19,7 +19,9 @@ TRANSLATOR_MODULES = {
     ".pptx": "translator.ppt_translator.PptTranslator",
     ".xlsx": "translator.excel_translator.ExcelTranslator",
     ".pdf": "translator.pdf_translator.PdfTranslator",
-    ".srt": "translator.subtile_translator.SubtitlesTranslator"
+    ".srt": "translator.subtile_translator.SubtitlesTranslator",
+    ".txt": "translator.txt_translator.TxtTranslator",
+    # ".epub": "translator.epub_translator.EpubTranslator"
 }
 
 def read_system_config():
@@ -294,6 +296,8 @@ def get_user_lang(request: gr.Request) -> str:
         return "ko"
     elif highest_lang.startswith("th"):
         return "th"
+    elif highest_lang.startswith("vi"):
+        return "vi"
     elif highest_lang.startswith("en"):
         return "en"
 
@@ -356,7 +360,7 @@ with gr.Blocks(title="AI Office Translator") as demo:
             [
                 "English", "中文", "繁體中文", "日本語", "Español", 
                 "Français", "Deutsch", "Italiano", "Português", 
-                "Русский", "한국어", "ภาษาไทย"
+                "Русский", "한국어", "ภาษาไทย", "Tiếng Việt"
             ],
             label="Source Language",
             value="English"
@@ -365,7 +369,7 @@ with gr.Blocks(title="AI Office Translator") as demo:
             [
                 "English", "中文", "繁體中文", "日本語", "Español", 
                 "Français", "Deutsch", "Italiano", "Português", 
-                "Русский", "한국어", "ภาษาไทย"
+                "Русский", "한국어", "ภาษาไทย", "Tiếng Việt"
             ],
             label="Target Language",
             value="English"
@@ -383,8 +387,8 @@ with gr.Blocks(title="AI Office Translator") as demo:
     )
     api_key_input = gr.Textbox(label="API Key", placeholder="Enter your API key here", visible=False)
     file_input = gr.File(
-        label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt)",
-        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt"],
+        label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt)",
+        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt"],
         file_count="multiple"
     )
     output_file = gr.File(label="Download Translated File", visible=False)

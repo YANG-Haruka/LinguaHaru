@@ -5,9 +5,9 @@ from config.log_config import app_logger
 
 
 from llmWrapper.llm_wrapper import translate_text
-from textProcessing.text_separator import stream_segment_json
-from translator.load_prompt import load_prompt
-from .translation_checker import SRC_JSON_PATH, RESULT_JSON_PATH, FAILED_JSON_PATH, process_translation_results, clean_json, check_and_sort_translations
+from textProcessing.text_separator import stream_segment_json, split_text_by_token_limit, recombine_split_jsons
+from config.load_prompt import load_prompt
+from .translation_checker import SRC_JSON_PATH, SRC_SPLIT_JSON_PATH, RESULT_JSON_PATH, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, process_translation_results, clean_json, check_and_sort_translations
 
 
 class DocumentTranslator:
@@ -38,7 +38,7 @@ class DocumentTranslator:
     def translate_content(self, progress_callback):
         app_logger.info("Segmenting JSON content...")
         stream_generator = stream_segment_json(
-            SRC_JSON_PATH,
+            SRC_SPLIT_JSON_PATH,
             self.max_token,
             self.system_prompt,
             self.user_prompt,
@@ -295,8 +295,13 @@ class DocumentTranslator:
         app_logger.info("Extracting content to JSON...")
         if progress_callback:
             progress_callback(0, desc="Extracting text, please wait...")
-        json_path = self.extract_content_to_json(progress_callback)
+        self.extract_content_to_json(progress_callback)
 
+        app_logger.info("Split JSON...")
+        if progress_callback:
+            progress_callback(0, desc="Extracting text, please wait...")
+        split_text_by_token_limit(SRC_JSON_PATH)
+        
         app_logger.info("Translating content...")
         if progress_callback:
             progress_callback(0, desc="Translating, please wait...")
@@ -306,10 +311,14 @@ class DocumentTranslator:
             progress_callback(0, desc="Checking for errors...")
         missing_counts = check_and_sort_translations()
 
+        if progress_callback:
+            progress_callback(0, desc="Recombine Split jsons...")
+        recombine_split_jsons(SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH)
+
         app_logger.info("Writing translated content to file...")
         if progress_callback:
             progress_callback(0, desc="Translation completed, new file being generated...")
-        self.write_translated_json_to_file(json_path, RESULT_JSON_PATH,progress_callback)
+        self.write_translated_json_to_file(SRC_JSON_PATH, RESULT_JSON_PATH, progress_callback)
 
         result_folder = "result" 
         base_name = os.path.basename(file_name)

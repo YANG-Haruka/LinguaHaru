@@ -4,8 +4,10 @@ import re
 from config.log_config import app_logger
 
 SRC_JSON_PATH = "temp/src.json"
-RESULT_JSON_PATH = "temp/dst_translated.json"
+SRC_SPLIT_JSON_PATH = "temp/src_split.json"
+RESULT_SPLIT_JSON_PATH = "temp/dst_translated_split.json"
 FAILED_JSON_PATH = "temp/dst_translated_failed.json"
+RESULT_JSON_PATH = "temp/dst_translated.json"
 
 def clean_json(text):
     """Clean JSON text, remove markdown code blocks, handle BOM, and fix trailing commas."""
@@ -62,7 +64,7 @@ def process_translation_results(original_text, translated_text):
             failed_translations.append({"count": int(key), "value": value})
 
     # Save successful translations
-    save_json(RESULT_JSON_PATH, successful_translations)
+    save_json(RESULT_SPLIT_JSON_PATH, successful_translations)
 
     # Save failed translations
     if failed_translations:
@@ -107,44 +109,81 @@ def save_json(filepath, data):
         json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
 def check_and_sort_translations():
-    """Check for missing translations and sort results."""
+    """
+    Check for missing translations and sort results.
+    If translations are missing, use the original text as translation result.
+    """
     missing_counts = set()
 
-    if not os.path.exists(SRC_JSON_PATH) or not os.path.exists(RESULT_JSON_PATH):
+    if not os.path.exists(SRC_SPLIT_JSON_PATH) or not os.path.exists(RESULT_SPLIT_JSON_PATH):
         app_logger.error("Source or result file not found.")
         return missing_counts  # Return empty set
 
-    with open(SRC_JSON_PATH, "r", encoding="utf-8") as src_file:
+    with open(SRC_SPLIT_JSON_PATH, "r", encoding="utf-8") as src_file:
         try:
             src_data = json.load(src_file)
         except json.JSONDecodeError:
             app_logger.error("Failed to load source JSON.")
             return missing_counts
 
-    with open(RESULT_JSON_PATH, "r", encoding="utf-8") as result_file:
+    with open(RESULT_SPLIT_JSON_PATH, "r", encoding="utf-8") as result_file:
         try:
             translated_data = json.load(result_file)
         except json.JSONDecodeError:
             app_logger.error("Failed to load translated JSON.")
             return missing_counts
 
-    # Ensure src_data is in list format
+    # Ensure src_data is in list format with proper structure
+    src_data_list = []
     if isinstance(src_data, dict):
-        src_data = [{"count": int(k), "original": v} for k, v in src_data.items()]
+        for k, v in src_data.items():
+            src_data_list.append({"count": int(k), "original": v})
+    else:
+        # Handle cases where src_data is already a list but might need restructuring
+        for item in src_data:
+            if isinstance(item, dict) and "count" in item:
+                if "original" not in item and "value" in item:
+                    item["original"] = item["value"]
+                src_data_list.append(item)
+    
+    # Create a dictionary of translated items by count for quick lookup
+    translated_dict = {int(item["count"]): item for item in translated_data}
+    
+    # Convert source counts to a set for comparison
+    src_counts = {int(item["count"]) for item in src_data_list}
+    
+    # Find missing translations
+    missing_counts = src_counts - set(translated_dict.keys())
 
-    translated_counts = {int(item["count"]) for item in translated_data}
-    src_counts = {int(item["count"]) for item in src_data}
-    missing_counts = src_counts - translated_counts
-
+    # If there are missing translations, add them using original text
     if missing_counts:
         app_logger.warning(f"Missing translations for: {missing_counts}")
+        
+        # Create a lookup dictionary for source items by count
+        src_dict = {int(item["count"]): item for item in src_data_list}
+        
+        # Add missing translations using original text
+        for count in missing_counts:
+            if count in src_dict:
+                original_text = src_dict[count].get("original", "")
+                if not original_text and "value" in src_dict[count]:
+                    original_text = src_dict[count]["value"]
+                
+                # Create a new entry with original text as translation
+                new_entry = {
+                    "count": count,
+                    "original": original_text,
+                    "translated": original_text  # Use original as translated
+                }
+                translated_data.append(new_entry)
+                app_logger.info(f"Used original text as translation for count {count}")
     else:
         app_logger.info("No missing counts detected. All segments are translated.")
 
     # Sort results by count
     sorted_data = sorted(translated_data, key=lambda x: int(x["count"]))
 
-    with open(RESULT_JSON_PATH, "w", encoding="utf-8") as f:
+    with open(RESULT_SPLIT_JSON_PATH, "w", encoding="utf-8") as f:
         json.dump(sorted_data, f, ensure_ascii=False, indent=4)
 
     app_logger.info("Translation results have been sorted by count.")

@@ -1,10 +1,10 @@
 {
-    "system_prompt": "{Text_Target_Language}와 {Text_Source_Language} 문화에 능통한 현지화 전문가입니다. {Text_Source_Language} 텍스트를 {Text_Target_Language}로 번역해 주세요. 아래 요구 사항을 엄격히 준수하여 번역 작업을 완료하세요:\n1. 소개, 요약 또는 설명과 같은 불필요한 내용을 추가하지 마십시오.\n2. 각 줄이 소스와 일치하고 동일한 형식을 유지하도록 줄 단위로 번역하세요.\n3. 원본 텍스트의 특수 문자, 이스케이프 시퀀스, 서식 코드, 줄 바꿈 및 캐리지 리턴을 유지하십시오.\n### 원본 텍스트 형식은 다음과 같습니다 ###\n{{\"<Text ID>\":\"<Original Text>\"}}\n### JSON 형식으로 번역 결과 출력 ###\n{{\"<Text ID>\":\"<Translated Text>\"}}\n위 JSON 형식 내용만 출력하고 추가적인 설명은 하지 마십시오.",
-    "user_prompt": "다음은 번역 작업입니다. 아래 텍스트를 번역하여 결과를 JSON 형식으로 직접 출력해 주세요. 추가적인 설명이나 댓글은 필요하지 않습니다:",
-    "previous_prompt": "다음은 이전 섹션의 문맥입니다. 아래 형식으로 번역 결과를 제시하세요:",
-    "previous_text_default": {
-        "0": "안녕하세요",
-        "1": "이것은 자동 번역 시스템입니다.",
-        "2": "제가 직접 번역하겠습니다."
-    }
+  "system_prompt": "당신은 {Text_Target_Language}와 {Text_Source_Language} 모두에 능통한 전문 번역 전문가입니다. {Text_Source_Language} 텍스트를 자연스럽고 관용적인 {Text_Target_Language}로 번역해 주세요.\n\n번역 요구사항:\n1. 텍스트 내용만 번역하고, 설명이나 코멘트는 추가하지 마세요.\n2. 원본 형식, 구두점 및 특수 문자를 유지하세요.\n3. 모든 이스케이프 문자와 형식 코드들을 보존하세요.\n4. 기술 용어를 접할 경우, {Text_Target_Language}에 해당하는 표준 용어를 사용하세요.\n5. 코드 블록 내의 키워드, 변수명, 함수명은 번역하지 마세요.\n\n입력 형식:\n{{\"{{id}}\":\"{{source_text}}\"}}\n\n출력 형식:\n{{\"{{id}}\":\"{{translated_text}}\"}}\n\n주의: 추가 설명 없이 JSON 형식으로 번역 결과만 출력하세요.",
+  "user_prompt": "다음 텍스트를 {Text_Source_Language}에서 {Text_Target_Language}로 번역하고, 원본 형식과 구조를 유지하며, JSON 형식으로 바로 출력해 주세요:",
+  "previous_prompt": "현재 번역 작업의 배경을 이해하는 데 도움이 될 수 있는 컨텍스트는 다음과 같습니다:",
+  "previous_text_default": {
+    "0": "안녕하세요",
+    "1": "이것은 자동 번역 시스템입니다",
+    "2": "내가 스스로 번역할 것입니다"
+  }
 }

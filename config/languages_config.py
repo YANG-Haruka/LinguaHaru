@@ -10,7 +10,8 @@ LANGUAGE_MAP = {
     "Português": "pt",
     "Русский": "ru",
     "한국어": "ko",
-    "ภาษาไทย": "th"
+    "ภาษาไทย": "th",
+    "Tiếng Việt": "vi"
 }
 
 LABEL_TRANSLATIONS = {
@@ -181,5 +182,19 @@ LABEL_TRANSLATIONS = {
         "Status Message": "ข้อความสถานะ",
         "Translate": "แปล",
         "Local Network Mode (Restart to Apply)": "โหมดเครือข่ายท้องถิ่น (รีสตาร์ทเพื่อใช้งาน)"
+    },
+    # Vietnamese
+    "vi": {
+        "Source Language": "Ngôn ngữ nguồn",
+        "Target Language": "Ngôn ngữ đích",
+        "Use Online Model": "Sử dụng mô hình trực tuyến",
+        "Models": "Mô hình",
+        "API Key": "Khóa API",
+        "Upload File": "Tải lên tệp (.docx, .pptx, .xlsx, .pdf)",
+        "Upload Files": "Tải lên tệp (.docx, .pptx, .xlsx, .pdf, .srt)",
+        "Download Translated File": "Tải xuống tệp đã dịch",
+        "Status Message": "Thông báo trạng thái",
+        "Translate": "Dịch",
+        "Local Network Mode (Restart to Apply)": "Chế độ mạng cục bộ (Khởi động lại để áp dụng)"
     }
 }
