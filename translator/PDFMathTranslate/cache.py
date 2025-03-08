@@ -162,19 +162,19 @@ def clean_all_dbs(cache_folder):
             # Remove main database file
             if os.path.exists(db_file):
                 os.remove(db_file)
-                print(f"Removed database file: {db_file}")
+                # print(f"Removed database file: {db_file}")
             
             # Remove WAL file
             wal_file = db_file + "-wal"
             if os.path.exists(wal_file):
                 os.remove(wal_file)
-                print(f"Removed WAL file: {wal_file}")
+                # print(f"Removed WAL file: {wal_file}")
             
             # Remove SHM file
             shm_file = db_file + "-shm"
             if os.path.exists(shm_file):
                 os.remove(shm_file)
-                print(f"Removed SHM file: {shm_file}")
+                # print(f"Removed SHM file: {shm_file}")
                 
         except PermissionError as e:
             print(f"PermissionError while removing {db_file}: {e}")
@@ -188,7 +188,7 @@ def close_existing_db_connection():
     try:
         if not db.is_closed():
             db.close()  # Close the database connection if it’s open
-            print("Database connection closed.")
+            # print("Database connection closed.")
     except Exception as e:
         print(f"Error while closing the database connection: {e}")
 
