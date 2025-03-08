@@ -1,4 +1,4 @@
-from .PDFMathTranslate.high_level import translate,extract_and_translate,write_translated_result
+from .PDFMathTranslate.high_level import extract_and_translate,write_translated_result
 from .PDFMathTranslate.doclayout import OnnxModel
 from .PDFMathTranslate.cache import init_db,clean_all_dbs
 from .base_translator import DocumentTranslator

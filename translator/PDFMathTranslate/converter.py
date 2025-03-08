@@ -25,7 +25,7 @@ from .translator import (
     BingTranslator,
     DeepLTranslator,
     DeepLXTranslator,
-    OllamaTranslator,
+    # OllamaTranslator,
     OpenAITranslator,
     ZhipuTranslator,
     ModelScopeTranslator,
@@ -161,7 +161,7 @@ class TranslateConverter(PDFConverterEx):
             envs = {}
         if not prompt:
             prompt = []
-        for translator in [GoogleTranslator, BingTranslator, DeepLTranslator, DeepLXTranslator, OllamaTranslator, XinferenceTranslator, AzureOpenAITranslator,
+        for translator in [GoogleTranslator, BingTranslator, DeepLTranslator, DeepLXTranslator, XinferenceTranslator, AzureOpenAITranslator,
                            OpenAITranslator, ZhipuTranslator, ModelScopeTranslator, SiliconTranslator, GeminiTranslator, AzureTranslator, TencentTranslator, DifyTranslator, AnythingLLMTranslator, ArgosTranslator, GorkTranslator, GroqTranslator, DeepseekTranslator, OpenAIlikedTranslator,]:
             if service_name == translator.name:
                 self.translator = translator(lang_in, lang_out, service_model, envs=envs, prompt=prompt)

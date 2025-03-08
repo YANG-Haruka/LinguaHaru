@@ -5,7 +5,7 @@ import re
 import unicodedata
 from copy import copy
 import deepl
-import ollama
+# import ollama
 import openai
 import xinference_client
 import requests
@@ -246,47 +246,47 @@ class DeepLXTranslator(BaseTranslator):
         return response.json()["data"]
 
 
-class OllamaTranslator(BaseTranslator):
-    # https://github.com/ollama/ollama-python
-    name = "ollama"
-    envs = {
-        "OLLAMA_HOST": "http://127.0.0.1:11434",
-        "OLLAMA_MODEL": "gemma2",
-    }
-    CustomPrompt = True
+# class OllamaTranslator(BaseTranslator):
+#     # https://github.com/ollama/ollama-python
+#     name = "ollama"
+#     envs = {
+#         "OLLAMA_HOST": "http://127.0.0.1:11434",
+#         "OLLAMA_MODEL": "gemma2",
+#     }
+#     CustomPrompt = True
 
-    def __init__(self, lang_in, lang_out, model, envs=None, prompt=None):
-        self.set_envs(envs)
-        if not model:
-            model = self.envs["OLLAMA_MODEL"]
-        super().__init__(lang_in, lang_out, model)
-        self.options = {"temperature": 0}  # 随机采样可能会打断公式标记
-        self.client = ollama.Client()
-        self.prompttext = prompt
-        self.add_cache_impact_parameters("temperature", self.options["temperature"])
-        if prompt:
-            self.add_cache_impact_parameters("prompt", prompt.template)
+#     def __init__(self, lang_in, lang_out, model, envs=None, prompt=None):
+#         self.set_envs(envs)
+#         if not model:
+#             model = self.envs["OLLAMA_MODEL"]
+#         super().__init__(lang_in, lang_out, model)
+#         self.options = {"temperature": 0}  # 随机采样可能会打断公式标记
+#         self.client = ollama.Client()
+#         self.prompttext = prompt
+#         self.add_cache_impact_parameters("temperature", self.options["temperature"])
+#         if prompt:
+#             self.add_cache_impact_parameters("prompt", prompt.template)
 
-    def do_translate(self, text):
-        maxlen = max(2000, len(text) * 5)
-        for model in self.model.split(";"):
-            try:
-                response = ""
-                stream = self.client.chat(
-                    model=model,
-                    options=self.options,
-                    messages=self.prompt(text, self.prompttext),
-                    stream=True,
-                )
-                for chunk in stream:
-                    chunk = chunk["message"]["content"]
-                    response += chunk
-                    if len(response) > maxlen:
-                        raise Exception("Response too long")
-                return response.strip()
-            except Exception as e:
-                print(e)
-        raise Exception("All models failed")
+#     def do_translate(self, text):
+#         maxlen = max(2000, len(text) * 5)
+#         for model in self.model.split(";"):
+#             try:
+#                 response = ""
+#                 stream = self.client.chat(
+#                     model=model,
+#                     options=self.options,
+#                     messages=self.prompt(text, self.prompttext),
+#                     stream=True,
+#                 )
+#                 for chunk in stream:
+#                     chunk = chunk["message"]["content"]
+#                     response += chunk
+#                     if len(response) > maxlen:
+#                         raise Exception("Response too long")
+#                 return response.strip()
+#             except Exception as e:
+#                 print(e)
+#         raise Exception("All models failed")
 
 
 class XinferenceTranslator(BaseTranslator):
