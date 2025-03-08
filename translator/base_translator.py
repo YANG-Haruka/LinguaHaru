@@ -75,7 +75,7 @@ class DocumentTranslator:
                         last_3_entries = translated_lines[-4:-1]
                         self.previous_text = "\n".join(last_3_entries)
                     else:
-                        app_logger.warning("Translated text does not have enough lines to update previous_text,use Default ones")
+                        app_logger.info("Translated text does not have enough lines to update previous_text,use Default ones")
                         self.previous_text = self.previous_text_default
 
                     combined_previous_texts.append(translated_text)

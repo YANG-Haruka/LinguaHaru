@@ -69,7 +69,7 @@ def process_translation_results(original_text, translated_text):
     # Save failed translations
     if failed_translations:
         save_json(FAILED_JSON_PATH, failed_translations)
-        app_logger.warning(f"Appended missing or empty keys to {FAILED_JSON_PATH}")
+        app_logger.info(f"Appended missing or empty keys to {FAILED_JSON_PATH}")
         return True
     return False
 
