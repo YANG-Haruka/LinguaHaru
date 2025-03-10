@@ -27,7 +27,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Download Translated File",
         "Status Message": "Status Message",
         "Translate": "Translate",
-        "Local Network Mode (Restart to Apply)": "Local Network Mode (Restart to Apply)"
+        "Local Network Mode (Restart to Apply)": "Local Network Mode (Restart to Apply)",
+        "Max Retries": "Max Retries"
     },
     # Simplified Chinese
     "zh": {
@@ -41,7 +42,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "下载翻译文件",
         "Status Message": "状态消息",
         "Translate": "翻译",
-        "Local Network Mode (Restart to Apply)": "局域网模式（重启后生效）"
+        "Local Network Mode (Restart to Apply)": "局域网模式（重启后生效）",
+        "Max Retries": "最大重试次数"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -55,7 +57,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "下載翻譯後的檔案",
         "Status Message": "狀態訊息",
         "Translate": "翻譯",
-        "Local Network Mode (Restart to Apply)": "區域網路模式（重新啟動後生效）"
+        "Local Network Mode (Restart to Apply)": "區域網路模式（重新啟動後生效）",
+        "Max Retries": "最大重試次數"
     },
     # Japanese
     "ja": {
@@ -69,7 +72,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "翻訳ファイルをダウンロード",
         "Status Message": "ステータスメッセージ",
         "Translate": "翻訳",
-        "Local Network Mode (Restart to Apply)": "ローカルネットワークモード（再起動後に適用）"
+        "Local Network Mode (Restart to Apply)": "ローカルネットワークモード（再起動後に適用）",
+        "Max Retries": "最大再試行回数"
     },
     # Spanish
     "es": {
@@ -83,7 +87,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Descargar archivo traducido",
         "Status Message": "Mensaje de estado",
         "Translate": "Traducir",
-        "Local Network Mode (Restart to Apply)": "Modo de red local (Reiniciar para aplicar)"
+        "Local Network Mode (Restart to Apply)": "Modo de red local (Reiniciar para aplicar)",
+        "Max Retries": "Número máximo de reintentos"
     },
     # French
     "fr": {
@@ -97,7 +102,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Télécharger le fichier traduit",
         "Status Message": "Message d'état",
         "Translate": "Traduire",
-        "Local Network Mode (Restart to Apply)": "Mode réseau local (Redémarrer pour appliquer)"
+        "Local Network Mode (Restart to Apply)": "Mode réseau local (Redémarrer pour appliquer)",
+        "Max Retries": "Nombre maximal de tentatives"
     },
     # German
     "de": {
@@ -111,7 +117,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Übersetzte Datei herunterladen",
         "Status Message": "Statusnachricht",
         "Translate": "Übersetzen",
-        "Local Network Mode (Restart to Apply)": "Lokaler Netzwerkmodus (Neustart erforderlich)"
+        "Local Network Mode (Restart to Apply)": "Lokaler Netzwerkmodus (Neustart erforderlich)",
+        "Max Retries": "Maximale Wiederholungsversuche"
     },
     # Italian
     "it": {
@@ -125,7 +132,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Scarica file tradotto",
         "Status Message": "Messaggio di stato",
         "Translate": "Traduci",
-        "Local Network Mode (Restart to Apply)": "Modalità rete locale (Riavvia per applicare)"
+        "Local Network Mode (Restart to Apply)": "Modalità rete locale (Riavvia per applicare)",
+        "Max Retries": "Numero massimo di tentativi"
     },
     # Portuguese
     "pt": {
@@ -139,7 +147,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Baixar arquivo traduzido",
         "Status Message": "Mensagem de status",
         "Translate": "Traduzir",
-        "Local Network Mode (Restart to Apply)": "Modo de rede local (Reiniciar para aplicar)"
+        "Local Network Mode (Restart to Apply)": "Modo de rede local (Reiniciar para aplicar)",
+        "Max Retries": "Número máximo de tentativas"
     },
     # Russian
     "ru": {
@@ -153,7 +162,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Скачать переведенный файл",
         "Status Message": "Статусное сообщение",
         "Translate": "Перевести",
-        "Local Network Mode (Restart to Apply)": "Режим локальной сети (Перезагрузка для применения)"
+        "Local Network Mode (Restart to Apply)": "Режим локальной сети (Перезагрузка для применения)",
+        "Max Retries": "Максимальное количество повторных попыток"
     },
     # Korean
     "ko": {
@@ -167,7 +177,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "번역된 파일 다운로드",
         "Status Message": "상태 메시지",
         "Translate": "번역",
-        "Local Network Mode (Restart to Apply)": "로컬 네트워크 모드 (적용하려면 재시작)"
+        "Local Network Mode (Restart to Apply)": "로컬 네트워크 모드 (적용하려면 재시작)",
+        "Max Retries": "최대 재시도 횟수"
     },
     # Thai
     "th": {
@@ -181,7 +192,8 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "ดาวน์โหลดไฟล์ที่แปลแล้ว",
         "Status Message": "ข้อความสถานะ",
         "Translate": "แปล",
-        "Local Network Mode (Restart to Apply)": "โหมดเครือข่ายท้องถิ่น (รีสตาร์ทเพื่อใช้งาน)"
+        "Local Network Mode (Restart to Apply)": "โหมดเครือข่ายท้องถิ่น (รีสตาร์ทเพื่อใช้งาน)",
+        "Max Retries": "จำนวนการลองซ้ำสูงสุด"
     },
     # Vietnamese
     "vi": {
@@ -195,6 +207,7 @@ LABEL_TRANSLATIONS = {
         "Download Translated File": "Tải xuống tệp đã dịch",
         "Status Message": "Thông báo trạng thái",
         "Translate": "Dịch",
-        "Local Network Mode (Restart to Apply)": "Chế độ mạng cục bộ (Khởi động lại để áp dụng)"
+        "Local Network Mode (Restart to Apply)": "Chế độ mạng cục bộ (Khởi động lại để áp dụng)",
+        "Max Retries": "Số lần thử lại tối đa"
     }
 }

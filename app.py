@@ -72,7 +72,7 @@ def get_translator_class(file_extension):
 
 # Main translation function
 def translate_files(
-    files, model, src_lang, dst_lang, use_online, api_key, max_token=768,
+    files, model, src_lang, dst_lang, use_online, api_key, max_token=768, max_retries=4,
     progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using the chosen model."""
@@ -93,19 +93,19 @@ def translate_files(
     if isinstance(files, list) and len(files) > 1:
         return process_multiple_files(
             files, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, progress_callback
+            use_online, api_key, max_token, max_retries, progress_callback
         )
     else:
         # Handle single file case
         single_file = files[0] if isinstance(files, list) else files
         return process_single_file(
             single_file, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, progress_callback
+            use_online, api_key, max_token, max_retries, progress_callback
         )
 
 def process_single_file(
     file, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, progress_callback
+    use_online, api_key, max_token, max_retries, progress_callback
 ):
     """Process a single file for translation."""
     file_name, file_extension = os.path.splitext(file.name)
@@ -120,7 +120,7 @@ def process_single_file(
     try:
         translator = translator_class(
             file.name, model, use_online, api_key,
-            src_lang_code, dst_lang_code, max_token=max_token
+            src_lang_code, dst_lang_code, max_token=max_token, max_retries=max_retries
         )
         progress_callback(0, desc="Initializing translation...")
 
@@ -142,7 +142,7 @@ def process_single_file(
 
 def process_multiple_files(
     files, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, progress_callback
+    use_online, api_key, max_token, max_retries, progress_callback
 ):
     """Process multiple files and return a zip archive."""
     # Create a temporary directory for the translated files
@@ -184,7 +184,7 @@ def process_multiple_files(
                     # Process file
                     translator = translator_class(
                         file_obj.name, model, use_online, api_key,
-                        src_lang_code, dst_lang_code, max_token=max_token
+                        src_lang_code, dst_lang_code, max_token=max_token, max_retries=max_retries
                     )
                     
                     # Create output directory
@@ -310,6 +310,11 @@ def update_lan_mode(lan_mode):
     write_system_config(config)
     return config["lan_mode"]
 
+# We don't need to save the max retries in the system config
+def update_max_retries(max_retries):
+    """Just return the current max retries without updating the system config."""
+    return max_retries
+
 # Apply labels based on user language
 def set_labels(session_lang: str):
     """Update UI labels according to the chosen language."""
@@ -322,13 +327,14 @@ def set_labels(session_lang: str):
     elif "Upload File" in labels:
         # Modify existing label for multiple files
         file_upload_label = labels["Upload File"] + "s"
-
+    
     return {
         src_lang: gr.update(label=labels["Source Language"]),
         dst_lang: gr.update(label=labels["Target Language"]),
         use_online_model: gr.update(label=labels["Use Online Model"]),
         lan_mode_checkbox: gr.update(label=labels["Local Network Mode (Restart to Apply)"]),
         model_choice: gr.update(label=labels["Models"]),
+        max_retries_slider: gr.update(label=labels["Max Retries"]),
         api_key_input: gr.update(label=labels["API Key"]),
         file_input: gr.update(label=file_upload_label),
         output_file: gr.update(label=labels["Download Translated File"]),
@@ -342,18 +348,22 @@ def init_ui(request: gr.Request):
     config = read_system_config()
     
     lan_mode_state = config.get("lan_mode", False)
+    # Always use default 4 for max retries
+    max_retries_state = 4
     
     label_updates = set_labels(user_lang)
-    return [user_lang, lan_mode_state] + list(label_updates.values())
+    return [user_lang, lan_mode_state, max_retries_state] + list(label_updates.values())
 
 config = read_system_config()
 initial_lan_mode = config.get("lan_mode", False)
+initial_max_retries = 4  # Always use default 4
 
 # Build Gradio interface
 with gr.Blocks(title="AI Office Translator") as demo:
     gr.Markdown("# AI-Office-Translator\n### Made by Haruka-YANG")
     session_lang = gr.State("en")
     lan_mode_state = gr.State(initial_lan_mode)
+    max_retries_state = gr.State(initial_max_retries)
 
     with gr.Row():
         src_lang = gr.Dropdown(
@@ -379,12 +389,21 @@ with gr.Blocks(title="AI Office Translator") as demo:
         use_online_model = gr.Checkbox(label="Use Online Model", value=False)
         lan_mode_checkbox = gr.Checkbox(label="Local Network Mode (Restart to Apply)", value=initial_lan_mode)
 
-    default_local_value = local_models[0] if local_models else None
-    model_choice = gr.Dropdown(
-        choices=local_models,
-        label="Models",
-        value=default_local_value
-    )
+    with gr.Row():
+        default_local_value = local_models[0] if local_models else None
+        model_choice = gr.Dropdown(
+            choices=local_models,
+            label="Models",
+            value=default_local_value
+        )
+        max_retries_slider = gr.Slider(
+            minimum=1,
+            maximum=10,
+            step=1,
+            value=initial_max_retries,
+            label="Max Retries"
+        )
+
     api_key_input = gr.Textbox(label="API Key", placeholder="Enter your API key here", visible=False)
     file_input = gr.File(
         label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt)",
@@ -408,6 +427,13 @@ with gr.Blocks(title="AI Office Translator") as demo:
         inputs=lan_mode_checkbox,
         outputs=lan_mode_state
     )
+    
+    # Add Max Retries
+    max_retries_slider.change(
+        update_max_retries,
+        inputs=max_retries_slider,
+        outputs=max_retries_state
+    )
 
     # Hide download button and reset status first
     translate_button.click(
@@ -421,7 +447,7 @@ with gr.Blocks(title="AI Office Translator") as demo:
         translate_files,
         inputs=[
             file_input, model_choice, src_lang, dst_lang, 
-            use_online_model, api_key_input
+            use_online_model, api_key_input, max_retries_slider
         ],
         outputs=[output_file, status_message]
     )
@@ -431,8 +457,8 @@ with gr.Blocks(title="AI Office Translator") as demo:
         fn=init_ui,
         inputs=None,
         outputs=[
-            session_lang, lan_mode_state, src_lang, dst_lang, use_online_model,
-            lan_mode_checkbox, model_choice, api_key_input, file_input, 
+            session_lang, lan_mode_state, max_retries_state, src_lang, dst_lang, use_online_model,
+            lan_mode_checkbox, model_choice, max_retries_slider, api_key_input, file_input, 
             output_file, status_message, translate_button
         ]
     )

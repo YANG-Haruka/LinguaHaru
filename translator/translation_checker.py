@@ -31,7 +31,7 @@ def process_translation_results(original_text, translated_text):
     if not translated_text:
         app_logger.warning("No translated text received.")
         _mark_all_as_failed(original_text)
-        return
+        return False
 
     successful_translations = []
     failed_translations = []
@@ -42,7 +42,7 @@ def process_translation_results(original_text, translated_text):
     except json.JSONDecodeError as e:
         app_logger.warning(f"Failed to parse original JSON: {e}")
         _mark_all_as_failed(original_text)
-        return
+        return False
 
     # Parse translated JSON
     try:
@@ -50,11 +50,14 @@ def process_translation_results(original_text, translated_text):
     except json.JSONDecodeError as e:
         app_logger.warning(f"Failed to parse translated JSON: {e}")
         _mark_all_as_failed(original_text)
-        return
+        return False
 
     for key, value in original_json.items():
+        # Get the translated value if it exists
         translated_value = translated_json.get(key, "").strip()
-        if translated_value:
+        
+        # Check if we have a valid translation (not empty and not the same as the original)
+        if translated_value and translated_value != value.strip():
             successful_translations.append({
                 "count": key,
                 "original": value,
@@ -63,13 +66,42 @@ def process_translation_results(original_text, translated_text):
         else:
             failed_translations.append({"count": int(key), "value": value})
 
+    # Use a fixed box width instead of calculating dynamically
+    fixed_box_width = 100
+    
+    # Format successful translations within a text box
+    if successful_translations:
+        app_logger.info("+" + "-" * fixed_box_width + "+")
+        for item in successful_translations:
+            text = f"[{item['count']}] {item['original']} ==> {item['translated']}"
+            padded_line = f"| {text}"
+            app_logger.info(padded_line)
+        app_logger.info("+" + "-" * fixed_box_width + "+")
+    
+    # Format failed translations within a text box if any exist
+    if failed_translations:
+        app_logger.warning("+" + "-" * fixed_box_width + "+")
+        header = "FAILED TRANSLATIONS:"
+        padded_header = f"| {header}"
+        app_logger.warning(padded_header)
+        app_logger.warning("+" + "-" * fixed_box_width + "+")
+        
+        for item in failed_translations:
+            if not translated_json.get(str(item['count']), "").strip():
+                text = f"[{item['count']}] {item['value']} ==> \"\""
+            else:
+                text = f"[{item['count']}] {item['value']} ==> {translated_json.get(str(item['count']), '')}"
+            padded_line = f"| {text}"
+            app_logger.warning(padded_line)
+        app_logger.warning("+" + "-" * fixed_box_width + "+")
+
     # Save successful translations
     save_json(RESULT_SPLIT_JSON_PATH, successful_translations)
 
     # Save failed translations
     if failed_translations:
         save_json(FAILED_JSON_PATH, failed_translations)
-        app_logger.info(f"Appended missing or empty keys to {FAILED_JSON_PATH}")
+        app_logger.info(f"Appended {len(failed_translations)} missing or invalid translations to {FAILED_JSON_PATH}")
         return True
     return False
 
@@ -176,7 +208,6 @@ def check_and_sort_translations():
                     "translated": original_text  # Use original as translated
                 }
                 translated_data.append(new_entry)
-                app_logger.info(f"Used original text as translation for count {count}")
     else:
         app_logger.info("No missing counts detected. All segments are translated.")
 
