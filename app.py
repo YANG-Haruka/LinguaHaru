@@ -24,6 +24,8 @@ TRANSLATOR_MODULES = {
     # ".epub": "translator.epub_translator.EpubTranslator"
 }
 
+MAX_TOKEN = 768
+
 def read_system_config():
     """Read the system configuration from the config file."""
     config_path = os.path.join("config", "system_config.json")
@@ -72,7 +74,7 @@ def get_translator_class(file_extension):
 
 # Main translation function
 def translate_files(
-    files, model, src_lang, dst_lang, use_online, api_key, max_token=768, max_retries=4,
+    files, model, src_lang, dst_lang, use_online, api_key, max_retries=4,
     progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using the chosen model."""
@@ -93,14 +95,14 @@ def translate_files(
     if isinstance(files, list) and len(files) > 1:
         return process_multiple_files(
             files, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, max_retries, progress_callback
+            use_online, api_key, MAX_TOKEN, max_retries, progress_callback
         )
     else:
         # Handle single file case
         single_file = files[0] if isinstance(files, list) else files
         return process_single_file(
             single_file, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, max_retries, progress_callback
+            use_online, api_key, MAX_TOKEN, max_retries, progress_callback
         )
 
 def process_single_file(
@@ -357,6 +359,7 @@ def init_ui(request: gr.Request):
 config = read_system_config()
 initial_lan_mode = config.get("lan_mode", False)
 initial_max_retries = 4  # Always use default 4
+initial_max_tokens = 768  
 
 # Build Gradio interface
 with gr.Blocks(title="AI Office Translator") as demo:
