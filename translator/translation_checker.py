@@ -3,12 +3,6 @@ import os
 import re
 from config.log_config import app_logger
 
-SRC_JSON_PATH = "temp/src.json"
-SRC_SPLIT_JSON_PATH = "temp/src_split.json"
-RESULT_SPLIT_JSON_PATH = "temp/dst_translated_split.json"
-FAILED_JSON_PATH = "temp/dst_translated_failed.json"
-RESULT_JSON_PATH = "temp/dst_translated.json"
-
 def clean_json(text):
     """Clean JSON text, remove markdown code blocks, handle BOM, and fix trailing commas."""
     if text is None:
@@ -26,11 +20,11 @@ def clean_json(text):
     text = re.sub(r',\s*\]', ']', text)  # Fix ", ]" issue
     return text
 
-def process_translation_results(original_text, translated_text):
+def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH):
     """Process translation results and save successful and failed translations"""
     if not translated_text:
         app_logger.warning("No translated text received.")
-        _mark_all_as_failed(original_text)
+        _mark_all_as_failed(original_text, FAILED_JSON_PATH)
         return False
 
     successful_translations = []
@@ -41,7 +35,7 @@ def process_translation_results(original_text, translated_text):
         original_json = json.loads(clean_json(original_text))
     except json.JSONDecodeError as e:
         app_logger.warning(f"Failed to parse original JSON: {e}")
-        _mark_all_as_failed(original_text)
+        _mark_all_as_failed(original_text, FAILED_JSON_PATH)
         return False
 
     # Parse translated JSON
@@ -49,7 +43,7 @@ def process_translation_results(original_text, translated_text):
         translated_json = json.loads(clean_json(translated_text))
     except json.JSONDecodeError as e:
         app_logger.warning(f"Failed to parse translated JSON: {e}")
-        _mark_all_as_failed(original_text)
+        _mark_all_as_failed(original_text, FAILED_JSON_PATH)
         return False
 
     for key, value in original_json.items():
@@ -105,7 +99,7 @@ def process_translation_results(original_text, translated_text):
         return True
     return False
 
-def _mark_all_as_failed(original_text):
+def _mark_all_as_failed(original_text, FAILED_JSON_PATH):
     failed_segments = []
 
     try:
@@ -140,7 +134,7 @@ def save_json(filepath, data):
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
-def check_and_sort_translations():
+def check_and_sort_translations(SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH):
     """
     Check for missing translations and sort results.
     If translations are missing, use the original text as translation result.

@@ -38,7 +38,8 @@ def extract_ppt_content_to_json(file_path):
                     })
 
     # Save content to JSON
-    temp_folder = "temp"
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    temp_folder = os.path.join("temp", filename)
     os.makedirs(temp_folder, exist_ok=True)
     json_path = os.path.join(temp_folder, "src.json")
     with open(json_path, "w", encoding="utf-8") as json_file:

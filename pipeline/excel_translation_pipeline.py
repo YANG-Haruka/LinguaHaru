@@ -208,7 +208,8 @@ def extract_excel_content_to_json(file_path):
     app_logger.info(f"Total cells extracted: {count}")
     
     # Save the extracted data to JSON
-    temp_folder = os.path.join('temp')
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    temp_folder = os.path.join("temp", filename)
     os.makedirs(temp_folder, exist_ok=True)
     json_path = os.path.join(temp_folder, "src.json")
     

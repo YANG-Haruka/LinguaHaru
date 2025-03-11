@@ -29,7 +29,7 @@ def setup_logger(name="app_logger"):
     log_file = os.path.join(log_dir, f"{current_time}_app.log")
 
     logger = logging.getLogger(name)
-    logger.setLevel(logging.DEBUG)
+    logger.setLevel(logging.INFO)
 
     if not logger.hasHandlers():
         # Console handler

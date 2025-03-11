@@ -14,7 +14,9 @@ def extract_epub_content_to_json(file_path):
     count = 0
     
     # Create temp directory
-    temp_folder = "temp"
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    temp_folder = os.path.join("temp", filename)
+
     os.makedirs(temp_folder, exist_ok=True)
     
     # EPUB files are zip files containing HTML/XHTML

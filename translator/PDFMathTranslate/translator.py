@@ -18,6 +18,7 @@ from tencentcloud.tmt.v20180321.models import TextTranslateRequest
 from tencentcloud.tmt.v20180321.models import TextTranslateResponse
 import argostranslate.package
 import argostranslate.translate
+from . import shared_constants
 
 import json
 
@@ -48,7 +49,8 @@ class BaseTranslator:
                 "model": model,
             },
         )
-        translation_json_path = "temp/dst_translated.json"
+        temp_folder = os.path.join("temp", shared_constants.PDF_FILE_NAME)
+        translation_json_path = os.path.join(temp_folder, "dst_translated.json")
         if os.path.exists(translation_json_path):
             self.cache.update_translations_from_json(translation_json_path)
 
@@ -96,11 +98,9 @@ class BaseTranslator:
         raise NotImplementedError
     
     def process_translation_cache(self):
-        text_json_path = "temp/src.json"
-        # translation_json_path = "temp/dst_translated.json"
+        temp_folder = os.path.join("temp", shared_constants.PDF_FILE_NAME)
+        text_json_path = os.path.join(temp_folder, "src.json")
         self.cache.export_translation_to_json(text_json_path)
-        # if os.path.exists(translation_json_path):
-        #     self.cache.update_translations_from_json(translation_json_path)
 
     def prompt(self, text, prompt):
         if prompt:

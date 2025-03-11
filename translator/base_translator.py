@@ -7,8 +7,13 @@ from config.log_config import app_logger
 from llmWrapper.llm_wrapper import translate_text
 from textProcessing.text_separator import stream_segment_json, split_text_by_token_limit, recombine_split_jsons
 from config.load_prompt import load_prompt
-from .translation_checker import SRC_JSON_PATH, SRC_SPLIT_JSON_PATH, RESULT_JSON_PATH, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, process_translation_results, clean_json, check_and_sort_translations
+from .translation_checker import process_translation_results, clean_json, check_and_sort_translations
 
+SRC_JSON_PATH = "src.json"
+SRC_SPLIT_JSON_PATH = "src_split.json"
+RESULT_SPLIT_JSON_PATH = "dst_translated_split.json"
+FAILED_JSON_PATH = "dst_translated_failed.json"
+RESULT_JSON_PATH = "dst_translated.json"
 
 class DocumentTranslator:
     def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, max_token, max_retries, previous_text=None):
@@ -22,6 +27,22 @@ class DocumentTranslator:
         self.api_key = api_key
         self.max_retries = max_retries
         self.translated_failed = True
+
+        # Extract just the filename without the directory path
+        filename = os.path.splitext(os.path.basename(input_file_path))[0]
+        
+        # Create a directory path using the filename
+        self.file_dir = os.path.join("temp", filename)
+        
+        # Update all the JSON paths
+        self.src_json_path = os.path.join(self.file_dir, SRC_JSON_PATH)
+        self.src_split_json_path = os.path.join(self.file_dir, SRC_SPLIT_JSON_PATH)
+        self.result_split_json_path = os.path.join(self.file_dir, RESULT_SPLIT_JSON_PATH)
+        self.failed_json_path = os.path.join(self.file_dir, FAILED_JSON_PATH)
+        self.result_json_path = os.path.join(self.file_dir, RESULT_JSON_PATH)
+        
+        # Ensure the directory exists
+        os.makedirs(self.file_dir, exist_ok=True)
 
         # Load translation prompts
         self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default = load_prompt(src_lang, dst_lang)
@@ -39,7 +60,7 @@ class DocumentTranslator:
     def translate_content(self, progress_callback):
         app_logger.info("Segmenting JSON content...")
         stream_generator = stream_segment_json(
-            SRC_SPLIT_JSON_PATH,
+            self.src_split_json_path,
             self.max_token,
             self.system_prompt,
             self.user_prompt,
@@ -65,7 +86,7 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
                 
-                process_translation_results(segment, translated_text)
+                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path)
                 
                 cleaned_text = clean_json(translated_text)
                 translated_lines = cleaned_text.splitlines()
@@ -89,12 +110,12 @@ class DocumentTranslator:
 
     def retranslate_failed_content(self, progress_callback):
         app_logger.info("Retrying translation for failed segments (single attempt only)...")
-        if not os.path.exists(FAILED_JSON_PATH):
+        if not os.path.exists(self.failed_json_path):
             app_logger.info("No failed segments to retranslate. Skipping this step.")
             return False
 
         # Check if file is empty or contains an empty JSON array
-        with open(FAILED_JSON_PATH, 'r', encoding='utf-8') as f:
+        with open(self.failed_json_path, 'r', encoding='utf-8') as f:
             try:
                 data = json.load(f)
                 if not data:  # If the JSON is an empty list or dict
@@ -105,7 +126,7 @@ class DocumentTranslator:
                 return False
 
         stream_generator_failed = stream_segment_json(
-            FAILED_JSON_PATH,
+            self.failed_json_path,
             self.max_token,
             self.system_prompt,
             self.user_prompt,
@@ -117,9 +138,9 @@ class DocumentTranslator:
             return False
 
         # Read the original failed segments
-        with open(FAILED_JSON_PATH, 'r', encoding='utf-8') as f:
+        with open(self.failed_json_path, 'r', encoding='utf-8') as f:
             original_segments = json.load(f)
-        with open(FAILED_JSON_PATH, "w", encoding="utf-8") as f:
+        with open(self.failed_json_path, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=4)
         
         # Keep track of which segments we're going to process in this run
@@ -144,7 +165,7 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
                 
-                process_translation_results(segment, translated_text)
+                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path)
 
                 # Update previous text context with last 3 lines if possible
                 try:
@@ -179,11 +200,11 @@ class DocumentTranslator:
         os.makedirs(temp_folder)
     
     def _mark_segment_as_failed(self, segment):        
-        if not os.path.exists(FAILED_JSON_PATH):
-            with open(FAILED_JSON_PATH, "w", encoding="utf-8") as f:
+        if not os.path.exists(self.failed_json_path):
+            with open(self.failed_json_path, "w", encoding="utf-8") as f:
                 json.dump([], f)
 
-        with open(FAILED_JSON_PATH, "r+", encoding="utf-8") as f:
+        with open(self.failed_json_path, "r+", encoding="utf-8") as f:
             try:
                 failed_segments = json.load(f)
             except json.JSONDecodeError:
@@ -214,7 +235,7 @@ class DocumentTranslator:
         app_logger.info("Split JSON...")
         if progress_callback:
             progress_callback(0, desc="Extracting text, please wait...")
-        split_text_by_token_limit(SRC_JSON_PATH)
+        split_text_by_token_limit(self.src_json_path)
         
         app_logger.info("Translating content...")
         if progress_callback:
@@ -231,16 +252,16 @@ class DocumentTranslator:
 
         if progress_callback:
             progress_callback(0, desc="Checking for errors...")
-        missing_counts = check_and_sort_translations()
+        missing_counts = check_and_sort_translations(self.src_split_json_path, self.result_split_json_path)
 
         if progress_callback:
             progress_callback(0, desc="Recombine Split jsons...")
-        recombine_split_jsons(SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH)
+        recombine_split_jsons(self.src_split_json_path, self.result_split_json_path)
 
         app_logger.info("Writing translated content to file...")
         if progress_callback:
             progress_callback(0, desc="Translation completed, new file being generated...")
-        self.write_translated_json_to_file(SRC_JSON_PATH, RESULT_JSON_PATH, progress_callback)
+        self.write_translated_json_to_file(self.src_json_path, self.result_json_path, progress_callback)
 
         result_folder = "result" 
         base_name = os.path.basename(file_name)

@@ -15,28 +15,29 @@ def extract_txt_content_to_json(file_path):
     with open(file_path, 'r', encoding='utf-8') as txt_file:
         content = txt_file.read()
         
-        # Save original content
-        temp_folder = "temp"
-        os.makedirs(temp_folder, exist_ok=True)
-        with open(os.path.join(temp_folder, "original_content.txt"), "w", encoding="utf-8") as original_file:
-            original_file.write(content)
+    # Save original content
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    temp_folder = os.path.join("temp", filename)
+    os.makedirs(temp_folder, exist_ok=True)
+    with open(os.path.join(temp_folder, "original_content.txt"), "w", encoding="utf-8") as original_file:
+        original_file.write(content)
+    
+    # Split content by line
+    lines = content.split('\n')
+    
+    # Process each line
+    for line in lines:
+        line = line.strip()
         
-        # Split content by line
-        lines = content.split('\n')
-        
-        # Process each line
-        for line in lines:
-            line = line.strip()
-            
-            # If line is not empty and should be translated
-            if line and should_translate(line):
-                count += 1
-                content_data.append({
-                    "count": count,
-                    "type": "paragraph",
-                    "value": line,
-                    "format": "\\x0a\\x0a"
-                })
+        # If line is not empty and should be translated
+        if line and should_translate(line):
+            count += 1
+            content_data.append({
+                "count": count,
+                "type": "paragraph",
+                "value": line,
+                "format": "\\x0a\\x0a"
+            })
     
     # Save content to JSON
     json_path = os.path.join(temp_folder, "src.json")

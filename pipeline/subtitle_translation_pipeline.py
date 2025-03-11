@@ -25,7 +25,8 @@ def extract_srt_content_to_json(file_path):
             "value": value
         })
     
-    temp_folder = "temp"
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    temp_folder = os.path.join("temp", filename)
     os.makedirs(temp_folder, exist_ok=True)
     json_path = os.path.join(temp_folder, "src.json")
     
@@ -43,7 +44,7 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_data = json.load(translated_file)
     
-    translations = {item["count"]: item["translated"] for item in translated_data}
+    translations = {str(item["count"]): item["translated"] for item in translated_data}
     
     output_srt_lines = []
     

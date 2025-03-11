@@ -5,44 +5,70 @@ import tiktoken_ext # For pyinstaller
 import copy
 import os
 import re
+import shutil
 
 def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, previous_text):
     """
     Process JSON in segments, ensuring each segment's token count does not exceed max_token.
+    First creates a copy of the original JSON file with "_translating" suffix and works on the copy.
+    After processing each segment, clears this data from the copied file.
     Tracks and reports progress using count-based calculation.
     """
-    # Load JSON data
-    with open(json_file_path, "r", encoding="utf-8") as json_file:
+    # Create a copy of the original JSON file with "_translating" suffix
+    file_dir = os.path.dirname(json_file_path)
+    file_name = os.path.basename(json_file_path)
+    base_name, ext = os.path.splitext(file_name)
+    
+    # Generate working copy filename
+    working_copy_path = os.path.join(file_dir, f"{base_name}_translating{ext}")
+    
+    # Copy the original file
+    if not os.path.exists(working_copy_path):
+        shutil.copy2(json_file_path, working_copy_path)
+    
+    # Load JSON data from the working copy
+    with open(working_copy_path, "r", encoding="utf-8") as json_file:
         cell_data = json.load(json_file)
 
     if not cell_data:
+        # Clean up working copy if empty
+        if os.path.exists(working_copy_path):
+            os.remove(working_copy_path)
         raise ValueError("cell_data is empty. Please check the input data.")
 
+    # Get the maximum count value for progress calculation
     max_count = max((cell.get("count", 0) for cell in cell_data), default=0)
 
-    # Pre-calculate the initial token count from prompts and previous text
+    # Pre-calculate token count from prompts and previous text
     prompt_token_count = sum(
         num_tokens_from_string(json.dumps(prompt, ensure_ascii=False))
         for prompt in [system_prompt, user_prompt, previous_prompt, previous_text]
+        if prompt  # Ignore None or empty strings
     )
 
-    # Iterator for JSON cells
-    remaining_data = iter(cell_data)
-
+    # Create a list of processed entries for tracking items to be removed from the file
+    processed_indices = []
+    
     def get_next_segment():
         """
-        Generator to yield JSON segments with token counts within the limit
-        and progress updates.
+        Generator function that yields JSON segments with token counts within the limit
+        and progress updates. After yielding each segment, removes processed data 
+        from the working copy file.
         """
-        nonlocal remaining_data
-
+        nonlocal processed_indices
+        
         current_segment_dict = {}
         current_token_count = prompt_token_count
+        current_processed_indices = []
 
-        for cell in remaining_data:
+        for i, cell in enumerate(cell_data):
+            if i in processed_indices:
+                continue  # Skip already processed entries
+                
             count = cell.get("count")
             value = cell.get("value", "").strip()
             if count is None or not value:
+                processed_indices.append(i)  # Mark invalid entries as processed
                 continue  # Skip invalid or empty cells
 
             line_dict = {str(count): value}
@@ -50,25 +76,76 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
             new_token_count = prompt_token_count + num_tokens_from_string(new_segment_str)
 
             if new_token_count > max_token:
-                # If adding this line exceeds the max_token, yield the current segment
+                # If adding this line exceeds max_token, yield the current segment
                 if current_segment_dict:
-                    yield create_segment_output(current_segment_dict), calculate_progress(current_segment_dict, max_count)
+                    # Update the processed indices list
+                    processed_indices.extend(current_processed_indices)
+                    
+                    # Output segment and update working copy file
+                    progress = calculate_progress(current_segment_dict, max_count)
+                    segment_output = create_segment_output(current_segment_dict)
+                    
+                    # Remove processed data from working copy file
+                    update_source_file(working_copy_path, processed_indices)
+                    
+                    yield segment_output, progress
                 
                 # Start a new segment with the current line
                 current_segment_dict = line_dict
+                current_processed_indices = [i]
                 current_token_count = prompt_token_count + num_tokens_from_string(
                     f"```json\n{json.dumps(current_segment_dict, ensure_ascii=False, indent=4)}\n```"
                 )
             else:
-                # Add the line to the current segment
+                # Add the current line to the segment
                 current_segment_dict.update(line_dict)
+                current_processed_indices.append(i)
                 current_token_count = new_token_count
 
         # Yield the final segment
         if current_segment_dict:
-            yield create_segment_output(current_segment_dict), calculate_progress(current_segment_dict, max_count)
+            processed_indices.extend(current_processed_indices)
+            progress = calculate_progress(current_segment_dict, max_count)
+            segment_output = create_segment_output(current_segment_dict)
+            
+            # Remove processed data from working copy file
+            update_source_file(working_copy_path, processed_indices)
+            
+            yield segment_output, progress
+        
+        # Clean up the working copy file when all processing is complete
+        try:
+            if os.path.exists(working_copy_path):
+                os.remove(working_copy_path)
+        except Exception as e:
+            print(f"Warning: Could not remove working copy file: {e}")
 
     return get_next_segment
+
+def update_source_file(json_file_path, processed_indices):
+    """
+    Remove processed entries from the source JSON file
+    
+    Args:
+        json_file_path (str): Path to the JSON file
+        processed_indices (list): List of indices of processed entries
+    """
+    # Create temporary file path
+    temp_file_path = f"{json_file_path}.tmp"
+    
+    # Read current JSON file
+    with open(json_file_path, "r", encoding="utf-8") as json_file:
+        cell_data = json.load(json_file)
+    
+    # Filter out processed entries
+    updated_data = [cell for i, cell in enumerate(cell_data) if i not in processed_indices]
+    
+    # Write to temporary file
+    with open(temp_file_path, "w", encoding="utf-8") as temp_file:
+        json.dump(updated_data, temp_file, ensure_ascii=False, indent=4)
+    
+    # Replace original file
+    shutil.move(temp_file_path, json_file_path)
 
 def create_segment_output(segment_dict):
     """
