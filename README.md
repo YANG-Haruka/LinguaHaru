@@ -1,7 +1,9 @@
+<h2 id="title">LinguaHaru</h2>
 <div align="center">
+
 English | [简体中文](README_ZH.md) | [日本語](README_JP.md) 
 
-<h2 id="title">LinguaHaru</h2>
+
 <div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
 <p align='center'>A free, user-friendly AI translation tool with one-click translation, supporting multiple document formats and languages.</p>
 
