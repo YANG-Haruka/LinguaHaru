@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# pyinstaller ai-translator.spec  
+# pyinstaller lingua-haru.spec  
 from PyInstaller.utils.hooks import collect_all
 
 #  gradio、gradio_client、safehttp、safehttpx
@@ -35,7 +35,7 @@ exe = EXE(
     a.scripts,
     a.binaries,
     a.datas,
-    name="ai-translator",
+    name="LinguaHaru",
     debug=False,
     upx=True,
     console=True,
