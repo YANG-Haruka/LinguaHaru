@@ -8,6 +8,8 @@ gradio_client_collect = collect_all("gradio_client")
 safehttp_collect = collect_all("safehttp")
 safehttpx_collect = collect_all("safehttpx")
 
+image_files = [('img/ico.ico', 'img')]
+
 a = Analysis(
     ["app.py"],
     pathex=[],
@@ -17,6 +19,7 @@ a = Analysis(
         + gradio_client_collect[0]
         + safehttp_collect[0]
         + safehttpx_collect[0]
+        + image_files
     ),
     hiddenimports=(
         gradio_collect[1]

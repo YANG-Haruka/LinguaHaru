@@ -9,6 +9,7 @@ from llmWrapper.offline_translation import populate_sum_model
 from typing import List, Tuple
 from config.log_config import app_logger
 import socket
+import sys
 import base64
 
 # Import language configs
@@ -363,15 +364,27 @@ initial_max_retries = 4  # Always use default 4
 initial_max_tokens = 768  
 
 # Build Gradio interface
-img_path = os.path.join(os.path.dirname(__file__), "img/ico.ico")
-with open(img_path, "rb") as img_file:
-    img_data = base64.b64encode(img_file.read()).decode('utf-8')
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+    return os.path.join(base_path, relative_path)
 
+# Get the image and encode it to base64
+icon_path = resource_path("img/ico.ico")
+with open(icon_path, "rb") as f:
+    encoded_image = base64.b64encode(f.read()).decode("utf-8")
+
+# Create a Gradio blocks interface
 with gr.Blocks(title="LinguaHaru") as demo:
     gr.HTML(f"""
     <div style="text-align: center;">
         <h1>LinguaHaru</h1>
-        <img src="data:image/x-icon;base64,{img_data}" alt="LinguaHaru Logo" style="display: block; width: 100px; height: 100px; margin: 0 auto;">
+        <img src="data:image/x-icon;base64,{encoded_image}" alt="LinguaHaru Logo" 
+             style="display: block; width: 100px; height: 100px; margin: 0 auto;">
         <h3>Made by Haruka-YANG | Version: 2.0</h3>
     </div>
     """)
