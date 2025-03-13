@@ -81,7 +81,6 @@ You need to install CUDA (Currently there are no problems with 11.7 and 12.1 tes
 - Added the function of continuing translation.  
 - Optimized the translation speed of Excel files.
 
-
 ## Changelog
 - 2025/02/01  
 Updated the logic for translation failure text.
