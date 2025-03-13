@@ -77,14 +77,10 @@ You need to install CUDA (Currently there are no problems with 11.7 and 12.1 tes
 - [ollama-python](https://github.com/ollama/ollama-python)
 - [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 
-## Software Disclaimer  
-The software code is completely open-source and can be freely used in accordance with the GPL-3.0 license.  
-The software only provides AI translation services, and any content translated using this software is unrelated to its creators.  
-Users are expected to comply with the law and engage in legal translation activities. 
+## TODOs
+- Added the function of continuing translation.  
+- Optimized the translation speed of Excel files.
 
-Qwen Model Disclaimer  
-The code and model weights are fully open for academic research and support commercial use.  
-Please refer to the Qwen LICENSE for detailed information on the specific open-source agreement. 
 
 ## Changelog
 - 2025/02/01  
@@ -104,3 +100,12 @@ Update Error detection and Re-translation
 Added some validations and fixed the bug of getting context function
 - 2024/12/12  
 Updated the handling of line breaks. Fixed some bugs
+
+## Software Disclaimer  
+The software code is completely open-source and can be freely used in accordance with the GPL-3.0 license.  
+The software only provides AI translation services, and any content translated using this software is unrelated to its creators.  
+Users are expected to comply with the law and engage in legal translation activities. 
+
+Qwen Model Disclaimer  
+The code and model weights are fully open for academic research and support commercial use.  
+Please refer to the Qwen LICENSE for detailed information on the specific open-source agreement. 
