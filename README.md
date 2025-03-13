@@ -54,7 +54,7 @@ You need to install CUDA (Currently there are no problems with 11.7 and 12.1 tes
     ```
 
 5. Local large language model support  
-    Now just support [Ollama] (https://ollama.com/)  
+    Now just support [Ollama](https://ollama.com/)  
     You need to download Ollama dependencies and models for translation
     - Download model (QWen series models are recommended) 
         ```bash
