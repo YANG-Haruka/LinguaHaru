@@ -64,14 +64,9 @@ You need to install CUDA (Currently there are no problems with 11.7 and 12.1 tes
 
 <h2 id="preview">Preview</h2>
 <div align="center">
-- Excel File: English to Japanese  
-![excel_sample](img/excel.png)  
-- PPT File: English to Japanese  
-![ppt_sample](img/ppt.png)  
-- Word File: English to Japanese  
-![word_sample](img/word.png)
-- PDF File: English to Japanese  
-![pdf_sample](img/pdf.png)
+<img src="img/excel.png" width="80%"/>
+<img src="img/ppt.png" width="80%"/>
+<img src="img/pdf.png" width="80%"/>
 </div>
 
 
