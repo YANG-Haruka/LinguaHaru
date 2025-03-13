@@ -1,54 +1,59 @@
-# AI-Office-Translator
-[简体中文](README_ZH.md)  
-[日本語](README_JP.md)  
+<div align="center">
+English | [简体中文](README_ZH.md) | [日本語](README_JP.md) 
 
-**UI based on PyQt-Fluent-Widgets developing...**  
-**Over 100 files have been tested**  
-**If you find this project useful, please give it a star ^ ^_**  
+<h2 id="title">LinguaHaru</h2>
+<div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
+<p align='center'>A free, user-friendly AI translation tool with one-click translation, supporting multiple document formats and languages.</p>
+
 
 **Model Download / Please save it in the "Models" folder after downloading**  
-**Model Download / Please save it in the "Models" folder after downloading**  
-**Model Download / Please save it in the "Models" folder after downloading**  
+
 - [Baidu Netdisk](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
 - [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
 
-## What's this
-This software is a **Free**, **Fully Localized**, **User-friendly** translation tool that helps you translate Office files (Word, PowerPoint, and Excel) between different languages.  
-Here's what it offers:  
-  
-- Supported File Types: Accepts .docx, .pptx, and .xlsx files.
-- Language Options: You can translate between English, Chinese, and Japanese. 
+<h2 id="What's This">What's This?</h2>
+This software is a free, user-friendly AI translation tool that supports various document formats and multiple languages.
 
-## Get Started
-### CUDA
-You need to install CUDA
-(Currently there are no problems with 11.7 and 12.1 tests)  
+Here's what it offers:
 
-### Ollama
-You need to download Ollama dependencies and models for translation
-- Download Ollama  
-https://ollama.com/  
+- One-Click Translation: Easily translate documents with a single click.
+- Supported File Types: Accepts .docx, .pptx, .xlsx, .pdf, .txt, and .srt files, with more formats to be added in the future.
+- Language Options: Supports translation between 10+ languages, with plans to expand further.
+- Flexible Translation Models: Supports both local models and online API-based translation.
+- Local Network Sharing: Share translation capabilities within a local network.
 
-- Download model (QWen series models are recommended) 
-```bash
-ollama pull qwen2.5
-```
-### Virtual Environment (Optional)
-Create and start a virtual environment
-```bash
-conda create -n ai-translator python=3.10
-conda activate ai-translator
-```
-### Requirements
-Install requirements
-```bash
-pip install -r requirements.txt
-```
-### Run This Tool
-Run the tool
-```bash
-python app.py
-```
+
+<h2 id="install">Installation and Usage</h2>
+</details>
+
+1. [CUDA](https://developer.nvidia.com/cuda-downloads)   
+You need to install CUDA (Currently there are no problems with 11.7 and 12.1 tests)  
+
+2. Python (python==3.10)
+    It is recommended to use [Conda](https://www.anaconda.com/download) to create a virtual environment  
+    ```bash
+    conda create -n ai-translator python=3.10
+    conda activate ai-translator
+    ```
+
+3. Install requirements
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4. Run the tool
+    ```bash
+    python app.py
+    ```
+
+5. Local large language model support  
+    Now just support [Ollama] (https://ollama.com/  )
+    You need to download Ollama dependencies and models for translation
+    - Download model (QWen series models are recommended) 
+    ```bash
+    ollama pull qwen2.5
+    ```
+</details>
 
 ## APP
 ### Instructions
