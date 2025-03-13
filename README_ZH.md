@@ -28,8 +28,8 @@
 2. Python (python==3.10)  
     建议使用[Conda](https://www.anaconda.com/download)创建虚拟环境  
     ```bash
-    conda create -n ai-translator python=3.10
-    conda activate ai-translator
+    conda create -n lingua-haru python=3.10
+    conda activate lingua-haru
     ```
 
 3. 安装依赖

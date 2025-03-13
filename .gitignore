@@ -13,3 +13,4 @@ dist/
 *.7z
 test.py
 *.ttf
+*.onnx

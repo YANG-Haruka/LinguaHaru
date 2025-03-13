@@ -28,8 +28,8 @@ CUDAをインストールする必要があります（現在、11.7と12.1の�
 2. Python (python==3.10)  
     [Conda](https://www.anaconda.com/download)を使用して仮想環境を作成することをお勧めします  
     ```bash
-    conda create -n ai-translator python=3.10
-    conda activate ai-translator
+    conda create -n lingua-haru python=3.10
+    conda activate lingua-haru
     ```
 
 3. 必要なパッケージのインストール

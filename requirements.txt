@@ -11,3 +11,5 @@ xinference-client==1.1.1
 peewee==3.17.8
 argostranslate==1.9.6
 fontTools==4.55.3
+xlwings==0.33.11
+openai==1.59.6

@@ -29,8 +29,8 @@ You need to install CUDA (Currently there are no problems with 11.7 and 12.1 tes
 2. Python (python==3.10)  
     It is recommended to use [Conda](https://www.anaconda.com/download) to create a virtual environment  
     ```bash
-    conda create -n ai-translator python=3.10
-    conda activate ai-translator
+    conda create -n lingua-haru python=3.10
+    conda activate lingua-haru
     ```
 
 3. Install requirements
