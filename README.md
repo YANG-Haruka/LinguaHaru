@@ -1,5 +1,5 @@
-<h2 id="title">LinguaHaru</h2>
 <div align="center">
+<h2 id="title">LinguaHaru</h2>
 
 English | [简体中文](README_ZH.md) | [日本語](README_JP.md) 
 
