@@ -8,7 +8,31 @@ gradio_client_collect = collect_all("gradio_client")
 safehttp_collect = collect_all("safehttp")
 safehttpx_collect = collect_all("safehttpx")
 
+translator_modules = [
+    "translator.word_translator", 
+    "translator.ppt_translator",
+    "translator.excel_translator",
+    "translator.pdf_translator",
+    "translator.subtile_translator",
+    "translator.txt_translator",
+    "translator"
+]
+
+translator_collects = []
+for module in translator_modules:
+    try:
+        translator_collects.append(collect_all(module))
+    except Exception:
+        print(f"Warning: Could not collect {module}")
+
 image_files = [('img/ico.ico', 'img')]
+config_files = [('config', 'config')]  # 确保配置文件被包含
+
+translator_datas = []
+translator_imports = []
+for collect in translator_collects:
+    translator_datas.extend(collect[0])
+    translator_imports.extend(collect[1])
 
 a = Analysis(
     ["app.py"],
@@ -20,12 +44,16 @@ a = Analysis(
         + safehttp_collect[0]
         + safehttpx_collect[0]
         + image_files
+        + config_files
+        + translator_datas
     ),
     hiddenimports=(
         gradio_collect[1]
         + gradio_client_collect[1]
         + safehttp_collect[1]
         + safehttpx_collect[1]
+        + translator_imports
+        + translator_modules
     ),
     excludes=[],
     module_collection_mode={"gradio": "py"},
