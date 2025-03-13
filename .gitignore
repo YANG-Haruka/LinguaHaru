@@ -1,0 +1,15 @@
+Result/
+__pycache__/
+temp/
+test/
+.vs/
+.gradio/
+.qodo/
+log/
+build/
+dist/
+
+*.xlsx
+*.7z
+test.py
+*.ttf
