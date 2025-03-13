@@ -1,120 +1,108 @@
-# AI-Office-Translator
+<div align="center">
+<h1 id="title">LinguaHaru</h1>
 
-**PyQt-Fluent-Widgetsを基にしたUI開発中...**  
-**100件以上のファイルでテスト済み**  
-**このプロジェクトが役に立った場合、ぜひStarをクリックしてください ^ ^_**  
-
-**モデルのダウンロード / ダウンロード後は「Models」フォルダに保存してください**  
-**モデルのダウンロード / ダウンロード後は「Models」フォルダに保存してください**  
-**モデルのダウンロード / ダウンロード後は「Models」フォルダに保存してください**  
-- [Baidu Netdisk](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
-- [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
-
-## What's this
-これは、**無料**、**完全ローカル**、**ユーザーフレンドリー**な翻訳ツールです。Word、PowerPoint、ExcelなどのOfficeファイルを異なる言語間で翻訳するのに役立ちます。  
-主な機能は以下の通りです：
-  
-- 対応ファイル形式：.docx、.pptx、.xlsxファイルをサポート  
-- 言語選択：英語、中国語、日本語の間で翻訳が可能
-
-## クイックスタート
-### CUDA
-CUDAをインストールする必要があります  
-（現在、バージョン11.7および12.1で問題なく動作することを確認済み）
-
-### Ollama
-Ollama依存関係および翻訳用モデルをダウンロードする必要があります  
-- Ollamaのダウンロード  
-https://ollama.com/  
-
-- モデルのダウンロード（推奨：QWenシリーズモデル）  
-```bash
-ollama pull qwen2.5
-```
-### 仮想環境（任意）
-仮想環境を作成して有効化
-```bash
-conda create -n ai-translator python=3.10
-conda activate ai-translator
-```
-### 必要な依存関係をインストール
-```bash
-pip install -r requirements.txt
-```
-### ツールを起動
-```bash
-python app.py
-```
-
-## アプリケーション
-### 使用方法
-![APP](img/app.png)
-
-- 言語選択   
-ソース言語（元のファイルの言語）とターゲット言語（翻訳先の言語）を選択。  
-- モデル選択   
-Model欄でOllamaからダウンロードしたモデルを選択。Max_tokensの設定は変更しないことを推奨（LLMに詳しい場合を除く）。  
-- ファイルをアップロード  
-「Upload Office File」をクリック、または指定エリアにドラッグ＆ドロップして翻訳したいファイルをアップロード。プログラムが自動的にファイル形式を認識します。  
-- 翻訳開始  
-「Translate」ボタンをクリックすると翻訳が開始されます。  
-- ファイルをダウンロード   
-翻訳完了後、「Download Translated File」から翻訳されたファイルをダウンロード可能。また、翻訳結果は~/resultフォルダにも保存されます。   
-![APP](img/app_online.png)
-オンラインモード追加済み、現在はDeepseek-v3のみ対応（低コスト/高速->0.1元/100万tokens） 
-オンラインモードを有効にすると、API-KEYが必要です。公式サイトで取得してください：
-https://www.deepseek.com/
-![APP](img/app_completed.png)
-翻訳完了後、ダウンロードボックスが表示されます。  
-
-### サンプル
-- Excelファイル：英語から日本語  
-![excel_sample](img/excel.png)  
-- PPTファイル：英語から日本語  
-![ppt_sample](img/ppt.png)  
-- Wordファイル：英語から日本語  
-![word_sample](img/word.png)
-- PDFファイル：英語から日本語  
-![pdf_sample](img/pdf.png)
+[English](README.md) | [简体中文](README_ZH.md) | 日本語
 
 
-デフォルトのアクセスURL：
-```bash
-http://127.0.0.1:9980
-```
-ローカルネットワークで共有する場合は、最後の行を修正してください：
-```bash
-iface.launch(share=True)
-```
+<div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
+<p align='center'>ワンクリック翻訳に対応した使いやすいAI翻訳ツールで、複数の文書形式と言語をサポートしています。</p>
 
-## 参考プロジェクト
+</div>
+<h2 id="What's This">これは何ですか？</h2>
+このソフトウェアは、様々な文書形式と複数の言語をサポートする無料で使いやすいAI翻訳ツールです。
+
+主な特徴：
+
+- ワンクリック翻訳：シンプルな操作で文書を簡単に翻訳できます。
+- サポートするファイル形式：.docx、.pptx、.xlsx、.pdf、.txt、.srtファイルに対応し、将来的にはさらに多くの形式をサポート予定です。
+- 言語オプション：10以上の言語間の翻訳をサポートし、さらに拡大する計画があります。
+- 柔軟な翻訳モデル：ローカルモデルとオンラインAPIベースの翻訳の両方をサポートします。
+- ローカルネットワーク共有：ローカルネットワーク内で翻訳機能を共有できます。
+
+
+<h2 id="install">インストールと使用方法</h2>
+
+1. [CUDA](https://developer.nvidia.com/cuda-downloads)   
+CUDAをインストールする必要があります（現在、11.7と12.1のテストで問題は確認されていません）  
+
+2. Python (python==3.10)  
+    [Conda](https://www.anaconda.com/download)を使用して仮想環境を作成することをお勧めします  
+    ```bash
+    conda create -n ai-translator python=3.10
+    conda activate ai-translator
+    ```
+
+3. 必要なパッケージのインストール
+    - 要件
+        ```bash
+        pip install -r requirements.txt
+        ```
+    - モデルのダウンロード
+        ダウンロード後は「models」フォルダに保存してください**  
+        - [Baidu Netdisk](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
+        - [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
+
+
+4. ツールの実行
+    ```bash
+    python app.py
+    ```
+    デフォルトのアクセスアドレスは
+    ```bash
+    http://127.0.0.1:9980
+    ```
+
+5. ローカル大規模言語モデルのサポート  
+    現在は[Ollama](https://ollama.com/)のみサポートしています  
+    翻訳にはOllamaの依存関係とモデルをダウンロードする必要があります
+    - モデルのダウンロード（QWenシリーズのモデルを推奨）
+        ```bash
+        ollama pull qwen2.5
+        ```
+
+<h2 id="preview">プレビュー</h2>
+<div align="center">
+  <h3>Excel</h3>
+  <img src="img/excel.png" width="80%"/>
+  <h3>スライド</h3>
+  <img src="img/ppt.png" width="80%"/>
+  <h3>PDF</h3>
+  <img src="img/pdf.png" width="80%"/>
+</div>
+
+
+## 参照プロジェクト
 - [ollama-python](https://github.com/ollama/ollama-python)
 - [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 
-## 今後の更新予定
-- より多くのモデルおよびファイル形式をサポート
+## 今後の予定
+- 翻訳継続機能の追加。
+- Excelファイルの翻訳速度の最適化。
 
-## ソフトウェア声明
-本ソフトウェアは完全オープンソースで、自由に使用できます。GPL-3.0ライセンスに従ってください。
-ソフトウェアはAI翻訳サービスのみを提供し、生成された翻訳コンテンツに関する責任を制作者は負いません。法律を守り、合法的に翻訳をご利用ください。
-Qwenモデルに関する声明：
-コードおよびモデルウェイトは学術研究用途に完全に開放されており、商用利用も可能です。詳細は通義千問LICENSEをご覧ください。
-
-## 更新履歴
+## 変更履歴
 - 2025/02/01  
-翻訳失敗テキストのロジックを更新しました。
-- 2025/01/15
-PDF翻訳のバグ修正、多言語サポート追加、小猫ちゃんを撫でました。  
-- 2025/01/11
-PDFサポートを追加。PDFMathTranslateを参考にしました。  
-- 2025/01/10
-Deepseek-v3のサポートを追加（PC性能が低い方におすすめ、コスパ最強モデル）。ローカルモデルと比較して翻訳品質が向上。  
-API取得：https://www.deepseek.com/
-- 2025/01/03
-新年おめでとうございます！ロジックを再構築し、校正機能とログ記録を追加。  
-- 2024/12/16
-エラーチェックと再翻訳機能を更新。  
-- 2024/12/15
-検証機能を追加、コンテキスト取得のバグを修正。  
-- 2024/12/12
-改行処理を更新、一部のエラーを修正。  
+翻訳失敗テキストの処理ロジックを更新。
+- 2025/01/15  
+PDF翻訳のバグを修正し、多言語サポートを追加し、子猫を撫でました。
+- 2025/01/11  
+PDFのサポートを追加。参照プロジェクト：[PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
+- 2025/01/10    
+deepseek-v3のサポートを追加。APIを使用して翻訳できるようになりました（より安定しています）。  
+API取得先: https://www.deepseek.com/
+- 2025/01/03  
+新年おめでとうございます！ロジックを改訂し、レビュー機能を追加し、ロギングを強化しました。
+- 2024/12/16  
+エラー検出と再翻訳機能を更新
+- 2024/12/15  
+いくつかの検証を追加し、コンテキスト取得機能のバグを修正
+- 2024/12/12  
+改行の処理を更新。いくつかのバグを修正
+
+## ソフトウェア免責事項  
+このソフトウェアコードは完全にオープンソースであり、GPL-3.0ライセンスに従って自由に使用できます。  
+このソフトウェアはAI翻訳サービスのみを提供し、このソフトウェアを使用して翻訳されたコンテンツは、その作成者とは無関係です。  
+ユーザーは法律を遵守し、合法的な翻訳活動に従事することが期待されています。
+
+Qwenモデル免責事項  
+コードとモデルの重みは、学術研究のために完全に公開されており、商業利用もサポートしています。  
+特定のオープンソース契約に関する詳細情報については、Qwen LICENSEを参照してください。
