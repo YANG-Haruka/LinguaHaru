@@ -1,5 +1,5 @@
 <div align="center">
-<h2 id="title">LinguaHaru</h2>
+<h1 id="title">LinguaHaru</h1>
 
 English | [简体中文](README_ZH.md) | [日本語](README_JP.md) 
 
@@ -7,12 +7,7 @@ English | [简体中文](README_ZH.md) | [日本語](README_JP.md)
 <div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
 <p align='center'>A free, user-friendly AI translation tool with one-click translation, supporting multiple document formats and languages.</p>
 
-
-**Model Download / Please save it in the "Models" folder after downloading**  
-
-- [Baidu Netdisk](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
-- [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
-
+</div>
 <h2 id="What's This">What's This?</h2>
 This software is a free, user-friendly AI translation tool that supports various document formats and multiple languages.
 
@@ -42,6 +37,10 @@ You need to install CUDA (Currently there are no problems with 11.7 and 12.1 tes
     ```bash
     pip install -r requirements.txt
     ```
+    Model Download / Please save it in the "Models" folder after downloading**  
+    - [Baidu Netdisk](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
+    - [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
+
 
 4. Run the tool
     ```bash
