@@ -1,7 +1,7 @@
 <div align="center">
 <h1 id="title">LinguaHaru</h1>
 
-[English](README.md) | [简体中文](README_CN.md) | 日本語
+[English](README.md) | [简体中文](README_ZH.md) | 日本語
 
 
 <div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
