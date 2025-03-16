@@ -39,8 +39,8 @@ CUDAをインストールする必要があります（現在11.7と12.1でテ�
         ```
     - モデルのダウンロード 
         **ダウンロード後、「models」フォルダに保存してください**  
-        - [Baidu Cloud](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
-        - [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
+        - [Baidu Cloud](https://pan.baidu.com/s/1mdfiaOIOVzH6F2PX9fPz9g?pwd=puap)
+        - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
 
 
 4. ツールの実行

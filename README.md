@@ -39,8 +39,8 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
         ```
     - Model download 
         **After downloading, please save in the "models" folder**  
-        - [Baidu Cloud](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
-        - [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
+        - [Baidu Cloud](https://pan.baidu.com/s/1mdfiaOIOVzH6F2PX9fPz9g?pwd=puap)
+        - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
 
 
 4. Run the tool

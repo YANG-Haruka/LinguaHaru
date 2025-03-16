@@ -39,8 +39,8 @@
         ```
     - 模型下载 
         下载后请保存在"models"文件夹中**  
-        - [百度网盘](https://pan.baidu.com/s/1erFEqR4CgR0JwWvpvms4eQ?pwd=v813)
-        - [Google Drive](https://drive.google.com/file/d/1UVfJhpxWywBu250Xt-TDkvN5Jjjj0LN7/view?usp=sharing)
+        - [百度网盘](https://pan.baidu.com/s/1mdfiaOIOVzH6F2PX9fPz9g?pwd=puap)
+        - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
 
 
 4. 运行工具
