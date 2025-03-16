@@ -38,10 +38,10 @@ def translate_online(api_key, messages, model):
     # Get API settings from the config
     base_url = model_config.get("base_url")
     api_model = model_config.get("model")
-    top_p = model_config.get("top_p", 0.95)
-    temperature = model_config.get("temperature", 0.75)
-    presence_penalty = model_config.get("presence_penalty", 0.0)
-    frequency_penalty = model_config.get("frequency_penalty", 0.0)
+    top_p = model_config.get("top_p")
+    temperature = model_config.get("temperature")
+    presence_penalty = model_config.get("presence_penalty")
+    frequency_penalty = model_config.get("frequency_penalty")
 
     if not base_url or not api_model:
         app_logger.error(f"Invalid model config: {model}")
@@ -51,16 +51,25 @@ def translate_online(api_key, messages, model):
         # Initialize API client
         client = OpenAI(api_key=api_key, base_url=base_url)
 
+        # Prepare parameters for the API call
+        params = {
+            "model": api_model,
+            "messages": messages,
+            "stream": False
+        }
+        
+        # Only add parameters that are present in the config
+        if top_p is not None:
+            params["top_p"] = top_p
+        if temperature is not None:
+            params["temperature"] = temperature
+        if presence_penalty is not None:
+            params["presence_penalty"] = presence_penalty
+        if frequency_penalty is not None:
+            params["frequency_penalty"] = frequency_penalty
+
         # Send request
-        response = client.chat.completions.create(
-            model=api_model,
-            messages=messages,
-            top_p=top_p,
-            temperature=temperature,
-            presence_penalty=presence_penalty,
-            frequency_penalty=frequency_penalty,
-            stream=False
-        )
+        response = client.chat.completions.create(**params)
     except Exception as e:
         app_logger.error(f"API call failed: {e}")
         return "API request failed."
