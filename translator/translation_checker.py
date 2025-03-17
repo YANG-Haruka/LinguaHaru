@@ -48,7 +48,10 @@ def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSO
 
     for key, value in original_json.items():
         # Get the translated value if it exists
-        translated_value = translated_json.get(key, "").strip()
+        if translated_json is not None:
+            translated_value = translated_json.get(key, "").strip()
+        else:
+            translated_value = ""
         
         # Check if we have a valid translation (not empty and not the same as the original)
         if translated_value and translated_value != value.strip():
