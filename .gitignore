@@ -14,3 +14,4 @@ dist/
 test.py
 *.ttf
 *.onnx
+.qodo

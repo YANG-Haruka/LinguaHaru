@@ -15,6 +15,18 @@ def extract_excel_content_to_json(file_path):
     
     try:
         wb = app.books.open(file_path)
+
+        sheets = list(wb.sheets)
+        for sheet in sheets:
+            sheet_name = sheet.name
+            if should_translate(sheet_name):
+                count += 1
+                cell_data.append({
+                    "count": count,
+                    "sheet": sheet_name,
+                    "value": sheet_name,
+                    "type": "sheet_name"
+                })
         
         def process_sheet(sheet):
             nonlocal count
@@ -59,7 +71,9 @@ def extract_excel_content_to_json(file_path):
             try:
                 shapes = sheet.shapes
                 if shapes:
-                    for shape in shapes:
+                    shape_name_count = {}
+                    
+                    for shape_idx, shape in enumerate(shapes):
                         if hasattr(shape, 'text') and shape.text:
                             text_value = shape.text
                             if not should_translate(text_value):
@@ -67,10 +81,20 @@ def extract_excel_content_to_json(file_path):
                                 
                             text_value = str(text_value).replace("\n", "␊").replace("\r", "␍")
                             
+                            # Create a unique identifier for the shape
+                            original_shape_name = shape.name
+                            if original_shape_name in shape_name_count:
+                                shape_name_count[original_shape_name] += 1
+                            else:
+                                shape_name_count[original_shape_name] = 1
+                            unique_shape_id = f"{original_shape_name}_{shape_name_count[original_shape_name]}"
+                            
                             sheet_data.append({
                                 "count": 0,
                                 "sheet": sheet.name,
-                                "shape_name": shape.name,
+                                "shape_name": original_shape_name,
+                                "unique_shape_id": unique_shape_id,
+                                "shape_index": shape_idx,
                                 "value": text_value,
                                 "type": "textbox"
                             })
@@ -79,8 +103,6 @@ def extract_excel_content_to_json(file_path):
                 
             return sheet_data
             
-        sheets = list(wb.sheets)
-        
         results = []
         for sheet in sheets:
             sheet_data = process_sheet(sheet)
@@ -116,8 +138,20 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
 
     translations = {str(item["count"]): item["translated"] for item in translated_data}
     
+    sheet_name_translations = {}
+    for cell_info in original_data:
+        if cell_info.get("type") == "sheet_name":
+            count = str(cell_info["count"])
+            original_sheet_name = cell_info["sheet"]
+            translated_sheet_name = translations.get(count)
+            if translated_sheet_name:
+                sheet_name_translations[original_sheet_name] = translated_sheet_name.replace("␊", "\n").replace("␍", "\r")
+
     sheets_data = {}
     for cell_info in original_data:
+        if cell_info.get("type") == "sheet_name":
+            continue
+            
         count = str(cell_info["count"])
         sheet_name = cell_info["sheet"]
         
@@ -145,6 +179,8 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         else:
             sheets_data[sheet_name]["textboxes"].append({
                 "shape_name": cell_info["shape_name"],
+                "unique_shape_id": cell_info.get("unique_shape_id"),
+                "shape_index": cell_info.get("shape_index"),
                 "value": translated_value
             })
     
@@ -155,44 +191,114 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
     try:
         wb = app.books.open(file_path)
         
+        original_to_translated_sheet_map = {}
+        new_sheet_names = []
+        
         for sheet_name, data in sheets_data.items():
-            sheet = wb.sheets[sheet_name]
-            
-            cells_by_row = {}
-            for cell in data["cells"]:
-                row = cell["row"]
-                if row not in cells_by_row:
-                    cells_by_row[row] = []
-                cells_by_row[row].append(cell)
-            
-            for row, cells in cells_by_row.items():
-                if len(cells) > 5:
-                    min_col = min(c["column"] for c in cells)
-                    max_col = max(c["column"] for c in cells)
+            translated_sheet_name = sheet_name_translations.get(sheet_name)
+            if translated_sheet_name:
+                original_to_translated_sheet_map[sheet_name] = translated_sheet_name
+                new_sheet_names.append((sheet_name, translated_sheet_name))
+        
+        existing_names = set(sheet.name for sheet in wb.sheets)
+        temp_names = {}
+        
+        for original_name, new_name in new_sheet_names:
+            if new_name in existing_names and new_name != original_name:
+                temp_name = f"temp_{original_name}_{hash(original_name) % 10000}"
+                temp_names[original_name] = temp_name
+        
+        for original_name, temp_name in temp_names.items():
+            wb.sheets[original_name].name = temp_name
+        
+        for original_name, new_name in new_sheet_names:
+            actual_original_name = temp_names.get(original_name, original_name)
+            try:
+                wb.sheets[actual_original_name].name = new_name
+            except Exception as e:
+                app_logger.warning(f"Error renaming sheet '{original_name}' to '{new_name}': {str(e)}")
+
+        updated_sheets_data = {}
+        for sheet_name, data in sheets_data.items():
+            actual_sheet_name = sheet_name_translations.get(sheet_name, sheet_name)
+            updated_sheets_data[actual_sheet_name] = data
+        
+        for sheet_name, data in updated_sheets_data.items():
+            try:
+                sheet = wb.sheets[sheet_name]
+                
+                cells_by_row = {}
+                for cell in data["cells"]:
+                    row = cell["row"]
+                    if row not in cells_by_row:
+                        cells_by_row[row] = []
+                    cells_by_row[row].append(cell)
+                
+                for row, cells in cells_by_row.items():
+                    if len(cells) > 5:
+                        min_col = min(c["column"] for c in cells)
+                        max_col = max(c["column"] for c in cells)
+                        
+                        current_values = sheet.range((row, min_col), (row, max_col)).value
+                        if not isinstance(current_values, list):
+                            current_values = [current_values]
+                        
+                        new_values = list(current_values)
+                        for cell in cells:
+                            col_idx = cell["column"] - min_col
+                            if col_idx < len(new_values):
+                                new_values[col_idx] = cell["value"]
+                        
+                        sheet.range((row, min_col), (row, min_col + len(new_values) - 1)).value = new_values
+                    else:
+                        for cell in cells:
+                            sheet.cells(cell["row"], cell["column"]).value = cell["value"]
+                
+                # Process textboxes using shape_index for more precise identification
+                all_shapes = list(sheet.shapes)
+                
+                for textbox in data["textboxes"]:
+                    matched = False
+                    shape_index = textbox.get("shape_index")
                     
-                    current_values = sheet.range((row, min_col), (row, max_col)).value
-                    if not isinstance(current_values, list):
-                        current_values = [current_values]
+                    if shape_index is not None and 0 <= shape_index < len(all_shapes):
+                        try:
+                            shape = all_shapes[shape_index]
+                            if hasattr(shape, 'text'):
+                                shape.text = textbox["value"]
+                                matched = True
+                        except Exception as e:
+                            app_logger.warning(f"Error updating shape by index {shape_index}: {str(e)}")
                     
-                    new_values = list(current_values)
-                    for cell in cells:
-                        col_idx = cell["column"] - min_col
-                        if col_idx < len(new_values):
-                            new_values[col_idx] = cell["value"]
-                    
-                    sheet.range((row, min_col), (row, min_col + len(new_values) - 1)).value = new_values
-                else:
-                    for cell in cells:
-                        sheet.cells(cell["row"], cell["column"]).value = cell["value"]
-            
-            for textbox in data["textboxes"]:
-                try:
-                    for shape in sheet.shapes:
-                        if shape.name == textbox["shape_name"]:
-                            shape.text = textbox["value"]
-                            break
-                except Exception as e:
-                    app_logger.warning(f"Error updating text box {textbox['shape_name']} in sheet {sheet_name}: {str(e)}")
+                    if not matched and textbox.get("unique_shape_id"):
+                        original_name = textbox["shape_name"]
+                        same_name_shapes = [s for s in all_shapes if s.name == original_name]
+                        unique_id_parts = textbox["unique_shape_id"].split("_")
+                        if len(unique_id_parts) > 1:
+                            try:
+                                id_number = int(unique_id_parts[-1])
+                                if 1 <= id_number <= len(same_name_shapes):
+                                    shape = same_name_shapes[id_number - 1]
+                                    if hasattr(shape, 'text'):
+                                        shape.text = textbox["value"]
+                                        matched = True
+                                        app_logger.info(f"Updated shape by unique ID: {textbox['unique_shape_id']}")
+                            except (ValueError, IndexError) as e:
+                                app_logger.warning(f"Error updating shape with unique ID {textbox['unique_shape_id']}: {str(e)}")
+                
+                    if not matched:
+                        try:
+                            app_logger.warning(f"Falling back to shape name lookup for {textbox['shape_name']}")
+                            for shape in all_shapes:
+                                if shape.name == textbox["shape_name"]:
+                                    shape.text = textbox["value"]
+                                    app_logger.info(f"Updated shape by name: {textbox['shape_name']}")
+                                    break
+                        except Exception as e:
+                            app_logger.warning(f"Error updating text box {textbox['shape_name']} in sheet {sheet_name}: {str(e)}")
+                
+            except Exception as e:
+                app_logger.warning(f"Error processing sheet {sheet_name}: {str(e)}")
         
         result_folder = os.path.join('result')
         os.makedirs(result_folder, exist_ok=True)
