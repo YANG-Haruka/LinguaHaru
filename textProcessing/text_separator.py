@@ -1,11 +1,9 @@
 import json
-import tiktoken
-from tiktoken_ext import openai_public # For pyinstaller
-import tiktoken_ext # For pyinstaller
 import copy
 import os
 import re
 import shutil
+from .tik_token import num_tokens_from_string
 
 def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, previous_text):
     """
@@ -162,14 +160,6 @@ def calculate_progress(segment_dict, max_count):
         return 1.0
     last_count = max(int(key) for key in segment_dict.keys())
     return last_count / max_count if max_count > 0 else 1.0
-
-
-def num_tokens_from_string(string):
-    """
-    Calculate the number of tokens in a text string.
-    """
-    encoding = tiktoken.get_encoding("cl100k_base")
-    return len(encoding.encode(string))
 
 def split_text_by_token_limit(file_path, max_tokens=256):
     """
