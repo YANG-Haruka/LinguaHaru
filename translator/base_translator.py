@@ -194,10 +194,14 @@ class DocumentTranslator:
 
     def _clear_temp_folder(self):
         temp_folder = "temp"
-        if os.path.exists(temp_folder):
-            app_logger.info("Clearing temp folder...")
-            shutil.rmtree(temp_folder)
-        os.makedirs(temp_folder)
+        try:
+            if os.path.exists(temp_folder):
+                app_logger.info("Clearing temp folder...")
+                shutil.rmtree(temp_folder)
+        except Exception as e:
+            app_logger.warning(f"Could not delete temp folder: {str(e)}. Continuing with existing folder.")
+        finally:
+            os.makedirs(temp_folder,exist_ok=True)
     
     def _mark_segment_as_failed(self, segment):        
         if not os.path.exists(self.failed_json_path):

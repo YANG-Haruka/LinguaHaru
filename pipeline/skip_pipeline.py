@@ -45,9 +45,9 @@ def should_translate(text_value):
     if re.match(r'^\d{4}/\d{1,2}/\d{1,2}$', text_value) or re.match(r'^\w{3,9} \d{1,2}, \d{4}$', text_value):
         return False
 
-    # Skip very short strings
-    if len(text_value) < 2:
-        return False
+    # # Skip very short strings
+    # if len(text_value) < 2:
+    #     return False
 
     # Skip single letters (a-Z)
     if re.match(r'^[a-zA-Z]$', text_value):
