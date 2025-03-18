@@ -385,7 +385,7 @@ with gr.Blocks(title="LinguaHaru") as demo:
         <h1>LinguaHaru</h1>
         <img src="data:image/x-icon;base64,{encoded_image}" alt="LinguaHaru Logo" 
              style="display: block; width: 100px; height: 100px; margin: 0 auto;">
-        <h3>Made by Haruka-YANG | Version: 2.0</h3>
+        <h3>Made by Haruka-YANG | Version: 2.1</h3>
     </div>
     """)
     session_lang = gr.State("en")
