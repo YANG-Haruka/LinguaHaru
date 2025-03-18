@@ -3,7 +3,9 @@ import copy
 import os
 import re
 import shutil
-from .tik_token import num_tokens_from_string
+import tiktoken
+from tiktoken_ext import openai_public
+import tiktoken_ext
 
 def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, previous_text):
     """
@@ -497,3 +499,10 @@ def recombine_split_jsons(src_split_path, dst_translated_split_path):
         json.dump(result, f, ensure_ascii=False, indent=4)
     
     return output_path
+
+def num_tokens_from_string(string):
+    """
+    Calculate the number of tokens in a text string.
+    """
+    encoding = tiktoken.get_encoding("cl100k_base")
+    return len(encoding.encode(string))
