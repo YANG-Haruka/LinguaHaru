@@ -32,6 +32,7 @@ def extract_excel_content_to_json(file_path):
             nonlocal count
             sheet_data = []
             
+            # Process cells
             used_range = sheet.used_range
             if used_range:
                 all_values = used_range.options(ndim=2).value
@@ -68,36 +69,148 @@ def extract_excel_content_to_json(file_path):
                             "type": "cell"
                         })
             
+            # Process shapes - with safe group handling
             try:
-                shapes = sheet.shapes
+                shapes = list(sheet.shapes)  # Create a copy
                 if shapes:
                     shape_name_count = {}
                     
+                    # Recursive function to handle nested groups
+                    def process_group_items(group, group_index, group_name, path=""):
+                        group_items_data = []
+                        
+                        try:
+                            if hasattr(group.api, 'GroupItems'):
+                                group_items = group.api.GroupItems
+                                for i in range(1, group_items.Count + 1):
+                                    try:
+                                        child_item = group_items.Item(i)
+                                        item_path = f"{path}/{i}" if path else str(i)
+                                        
+                                        # Check if child is a group
+                                        is_child_group = False
+                                        try:
+                                            if hasattr(child_item, 'Type') and child_item.Type == 6:  # 6 is Excel's group type
+                                                is_child_group = True
+                                        except:
+                                            pass
+                                        
+                                        if is_child_group:
+                                            # Process nested group recursively
+                                            try:
+                                                child_name = f"{group_name}_child{i}"
+                                                nested_items = process_group_items(child_item, -1, child_name, item_path)
+                                                group_items_data.extend(nested_items)
+                                            except Exception as nested_error:
+                                                app_logger.warning(f"Error processing nested group {item_path}: {str(nested_error)}")
+                                        else:
+                                            # Process normal shape
+                                            has_text = False
+                                            text_value = None
+                                            
+                                            # Try TextFrame
+                                            try:
+                                                if hasattr(child_item, 'TextFrame') and child_item.TextFrame.HasText:
+                                                    text_value = child_item.TextFrame.Characters().Text
+                                                    has_text = True
+                                            except:
+                                                pass
+                                            
+                                            # Try TextFrame2
+                                            if not has_text:
+                                                try:
+                                                    if hasattr(child_item, 'TextFrame2') and child_item.TextFrame2.HasText:
+                                                        text_value = child_item.TextFrame2.TextRange.Text
+                                                        has_text = True
+                                                except:
+                                                    pass
+                                            
+                                            # If has text and needs translation
+                                            if has_text and text_value and should_translate(text_value):
+                                                text_value = str(text_value).replace("\n", "␊").replace("\r", "␍")
+                                                
+                                                # Create unique identifier
+                                                try:
+                                                    child_name = child_item.Name
+                                                except:
+                                                    child_name = f"GroupChild_{group_name}_{item_path}"
+                                                
+                                                if child_name in shape_name_count:
+                                                    shape_name_count[child_name] += 1
+                                                else:
+                                                    shape_name_count[child_name] = 1
+                                                    
+                                                unique_shape_id = f"{child_name}_{shape_name_count[child_name]}"
+                                                
+                                                # Add to group items data
+                                                group_items_data.append({
+                                                    "count": 0,
+                                                    "sheet": sheet.name,
+                                                    "shape_name": child_name,
+                                                    "unique_shape_id": unique_shape_id,
+                                                    "shape_index": -1,  # Negative indicates group child
+                                                    "group_name": group_name,
+                                                    "group_index": group_index,
+                                                    "child_path": item_path,  # Path to locate nested items
+                                                    "value": text_value,
+                                                    "type": "group_textbox"
+                                                })
+                                    except Exception as child_error:
+                                        app_logger.warning(f"Error processing group child {path}/{i}: {str(child_error)}")
+                        except Exception as group_error:
+                            app_logger.warning(f"Error accessing group items: {str(group_error)}")
+                            
+                        return group_items_data
+                    
+                    # Process individual shapes
                     for shape_idx, shape in enumerate(shapes):
-                        if hasattr(shape, 'text') and shape.text:
-                            text_value = shape.text
-                            if not should_translate(text_value):
-                                continue
-                                
-                            text_value = str(text_value).replace("\n", "␊").replace("\r", "␍")
+                        try:
+                            # Check if shape is a group
+                            is_group = False
+                            try:
+                                if hasattr(shape, 'type') and 'group' in str(shape.type).lower():
+                                    is_group = True
+                            except:
+                                try:
+                                    if shape.api.Type == 6:  # 6 is Excel's group type
+                                        is_group = True
+                                except:
+                                    pass
                             
-                            # Create a unique identifier for the shape
-                            original_shape_name = shape.name
-                            if original_shape_name in shape_name_count:
-                                shape_name_count[original_shape_name] += 1
+                            if is_group:
+                                # Process group and its nested items
+                                group_name = shape.name
+                                group_items_data = process_group_items(shape, shape_idx, group_name)
+                                sheet_data.extend(group_items_data)
                             else:
-                                shape_name_count[original_shape_name] = 1
-                            unique_shape_id = f"{original_shape_name}_{shape_name_count[original_shape_name]}"
-                            
-                            sheet_data.append({
-                                "count": 0,
-                                "sheet": sheet.name,
-                                "shape_name": original_shape_name,
-                                "unique_shape_id": unique_shape_id,
-                                "shape_index": shape_idx,
-                                "value": text_value,
-                                "type": "textbox"
-                            })
+                                # Process individual shape
+                                if hasattr(shape, 'text') and shape.text:
+                                    text_value = shape.text
+                                    if not should_translate(text_value):
+                                        continue
+                                    
+                                    text_value = str(text_value).replace("\n", "␊").replace("\r", "␍")
+                                    
+                                    # Create unique identifier
+                                    original_shape_name = shape.name
+                                    if original_shape_name in shape_name_count:
+                                        shape_name_count[original_shape_name] += 1
+                                    else:
+                                        shape_name_count[original_shape_name] = 1
+                                    unique_shape_id = f"{original_shape_name}_{shape_name_count[original_shape_name]}"
+                                    
+                                    sheet_data.append({
+                                        "count": 0,
+                                        "sheet": sheet.name,
+                                        "shape_name": original_shape_name,
+                                        "unique_shape_id": unique_shape_id,
+                                        "shape_index": shape_idx,
+                                        "value": text_value,
+                                        "type": "textbox"
+                                    })
+                        except Exception as e:
+                            app_logger.warning(f"Error processing shape #{shape_idx}: {str(e)}")
+                    
             except Exception as e:
                 app_logger.warning(f"Error processing shapes in sheet {sheet.name}: {str(e)}")
                 
@@ -170,19 +283,15 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
             
         translated_value = translated_value.replace("␊", "\n").replace("␍", "\r")
         
-        if cell_info.get("type", "cell") == "cell":
+        if cell_info.get("type") == "cell":
             sheets_data[sheet_name]["cells"].append({
                 "row": cell_info["row"],
                 "column": cell_info["column"],
                 "value": translated_value
             })
         else:
-            sheets_data[sheet_name]["textboxes"].append({
-                "shape_name": cell_info["shape_name"],
-                "unique_shape_id": cell_info.get("unique_shape_id"),
-                "shape_index": cell_info.get("shape_index"),
-                "value": translated_value
-            })
+            sheets_data[sheet_name]["textboxes"].append(cell_info.copy())
+            sheets_data[sheet_name]["textboxes"][-1]["value"] = translated_value
     
     app = xw.App(visible=False)
     app.screen_updating = False
@@ -227,6 +336,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
             try:
                 sheet = wb.sheets[sheet_name]
                 
+                # Process cells
                 cells_by_row = {}
                 for cell in data["cells"]:
                     row = cell["row"]
@@ -254,13 +364,19 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                         for cell in cells:
                             sheet.cells(cell["row"], cell["column"]).value = cell["value"]
                 
-                # Process textboxes using shape_index for more precise identification
+                # Get all shapes in the sheet
                 all_shapes = list(sheet.shapes)
                 
-                for textbox in data["textboxes"]:
+                # Split textboxes by type
+                normal_textboxes = [tb for tb in data["textboxes"] if tb.get("type") == "textbox"]
+                group_textboxes = [tb for tb in data["textboxes"] if tb.get("type") == "group_textbox"]
+                
+                # Process normal textboxes
+                for textbox in normal_textboxes:
                     matched = False
                     shape_index = textbox.get("shape_index")
                     
+                    # Method 1: Find by index
                     if shape_index is not None and 0 <= shape_index < len(all_shapes):
                         try:
                             shape = all_shapes[shape_index]
@@ -270,6 +386,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                         except Exception as e:
                             app_logger.warning(f"Error updating shape by index {shape_index}: {str(e)}")
                     
+                    # Method 2: Find by unique ID
                     if not matched and textbox.get("unique_shape_id"):
                         original_name = textbox["shape_name"]
                         same_name_shapes = [s for s in all_shapes if s.name == original_name]
@@ -285,7 +402,8 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                                         app_logger.info(f"Updated shape by unique ID: {textbox['unique_shape_id']}")
                             except (ValueError, IndexError) as e:
                                 app_logger.warning(f"Error updating shape with unique ID {textbox['unique_shape_id']}: {str(e)}")
-                
+                    
+                    # Method 3: Find by name
                     if not matched:
                         try:
                             app_logger.warning(f"Falling back to shape name lookup for {textbox['shape_name']}")
@@ -296,6 +414,93 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                                     break
                         except Exception as e:
                             app_logger.warning(f"Error updating text box {textbox['shape_name']} in sheet {sheet_name}: {str(e)}")
+                
+                # Process group textboxes with nested path support
+                for textbox in group_textboxes:
+                    try:
+                        # Find the group
+                        group_name = textbox.get("group_name")
+                        group_index = textbox.get("group_index")
+                        child_path = textbox.get("child_path")
+                        
+                        if not child_path:
+                            child_path = str(textbox.get("child_index", ""))
+                        
+                        # Try to find the group
+                        group = None
+                        
+                        # Method 1: Find by index
+                        if group_index is not None and 0 <= group_index < len(all_shapes):
+                            try:
+                                group = all_shapes[group_index]
+                            except:
+                                pass
+                        
+                        # Method 2: Find by name
+                        if not group and group_name:
+                            for shape in all_shapes:
+                                if shape.name == group_name:
+                                    group = shape
+                                    break
+                        
+                        # If group found, navigate to the child using path
+                        if group and child_path and hasattr(group.api, 'GroupItems'):
+                            # Function to navigate nested groups using path
+                            def navigate_to_child(parent_group, path):
+                                path_parts = path.split('/')
+                                current_item = parent_group
+                                
+                                for part in path_parts:
+                                    try:
+                                        # Convert path part to index (1-based in Excel)
+                                        idx = int(part)
+                                        if hasattr(current_item.api, 'GroupItems'):
+                                            items = current_item.api.GroupItems
+                                            if 1 <= idx <= items.Count:
+                                                current_item = items.Item(idx)
+                                            else:
+                                                return None
+                                        else:
+                                            return None
+                                    except:
+                                        return None
+                                
+                                return current_item
+                            
+                            # Navigate to child using path
+                            child_item = navigate_to_child(group, child_path)
+                            
+                            if child_item:
+                                # Try to update text
+                                updated = False
+                                
+                                # Method 1: TextFrame
+                                try:
+                                    if hasattr(child_item, 'TextFrame') and child_item.TextFrame.HasText:
+                                        child_item.TextFrame.Characters().Text = textbox["value"]
+                                        updated = True
+                                        app_logger.info(f"Updated group '{group_name}' child with path {child_path} using TextFrame")
+                                except:
+                                    pass
+                                
+                                # Method 2: TextFrame2
+                                if not updated:
+                                    try:
+                                        if hasattr(child_item, 'TextFrame2'):
+                                            child_item.TextFrame2.TextRange.Text = textbox["value"]
+                                            updated = True
+                                            app_logger.info(f"Updated group '{group_name}' child with path {child_path} using TextFrame2")
+                                    except:
+                                        pass
+                                
+                                if not updated:
+                                    app_logger.warning(f"Could not update group '{group_name}' child with path {child_path}")
+                            else:
+                                app_logger.warning(f"Could not navigate to child with path {child_path} in group '{group_name}'")
+                        else:
+                            app_logger.warning(f"Could not find group '{group_name}' or it lacks GroupItems")
+                    except Exception as e:
+                        app_logger.warning(f"Error processing group shape, group: {textbox.get('group_name')}, path: {textbox.get('child_path')}: {str(e)}")
                 
             except Exception as e:
                 app_logger.warning(f"Error processing sheet {sheet_name}: {str(e)}")

@@ -3,6 +3,40 @@ import os
 import re
 from config.log_config import app_logger
 
+def detect_language_characters(text, lang_code):
+    """
+    Detect if text contains characters from specific language
+    
+    Args:
+        text: Text to check
+        lang_code: Language code to check for
+        
+    Returns:
+        Boolean indicating if text contains characters of the specified language
+    """
+    patterns = {
+        # East Asian languages
+        "zh": r'[\u4e00-\u9fff]',  # Chinese (simplified)
+        "zh-Hant": r'[\u4e00-\u9fff\u3400-\u4dbf]',  # Chinese (traditional)
+        "ja": r'[\u3040-\u309f\u30a0-\u30ff\u4e00-\u9faf]',  # Japanese
+        "ko": r'[\uac00-\ud7af\u1100-\u11ff]',  # Korean
+        
+        # Other non-Latin script languages
+        "ru": r'[\u0400-\u04FF]',  # Russian (Cyrillic)
+        "th": r'[\u0e00-\u0e7f]',  # Thai
+        "vi": r'[\u00C0-\u1EF9]',  # Vietnamese (Latin with diacritics)
+    }
+    
+    # For Latin-based languages, we simply check that the translation doesn't 
+    # contain characters of the source language when it shouldn't
+    latin_langs = ["en", "es", "fr", "de", "it", "pt"]
+    
+    if lang_code in patterns:
+        pattern = re.compile(patterns[lang_code])
+        return bool(pattern.search(text))
+    
+    return False  # Default for Latin-based languages
+
 def clean_json(text):
     """Clean JSON text, remove markdown code blocks, handle BOM, and fix trailing commas."""
     if text is None:
@@ -20,7 +54,45 @@ def clean_json(text):
     text = re.sub(r',\s*\]', ']', text)  # Fix ", ]" issue
     return text
 
-def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH):
+def is_translation_valid(original, translated, src_lang, dst_lang):
+    """
+    Determine if a translation is valid based on language-specific rules
+    
+    Args:
+        original: Original text
+        translated: Translated text
+        src_lang: Source language code
+        dst_lang: Destination language code
+        
+    Returns:
+        Boolean indicating if translation is valid
+    """
+    # Basic checks
+    if not translated or translated.strip() == "":
+        return False
+    
+    # If translation is identical to original, it's likely not translated
+    if translated.strip() == original.strip():
+        return False
+    
+    # Language-specific validation
+    non_latin_langs = ["zh", "zh-Hant", "ja", "ko", "ru", "th"]
+    
+    # Check if a non-latin language should not have its characters in the translation
+    if src_lang in non_latin_langs:
+        # If source is non-Latin, translated text should not contain source language characters
+        if detect_language_characters(translated, src_lang):
+            return False
+    
+    # Check if target language characters are present when they should be
+    if dst_lang in non_latin_langs:
+        # If target is non-Latin, translated text should contain target language characters
+        if not detect_language_characters(translated, dst_lang):
+            return False
+    
+    return True
+
+def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, src_lang, dst_lang):
     """Process translation results and save successful and failed translations"""
     if not translated_text:
         app_logger.warning("No translated text received.")
@@ -53,15 +125,18 @@ def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSO
         else:
             translated_value = ""
         
-        # Check if we have a valid translation (not empty and not the same as the original)
-        if translated_value and translated_value != value.strip():
+        # Check if we have a valid translation based on language-specific rules
+        if is_translation_valid(value, translated_value, src_lang, dst_lang):
             successful_translations.append({
                 "count": key,
                 "original": value,
                 "translated": translated_value
             })
         else:
-            failed_translations.append({"count": int(key), "value": value})
+            failed_translations.append({
+                "count": int(key), 
+                "value": value
+            })
 
     # Use a fixed box width instead of calculating dynamically
     fixed_box_width = 100
