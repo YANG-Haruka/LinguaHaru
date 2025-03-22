@@ -1,3 +1,9 @@
 {
-    "lan_mode": false
+    "max_token": 768,
+    "max_retries": 4,
+    "lan_mode": false,
+    "default_online": false,
+    "show_model_selection": true,
+    "show_mode_switch": true,
+    "show_lan_mode": true
 }
