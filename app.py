@@ -435,6 +435,8 @@ initial_lan_mode = config.get("lan_mode", False)
 initial_default_online = config.get("default_online", False)
 initial_max_token = config.get("max_token", 768)
 initial_max_retries = config.get("max_retries", 4)
+app_title = config.get("app_title", "LinguaHaru")
+img_path = config.get("img_path", "img/ico.ico")
 
 # Update global MAX_TOKEN from config
 MAX_TOKEN = initial_max_token
@@ -444,8 +446,18 @@ initial_show_model_selection = config.get("show_model_selection", True)
 initial_show_mode_switch = config.get("show_mode_switch", True)
 initial_show_lan_mode = config.get("show_lan_mode", True)
 
-# Get the image and encode it to base64
-icon_path = resource_path("img/ico.ico")
+
+icon_path = resource_path(img_path)
+image_type = img_path.split('.')[-1].lower()
+mime_types = {
+    'ico': 'image/x-icon',
+    'png': 'image/png',
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'gif': 'image/gif',
+    'svg': 'image/svg+xml'
+}
+mime_type = mime_types.get(image_type, 'image/png')
 with open(icon_path, "rb") as f:
     encoded_image = base64.b64encode(f.read()).decode("utf-8")
 
@@ -454,11 +466,11 @@ with open(icon_path, "rb") as f:
 #-------------------------------------------------------------------------
 
 # Create a Gradio blocks interface
-with gr.Blocks(title="LinguaHaru", css="footer {visibility: hidden}") as demo:
+with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     gr.HTML(f"""
     <div style="text-align: center;">
-        <h1>LinguaHaru</h1>
-        <img src="data:image/x-icon;base64,{encoded_image}" alt="LinguaHaru Logo" 
+        <h1>{app_title}</h1>
+        <img src="data:{mime_type};base64,{encoded_image}" alt="{app_title} Logo" 
              style="display: block; width: 100px; height: 100px; margin: 0 auto;">
     </div>
     """)
