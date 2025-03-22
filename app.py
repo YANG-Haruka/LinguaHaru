@@ -471,7 +471,7 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     <div style="text-align: center;">
         <h1>{app_title}</h1>
         <img src="data:{mime_type};base64,{encoded_image}" alt="{app_title} Logo" 
-             style="display: block; width: 100px; height: 100px; margin: 0 auto;">
+             style="display: block; height: 100px; width: auto; margin: 0 auto;">
     </div>
     """)
     
