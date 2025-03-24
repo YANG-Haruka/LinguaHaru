@@ -86,7 +86,7 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
                 
-                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path)
+                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
                 
                 cleaned_text = clean_json(translated_text)
                 translated_lines = cleaned_text.splitlines()
@@ -165,7 +165,7 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
                 
-                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path)
+                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
 
                 # Update previous text context with last 3 lines if possible
                 try:

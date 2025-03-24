@@ -70,13 +70,19 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
     # Basic checks
     if not translated or translated.strip() == "":
         return False
-    
+ 
+     # Language-specific validation
+    non_latin_langs = ["zh", "zh-Hant", "ja", "ko", "ru", "th"]
+       
     # If translation is identical to original, it's likely not translated
     if translated.strip() == original.strip():
-        return False
-    
-    # Language-specific validation
-    non_latin_langs = ["zh", "zh-Hant", "ja", "ko", "ru", "th"]
+        if src_lang in non_latin_langs:
+            if detect_language_characters(translated, src_lang):
+                return False
+            else:
+                return True
+        else:
+            return False
     
     # Check if a non-latin language should not have its characters in the translation
     if src_lang in non_latin_langs:

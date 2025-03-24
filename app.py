@@ -11,7 +11,6 @@ from config.log_config import app_logger
 import socket
 import sys
 import base64
-import html
 
 # Import language configs
 from config.languages_config import LANGUAGE_MAP, LABEL_TRANSLATIONS
@@ -39,7 +38,7 @@ def read_system_config():
     """Read the system configuration from the config file."""
     config_path = os.path.join("config", "system_config.json")
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return {
@@ -467,11 +466,11 @@ with open(icon_path, "rb") as f:
 #-------------------------------------------------------------------------
 
 # Create a Gradio blocks interface
-with gr.Blocks(css="footer {visibility: hidden}") as demo:
+with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     gr.HTML(f"""
     <div style="text-align: center;">
-        <h1>{html.escape(app_title)}</h1>
-        <img src="data:{mime_type};base64,{encoded_image}" alt="{html.escape(app_title)} Logo" 
+        <h1>{app_title}</h1>
+        <img src="data:{mime_type};base64,{encoded_image}" alt="{app_title} Logo" 
              style="display: block; height: 100px; width: auto; margin: 0 auto;">
     </div>
     """)
