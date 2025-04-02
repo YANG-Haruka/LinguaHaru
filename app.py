@@ -11,6 +11,9 @@ from config.log_config import app_logger
 import socket
 import sys
 import base64
+import threading
+import queue
+from functools import partial
 
 # Import language configs
 from config.languages_config import LANGUAGE_MAP, LABEL_TRANSLATIONS
@@ -29,6 +32,168 @@ TRANSLATOR_MODULES = {
     ".txt": "translator.txt_translator.TxtTranslator",
     # ".epub": "translator.epub_translator.EpubTranslator"
 }
+
+# Global task queue and counter
+task_queue = queue.Queue()
+active_tasks = 0
+task_lock = threading.Lock()
+
+def enqueue_task(
+    translate_func, files, model, src_lang, dst_lang, 
+    use_online, api_key, max_retries, max_token, progress
+):
+    """
+    Enqueue a translation task or execute it immediately if no tasks are running.
+    Returns a status message indicating whether the task was queued or started.
+    """
+    global active_tasks
+    
+    with task_lock:
+        if active_tasks == 0:
+            # No active tasks, start immediately
+            active_tasks += 1
+            # Return None to indicate the task should start immediately
+            return None
+        else:
+            # Tasks are running, add to queue
+            task_info = {
+                "files": files,
+                "model": model,
+                "src_lang": src_lang,
+                "dst_lang": dst_lang,
+                "use_online": use_online,
+                "api_key": api_key,
+                "max_retries": max_retries,
+                "max_token": max_token
+            }
+            task_queue.put(task_info)
+            queue_position = task_queue.qsize()
+            return f"Task added to queue. Position: {queue_position}"
+
+def process_task_with_queue(
+    translate_func, files, model, src_lang, dst_lang, 
+    use_online, api_key, max_retries, max_token, progress
+):
+    """
+    Process a translation task and handle queue management.
+    First checks if the task can start immediately or needs to be queued.
+    """
+    global active_tasks
+    
+    # Ensure progress is not None
+    if progress is None:
+        progress = gr.Progress(track_tqdm=True)
+    
+    # Try to enqueue the task
+    queue_msg = enqueue_task(
+        translate_func, files, model, src_lang, dst_lang, 
+        use_online, api_key, max_retries, max_token, progress
+    )
+    
+    if queue_msg:
+        # Task was queued, return early with status message
+        return gr.update(value=None, visible=False), queue_msg
+    
+    try:
+        # Process the translation
+        result = translate_func(
+            files, model, src_lang, dst_lang, 
+            use_online, api_key, max_retries, max_token, progress
+        )
+        
+        # Check for next task in queue
+        process_next_task_in_queue(translate_func, progress)
+        
+        return result[0], result[1]
+    except Exception as e:
+        # Ensure we decrement the counter even if an error occurs
+        with task_lock:
+            active_tasks -= 1
+        
+        # Check for next task in queue
+        process_next_task_in_queue(translate_func, progress)
+        
+        # Re-raise the exception
+        raise e
+
+def process_next_task_in_queue(translate_func, progress):
+    """
+    Process the next task in the queue if available.
+    This is called after a task completes.
+    """
+    global active_tasks
+    
+    with task_lock:
+        active_tasks -= 1
+        
+        if not task_queue.empty():
+            # Get the next task from the queue
+            next_task = task_queue.get()
+            active_tasks += 1
+            
+            # Process the task in a new thread to avoid blocking
+            threading.Thread(
+                target=process_queued_task,
+                args=(translate_func, next_task, progress),
+                daemon=True
+            ).start()
+
+def process_queued_task(translate_func, task_info, progress):
+    """
+    Process a task from the queue in a separate thread.
+    Updates the UI when complete.
+    """
+    try:
+        # Ensure progress is not None
+        if progress is None:
+            progress = gr.Progress(track_tqdm=True)
+            
+        # Execute the translation
+        result = translate_func(
+            task_info["files"],
+            task_info["model"],
+            task_info["src_lang"],
+            task_info["dst_lang"],
+            task_info["use_online"],
+            task_info["api_key"],
+            task_info["max_retries"],
+            task_info["max_token"],
+            progress
+        )
+        
+        # We can't directly update the UI from a thread in Gradio
+        # The next task will be handled in process_next_task_in_queue
+        
+    except Exception as e:
+        # Log the error
+        app_logger.exception(f"Error processing queued task: {e}")
+    finally:
+        # Check for the next task in the queue
+        process_next_task_in_queue(translate_func, progress)
+
+def modified_translate_button_click(
+    translate_files_func, files, model, src_lang, dst_lang, 
+    use_online, api_key, max_retries, max_token, progress=gr.Progress(track_tqdm=True)
+):
+    """
+    Modified version of the translate button click handler that uses the task queue.
+    First resets the UI, then either starts the translation or queues it.
+    """
+    # Reset the UI (hide download button and clear status)
+    output_file_update = gr.update(visible=False)
+    status_message = None
+    
+    if not files:
+        return output_file_update, "Please select file(s) to translate."
+    
+    if use_online and not api_key:
+        return output_file_update, "API key is required for online models."
+    
+    # Use the queue system to manage the task
+    return process_task_with_queue(
+        translate_files_func, files, model, src_lang, dst_lang, 
+        use_online, api_key, max_retries, max_token, progress
+    )
 
 #-------------------------------------------------------------------------
 # System Configuration Functions
@@ -95,6 +260,83 @@ def resource_path(relative_path):
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
+
+
+def load_application_icon(config):
+    """
+    Load the application icon using img_path from system_config.json.
+    If img_path is not specified or can't be loaded, defaults to img/ico.ico.
+    """
+    # Get icon path from config
+    img_path = config.get("img_path", "img/ico.ico")
+    
+    # Define MIME types for different image formats
+    mime_types = {
+        'ico': 'image/x-icon',
+        'png': 'image/png',
+        'jpg': 'image/jpeg',
+        'jpeg': 'image/jpeg',
+        'gif': 'image/gif',
+        'svg': 'image/svg+xml'
+    }
+    
+    # Paths to try in order
+    icon_paths_to_try = []
+    
+    # 1. Try absolute path if img_path is absolute
+    if os.path.isabs(img_path):
+        icon_paths_to_try.append(img_path)
+    
+    # 2. Try from current directory
+    if not os.path.isabs(img_path):
+        icon_paths_to_try.append(img_path)
+    
+    # 3. Try from PyInstaller _MEIPASS
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+        # If img_path is not absolute, add it to _MEIPASS path
+        if not os.path.isabs(img_path):
+            meipass_path = os.path.join(base_path, img_path)
+            icon_paths_to_try.append(meipass_path)
+    except Exception:
+        # Not running from PyInstaller bundle
+        pass
+    
+    # 4. Add default img/ico.ico as last resort (if not already in the list)
+    default_icon = "img/ico.ico"
+    if img_path != default_icon:
+        # Try from current directory
+        if default_icon not in icon_paths_to_try:
+            icon_paths_to_try.append(default_icon)
+        
+        # Try from _MEIPASS
+        try:
+            base_path = sys._MEIPASS
+            default_meipass_path = os.path.join(base_path, default_icon)
+            if default_meipass_path not in icon_paths_to_try:
+                icon_paths_to_try.append(default_meipass_path)
+        except Exception:
+            pass
+    
+    # Try each path in order
+    for icon_path in icon_paths_to_try:
+        try:
+            if os.path.isfile(icon_path):
+                image_type = icon_path.split('.')[-1].lower()
+                mime_type = mime_types.get(image_type, 'image/png')
+                
+                app_logger.info(f"Loading icon from: {icon_path}")
+                with open(icon_path, "rb") as f:
+                    encoded_image = base64.b64encode(f.read()).decode("utf-8")
+                return encoded_image, mime_type
+        except Exception as e:
+            app_logger.warning(f"Failed to load icon from {icon_path}: {e}")
+            # Try next path
+    
+    # If all else fails, log an error
+    app_logger.error("Failed to load any icon, application will run without an icon")
+    return None, None
 
 #-------------------------------------------------------------------------
 # Language and Localization Functions
@@ -446,20 +688,7 @@ initial_show_model_selection = config.get("show_model_selection", True)
 initial_show_mode_switch = config.get("show_mode_switch", True)
 initial_show_lan_mode = config.get("show_lan_mode", True)
 
-
-icon_path = resource_path(img_path)
-image_type = img_path.split('.')[-1].lower()
-mime_types = {
-    'ico': 'image/x-icon',
-    'png': 'image/png',
-    'jpg': 'image/jpeg',
-    'jpeg': 'image/jpeg',
-    'gif': 'image/gif',
-    'svg': 'image/svg+xml'
-}
-mime_type = mime_types.get(image_type, 'image/png')
-with open(icon_path, "rb") as f:
-    encoded_image = base64.b64encode(f.read()).decode("utf-8")
+encoded_image, mime_type = load_application_icon(config)
 
 #-------------------------------------------------------------------------
 # Gradio UI Construction
@@ -479,7 +708,7 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     gr.HTML("""
     <div style="position: fixed; bottom: 0; left: 0; width: 100%; 
               text-align: center; padding: 10px 0;">
-        Made by Haruka-YANG | Version: 2.2 | 
+        Made by Haruka-YANG | Version: 2.3 | 
         <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank">Visit Github</a>
     </div>
     """)
@@ -583,16 +812,13 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
         outputs=max_retries_state
     )
 
-    # Hide download button and reset status first
+    # Use the queue system with the translate button
     translate_button.click(
         lambda: (gr.update(visible=False), None),
         inputs=[],
         outputs=[output_file, status_message]
-    )
-
-    # Then translate
-    translate_button.click(
-        translate_files,
+    ).then(
+        partial(modified_translate_button_click, translate_files),
         inputs=[
             file_input, model_choice, src_lang, dst_lang, 
             use_online_model, api_key_input, max_retries_slider, max_token_state

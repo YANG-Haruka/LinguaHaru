@@ -25,9 +25,6 @@ for module in translator_modules:
     except Exception:
         print(f"Warning: Could not collect {module}")
 
-image_files = [('img/ico.ico', 'img')]
-config_files = [('config', 'config')]  # 确保配置文件被包含
-
 translator_datas = []
 translator_imports = []
 for collect in translator_collects:
@@ -43,8 +40,6 @@ a = Analysis(
         + gradio_client_collect[0]
         + safehttp_collect[0]
         + safehttpx_collect[0]
-        + image_files
-        + config_files
         + translator_datas
     ),
     hiddenimports=(

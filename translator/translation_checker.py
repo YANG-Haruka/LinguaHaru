@@ -33,7 +33,8 @@ def detect_language_characters(text, lang_code):
     
     if lang_code in patterns:
         pattern = re.compile(patterns[lang_code])
-        return bool(pattern.search(text))
+        status_lan = bool(pattern.search(text))
+        return status_lan
     
     return False  # Default for Latin-based languages
 
@@ -82,12 +83,6 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
             else:
                 return True
         else:
-            return False
-    
-    # Check if a non-latin language should not have its characters in the translation
-    if src_lang in non_latin_langs:
-        # If source is non-Latin, translated text should not contain source language characters
-        if detect_language_characters(translated, src_lang):
             return False
     
     # Check if target language characters are present when they should be
