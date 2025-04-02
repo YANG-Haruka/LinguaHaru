@@ -13,8 +13,9 @@ def load_prompt(src_lang,dst_lang):
         user_prompt = prompt_data.get("user_prompt", "Translate the following text:")
         previous_prompt = prompt_data.get("previous_prompt", "This is the contextual content of the previous paragraph:")
         previous_text_default = prompt_data.get("previous_text_default", {})
+        glossary_prompt = prompt_data.get("glossary_prompt", {})
         
         # Replace placeholders with src_lang and dst_lang
         system_prompt = system_prompt.format(Text_Target_Language=dst_lang, Text_Source_Language=src_lang)
         
-        return system_prompt, user_prompt, previous_prompt, previous_text_default
+        return system_prompt, user_prompt, previous_prompt, previous_text_default, glossary_prompt
