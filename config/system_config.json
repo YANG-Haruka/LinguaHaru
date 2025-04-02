@@ -1,6 +1,6 @@
 {
-    "app_title":"LinguaHaru",
-    "img_path":"img/ico.ico",
+    "app_title": "LinguaHaru",
+    "img_path": "img/test_ico.gif",
     "max_token": 768,
     "max_retries": 4,
     "lan_mode": false,
