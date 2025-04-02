@@ -83,6 +83,8 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
 - Bilingual comparison for Word, Excel, etc.
 
 ## Changelog
+- 2025/04/02  
+Updated to v2.3, adding custom icons/Title and supporting multi-task queues. Optimized translation result detection logic. Added a feature to show the translation result with the original text.
 - 2025/03/14
 Updated to V2.0, added support for Txt files. Optimized Word/Excel/long text translation. Added customizable retry count functionality. Improved display of translation results.
 - 2025/02/01  
