@@ -3,15 +3,26 @@ from llmWrapper.online_translation import translate_online
 from llmWrapper.offline_translation import translate_offline
 
 
-def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt):
-    """Translate text segments"""
+def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None):
+    """
+    Translate text segments with optional glossary support
+    """
     
     # Join segments to create the full text to translate
     text_to_translate = segments
     
+    # Create glossary text if glossary terms are provided
+    glossary_text = ""
+    if glossary_terms and len(glossary_terms) > 0:
+        glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
+        glossary_text = glossary_prompt + "\n".join(glossary_lines) + "\n\n"
+    
+    # Construct full prompt with optional glossary
+    full_user_prompt = f"{previous_prompt}\n###{previous_text}###\n{user_prompt}###\n{glossary_text}{text_to_translate}"
+    
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": f"{previous_prompt}\n###{previous_text}###\n{user_prompt}###\n{text_to_translate}"},
+        {"role": "user", "content": full_user_prompt},
     ]
     
     app_logger.debug(f"API messages: {messages}")

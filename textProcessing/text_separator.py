@@ -6,14 +6,127 @@ import shutil
 import tiktoken
 from tiktoken_ext import openai_public
 import tiktoken_ext
+import csv
 
-def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, previous_text):
+def load_glossary(glossary_path, src_lang, dst_lang):
+    """
+    Load and process glossary from CSV file.
+    Tries multiple common encodings to handle various file formats.
+    """
+    glossary_entries = []
+    
+    # Common encodings to try, in order of likelihood
+    encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1', 'shift-jis', 'cp949']
+    
+    for encoding in encodings:
+        try:
+            with open(glossary_path, 'r', encoding=encoding) as csv_file:
+                csv_reader = csv.reader(csv_file)
+                
+                # First row contains language codes
+                lang_codes = next(csv_reader, None)
+                if not lang_codes:
+                    continue  # Try next encoding if empty file
+                    
+                # Find column indices for source and target languages
+                src_idx = None
+                dst_idx = None
+                
+                for i, code in enumerate(lang_codes):
+                    if code.strip().lower() == src_lang.strip().lower():
+                        src_idx = i
+                    if code.strip().lower() == dst_lang.strip().lower():
+                        dst_idx = i
+                
+                # If we couldn't find matching language columns, try next encoding
+                if src_idx is None or dst_idx is None:
+                    print(f"Warning: Could not find columns for {src_lang} and/or {dst_lang} in glossary with {encoding} encoding.")
+                    continue
+                
+                # Read remaining rows as glossary entries
+                entries = []
+                for row in csv_reader:
+                    if len(row) > max(src_idx, dst_idx):
+                        source_term = row[src_idx].strip()
+                        target_term = row[dst_idx].strip()
+                        
+                        # Only add if both terms are non-empty
+                        if source_term and target_term:
+                            entries.append((source_term, target_term))
+                
+                # If we successfully parsed entries, return them
+                if entries:
+                    return entries
+                
+        except UnicodeDecodeError:
+            # Expected error when trying wrong encodings, continue silently
+            continue
+        except Exception as e:
+            print(f"Error loading glossary with {encoding} encoding: {e}")
+            continue
+    
+    # If we get here, all encodings failed
+    print(f"Failed to load glossary from {glossary_path} with any encoding.")
+    return []
+
+def format_glossary_for_prompt(glossary_entries, text):
+    """
+    Format glossary entries for inclusion in the prompt, filtering to only
+    include terms that appear in the text.
+    """
+    # Filter glossary to only include terms that appear in the text
+    relevant_entries = []
+    for src_term, dst_term in glossary_entries:
+        if src_term in text:
+            relevant_entries.append((src_term, dst_term))
+    
+    if not relevant_entries:
+        return ""
+    
+    # Format the glossary entries
+    glossary_lines = []
+    for src_term, dst_term in relevant_entries:
+        glossary_lines.append(f"{src_term} -> {dst_term}")
+    
+    formatted_glossary = "Glossary:\n" + "\n".join(glossary_lines)
+    return formatted_glossary
+
+def find_terms_with_hashtable(text, glossary_entries):
+    """
+    Use a hash table approach for exact matching.
+    Build a dictionary of source terms for O(1) lookups.
+    """
+    # Build lookup dictionary
+    term_dict = {src: dst for src, dst in glossary_entries}
+    
+    # Use a set to track which terms we've already found
+    found_terms = set()
+    results = []
+    
+    # Sort terms by length (longest first) to prioritize longer matches
+    sorted_terms = sorted(term_dict.keys(), key=len, reverse=True)
+    
+    for term in sorted_terms:
+        if term in text and term not in found_terms:
+            found_terms.add(term)
+            results.append((term, term_dict[term]))
+    
+    return results
+
+def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, previous_text, 
+                        src_lang=None, dst_lang=None, glossary_path=None):
     """
     Process JSON in segments, ensuring each segment's token count does not exceed max_token.
     First creates a copy of the original JSON file with "_translating" suffix and works on the copy.
     After processing each segment, clears this data from the copied file.
     Tracks and reports progress using count-based calculation.
+    Added support for source language, destination language and glossary.
     """
+    # Load glossary if language codes and path are provided
+    glossary_entries = []
+    if src_lang and dst_lang and glossary_path and os.path.exists(glossary_path):
+        glossary_entries = load_glossary(glossary_path, src_lang, dst_lang)
+    
     # Create a copy of the original JSON file with "_translating" suffix
     file_dir = os.path.dirname(json_file_path)
     file_name = os.path.basename(json_file_path)
@@ -60,6 +173,7 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
         current_segment_dict = {}
         current_token_count = prompt_token_count
         current_processed_indices = []
+        current_glossary_terms = []
 
         for i, cell in enumerate(cell_data):
             if i in processed_indices:
@@ -74,6 +188,13 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
             line_dict = {str(count): value}
             new_segment_str = f"```json\n{json.dumps(current_segment_dict | line_dict, ensure_ascii=False, indent=4)}\n```"
             new_token_count = prompt_token_count + num_tokens_from_string(new_segment_str)
+            
+            # Find relevant glossary terms for this text segment
+            if glossary_entries:
+                found_terms = find_terms_with_hashtable(value, glossary_entries)
+                for src_term, dst_term in found_terms:
+                    if (src_term, dst_term) not in current_glossary_terms:
+                        current_glossary_terms.append((src_term, dst_term))
 
             if new_token_count > max_token:
                 # If adding this line exceeds max_token, yield the current segment
@@ -88,7 +209,11 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
                     # Remove processed data from working copy file
                     update_source_file(working_copy_path, processed_indices)
                     
-                    yield segment_output, progress
+                    # Yield segment, progress, and relevant glossary terms
+                    yield segment_output, progress, current_glossary_terms
+                    
+                    # Reset for next segment
+                    current_glossary_terms = []
                 
                 # Start a new segment with the current line
                 current_segment_dict = line_dict
@@ -96,6 +221,13 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
                 current_token_count = prompt_token_count + num_tokens_from_string(
                     f"```json\n{json.dumps(current_segment_dict, ensure_ascii=False, indent=4)}\n```"
                 )
+                
+                # Check for glossary terms in this line
+                if glossary_entries:
+                    found_terms = find_terms_with_hashtable(value, glossary_entries)
+                    for src_term, dst_term in found_terms:
+                        if (src_term, dst_term) not in current_glossary_terms:
+                            current_glossary_terms.append((src_term, dst_term))
             else:
                 # Add the current line to the segment
                 current_segment_dict.update(line_dict)
@@ -111,7 +243,8 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
             # Remove processed data from working copy file
             update_source_file(working_copy_path, processed_indices)
             
-            yield segment_output, progress
+            # Yield final segment with glossary terms
+            yield segment_output, progress, current_glossary_terms
         
         # Clean up the working copy file when all processing is complete
         try:

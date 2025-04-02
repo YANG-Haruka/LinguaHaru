@@ -45,7 +45,7 @@ class DocumentTranslator:
         os.makedirs(self.file_dir, exist_ok=True)
 
         # Load translation prompts
-        self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default = load_prompt(src_lang, dst_lang)
+        self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default, self.glossary_prompt = load_prompt(src_lang, dst_lang)
         if self.previous_text is None:
             self.previous_text = self.previous_text_default
 
@@ -66,6 +66,9 @@ class DocumentTranslator:
             self.user_prompt,
             self.previous_prompt,
             self.previous_text,
+            self.src_lang,
+            self.dst_lang,
+            "models\Glossary.csv"
         )
         
         if stream_generator is None:
@@ -74,11 +77,11 @@ class DocumentTranslator:
 
         app_logger.info("Translating segments...")
         combined_previous_texts = []
-        for segment, segment_progress in stream_generator():
+        for segment, segment_progress, current_glossary_terms in stream_generator():
             try:
                 translated_text = translate_text(
                     segment, self.previous_text, self.model, self.use_online, self.api_key,
-                    self.system_prompt, self.user_prompt, self.previous_prompt
+                    self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
                 )
 
                 if not translated_text:
@@ -131,7 +134,10 @@ class DocumentTranslator:
             self.system_prompt,
             self.user_prompt,
             self.previous_prompt,
-            self.previous_text
+            self.previous_text,
+            self.src_lang,
+            self.dst_lang,
+            "models\Glossary.csv"
         )
         if stream_generator_failed is None:
             app_logger.info("All text has been translated.")
@@ -147,7 +153,7 @@ class DocumentTranslator:
         segments_to_process = original_segments.copy()
         combined_previous_texts = []
  
-        for segment, segment_progress in stream_generator_failed():
+        for segment, segment_progress, current_glossary_terms in stream_generator_failed():
             try:
                 translated_text = translate_text(
                     segment,
@@ -157,7 +163,9 @@ class DocumentTranslator:
                     self.api_key,
                     self.system_prompt,
                     self.user_prompt,
-                    self.previous_prompt
+                    self.previous_prompt,
+                    self.glossary_prompt,
+                    current_glossary_terms
                 )
 
                 if not translated_text:
