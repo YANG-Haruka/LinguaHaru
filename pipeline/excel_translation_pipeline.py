@@ -12,8 +12,23 @@ def extract_excel_content_to_json(file_path):
     workbook = load_workbook(file_path)
     cell_data = []
     count = 0
-
+    
+    # Add sheet names to the extraction process
     for sheet_name in workbook.sheetnames:
+        # Add sheet name as a special entry if it should be translated
+        if should_translate(sheet_name):
+            count += 1
+            sheet_info = {
+                "count": count,
+                "sheet": "SHEET_NAME",  # Special marker to identify sheet names
+                "row": 0,               # Use 0 to indicate it's a sheet name, not a cell
+                "column": 0,            # Use 0 to indicate it's a sheet name, not a cell
+                "value": sheet_name,
+                "is_merged": False,
+                "is_sheet_name": True   # Flag to identify this as a sheet name entry
+            }
+            cell_data.append(sheet_info)
+        
         sheet = workbook[sheet_name]
         merged_cells_ranges = sheet.merged_cells.ranges
 
@@ -41,6 +56,7 @@ def extract_excel_content_to_json(file_path):
                     "column": cell.column,
                     "value": cell_value,
                     "is_merged": is_merged_cell,
+                    "is_sheet_name": False  # Regular cell, not a sheet name
                 }
                 cell_data.append(cell_info)
     
@@ -67,9 +83,25 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
 
     # Convert translations to a dictionary {count: translated_value}
     translations = {str(item["count"]): item["translated"] for item in translated_data}
-
-    # Write translated content back to Excel
+    
+    # Track sheet name translations to apply at the end
+    sheet_name_translations = {}
+    
+    # First pass: Collect sheet name translations
     for cell_info in original_data:
+        count = str(cell_info["count"])  # Ensure count is a string
+        if cell_info.get("is_sheet_name", False):
+            original_sheet_name = cell_info["value"]
+            translated_sheet_name = translations.get(count)
+            if translated_sheet_name:
+                sheet_name_translations[original_sheet_name] = translated_sheet_name.replace("␊", "\n").replace("␍", "\r")
+    
+    # Second pass: Update cell contents
+    for cell_info in original_data:
+        # Skip sheet name entries as they are handled separately
+        if cell_info.get("is_sheet_name", False):
+            continue
+            
         count = str(cell_info["count"])  # Ensure count is a string
         sheet_name = cell_info["sheet"]
         row = cell_info["row"]
@@ -98,6 +130,13 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         if is_merged:
             merge_range = f"{cell.coordinate}:{cell.coordinate}"
             sheet.merge_cells(merge_range)
+    
+    # Final pass: Rename sheets with their translations
+    for original_name, translated_name in sheet_name_translations.items():
+        if original_name in workbook.sheetnames:
+            sheet = workbook[original_name]
+            sheet.title = translated_name
+            app_logger.info(f"Renamed sheet from '{original_name}' to '{translated_name}'")
 
     # Save the modified Excel file
     result_folder = os.path.join('result')
