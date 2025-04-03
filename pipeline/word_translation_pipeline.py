@@ -245,7 +245,6 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                     app_logger.error(f"Element at index {element_index} is not a paragraph")
                     continue
                 
-                # 修改：直接使用完整的翻译文本，不再分离编号和内容
                 update_paragraph_text_with_formatting(paragraph, translated_text, namespaces, item.get("has_numbering", False))
                     
             except (IndexError, TypeError) as e:
@@ -385,88 +384,83 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     app_logger.info(f"Translated Word document saved to: {result_path}")
     return result_path
 
-
-# 新函数：保持格式的文本更新
 def update_paragraph_text_with_formatting(paragraph, new_text, namespaces, has_numbering=False):
+    # Get all runs in the paragraph
     runs = paragraph.xpath('.//w:r', namespaces=namespaces)
     
     if not runs:
-        # 如果没有运行块，创建一个新的
+        # If no runs exist, create a new one
         new_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
         new_text_node = etree.SubElement(new_run, f"{{{namespaces['w']}}}t")
         new_text_node.text = new_text
         return
     
-    # 保存原始格式信息
+    # Save original formatting information
     formatting_elements = {}
     for i, run in enumerate(runs):
-        # 收集每个运行块中的格式元素（粗体、斜体等）
+        # Collect formatting elements from each run (bold, italic, etc.)
         formats = run.xpath('./w:rPr/*', namespaces=namespaces)
         if formats:
             formatting_elements[i] = formats
     
-    # 清除所有现有文本节点
+    # Clear all existing text nodes
     text_nodes = []
     for run in runs:
         for t in run.xpath('.//w:t', namespaces=namespaces):
             t.getparent().remove(t)
     
-    # 如果有编号，需要特殊处理以保持编号样式
+    # Special handling for paragraphs with numbering
     if has_numbering:
-        # 对于编号段落，我们需要保持第一个运行块的特殊格式
-        # 通常编号信息存储在第一个运行块中
-        
-        # 处理线索：如果文本中有明显的编号模式（如"1. "，"A. "等）
+        # Try to detect numbering pattern in text
         import re
         numbering_match = re.match(r'^(\d+[\.\)]|\w+[\.\)]|\•|\-|\*)\s+(.*)$', new_text)
         
         if numbering_match and len(runs) > 1:
-            # 如果能检测到编号模式
+            # If numbering pattern detected, split content
             numbering_prefix = numbering_match.group(1) + " "
             remaining_text = numbering_match.group(2)
             
-            # 将编号部分放入第一个运行块
+            # Put numbering part in first run
             new_text_node = etree.SubElement(runs[0], f"{{{namespaces['w']}}}t")
             new_text_node.text = numbering_prefix
             
-            # 将剩余文本放入第二个运行块
+            # Put remaining text in second run
             if len(runs) > 1:
                 new_text_node = etree.SubElement(runs[1], f"{{{namespaces['w']}}}t")
                 new_text_node.text = remaining_text
             else:
-                # 如果只有一个运行块，将所有内容放在同一个运行块
+                # If only one run, put all content there
                 new_text_node.text = new_text
         else:
-            # 如果没有检测到编号，或者只有一个运行块，放入所有文本
+            # If no numbering detected or only one run, insert all text
             new_text_node = etree.SubElement(runs[0], f"{{{namespaces['w']}}}t")
             new_text_node.text = new_text
     else:
-        # 对于非编号段落，将翻译后的文本放入第一个运行块
+        # For regular paragraphs, put translated text in first run
         new_text_node = etree.SubElement(runs[0], f"{{{namespaces['w']}}}t")
         new_text_node.text = new_text
         
-        # 清除其他运行块中的文本节点
+        # Clear text nodes in other runs
         for i in range(1, len(runs)):
             for t in runs[i].xpath('.//w:t', namespaces=namespaces):
                 if t.getparent() is not None:
                     t.getparent().remove(t)
     
-    # 恢复格式化元素
+    # Restore formatting elements
     for run_idx, formats in formatting_elements.items():
         if run_idx < len(runs):
-            # 获取或创建rPr元素
+            # Get or create rPr element
             rPr_elements = runs[run_idx].xpath('./w:rPr', namespaces=namespaces)
             if rPr_elements:
                 rPr = rPr_elements[0]
             else:
                 rPr = etree.SubElement(runs[run_idx], f"{{{namespaces['w']}}}rPr")
             
-            # 添加格式元素
+            # Add formatting elements
             for format_elem in formats:
-                # 克隆格式元素
+                # Clone the format element
                 cloned_format = etree.fromstring(etree.tostring(format_elem))
                 rPr.append(cloned_format)
-
 
 def update_table_cell_text(cell, new_text, namespaces):
     cell_paragraphs = cell.xpath('.//w:p', namespaces=namespaces)
