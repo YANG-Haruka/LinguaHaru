@@ -36,38 +36,21 @@ def extract_word_content_to_json(file_path):
             is_heading = bool(element.xpath('.//w:pStyle[@w:val="Heading1" or @w:val="Heading2" or @w:val="Heading3"]', namespaces=namespaces))
             has_numbering = bool(element.xpath('.//w:numPr', namespaces=namespaces))
             
-            paragraph_text = ""
-            numbering_text = ""
+            # 修改：获取完整段落文本，不再分离编号和内容
+            full_text = ""
+            runs = element.xpath('.//w:r', namespaces=namespaces)
+            for run in runs:
+                text_nodes = run.xpath('.//w:t', namespaces=namespaces)
+                for text_node in text_nodes:
+                    full_text += text_node.text if text_node.text else ""
             
+            # 记录原始编号样式，但仅用于标记
+            numbering_style = None
             if has_numbering:
-                runs = element.xpath('.//w:r', namespaces=namespaces)
-                in_numbering = True
-                
-                for run in runs:
-                    if in_numbering:
-                        run_text = ""
-                        text_nodes = run.xpath('.//w:t', namespaces=namespaces)
-                        for text_node in text_nodes:
-                            run_text += text_node.text if text_node.text else ""
-                        
-                        if run_text.strip() and (run_text.strip().endswith('.') or run_text.strip().endswith(')') or run_text.strip().endswith(':')):
-                            numbering_text += run_text
-                            in_numbering = False
-                        elif run_text.strip():
-                            paragraph_text += run_text
-                            in_numbering = False
-                    else:
-                        text_nodes = run.xpath('.//w:t', namespaces=namespaces)
-                        for text_node in text_nodes:
-                            paragraph_text += text_node.text if text_node.text else ""
-            else:
-                runs = element.xpath('.//w:r', namespaces=namespaces)
-                for run in runs:
-                    text_nodes = run.xpath('.//w:t', namespaces=namespaces)
-                    for text_node in text_nodes:
-                        paragraph_text += text_node.text if text_node.text else ""
-            
-            full_text = numbering_text + paragraph_text
+                # 需要识别编号的样式，但不分离文本
+                numbering_props = element.xpath('.//w:numPr', namespaces=namespaces)
+                if numbering_props:
+                    numbering_style = etree.tostring(numbering_props[0], encoding='unicode')
             
             if full_text and should_translate(full_text):
                 item_id += 1
@@ -77,15 +60,16 @@ def extract_word_content_to_json(file_path):
                     "type": "paragraph",
                     "is_heading": is_heading,
                     "has_numbering": has_numbering,
-                    "numbering_text": numbering_text,
+                    "numbering_style": numbering_style,  # 存储编号样式信息，不是文本内容
                     "element_index": element_index,
-                    "value": paragraph_text.replace("\n", "␊").replace("\r", "␍")
+                    "value": full_text.replace("\n", "␊").replace("\r", "␍")
                 })
         # Process for sheet in Word
         elif element_type == 'tbl':
             table_cells = []
             rows = element.xpath('.//w:tr', namespaces=namespaces)
             
+            # Table processing remains the same
             for row_idx, row in enumerate(rows):
                 cells = row.xpath('.//w:tc', namespaces=namespaces)
                 
@@ -122,7 +106,7 @@ def extract_word_content_to_json(file_path):
             
             content_data.extend(table_cells)
     
-    # Process headers and footers
+    # Headers and footers processing remains the same
     for hf_file, hf_xml in header_footer_content.items():
         hf_tree = etree.fromstring(hf_xml)
         hf_type = "header" if "header" in hf_file else "footer"
@@ -261,10 +245,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                     app_logger.error(f"Element at index {element_index} is not a paragraph")
                     continue
                 
-                if item.get("has_numbering", False):
-                    update_paragraph_text(paragraph, translated_text, namespaces, item.get("numbering_text", ""))
-                else:
-                    update_paragraph_text(paragraph, translated_text, namespaces)
+                # 修改：直接使用完整的翻译文本，不再分离编号和内容
+                update_paragraph_text_with_formatting(paragraph, translated_text, namespaces, item.get("has_numbering", False))
                     
             except (IndexError, TypeError) as e:
                 app_logger.error(f"Error finding paragraph with index {item.get('element_index')}: {e}")
@@ -320,7 +302,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                     continue
                 
                 paragraph = paragraphs[p_idx]
-                update_paragraph_text(paragraph, translated_text, namespaces)
+                update_paragraph_text_with_formatting(paragraph, translated_text, namespaces, False)
                 
             except (IndexError, TypeError) as e:
                 app_logger.error(f"Error updating header/footer paragraph: {e}")
@@ -404,46 +386,86 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     return result_path
 
 
-def update_paragraph_text(paragraph, new_text, namespaces, numbering_text=""):
+# 新函数：保持格式的文本更新
+def update_paragraph_text_with_formatting(paragraph, new_text, namespaces, has_numbering=False):
     runs = paragraph.xpath('.//w:r', namespaces=namespaces)
     
     if not runs:
+        # 如果没有运行块，创建一个新的
         new_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
         new_text_node = etree.SubElement(new_run, f"{{{namespaces['w']}}}t")
-        new_text_node.text = numbering_text + new_text
+        new_text_node.text = new_text
         return
     
-    # Get all text nodes
+    # 保存原始格式信息
+    formatting_elements = {}
+    for i, run in enumerate(runs):
+        # 收集每个运行块中的格式元素（粗体、斜体等）
+        formats = run.xpath('./w:rPr/*', namespaces=namespaces)
+        if formats:
+            formatting_elements[i] = formats
+    
+    # 清除所有现有文本节点
     text_nodes = []
     for run in runs:
-        run_text_nodes = run.xpath('.//w:t', namespaces=namespaces)
-        text_nodes.extend(run_text_nodes)
+        for t in run.xpath('.//w:t', namespaces=namespaces):
+            t.getparent().remove(t)
     
-    # Clear all existing text
-    for text_node in text_nodes:
-        text_node.text = ""
-    
-    # Handle numbering text if present
-    if numbering_text:
-        if text_nodes:
-            text_nodes[0].text = numbering_text
-            if len(text_nodes) > 1:
-                text_nodes[1].text = new_text
+    # 如果有编号，需要特殊处理以保持编号样式
+    if has_numbering:
+        # 对于编号段落，我们需要保持第一个运行块的特殊格式
+        # 通常编号信息存储在第一个运行块中
+        
+        # 处理线索：如果文本中有明显的编号模式（如"1. "，"A. "等）
+        import re
+        numbering_match = re.match(r'^(\d+[\.\)]|\w+[\.\)]|\•|\-|\*)\s+(.*)$', new_text)
+        
+        if numbering_match and len(runs) > 1:
+            # 如果能检测到编号模式
+            numbering_prefix = numbering_match.group(1) + " "
+            remaining_text = numbering_match.group(2)
+            
+            # 将编号部分放入第一个运行块
+            new_text_node = etree.SubElement(runs[0], f"{{{namespaces['w']}}}t")
+            new_text_node.text = numbering_prefix
+            
+            # 将剩余文本放入第二个运行块
+            if len(runs) > 1:
+                new_text_node = etree.SubElement(runs[1], f"{{{namespaces['w']}}}t")
+                new_text_node.text = remaining_text
             else:
-                # Add new text node if only one exists
-                new_text_node = etree.SubElement(runs[-1], f"{{{namespaces['w']}}}t")
+                # 如果只有一个运行块，将所有内容放在同一个运行块
                 new_text_node.text = new_text
         else:
-            # No text nodes found, create new ones
-            new_text_node = etree.SubElement(runs[0], f"{{{namespaces['w']}}}t")
-            new_text_node.text = numbering_text + new_text
-    else:
-        # No numbering, just add the text to first node
-        if text_nodes:
-            text_nodes[0].text = new_text
-        else:
+            # 如果没有检测到编号，或者只有一个运行块，放入所有文本
             new_text_node = etree.SubElement(runs[0], f"{{{namespaces['w']}}}t")
             new_text_node.text = new_text
+    else:
+        # 对于非编号段落，将翻译后的文本放入第一个运行块
+        new_text_node = etree.SubElement(runs[0], f"{{{namespaces['w']}}}t")
+        new_text_node.text = new_text
+        
+        # 清除其他运行块中的文本节点
+        for i in range(1, len(runs)):
+            for t in runs[i].xpath('.//w:t', namespaces=namespaces):
+                if t.getparent() is not None:
+                    t.getparent().remove(t)
+    
+    # 恢复格式化元素
+    for run_idx, formats in formatting_elements.items():
+        if run_idx < len(runs):
+            # 获取或创建rPr元素
+            rPr_elements = runs[run_idx].xpath('./w:rPr', namespaces=namespaces)
+            if rPr_elements:
+                rPr = rPr_elements[0]
+            else:
+                rPr = etree.SubElement(runs[run_idx], f"{{{namespaces['w']}}}rPr")
+            
+            # 添加格式元素
+            for format_elem in formats:
+                # 克隆格式元素
+                cloned_format = etree.fromstring(etree.tostring(format_elem))
+                rPr.append(cloned_format)
 
 
 def update_table_cell_text(cell, new_text, namespaces):
@@ -465,14 +487,14 @@ def update_table_cell_text(cell, new_text, namespaces):
             
             for i, p_text in enumerate(paragraph_texts):
                 if i < len(cell_paragraphs):
-                    update_paragraph_text(cell_paragraphs[i], p_text, namespaces)
+                    update_paragraph_text_with_formatting(cell_paragraphs[i], p_text, namespaces, False)
                 else:
                     new_p = etree.SubElement(cell, f"{{{namespaces['w']}}}p")
                     new_run = etree.SubElement(new_p, f"{{{namespaces['w']}}}r")
-                    new_text = etree.SubElement(new_run, f"{{{namespaces['w']}}}t")
-                    new_text.text = p_text
+                    new_text_node = etree.SubElement(new_run, f"{{{namespaces['w']}}}t")
+                    new_text_node.text = p_text
         else:
-            update_paragraph_text(first_paragraph, new_text, namespaces)
+            update_paragraph_text_with_formatting(first_paragraph, new_text, namespaces, False)
     else:
         new_p = etree.SubElement(cell, f"{{{namespaces['w']}}}p")
         new_run = etree.SubElement(new_p, f"{{{namespaces['w']}}}r")
