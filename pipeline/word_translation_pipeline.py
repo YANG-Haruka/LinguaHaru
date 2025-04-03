@@ -35,8 +35,6 @@ def extract_word_content_to_json(file_path):
         if element_type == 'p':
             is_heading = bool(element.xpath('.//w:pStyle[@w:val="Heading1" or @w:val="Heading2" or @w:val="Heading3"]', namespaces=namespaces))
             has_numbering = bool(element.xpath('.//w:numPr', namespaces=namespaces))
-            
-            # 修改：获取完整段落文本，不再分离编号和内容
             full_text = ""
             runs = element.xpath('.//w:r', namespaces=namespaces)
             for run in runs:
@@ -44,10 +42,8 @@ def extract_word_content_to_json(file_path):
                 for text_node in text_nodes:
                     full_text += text_node.text if text_node.text else ""
             
-            # 记录原始编号样式，但仅用于标记
             numbering_style = None
             if has_numbering:
-                # 需要识别编号的样式，但不分离文本
                 numbering_props = element.xpath('.//w:numPr', namespaces=namespaces)
                 if numbering_props:
                     numbering_style = etree.tostring(numbering_props[0], encoding='unicode')
@@ -60,7 +56,7 @@ def extract_word_content_to_json(file_path):
                     "type": "paragraph",
                     "is_heading": is_heading,
                     "has_numbering": has_numbering,
-                    "numbering_style": numbering_style,  # 存储编号样式信息，不是文本内容
+                    "numbering_style": numbering_style,
                     "element_index": element_index,
                     "value": full_text.replace("\n", "␊").replace("\r", "␍")
                 })
