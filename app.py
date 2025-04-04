@@ -35,6 +35,7 @@ TRANSLATOR_MODULES = {
 
 # Alternative Excel translator module path (Mode 2)
 EXCEL_TRANSLATOR_MODE_2 = "translator.excel_translator_test.ExcelTranslator"
+WORD_TRANSLATOR_BILINGUAL = "translator.word_translator_bilingual.WordTranslator"
 
 # Global task queue and counter
 task_queue = queue.Queue()
@@ -43,7 +44,7 @@ task_lock = threading.Lock()
 
 def enqueue_task(
     translate_func, files, model, src_lang, dst_lang, 
-    use_online, api_key, max_retries, max_token, excel_mode_2, progress
+    use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress
 ):
     """
     Enqueue a translation task or execute it immediately if no tasks are running.
@@ -68,7 +69,8 @@ def enqueue_task(
                 "api_key": api_key,
                 "max_retries": max_retries,
                 "max_token": max_token,
-                "excel_mode_2": excel_mode_2
+                "excel_mode_2": excel_mode_2,
+                "word_bilingual_mode": word_bilingual_mode
             }
             task_queue.put(task_info)
             queue_position = task_queue.qsize()
@@ -76,48 +78,36 @@ def enqueue_task(
 
 def process_task_with_queue(
     translate_func, files, model, src_lang, dst_lang, 
-    use_online, api_key, max_retries, max_token, excel_mode_2, progress
+    use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress
 ):
     """
     Process a translation task and handle queue management.
     First checks if the task can start immediately or needs to be queued.
     """
     global active_tasks
-    
-    # Ensure progress is not None
     if progress is None:
         progress = gr.Progress(track_tqdm=True)
     
-    # Try to enqueue the task
     queue_msg = enqueue_task(
         translate_func, files, model, src_lang, dst_lang, 
-        use_online, api_key, max_retries, max_token, excel_mode_2, progress
+        use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress
     )
     
     if queue_msg:
-        # Task was queued, return early with status message
         return gr.update(value=None, visible=False), queue_msg
     
     try:
-        # Process the translation
         result = translate_func(
             files, model, src_lang, dst_lang, 
-            use_online, api_key, max_retries, max_token, excel_mode_2, progress
+            use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress
         )
-        
-        # Check for next task in queue
         process_next_task_in_queue(translate_func, progress)
         
         return result[0], result[1]
     except Exception as e:
-        # Ensure we decrement the counter even if an error occurs
         with task_lock:
             active_tasks -= 1
-        
-        # Check for next task in queue
         process_next_task_in_queue(translate_func, progress)
-        
-        # Re-raise the exception
         raise e
 
 def process_next_task_in_queue(translate_func, progress):
@@ -131,11 +121,8 @@ def process_next_task_in_queue(translate_func, progress):
         active_tasks -= 1
         
         if not task_queue.empty():
-            # Get the next task from the queue
             next_task = task_queue.get()
             active_tasks += 1
-            
-            # Process the task in a new thread to avoid blocking
             threading.Thread(
                 target=process_queued_task,
                 args=(translate_func, next_task, progress),
@@ -148,11 +135,8 @@ def process_queued_task(translate_func, task_info, progress):
     Updates the UI when complete.
     """
     try:
-        # Ensure progress is not None
         if progress is None:
             progress = gr.Progress(track_tqdm=True)
-            
-        # Execute the translation
         result = translate_func(
             task_info["files"],
             task_info["model"],
@@ -163,22 +147,17 @@ def process_queued_task(translate_func, task_info, progress):
             task_info["max_retries"],
             task_info["max_token"],
             task_info["excel_mode_2"],
+            task_info["word_bilingual_mode"],
             progress
-        )
-        
-        # We can't directly update the UI from a thread in Gradio
-        # The next task will be handled in process_next_task_in_queue
-        
+        )    
     except Exception as e:
-        # Log the error
         app_logger.exception(f"Error processing queued task: {e}")
     finally:
-        # Check for the next task in the queue
         process_next_task_in_queue(translate_func, progress)
 
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang, 
-    use_online, api_key, max_retries, max_token, excel_mode_2, progress=gr.Progress(track_tqdm=True)
+    use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress=gr.Progress(track_tqdm=True)
 ):
     """
     Modified version of the translate button click handler that uses the task queue.
@@ -197,7 +176,7 @@ def modified_translate_button_click(
     # Use the queue system to manage the task
     return process_task_with_queue(
         translate_files_func, files, model, src_lang, dst_lang, 
-        use_online, api_key, max_retries, max_token, excel_mode_2, progress
+        use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress
     )
 
 #-------------------------------------------------------------------------
@@ -218,7 +197,8 @@ def read_system_config():
             "show_model_selection": True,
             "show_mode_switch": True,
             "show_lan_mode": True,
-            "excel_mode_2": False  # Default to Mode 1 (excel_translator)
+            "excel_mode_2": False,
+            "word_bilingual_mode": False
         }
 
 def write_system_config(config):
@@ -255,6 +235,13 @@ def update_excel_mode(excel_mode_2):
     config["excel_mode_2"] = excel_mode_2
     write_system_config(config)
     return excel_mode_2
+
+def update_word_bilingual_mode(word_bilingual_mode):
+    """Update system config with new Word bilingual mode setting."""
+    config = read_system_config()
+    config["word_bilingual_mode"] = word_bilingual_mode
+    write_system_config(config)
+    return word_bilingual_mode
 
 def find_available_port(start_port=9980, max_attempts=20):
     """Find an available port starting from `start_port`. Try up to `max_attempts`."""
@@ -419,18 +406,11 @@ def set_labels(session_lang: str):
     """Update UI labels according to the chosen language."""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     
-    # Update file upload label
     file_upload_label = "Upload Files"
     if "Upload Files" in labels:
         file_upload_label = labels["Upload Files"]
     elif "Upload File" in labels:
-        # Modify existing label for multiple files
         file_upload_label = labels["Upload File"] + "s"
-    
-    # Add Excel Mode label
-    excel_mode_label = "Use Excel Mode 2"
-    if "Use Excel Mode 2" in labels:
-        excel_mode_label = labels["Use Excel Mode 2"]
     
     return {
         src_lang: gr.update(label=labels["Source Language"]),
@@ -444,7 +424,8 @@ def set_labels(session_lang: str):
         output_file: gr.update(label=labels["Download Translated File"]),
         status_message: gr.update(label=labels["Status Message"]),
         translate_button: gr.update(value=labels["Translate"]),
-        excel_mode_checkbox: gr.update(label=excel_mode_label)
+        excel_mode_checkbox: gr.update(label=labels.get("Excel Mode")),
+        word_bilingual_checkbox: gr.update(label=labels.get("Word Bilingual"))
     }
 
 #-------------------------------------------------------------------------
@@ -502,30 +483,40 @@ def init_ui(request: gr.Request):
         max_token_state,
         max_retries_state,
         excel_mode_2_state,
+        word_bilingual_mode_state,
         use_online_value,
         model_choices,
         model_value
     ] + list(label_updates.values())
 
-def show_excel_mode_checkbox(files):
+def show_mode_checkbox(files):
+    """Show Excel mode checkbox if Excel files are present and Word bilingual checkbox if Word files are present."""
     if not files:
-        return gr.update(visible=False)
+        return gr.update(visible=False), gr.update(visible=False)
     
     # Check if at least one Excel file is present
     excel_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".xlsx"]
-    return gr.update(visible=bool(excel_files))
+    excel_visible = bool(excel_files)
+    
+    # Check if at least one Word file is present
+    word_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".docx"]
+    word_visible = bool(word_files)
+    
+    return gr.update(visible=excel_visible), gr.update(visible=word_visible)
 
 #-------------------------------------------------------------------------
 # Translation Processing Functions
 #-------------------------------------------------------------------------
 
-def get_translator_class(file_extension, excel_mode_2=False):
+def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode=False):
     """
     Dynamically import and return the appropriate translator class for the file extension.
     For Excel files, select between mode 1 and mode 2 based on excel_mode_2 parameter.
     """
     if file_extension.lower() == ".xlsx" and excel_mode_2:
         module_path = EXCEL_TRANSLATOR_MODE_2
+    elif file_extension.lower() == ".docx" and word_bilingual_mode:
+        module_path = WORD_TRANSLATOR_BILINGUAL
     else:
         module_path = TRANSLATOR_MODULES.get(file_extension.lower())
     
@@ -548,7 +539,7 @@ def get_translator_class(file_extension, excel_mode_2=False):
 
 def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768,
-    excel_mode_2=False, progress=gr.Progress(track_tqdm=True)
+    excel_mode_2=False, word_bilingual_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using the chosen model."""
     if not files:
@@ -568,25 +559,25 @@ def translate_files(
     if isinstance(files, list) and len(files) > 1:
         return process_multiple_files(
             files, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, max_retries, excel_mode_2, progress_callback
+            use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
         )
     else:
         # Handle single file case
         single_file = files[0] if isinstance(files, list) else files
         return process_single_file(
             single_file, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, max_retries, excel_mode_2, progress_callback
+            use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
         )
 
 def process_single_file(
     file, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, max_retries, excel_mode_2, progress_callback
+    use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
 ):
     """Process a single file for translation."""
     file_name, file_extension = os.path.splitext(file.name)
     
     # Pass excel_mode_2 parameter when determining translator class
-    translator_class = get_translator_class(file_extension, excel_mode_2)
+    translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode)
 
     if not translator_class:
         return (
@@ -619,7 +610,7 @@ def process_single_file(
 
 def process_multiple_files(
     files, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, max_retries, excel_mode_2, progress_callback
+    use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
 ):
     """Process multiple files and return a zip archive."""
     # Create a temporary directory for the translated files
@@ -632,9 +623,7 @@ def process_multiple_files(
         # Validate all files
         for file_obj in files:
             _, ext = os.path.splitext(file_obj.name)
-            # Pass excel_mode_2 parameter when checking if the file type is supported
-            if get_translator_class(ext, excel_mode_2):
-                # Use filename as relative path
+            if get_translator_class(ext, excel_mode_2, word_bilingual_mode):
                 file_name = os.path.basename(file_obj.name)
                 valid_files.append((file_obj, file_name))
         
@@ -654,7 +643,7 @@ def process_multiple_files(
                 progress_callback(i / total_files, desc=f"Starting to process {rel_path} (File {i+1}/{total_files})")
                 
                 # Create translator for this file, passing excel_mode_2 parameter
-                translator_class = get_translator_class(file_extension, excel_mode_2)
+                translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode)
                 if not translator_class:
                     continue  # Skip unsupported files (should not happen due to earlier validation)
                 
@@ -717,6 +706,7 @@ initial_default_online = config.get("default_online", False)
 initial_max_token = config.get("max_token", 768)
 initial_max_retries = config.get("max_retries", 4)
 initial_excel_mode_2 = config.get("excel_mode_2", False)
+initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
 app_title = config.get("app_title", "LinguaHaru")
 img_path = config.get("img_path", "img/ico.ico")
 
@@ -758,6 +748,7 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     max_token_state = gr.State(initial_max_token)
     max_retries_state = gr.State(initial_max_retries)
     excel_mode_2_state = gr.State(initial_excel_mode_2)
+    word_bilingual_mode_state = gr.State(initial_word_bilingual_mode)
 
     with gr.Row():
         src_lang = gr.Dropdown(
@@ -810,6 +801,12 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
             value=initial_excel_mode_2, 
             visible=False
         )
+        
+    word_bilingual_checkbox = gr.Checkbox(
+        label="Use Word Bilingual Mode", 
+        value=initial_word_bilingual_mode, 
+        visible=False
+    )
 
     # Model choice and API key input
     with gr.Row():
@@ -866,10 +863,16 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
         outputs=excel_mode_2_state
     )
 
+    word_bilingual_checkbox.change(
+        update_word_bilingual_mode,
+        inputs=word_bilingual_checkbox,
+        outputs=word_bilingual_mode_state
+    )
+    
     file_input.change(
-        show_excel_mode_checkbox,
+        show_mode_checkbox,
         inputs=file_input,
-        outputs=excel_mode_checkbox
+        outputs=[excel_mode_checkbox, word_bilingual_checkbox]
     )
 
     # Use the queue system with the translate button
@@ -882,7 +885,7 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
         inputs=[
             file_input, model_choice, src_lang, dst_lang, 
             use_online_model, api_key_input, max_retries_slider, max_token_state,
-            excel_mode_checkbox
+            excel_mode_checkbox, word_bilingual_checkbox
         ],
         outputs=[output_file, status_message]
     )
@@ -893,12 +896,12 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
         inputs=None,
         outputs=[
             session_lang, lan_mode_state, default_online_state, max_token_state, max_retries_state,
-            excel_mode_2_state,
+            excel_mode_2_state, word_bilingual_mode_state,
             use_online_model, model_choice, model_choice,
             src_lang, dst_lang, use_online_model, lan_mode_checkbox,
             model_choice, max_retries_slider, 
             api_key_input, file_input, output_file, status_message, translate_button,
-            excel_mode_checkbox
+            excel_mode_checkbox, word_bilingual_checkbox
         ]
     )
 
