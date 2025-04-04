@@ -7,6 +7,7 @@ gradio_collect = collect_all("gradio")
 gradio_client_collect = collect_all("gradio_client")
 safehttp_collect = collect_all("safehttp")
 safehttpx_collect = collect_all("safehttpx")
+groovy_collect = collect_all("groovy")
 
 translator_modules = [
     "translator.word_translator", 
@@ -40,6 +41,7 @@ a = Analysis(
         + gradio_client_collect[0]
         + safehttp_collect[0]
         + safehttpx_collect[0]
+        + groovy_collect[0]
         + translator_datas
     ),
     hiddenimports=(
@@ -47,6 +49,7 @@ a = Analysis(
         + gradio_client_collect[1]
         + safehttp_collect[1]
         + safehttpx_collect[1]
+        + groovy_collect[1]
         + translator_imports
         + translator_modules
     ),

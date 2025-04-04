@@ -79,8 +79,6 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
 
 ## To-Do List
 - Add continue translation functionality.
-- Optimize Excel file translation speed.
-- Bilingual comparison for Word, Excel, etc.
 
 ## Changelog
 - 2025/04/02  
