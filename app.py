@@ -438,13 +438,19 @@ def update_model_list_and_api_input(use_online):
     update_online_mode(use_online)
     
     if use_online:
-        default_online_value = online_models[0] if online_models else None
+        if default_online_model and default_online_model in online_models:
+            default_online_value = default_online_model
+        else:
+            default_online_value = online_models[0] if online_models else None
         return (
             gr.update(choices=online_models, value=default_online_value),
             gr.update(visible=True, value="")
         )
     else:
-        default_local_value = local_models[0] if local_models else None
+        if default_local_model and default_local_model in local_models:
+            default_local_value = default_local_model
+        else:
+            default_local_value = local_models[0] if local_models else None
         return (
             gr.update(choices=local_models, value=default_local_value),
             gr.update(visible=False, value="")
@@ -468,10 +474,16 @@ def init_ui(request: gr.Request):
     # Update model choices based on online/offline mode
     if use_online_value:
         model_choices = online_models
-        model_value = online_models[0] if online_models else None
+        if default_online_model and default_online_model in online_models:
+            model_value = default_online_model
+        else:
+            model_value = online_models[0] if online_models else None
     else:
         model_choices = local_models
-        model_value = local_models[0] if local_models else None
+        if default_local_model and default_local_model in local_models:
+            model_value = default_local_model
+        else:
+            model_value = local_models[0] if local_models else None
     
     label_updates = set_labels(user_lang)
     
@@ -717,6 +729,8 @@ MAX_TOKEN = initial_max_token
 initial_show_model_selection = config.get("show_model_selection", True)
 initial_show_mode_switch = config.get("show_mode_switch", True)
 initial_show_lan_mode = config.get("show_lan_mode", True)
+default_local_model = config.get("default_local_model", "")
+default_online_model = config.get("default_online_model", "")
 
 encoded_image, mime_type = load_application_icon(config)
 
