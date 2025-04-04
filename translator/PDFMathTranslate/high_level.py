@@ -524,9 +524,8 @@ def write_translated_result(
     doc_en.subset_fonts(fallback=True)
 
     output_file = os.path.join(
-        output_dir,
-        os.path.basename(input_file).replace(".pdf", "_translated.pdf"),
-    )
+            output_dir,f"{os.path.splitext(os.path.basename(input_file))[0]}_translated{os.path.splitext(input_file)[1]}",
+        )
 
     with open(output_file, "wb") as f:
         f.write(doc_zh.write(deflate=True, garbage=3, use_objstms=1))
