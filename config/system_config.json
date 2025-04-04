@@ -8,5 +8,6 @@
     "show_model_selection": true,
     "show_mode_switch": true,
     "show_lan_mode": true,
-    "excel_mode_2": false
+    "excel_mode_2": false,
+    "word_bilingual_mode": false
 }
