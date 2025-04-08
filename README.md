@@ -64,12 +64,7 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
 
 <h2 id="preview">Preview</h2>
 <div align="center">
-  <h3>Excel</h3>
-  <img src="img/excel.png" width="80%"/>
-  <h3>PPT</h3>
-  <img src="img/ppt.png" width="80%"/>
-  <h3>PDF</h3>
-  <img src="img/pdf.png" width="80%"/>
+  <img src="img/sample.gif" width="80%"/>
 </div>
 
 

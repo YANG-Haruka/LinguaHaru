@@ -64,12 +64,7 @@ CUDAをインストールする必要があります（現在11.7と12.1でテ�
 
 <h2 id="preview">プレビュー</h2>
 <div align="center">
-  <h3>Excel</h3>
-  <img src="img/excel.png" width="80%"/>
-  <h3>PPT</h3>
-  <img src="img/ppt.png" width="80%"/>
-  <h3>PDF</h3>
-  <img src="img/pdf.png" width="80%"/>
+  <img src="img/sample.gif" width="80%"/>
 </div>
 
 
