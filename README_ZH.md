@@ -78,7 +78,7 @@
 - [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
 
 ## 待办事项
-- 添加继续翻译的功能。
+- 添加继续翻译功能。
 
 ## 更新日志
 - 2025/04/02  
