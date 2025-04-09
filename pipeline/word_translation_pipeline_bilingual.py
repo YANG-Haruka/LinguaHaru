@@ -531,7 +531,9 @@ def update_table_cell_text(cell, new_text, namespaces):
     
     # Remove all existing paragraphs from the cell
     for p in list(cell_paragraphs):
-        cell.remove(p)
+        parent = p.getparent()
+        if parent is not None:
+            parent.remove(p)
     
     # Create a new paragraph for the original text
     orig_p = etree.SubElement(cell, f"{{{namespaces['w']}}}p")
