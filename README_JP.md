@@ -1,5 +1,6 @@
 <div align="center">
-<h1 id="title">LinguaHaru</h1>
+  <img src="img/ico.png" alt="LinguaHaru" id="title" />
+
 
 [English](README.md) | [简体中文](README_ZH.md) | 日本語
 

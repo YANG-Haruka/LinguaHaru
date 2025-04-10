@@ -720,7 +720,8 @@ initial_max_retries = config.get("max_retries", 4)
 initial_excel_mode_2 = config.get("excel_mode_2", False)
 initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
 app_title = config.get("app_title", "LinguaHaru")
-img_path = config.get("img_path", "img/ico.ico")
+img_path = config.get("img_path", "img/ico.png")
+img_height = config.get("height", 250)
 
 # Update global MAX_TOKEN from config
 MAX_TOKEN = initial_max_token
@@ -744,7 +745,7 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     <div style="text-align: center;">
         <h1>{app_title}</h1>
         <img src="data:{mime_type};base64,{encoded_image}" alt="{app_title} Logo" 
-             style="display: block; height: 100px; width: auto; margin: 0 auto;">
+             style="display: block; height: {img_height}px; width: auto; margin: 0 auto;">
     </div>
     """)
     
@@ -752,7 +753,7 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     gr.HTML("""
     <div style="position: fixed; bottom: 0; left: 0; width: 100%; 
               text-align: center; padding: 10px 0;">
-        Made by Haruka-YANG | Version: 2.3 | 
+        Made by Haruka-YANG | Version: 2.4 | 
         <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank">Visit Github</a>
     </div>
     """)

@@ -1,6 +1,7 @@
 {
-    "app_title": "LinguaHaru",
+    "app_title": "",
     "img_path": "img/ico.png",
+    "img_height": 250,
     "default_local_model": "qwen2.5:latest",
     "default_online_model": "(Deepseek) DeepSeek-V3",
     "max_token": 768,
