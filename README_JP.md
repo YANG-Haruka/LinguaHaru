@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="img/ico.png" alt="LinguaHaru" id="title" />
+  <img src="img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
 
 
 [English](README.md) | [简体中文](README_ZH.md) | 日本語
