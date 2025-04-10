@@ -16,6 +16,8 @@ translator_modules = [
     "translator.pdf_translator",
     "translator.subtile_translator",
     "translator.txt_translator",
+    "translator.word_translator_bilingual",
+    "translator.excel_translator_test",
     "translator"
 ]
 
