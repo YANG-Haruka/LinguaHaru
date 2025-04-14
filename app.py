@@ -755,7 +755,7 @@ with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
     gr.HTML("""
     <div style="position: fixed; bottom: 0; left: 0; width: 100%; 
               text-align: center; padding: 10px 0;">
-        Made by Haruka-YANG | Version: 2.4 | 
+        Made by Haruka-YANG | Version: 2.5 | 
         <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank">Visit Github</a>
     </div>
     """)
