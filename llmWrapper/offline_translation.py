@@ -39,7 +39,7 @@ def translate_offline(messages, model):
             },
             "stream": False
         }
-        response = requests.post(url, json=payload)
+        response = requests.post(url, json=payload,timeout=120)
         response.raise_for_status()  # Raise exception for HTTP errors     
         response = response.text
         # Extract the translated content

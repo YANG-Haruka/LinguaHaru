@@ -246,10 +246,12 @@ def update_word_bilingual_mode(word_bilingual_mode):
 def find_available_port(start_port=9980, max_attempts=20):
     """Find an available port starting from `start_port`. Try up to `max_attempts`."""
     for port in range(start_port, start_port + max_attempts):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.settimeout(1)
-            if s.connect_ex(("127.0.0.1", port)) != 0:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("127.0.0.1", port))
                 return port
+        except OSError:
+            continue
     raise RuntimeError("No available port found.")
 
 def resource_path(relative_path):
@@ -721,7 +723,7 @@ initial_excel_mode_2 = config.get("excel_mode_2", False)
 initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
 app_title = config.get("app_title", "LinguaHaru")
 img_path = config.get("img_path", "img/ico.png")
-img_height = config.get("height", 250)
+img_height = config.get("img_height", 250)
 
 # Update global MAX_TOKEN from config
 MAX_TOKEN = initial_max_token
