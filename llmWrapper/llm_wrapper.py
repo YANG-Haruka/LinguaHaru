@@ -2,16 +2,18 @@ from config.log_config import app_logger
 from llmWrapper.online_translation import translate_online
 from llmWrapper.offline_translation import translate_offline
 
-
 def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None):
     """
     Translate text segments with optional glossary support
     """
+    if isinstance(segments, dict):
+        text_to_translate = str(segments)  # Basic conversion
+    else:
+        if isinstance(segments, list):
+            text_to_translate = "\n".join(segments)
+        else:
+            text_to_translate = segments
     
-    # Join segments to create the full text to translate
-    text_to_translate = segments
-    
-    # Create glossary text if glossary terms are provided
     glossary_text = ""
     if glossary_terms and len(glossary_terms) > 0:
         glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
