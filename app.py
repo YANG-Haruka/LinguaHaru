@@ -722,6 +722,7 @@ initial_max_retries = config.get("max_retries", 4)
 initial_excel_mode_2 = config.get("excel_mode_2", False)
 initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
 app_title = config.get("app_title", "LinguaHaru")
+app_title_web = "LinguaHaru" if app_title == "" else app_title
 img_path = config.get("img_path", "img/ico.png")
 img_height = config.get("img_height", 250)
 
@@ -742,7 +743,7 @@ encoded_image, mime_type = load_application_icon(config)
 #-------------------------------------------------------------------------
 
 # Create a Gradio blocks interface
-with gr.Blocks(title=app_title, css="footer {visibility: hidden}") as demo:
+with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
     gr.HTML(f"""
     <div style="text-align: center;">
         <h1>{app_title}</h1>
