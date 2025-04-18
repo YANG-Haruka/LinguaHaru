@@ -41,7 +41,7 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
         ```
     - Model download 
         **After downloading, please save in the "models" folder**  
-        - [Baidu Cloud](https://pan.baidu.com/s/1mdfiaOIOVzH6F2PX9fPz9g?pwd=puap)
+        - [Quark Cloud](https://pan.quark.cn/s/c4ba89fa263c#/list/share)
         - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
 
 

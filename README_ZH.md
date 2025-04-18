@@ -41,7 +41,7 @@
         ```
     - 模型下载 
         下载后请保存在"models"文件夹中**  
-        - [百度网盘](https://pan.baidu.com/s/1mdfiaOIOVzH6F2PX9fPz9g?pwd=puap)
+        - [夸克网盘](https://pan.quark.cn/s/c4ba89fa263c#/list/share)
         - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
 
 

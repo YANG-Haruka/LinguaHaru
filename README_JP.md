@@ -42,7 +42,7 @@ CUDAをインストールする必要があります（現在11.7と12.1でテ�
         ```
     - モデルのダウンロード 
         **ダウンロード後、「models」フォルダに保存してください**  
-        - [Baidu Cloud](https://pan.baidu.com/s/1mdfiaOIOVzH6F2PX9fPz9g?pwd=puap)
+        - [Quark Cloud](https://pan.quark.cn/s/c4ba89fa263c#/list/share)
         - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
 
 
