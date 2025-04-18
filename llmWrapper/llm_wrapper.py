@@ -26,6 +26,11 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
     if glossary_terms and len(glossary_terms) > 0:
         glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
         glossary_text = glossary_prompt_str + "\n".join(glossary_lines) + "\n\n"
+        
+        # Log information about glossary usage
+        glossary_info = "Glossary used:\n"
+        glossary_info += " || ".join([f"{src} ==> {dst}" for src, dst in glossary_terms])
+        app_logger.info(glossary_info)
     
     # Ensure all components are strings before concatenation
     previous_prompt_str = str(previous_prompt) if previous_prompt else ""
