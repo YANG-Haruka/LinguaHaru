@@ -22,9 +22,10 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
     
     # Make sure everything is a string before concatenation
     glossary_text = ""
+    glossary_prompt_str = str(glossary_prompt) if glossary_prompt else ""
     if glossary_terms and len(glossary_terms) > 0:
         glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
-        glossary_text = glossary_prompt + "\n".join(glossary_lines) + "\n\n"
+        glossary_text = glossary_prompt_str + "\n".join(glossary_lines) + "\n\n"
     
     # Ensure all components are strings before concatenation
     previous_prompt_str = str(previous_prompt) if previous_prompt else ""

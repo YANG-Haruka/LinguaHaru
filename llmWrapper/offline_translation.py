@@ -147,7 +147,7 @@ def is_lm_studio_running(timeout=1):
 def get_ollama_models():
     """Get list of available Ollama models."""
     if not is_ollama_running():
-        app_logger.warning("Ollama service does not appear to be running.")
+        app_logger.info("Ollama service does not appear to be running.")
         return []
     
     try:
@@ -185,7 +185,7 @@ def get_ollama_models():
 def get_lm_studio_models():
     """Get list of available LM Studio models."""
     if not is_lm_studio_running():
-        app_logger.warning("LM Studio service does not appear to be running.")
+        app_logger.info("LM Studio service does not appear to be running.")
         return []
     
     try:
@@ -223,6 +223,10 @@ def populate_sum_model():
     # Combine both lists
     combined_models = ollama_models + lm_studio_models
     
-    app_logger.info(f"Found {len(ollama_models)} Ollama models and {len(lm_studio_models)} LM Studio models")
+    if not combined_models:
+        app_logger.warning("No local models detected. Please use online mode.")
+        return None
+    else:
+        app_logger.info(f"Found {len(ollama_models)} Ollama models and {len(lm_studio_models)} LM Studio models")
     
     return combined_models if combined_models else None

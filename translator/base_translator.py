@@ -27,6 +27,7 @@ class DocumentTranslator:
         self.api_key = api_key
         self.max_retries = max_retries
         self.translated_failed = True
+        self.glossary_path = "models\Glossary.csv"
 
         # Extract just the filename without the directory path
         filename = os.path.splitext(os.path.basename(input_file_path))[0]
@@ -68,7 +69,7 @@ class DocumentTranslator:
             self.previous_text,
             self.src_lang,
             self.dst_lang,
-            "models\Glossary.csv"
+            self.glossary_path
         )
         
         if stream_generator is None:
