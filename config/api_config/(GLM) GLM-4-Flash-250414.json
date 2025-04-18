@@ -1,0 +1,6 @@
+{
+    "base_url": "https://open.bigmodel.cn/api/paas/v4/",
+    "model": "glm-4-flash-250414",
+    "top_p": 0.90,
+    "temperature": 0.75
+}
