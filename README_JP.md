@@ -8,7 +8,7 @@
 <div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
 <p align='center'>ワンクリックで様々な一般的なファイル形式に対して高品質で正確な翻訳を提供する次世代AI翻訳ツール</p>
 <h3 align='center'>対応ファイル形式</h3>
-<p align='center'><b>📄 DOCX</b> • <b>📊 XLSX</b> • <b>📑 PPTX</b> • <b>📰 PDF</b> • <b>📝 TXT</b> • <b>🎬 SRT</b></p>
+<p align='center'><b>📄 DOCX</b> • <b>📊 XLSX</b> • <b>📑 PPTX</b> • <b>📰 PDF</b> • <b>📝 TXT</b> • <b>🎬 SRT</b> • <b>📘 MD</b></p>
 
 </div>
 <h2 id="What's This">これは何ですか？</h2>

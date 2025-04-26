@@ -7,7 +7,7 @@ English | [简体中文](README_ZH.md) | [日本語](README_JP.md)
 <div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
 <p align='center'>Next-generation AI translation tool that provides high-quality, precise translations for various common file formats with a single click</p>
 <h3 align='center'>Supported File Formats</h3>
-<p align='center'><b>📄 DOCX</b> • <b>📊 XLSX</b> • <b>📑 PPTX</b> • <b>📰 PDF</b> • <b>📝 TXT</b> • <b>🎬 SRT</b></p>
+<p align='center'><b>📄 DOCX</b> • <b>📊 XLSX</b> • <b>📑 PPTX</b> • <b>📰 PDF</b> • <b>📝 TXT</b> • <b>🎬 SRT</b> • <b>📘 MD</b></p>
 
 </div>
 <h2 id="What's This">What's This?</h2>
