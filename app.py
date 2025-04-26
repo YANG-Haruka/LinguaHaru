@@ -30,6 +30,7 @@ TRANSLATOR_MODULES = {
     ".pdf": "translator.pdf_translator.PdfTranslator",
     ".srt": "translator.subtile_translator.SubtitlesTranslator",
     ".txt": "translator.txt_translator.TxtTranslator",
+    ".md": "translator.md_translator.MdTranslator",
     # ".epub": "translator.epub_translator.EpubTranslator"
 }
 
@@ -846,8 +847,8 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
     )
     
     file_input = gr.File(
-        label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt)",
-        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt"],
+        label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)",
+        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"],
         file_count="multiple"
     )
     output_file = gr.File(label="Download Translated File", visible=False)
