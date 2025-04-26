@@ -6,38 +6,37 @@ from config.log_config import app_logger
 
 def extract_md_content_to_json(file_path):
     """
-    提取Markdown文件中的所有文本内容并以JSON格式保存
-    处理复杂的HTML标签结构
-    保持行格式和文档结构
+    Extract Markdown content to JSON, handling complex HTML structures
+    Preserves line formats and document structure
     """
-    # 初始化数据结构
-    content_data = []     # 要翻译的内容
-    structure_items = []  # 完整的文档结构
-    position_index = 0    # 追踪文档中的位置
+    # Initialize data structures
+    content_data = []     # Content to translate
+    structure_items = []  # Complete document structure
+    position_index = 0    # Position tracker
     
-    # 读取MD文件内容
+    # Read file content
     with open(file_path, 'r', encoding='utf-8') as md_file:
         content = md_file.read()
         
-    # 保存原始内容
+    # Save original content
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join("temp", filename)
     os.makedirs(temp_folder, exist_ok=True)
     with open(os.path.join(temp_folder, "original_content.md"), "w", encoding="utf-8") as original_file:
         original_file.write(content)
     
-    # 将内容按行分割
+    # Split content by line
     lines = content.split('\n')
     
-    # 计数器
+    # Counter
     count = 0
     
-    # 用于跟踪代码块
+    # Code block tracker
     in_code_block = False
     
-    # 处理每一行
+    # Process each line
     for line_index, line in enumerate(lines):
-        # 处理代码块
+        # Handle code blocks
         if line.strip().startswith('```'):
             in_code_block = not in_code_block
             structure_items.append({
@@ -49,7 +48,7 @@ def extract_md_content_to_json(file_path):
             position_index += 1
             continue
         
-        # 在代码块内的内容不翻译
+        # Skip translation for code block content
         if in_code_block:
             structure_items.append({
                 "index": position_index,
@@ -60,7 +59,7 @@ def extract_md_content_to_json(file_path):
             position_index += 1
             continue
             
-        # 检查是否为空行
+        # Handle empty lines
         if not line.strip():
             structure_items.append({
                 "index": position_index,
@@ -71,11 +70,10 @@ def extract_md_content_to_json(file_path):
             position_index += 1
             continue
             
-        # 决定行处理策略
+        # Process HTML tags
         if line.strip().startswith('<') and '>' in line:
-            # 检查是否是单独的HTML标签，没有需要翻译的内容
+            # Handle self-closing tags
             if line.count('<') == line.count('>') and re.match(r'^<[^>]*>$', line.strip()):
-                # 纯HTML标签，不需要翻译
                 structure_items.append({
                     "index": position_index,
                     "type": "html_tag_only",
@@ -85,7 +83,7 @@ def extract_md_content_to_json(file_path):
                 position_index += 1
                 continue
                 
-            # 检查是否为HTML注释
+            # Handle HTML comments
             if '<!--' in line and '-->' in line:
                 structure_items.append({
                     "index": position_index,
@@ -96,7 +94,7 @@ def extract_md_content_to_json(file_path):
                 position_index += 1
                 continue
                 
-            # 处理包含简单内容的HTML标签 (如 <h1>Title</h1>)
+            # Handle simple HTML tags (e.g., <h1>Title</h1>)
             simple_pattern = r'^<([a-zA-Z0-9]+)[^>]*>(.*?)</\1>$'
             simple_match = re.match(simple_pattern, line.strip())
             
@@ -104,7 +102,7 @@ def extract_md_content_to_json(file_path):
                 tag_name = simple_match.group(1)
                 content_text = simple_match.group(2)
                 
-                # 提取开始标签和结束标签
+                # Extract opening and closing tags
                 opening_tag = line[:line.find('>') + 1]
                 closing_tag = line[line.rfind('<'):]
                 
@@ -129,10 +127,7 @@ def extract_md_content_to_json(file_path):
                 position_index += 1
                 continue
                 
-            # 处理复杂的HTML结构 (如包含多个标签的段落)
-            # 例如: <p align='center'><b>DOCX</b> • <b>XLSX</b> • ...</p>
-            
-            # 首先检查是否为完整的HTML结构 (开始和结束标签匹配)
+            # Handle complex HTML structures (e.g., <p><b>Text</b> • <b>More</b></p>)
             complex_pattern = r'^<([a-zA-Z0-9]+)[^>]*>(.*)</\1>$'
             complex_match = re.match(complex_pattern, line.strip())
             
@@ -140,11 +135,11 @@ def extract_md_content_to_json(file_path):
                 outer_tag = complex_match.group(1)
                 inner_content = complex_match.group(2)
                 
-                # 提取最外层标签
+                # Extract outer tags
                 opening_outer_tag = line[:line.find('>') + 1]
                 closing_outer_tag = line[line.rfind('<'):]
                 
-                # 检查内容是否需要翻译
+                # Check if content needs translation
                 if should_translate(inner_content):
                     count += 1
                     structure_items.append({
@@ -174,7 +169,7 @@ def extract_md_content_to_json(file_path):
                 position_index += 1
                 continue
                 
-            # 对于无法识别模式的HTML，保留原样
+            # Preserve unrecognized HTML
             structure_items.append({
                 "index": position_index,
                 "type": "html_unknown",
@@ -184,7 +179,7 @@ def extract_md_content_to_json(file_path):
             position_index += 1
             continue
             
-        # 处理普通文本行
+        # Handle regular text
         if should_translate(line):
             count += 1
             structure_items.append({
@@ -202,7 +197,7 @@ def extract_md_content_to_json(file_path):
                 "value": line
             })
         else:
-            # 不需要翻译的其他内容
+            # Other non-translatable content
             structure_items.append({
                 "index": position_index,
                 "type": "non_translatable",
@@ -212,12 +207,12 @@ def extract_md_content_to_json(file_path):
         
         position_index += 1
     
-    # 保存完整的文档结构
+    # Save document structure
     structure_path = os.path.join(temp_folder, "structure.json")
     with open(structure_path, "w", encoding="utf-8") as structure_file:
         json.dump(structure_items, structure_file, ensure_ascii=False, indent=4)
     
-    # 保存需要翻译的内容
+    # Save content for translation
     json_path = os.path.join(temp_folder, "src.json")
     with open(json_path, "w", encoding="utf-8") as json_file:
         json.dump(content_data, json_file, ensure_ascii=False, indent=4)
@@ -227,62 +222,62 @@ def extract_md_content_to_json(file_path):
 
 def write_translated_content_to_md(file_path, original_json_path, translated_json_path):
     """
-    将翻译后的内容写入新的Markdown文件，保持原始HTML结构
+    Write translated content to new Markdown file while preserving HTML structure
     """
-    # 获取文件路径
+    # Get file paths
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join("temp", filename)
     
-    # 加载文档结构
+    # Load document structure
     structure_path = os.path.join(temp_folder, "structure.json")
     with open(structure_path, "r", encoding="utf-8") as structure_file:
         structure_items = json.load(structure_file)
     
-    # 加载翻译结果
+    # Load translation results
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_data = json.load(translated_file)
     
-    # 创建翻译映射 (count -> 翻译文本)
+    # Create translation mapping (count -> translated text)
     translations = {}
     for item in translated_data:
         count = item.get("count")
         if count:
             translations[count] = item.get("translated", "")
     
-    # 重建文档
+    # Rebuild document
     final_lines = []
     
     for item in structure_items:
         if not item.get("translate", False):
-            # 不需要翻译的内容，直接使用原始值
+            # Keep original content for non-translated items
             final_lines.append(item["value"])
         else:
-            # 需要翻译的内容
+            # Insert translations
             count = item.get("count")
             if count in translations:
                 if item["type"] in ["html_simple", "html_complex"]:
-                    # 重建HTML标签和翻译内容
+                    # Rebuild HTML with translated content
                     final_lines.append(
                         item["opening_tag"] + 
                         translations[count] + 
                         item["closing_tag"]
                     )
                 else:
-                    # 普通文本
+                    # Regular text
                     final_lines.append(translations[count])
             else:
-                # 没有找到翻译，使用原值
+                # Fallback to original if translation not found
                 final_lines.append(item["value"])
     
-    # 将所有行连接为最终文档
+    # Join lines into final document
     final_content = '\n'.join(final_lines)
     
-    # 创建输出文件
+    # Create output file
     result_folder = "result"
     os.makedirs(result_folder, exist_ok=True)
     result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.md")
     
-    # 写入最终翻译内容
+    # Write final content
     with open(result_path, "w", encoding="utf-8") as result_file:
         result_file.write(final_content)
     
