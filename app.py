@@ -158,7 +158,8 @@ def process_queued_task(translate_func, task_info, progress):
 
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang, 
-    use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress=gr.Progress(track_tqdm=True)
+    use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, 
+    continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """
     Modified version of the translate button click handler that uses the task queue.
@@ -174,11 +175,46 @@ def modified_translate_button_click(
     if use_online and not api_key:
         return output_file_update, "API key is required for online models."
     
-    # Use the queue system to manage the task
+    def wrapped_translate_func(files, model, src_lang, dst_lang, 
+                              use_online, api_key, max_retries, max_token, 
+                              excel_mode_2, word_bilingual_mode, progress):
+        return translate_files_func(files, model, src_lang, dst_lang, 
+                                   use_online, api_key, max_retries, max_token, 
+                                   excel_mode_2, word_bilingual_mode, 
+                                   continue_mode=continue_mode, progress=progress)
+    
     return process_task_with_queue(
-        translate_files_func, files, model, src_lang, dst_lang, 
+        wrapped_translate_func, files, model, src_lang, dst_lang, 
         use_online, api_key, max_retries, max_token, excel_mode_2, word_bilingual_mode, progress
     )
+
+def check_temp_translation_exists(files):
+    """
+    Check if temporary translation folders exist for any of the input files in the 'temp' directory.
+    """
+    if not files:
+        return False, "No files selected."
+    
+    # Ensure temp directory exists
+    temp_base_dir = "temp"
+    os.makedirs(temp_base_dir, exist_ok=True)
+    
+    found_folders = []
+    
+    for file_obj in files:
+        # Get filename without extension
+        filename = os.path.splitext(os.path.basename(file_obj.name))[0]
+        
+        # Look for exact matching folder in the temp directory
+        temp_folder = os.path.join(temp_base_dir, filename)
+        
+        if os.path.exists(temp_folder) and os.path.isdir(temp_folder):
+            found_folders.append(temp_folder)
+    
+    if found_folders:
+        return True, f"Found {len(found_folders)} existing translation folders."
+    else:
+        return False, "No existing translations found."
 
 #-------------------------------------------------------------------------
 # System Configuration Functions
@@ -427,6 +463,7 @@ def set_labels(session_lang: str):
         output_file: gr.update(label=labels["Download Translated File"]),
         status_message: gr.update(label=labels["Status Message"]),
         translate_button: gr.update(value=labels["Translate"]),
+        continue_button: gr.update(value=labels["Continue Translation"]),
         excel_mode_checkbox: gr.update(label=labels.get("Excel Mode")),
         word_bilingual_checkbox: gr.update(label=labels.get("Word Bilingual"))
     }
@@ -519,6 +556,16 @@ def show_mode_checkbox(files):
     
     return gr.update(visible=excel_visible), gr.update(visible=word_visible)
 
+def update_continue_button(files):
+    """
+    Check if temp folders exist for the uploaded files and update the continue button state.
+    """
+    if not files:
+        return gr.update(interactive=False)
+    
+    has_temp, _ = check_temp_translation_exists(files)
+    return gr.update(interactive=has_temp)
+
 #-------------------------------------------------------------------------
 # Translation Processing Functions
 #-------------------------------------------------------------------------
@@ -554,7 +601,7 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
 
 def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768,
-    excel_mode_2=False, word_bilingual_mode=False, progress=gr.Progress(track_tqdm=True)
+    excel_mode_2=False, word_bilingual_mode=False, continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using the chosen model."""
     if not files:
@@ -574,19 +621,19 @@ def translate_files(
     if isinstance(files, list) and len(files) > 1:
         return process_multiple_files(
             files, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
+            use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, continue_mode, progress_callback
         )
     else:
         # Handle single file case
         single_file = files[0] if isinstance(files, list) else files
         return process_single_file(
             single_file, model, src_lang_code, dst_lang_code, 
-            use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
+            use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, continue_mode, progress_callback
         )
 
 def process_single_file(
     file, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
+    use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, continue_mode, progress_callback
 ):
     """Process a single file for translation."""
     file_name, file_extension = os.path.splitext(file.name)
@@ -603,7 +650,7 @@ def process_single_file(
     try:
         translator = translator_class(
             file.name, model, use_online, api_key,
-            src_lang_code, dst_lang_code, max_token=max_token, max_retries=max_retries
+            src_lang_code, dst_lang_code, continue_mode, max_token=max_token, max_retries=max_retries
         )
         progress_callback(0, desc="Initializing translation...")
 
@@ -625,7 +672,7 @@ def process_single_file(
 
 def process_multiple_files(
     files, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, progress_callback
+    use_online, api_key, max_token, max_retries, excel_mode_2, word_bilingual_mode, continue_mode, progress_callback
 ):
     """Process multiple files and return a zip archive."""
     # Create a temporary directory for the translated files
@@ -666,7 +713,7 @@ def process_multiple_files(
                     # Process file
                     translator = translator_class(
                         file_obj.name, model, use_online, api_key,
-                        src_lang_code, dst_lang_code, max_token=max_token, max_retries=max_retries
+                        src_lang_code, dst_lang_code, continue_mode, max_token=max_token, max_retries=max_retries
                     )
                     
                     # Create output directory
@@ -853,7 +900,10 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
     )
     output_file = gr.File(label="Download Translated File", visible=False)
     status_message = gr.Textbox(label="Status Message", interactive=False, visible=True)
-    translate_button = gr.Button("Translate")
+
+    with gr.Row():
+        translate_button = gr.Button("Translate")
+        continue_button = gr.Button("Continue Translation", interactive=False)  # Initially disabled
 
     # Event handlers
     use_online_model.change(
@@ -889,9 +939,11 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
     )
     
     file_input.change(
-        show_mode_checkbox,
+        fn=lambda files: [show_mode_checkbox(files)[0], 
+                        show_mode_checkbox(files)[1], 
+                        update_continue_button(files)],
         inputs=file_input,
-        outputs=[excel_mode_checkbox, word_bilingual_checkbox]
+        outputs=[excel_mode_checkbox, word_bilingual_checkbox, continue_button]
     )
 
     # Use the queue system with the translate button
@@ -901,6 +953,20 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
         outputs=[output_file, status_message]
     ).then(
         partial(modified_translate_button_click, translate_files),
+        inputs=[
+            file_input, model_choice, src_lang, dst_lang, 
+            use_online_model, api_key_input, max_retries_slider, max_token_state,
+            excel_mode_checkbox, word_bilingual_checkbox
+        ],
+        outputs=[output_file, status_message]
+    )
+
+    continue_button.click(
+        lambda: (gr.update(visible=False), None),
+        inputs=[],
+        outputs=[output_file, status_message]
+    ).then(
+        partial(modified_translate_button_click, translate_files, continue_mode=True),
         inputs=[
             file_input, model_choice, src_lang, dst_lang, 
             use_online_model, api_key_input, max_retries_slider, max_token_state,
@@ -920,7 +986,7 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
             src_lang, dst_lang, use_online_model, lan_mode_checkbox,
             model_choice, max_retries_slider, 
             api_key_input, file_input, output_file, status_message, translate_button,
-            excel_mode_checkbox, word_bilingual_checkbox
+            continue_button, excel_mode_checkbox, word_bilingual_checkbox
         ]
     )
 

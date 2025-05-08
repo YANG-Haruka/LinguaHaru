@@ -9,8 +9,7 @@ import socket
 def _get_host():
     # Get OLLAMA_HOST from environment variables or use default
     ollama_host = os.environ.get("OLLAMA_HOST", "localhost:11434")
-    app_logger.info(f"Ollama running in {ollama_host}")
-
+    
     # Parse host and port from OLLAMA_HOST
     if ":" in ollama_host:
         host_part, port_part = ollama_host.rsplit(":", 1)
@@ -24,11 +23,86 @@ def _get_host():
     
     return host_part, port_part
 
+# Global variables for hosts and ports
+OLLAMA_HOST, OLLAMA_PORT = _get_host()
+
 # LM Studio default settings
 LM_STUDIO_HOST = os.environ.get("LM_STUDIO_HOST", "localhost")
-LM_STUDIO_PORT = os.environ.get("LM_STUDIO_PORT", "1234")
+LM_STUDIO_PORT = os.environ.get("LM_STUDIO_PORT", "1234")  # Initial port from env
 
-OLLAMA_HOST, OLLAMA_PORT = _get_host()
+def _detect_lm_studio_port():
+    """
+    Detect the actual LM Studio port by running the 'lms server status' command
+    and parsing its output. Falls back to socket detection if command fails.
+    Returns the detected port or the default port if detection fails.
+    """
+    global LM_STUDIO_PORT
+    
+    # First try to get the port from lms server status command
+    try:
+        result = subprocess.run(
+            ['lms', 'server', 'status'], 
+            capture_output=True, 
+            text=True, 
+            check=False,
+        )
+        
+        if result.returncode == 0:
+            # Parse the output to find the port
+            output = result.stderr
+            
+            server_running_pattern = r"The server is running on port (\d+)"
+            match = re.search(server_running_pattern, output)
+            if match:
+                detected_port = match.group(1)
+                app_logger.info(f"LM Studio running in: {LM_STUDIO_HOST}:{detected_port}")
+                LM_STUDIO_PORT = detected_port
+                return
+                
+        app_logger.debug("Could not detect LM Studio port from command, trying socket detection")
+    except Exception as e:
+        app_logger.debug(f"Error running lms server status command: {e}")
+    
+    # Try the configured port first
+    configured_port = LM_STUDIO_PORT
+    common_ports = ["1234"]
+    
+    # Make sure the configured port is checked first if it's not already in the list
+    if configured_port not in common_ports:
+        common_ports.insert(0, configured_port)
+    
+    lm_studio_running = False
+    
+    for port in common_ports:
+        try:
+            # Try to connect to the port
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            result = sock.connect_ex((LM_STUDIO_HOST, int(port)))
+            sock.close()
+            
+            if result == 0:
+                # Now verify it's actually LM Studio by making an API call
+                try:
+                    url = f"http://{LM_STUDIO_HOST}:{port}/v1/models"
+                    response = requests.get(url, timeout=2)
+                    if response.status_code == 200:
+                        app_logger.info(f"LM Studio detected on port {port}")
+                        LM_STUDIO_PORT = port
+                        lm_studio_running = True
+                        return
+                except:
+                    pass  # If API call fails, it's probably not LM Studio
+        except:
+            continue
+    
+    # If no port detected, log that LM Studio doesn't seem to be running
+    if not lm_studio_running:
+        app_logger.info("LM Studio does not appear to be running")
+
+
+# Run the detection once at module initialization
+_detect_lm_studio_port()
 
 def translate_offline(messages, model):
     """
@@ -58,6 +132,13 @@ def translate_offline(messages, model):
             
         app_logger.debug(f"Using {service} model: {model_name}")
         
+        is_qwen3 = "qwen3" in model_name.lower()
+        if is_qwen3 and messages and len(messages) > 0:
+            last_message = messages[-1]
+            if last_message.get("role") == "user" and "content" in last_message:
+                if isinstance(last_message["content"], str):
+                    messages[-1]["content"] = last_message["content"] + " /no_think"
+        
         if service.lower() == "ollama":
             url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
             
@@ -69,7 +150,7 @@ def translate_offline(messages, model):
                     "num_predict": -1
                 },
                 "stream": False
-            }
+            }                
         elif service.lower() == "lm_studio":
             url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/v1/chat/completions"
             
@@ -79,7 +160,7 @@ def translate_offline(messages, model):
                 "temperature": 0.7,
                 "max_tokens": 2048,
                 "stream": False
-            }
+            }                
         else:
             app_logger.error(f"Unknown service: {service}")
             return f"Unknown service: {service}"
@@ -149,6 +230,8 @@ def get_ollama_models():
     if not is_ollama_running():
         app_logger.info("Ollama service does not appear to be running.")
         return []
+    else:
+        app_logger.info(f"Ollama running in: {OLLAMA_HOST}:{OLLAMA_PORT}")
     
     try:
         result = subprocess.run(
@@ -185,7 +268,6 @@ def get_ollama_models():
 def get_lm_studio_models():
     """Get list of available LM Studio models."""
     if not is_lm_studio_running():
-        app_logger.info("LM Studio service does not appear to be running.")
         return []
     
     try:

@@ -16,7 +16,7 @@ FAILED_JSON_PATH = "dst_translated_failed.json"
 RESULT_JSON_PATH = "dst_translated.json"
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, max_token, max_retries, previous_text=None):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, previous_text=None):
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
@@ -26,6 +26,7 @@ class DocumentTranslator:
         self.use_online = use_online
         self.api_key = api_key
         self.max_retries = max_retries
+        self.continue_mode = continue_mode
         self.translated_failed = True
         self.glossary_path = "models\Glossary.csv"
 

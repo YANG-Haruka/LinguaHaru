@@ -30,7 +30,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Local Network Mode (Restart to Apply)",
         "Max Retries": "Max Retries",
         "Excel Mode": "Missing Translation? Try Mode 2",
-        "Word Bilingual": "Enable Bilingual Comparison"
+        "Word Bilingual": "Enable Bilingual Comparison",
+        "Continue Translation": "Continue Translation"
     },
     # Simplified Chinese
     "zh": {
@@ -47,7 +48,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "局域网模式（重启后生效）",
         "Max Retries": "最大重试次数",
         "Excel Mode": "有漏翻？尝试模式2",
-        "Word Bilingual": "启用双语对照"
+        "Word Bilingual": "启用双语对照",
+        "Continue Translation": "继续翻译"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -64,7 +66,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "區域網路模式（重新啟動後生效）",
         "Max Retries": "最大重試次數",
         "Excel Mode": "有漏翻？嘗試模式2",
-        "Word Bilingual": "啟用雙語對照"
+        "Word Bilingual": "啟用雙語對照",
+        "Continue Translation": "繼續翻譯"
     },
     # Japanese
     "ja": {
@@ -81,7 +84,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "ローカルネットワークモード（再起動後に適用）",
         "Max Retries": "最大再試行回数",
         "Excel Mode": "翻訳漏れ？モード2を試す",
-        "Word Bilingual": "二言語対照を有効にする"
+        "Word Bilingual": "二言語対照を有効にする",
+        "Continue Translation": "翻訳を続ける"
     },
     # Spanish
     "es": {
@@ -98,7 +102,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Modo de red local (Reiniciar para aplicar)",
         "Max Retries": "Número máximo de reintentos",
         "Excel Mode": "¿Traducción incompleta? Probar modo 2",
-        "Word Bilingual": "Habilitar comparación bilingüe"
+        "Word Bilingual": "Habilitar comparación bilingüe",
+        "Continue Translation": "Continuar traducción"
     },
     # French
     "fr": {
@@ -115,7 +120,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Mode réseau local (Redémarrer pour appliquer)",
         "Max Retries": "Nombre maximal de tentatives",
         "Excel Mode": "Traduction incomplète ? Essayez le mode 2",
-        "Word Bilingual": "Activer la comparaison bilingue"
+        "Word Bilingual": "Activer la comparaison bilingue",
+        "Continue Translation": "Continuer la traduction"
     },
     # German
     "de": {
@@ -132,7 +138,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Lokaler Netzwerkmodus (Neustart erforderlich)",
         "Max Retries": "Maximale Wiederholungsversuche",
         "Excel Mode": "Übersetzung unvollständig? Versuchen Sie Modus 2",
-        "Word Bilingual": "Zweisprachigen Vergleich aktivieren"
+        "Word Bilingual": "Zweisprachigen Vergleich aktivieren",
+        "Continue Translation": "Übersetzung fortsetzen"
     },
     # Italian
     "it": {
@@ -149,7 +156,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Modalità rete locale (Riavvia per applicare)",
         "Max Retries": "Numero massimo di tentativi",
         "Excel Mode": "Traduzione incompleta? Prova la modalità 2",
-        "Word Bilingual": "Abilita confronto bilingue"
+        "Word Bilingual": "Abilita confronto bilingue",
+        "Continue Translation": "Continua traduzione"
     },
     # Portuguese
     "pt": {
@@ -166,7 +174,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Modo de rede local (Reiniciar para aplicar)",
         "Max Retries": "Número máximo de tentativas",
         "Excel Mode": "Tradução incompleta? Tente o modo 2",
-        "Word Bilingual": "Ativar comparação bilíngue"
+        "Word Bilingual": "Ativar comparação bilíngue",
+        "Continue Translation": "Continuar tradução"
     },
     # Russian
     "ru": {
@@ -183,7 +192,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Режим локальной сети (Перезагрузка для применения)",
         "Max Retries": "Максимальное количество повторных попыток",
         "Excel Mode": "Перевод неполный? Попробуйте режим 2",
-        "Word Bilingual": "Включить двуязычное сравнение"
+        "Word Bilingual": "Включить двуязычное сравнение",
+        "Continue Translation": "Продолжить перевод"
     },
     # Korean
     "ko": {
@@ -200,7 +210,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "로컬 네트워크 모드 (적용하려면 재시작)",
         "Max Retries": "최대 재시도 횟수",
         "Excel Mode": "번역이 누락되었나요? 모드 2 시도",
-        "Word Bilingual": "이중 언어 비교 활성화"
+        "Word Bilingual": "이중 언어 비교 활성화",
+        "Continue Translation": "번역 계속하기"
     },
     # Thai
     "th": {
@@ -217,7 +228,8 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "โหมดเครือข่ายท้องถิ่น (รีสตาร์ทเพื่อใช้งาน)",
         "Max Retries": "จำนวนการลองซ้ำสูงสุด",
         "Excel Mode": "การแปลขาดหายไป? ลองโหมด 2",
-        "Word Bilingual": "เปิดใช้งานการเปรียบเทียบสองภาษา"
+        "Word Bilingual": "เปิดใช้งานการเปรียบเทียบสองภาษา",
+        "Continue Translation": "แปลต่อ"
     },
     # Vietnamese
     "vi": {
@@ -234,6 +246,7 @@ LABEL_TRANSLATIONS = {
         "Local Network Mode (Restart to Apply)": "Chế độ mạng cục bộ (Khởi động lại để áp dụng)",
         "Max Retries": "Số lần thử lại tối đa",
         "Excel Mode": "Bị bỏ sót khi dịch? Thử chế độ 2",
-        "Word Bilingual": "Bật so sánh song ngữ"
+        "Word Bilingual": "Bật so sánh song ngữ",
+        "Continue Translation": "Tiếp tục dịch"
     }
 }

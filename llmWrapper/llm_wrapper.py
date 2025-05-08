@@ -50,8 +50,6 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         {"role": "user", "content": full_user_prompt},
     ]
     
-    app_logger.debug(f"API messages: {messages}")
-    
     if not use_online:
         return translate_offline(messages, model)
     else:
