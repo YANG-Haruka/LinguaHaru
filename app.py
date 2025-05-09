@@ -642,6 +642,15 @@ def process_single_file(
     use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, word_bilingual_mode, continue_mode, progress_callback
 ):
     """Process a single file for translation."""
+    file_name = os.path.basename(file.name)
+    
+    # Create a new log file for this file
+    from config.log_config import file_logger
+    file_logger.create_file_log(file_name)
+    
+    app_logger.info(f"Processing file: {file_name}")
+    app_logger.info(f"Source language: {src_lang_code}, Target language: {dst_lang_code}, Model: {model}")
+    
     file_name, file_extension = os.path.splitext(file.name)
     
     # Pass excel_mode_2 parameter when determining translator class
@@ -705,6 +714,12 @@ def process_multiple_files(
             total_files = len(valid_files)
             
             for i, (file_obj, rel_path) in enumerate(valid_files):
+                # Create a new log file for the current file being processed
+                from config.log_config import file_logger
+                file_logger.create_file_log(rel_path)
+                
+                app_logger.info(f"Processing file {i+1}/{total_files}: {rel_path}")
+                
                 file_name, file_extension = os.path.splitext(file_obj.name)
                 base_name = os.path.basename(file_name)
                 
