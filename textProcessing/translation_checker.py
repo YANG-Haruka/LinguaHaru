@@ -2,6 +2,11 @@ import json
 import os
 import re
 from config.log_config import app_logger
+from rich import box
+from rich import markup
+from rich.table import Table
+from rich.console import Console
+    
 
 def detect_language_characters(text, lang_code):
     """
@@ -98,6 +103,8 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
     Process translation results and save successful and failed translations.
     Updates translation status in the source split JSON file.
     """
+    CONSOLE = Console(highlight=True, tab_size=4)
+    
     if not translated_text:
         app_logger.warning("No translated text received.")
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
@@ -172,46 +179,77 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                     "value": value
                 })
 
-    # Use a fixed box width for logging
-    fixed_box_width = 100
-    
-    # Log successful translations
+    # Create and display tables for successful and failed translations
     if successful_translations:
-        app_logger.info("+" + "-" * fixed_box_width + "+")
+        # Create success table
+        success_table = Table(
+            box=box.ASCII2,
+            expand=True,
+            title="Successful Translations",
+            highlight=True,
+            show_lines=True,
+            border_style="green",
+            collapse_padding=True,
+        )
+        success_table.add_column("Count", style="cyan", no_wrap=True)
+        success_table.add_column("Original", style="white")
+        success_table.add_column("Translated", style="bright_green")
+        
         if last_try:
-            app_logger.info("| LAST TRY MODE: Accepting any non-empty translations")
-            app_logger.info("+" + "-" * fixed_box_width + "+")
+            app_logger.info("LAST TRY MODE: Accepting any non-empty translations")
         
         for item in successful_translations:
-            text = f"[{item['count']}] {item['original']} ==> {item['translated']}"
-            padded_line = f"| {text}"
-            app_logger.info(padded_line)
-        app_logger.info("+" + "-" * fixed_box_width + "+")
+            success_table.add_row(
+                str(item['count']),
+                markup.escape(str(item['original'])),
+                markup.escape(str(item['translated']))
+            )
+        
+        # Display the table
+        CONSOLE.print(success_table)
     
-    # Log failed translations
+    # Create and display table for failed translations
     if failed_translations:
-        app_logger.warning("+" + "-" * fixed_box_width + "+")
-        header = "FAILED TRANSLATIONS:"
-        padded_header = f"| {header}"
-        app_logger.warning(padded_header)
-        app_logger.warning("+" + "-" * fixed_box_width + "+")
+        border_style = "red" if last_try else "yellow"
+        result_style = "bright_red" if last_try else "yellow"
+        
+        # Create failed table
+        failed_table = Table(
+            box=box.ASCII2,
+            expand=True,
+            title="Failed Translations",
+            highlight=True,
+            show_lines=True,
+            border_style=border_style,
+            collapse_padding=True,
+        )
+        failed_table.add_column("Count", style="cyan", no_wrap=True)
+        failed_table.add_column("Original", style="white")
+        failed_table.add_column("Result", style=result_style)
         
         for item in failed_translations:
             if not translated_json.get(str(item['count']), "").strip():
-                text = f"[{item['count']}] {item['value']} ==> \"\""
+                failed_table.add_row(
+                    str(item['count']),
+                    markup.escape(str(item['value'])),
+                    markup.escape('""')
+                )
             else:
-                text = f"[{item['count']}] {item['value']} ==> {translated_json.get(str(item['count']), '')}"
-            padded_line = f"| {text}"
-            app_logger.warning(padded_line)
-        app_logger.warning("+" + "-" * fixed_box_width + "+")
-
+                failed_table.add_row(
+                    str(item['count']),
+                    markup.escape(str(item['value'])),
+                    markup.escape(str(translated_json.get(str(item['count']), '')))
+                )
+        
+        # Display the failed table
+        CONSOLE.print(failed_table)
+ 
     # Save successful translations
     save_json(RESULT_SPLIT_JSON_PATH, successful_translations)
 
     # Save failed translations
     if failed_translations:
         save_json(FAILED_JSON_PATH, failed_translations)
-        app_logger.info(f"Appended {len(failed_translations)} missing or invalid translations to {FAILED_JSON_PATH}")
     
     # Update translation status in the source file
     if successful_counts:
@@ -235,8 +273,21 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
             with open(SRC_SPLIT_JSON_PATH, "w", encoding="utf-8") as f:
                 json.dump(src_data, f, ensure_ascii=False, indent=4)
                 
-            app_logger.info(f"Updated translation status for {updated_count} segments in {SRC_SPLIT_JSON_PATH}")
         except Exception as e:
+            # Create an error table
+            error_table = Table(
+                box=box.ASCII2,
+                title="Error Updating Status",
+                highlight=True,
+                border_style="red",
+                collapse_padding=True,
+            )
+            error_table.add_column("Error", style="bright_red")
+            error_table.add_row(markup.escape(str(e)))
+            
+            # Display the error table
+            CONSOLE.print(error_table)
+            
             app_logger.error(f"Error updating translation status in source file: {e}")
     
     return result_dict

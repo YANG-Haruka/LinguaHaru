@@ -155,6 +155,16 @@ class DocumentTranslator:
             app_logger.info("Last try mode: processing each line individually for better success rate")
             
             processed_segments = []
+            total_lines = 0
+            for segment, _, current_glossary_terms in all_failed_segments:
+                try:
+                    segment_content = clean_json(segment)
+                    segment_json = json.loads(segment_content)
+                    total_lines += len(segment_json)
+                except (json.JSONDecodeError, ValueError) as e:
+                    total_lines += 1
+            
+            current_line = 0
             for segment, segment_progress, current_glossary_terms in all_failed_segments:
                 try:
                     # Parse JSON content in the segment
@@ -163,24 +173,20 @@ class DocumentTranslator:
                     
                     # Process each line separately
                     for key, value in segment_json.items():
-                        # Create single line JSON
                         single_line_json = {key: value}
                         single_line_segment = f"```json\n{json.dumps(single_line_json, ensure_ascii=False, indent=4)}\n```"
                         
-                        # Calculate progress for each line
-                        line_progress = (float(key) / max([int(k) for k in segment_json.keys() if k.isdigit()], default=1))
-                        
-                        # Determine relevant terms for this line
+                        current_line += 1
+                        line_progress = current_line / total_lines
                         line_glossary_terms = []
                         if current_glossary_terms:
                             line_glossary_terms = [term for term in current_glossary_terms if term[0] in value]
-                        
-                        # Add to processing queue
                         processed_segments.append((single_line_segment, line_progress, line_glossary_terms))
                         
                 except (json.JSONDecodeError, ValueError) as e:
                     app_logger.warning(f"Error parsing segment content: {e}. Keeping original segment.")
-                    processed_segments.append((segment, segment_progress, current_glossary_terms))
+                    current_line += 1
+                    processed_segments.append((segment, current_line / total_lines, current_glossary_terms))
             
             # Update processing queue
             if processed_segments:

@@ -53,4 +53,4 @@ def setup_logger(name="app_logger", console_level=logging.INFO, file_level=loggi
     return logger
 
 # Create logger with DEBUG level for file logging
-app_logger = setup_logger(console_level=logging.DEBUG, file_level=logging.DEBUG)
+app_logger = setup_logger(console_level=logging.INFO, file_level=logging.DEBUG)
