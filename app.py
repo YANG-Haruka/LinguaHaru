@@ -446,11 +446,6 @@ def set_labels(session_lang: str):
     elif "Upload File" in labels:
         file_upload_label = labels["Upload File"] + "s"
     
-    # Add thread count label
-    thread_count_label = "Thread Count"
-    if "Thread Count" in labels:
-        thread_count_label = labels["Thread Count"]
-    
     return {
         src_lang: gr.update(label=labels["Source Language"]),
         dst_lang: gr.update(label=labels["Target Language"]),
@@ -458,7 +453,7 @@ def set_labels(session_lang: str):
         lan_mode_checkbox: gr.update(label=labels["Local Network Mode (Restart to Apply)"]),
         model_choice: gr.update(label=labels["Models"]),
         max_retries_slider: gr.update(label=labels["Max Retries"]),
-        thread_count_slider: gr.update(label=thread_count_label),
+        thread_count_slider: gr.update(label=labels["Thread Count"]),
         api_key_input: gr.update(label=labels["API Key"]),
         file_input: gr.update(label=file_upload_label),
         output_file: gr.update(label=labels["Download Translated File"]),
@@ -865,22 +860,23 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
             )
     
     with gr.Row():
-        max_retries_slider = gr.Slider(
-            minimum=1,
-            maximum=10,
-            step=1,
-            value=initial_max_retries,
-            label="Max Retries"
-        )
+        with gr.Column(scale=1):
+            max_retries_slider = gr.Slider(
+                minimum=1,
+                maximum=10,
+                step=1,
+                value=initial_max_retries,
+                label="Max Retries"
+            )
         
-    with gr.Row():
-        thread_count_slider = gr.Slider(
-            minimum=1,
-            maximum=16,
-            step=1,
-            value=initial_thread_count,
-            label="Thread Count"
-        )
+        with gr.Column(scale=1):
+            thread_count_slider = gr.Slider(
+                minimum=1,
+                maximum=16,
+                step=1,
+                value=initial_thread_count,
+                label="Thread Count"
+            )
     
     with gr.Row():
         excel_mode_checkbox = gr.Checkbox(

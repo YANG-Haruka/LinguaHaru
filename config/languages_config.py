@@ -31,7 +31,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Max Retries",
         "Excel Mode": "Missing Translation? Try Mode 2",
         "Word Bilingual": "Enable Bilingual Comparison",
-        "Continue Translation": "Continue Translation"
+        "Continue Translation": "Continue Translation",
+        "Thread Count": "Thread Count"
     },
     # Simplified Chinese
     "zh": {
@@ -49,7 +50,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "最大重试次数",
         "Excel Mode": "有漏翻？尝试模式2",
         "Word Bilingual": "启用双语对照",
-        "Continue Translation": "继续翻译"
+        "Continue Translation": "继续翻译",
+        "Thread Count": "线程数量"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -67,7 +69,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "最大重試次數",
         "Excel Mode": "有漏翻？嘗試模式2",
         "Word Bilingual": "啟用雙語對照",
-        "Continue Translation": "繼續翻譯"
+        "Continue Translation": "繼續翻譯",
+        "Thread Count": "執行緒數量"
     },
     # Japanese
     "ja": {
@@ -85,7 +88,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "最大再試行回数",
         "Excel Mode": "翻訳漏れ？モード2を試す",
         "Word Bilingual": "二言語対照を有効にする",
-        "Continue Translation": "翻訳を続ける"
+        "Continue Translation": "翻訳を続ける",
+        "Thread Count": "スレッド数"
     },
     # Spanish
     "es": {
@@ -103,7 +107,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Número máximo de reintentos",
         "Excel Mode": "¿Traducción incompleta? Probar modo 2",
         "Word Bilingual": "Habilitar comparación bilingüe",
-        "Continue Translation": "Continuar traducción"
+        "Continue Translation": "Continuar traducción",
+        "Thread Count": "Número de hilos"
     },
     # French
     "fr": {
@@ -121,7 +126,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Nombre maximal de tentatives",
         "Excel Mode": "Traduction incomplète ? Essayez le mode 2",
         "Word Bilingual": "Activer la comparaison bilingue",
-        "Continue Translation": "Continuer la traduction"
+        "Continue Translation": "Continuer la traduction",
+        "Thread Count": "Nombre de threads"
     },
     # German
     "de": {
@@ -139,7 +145,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Maximale Wiederholungsversuche",
         "Excel Mode": "Übersetzung unvollständig? Versuchen Sie Modus 2",
         "Word Bilingual": "Zweisprachigen Vergleich aktivieren",
-        "Continue Translation": "Übersetzung fortsetzen"
+        "Continue Translation": "Übersetzung fortsetzen",
+        "Thread Count": "Thread-Anzahl"
     },
     # Italian
     "it": {
@@ -157,7 +164,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Numero massimo di tentativi",
         "Excel Mode": "Traduzione incompleta? Prova la modalità 2",
         "Word Bilingual": "Abilita confronto bilingue",
-        "Continue Translation": "Continua traduzione"
+        "Continue Translation": "Continua traduzione",
+        "Thread Count": "Numero di thread"
     },
     # Portuguese
     "pt": {
@@ -175,7 +183,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Número máximo de tentativas",
         "Excel Mode": "Tradução incompleta? Tente o modo 2",
         "Word Bilingual": "Ativar comparação bilíngue",
-        "Continue Translation": "Continuar tradução"
+        "Continue Translation": "Continuar tradução",
+        "Thread Count": "Número de threads"
     },
     # Russian
     "ru": {
@@ -193,7 +202,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Максимальное количество повторных попыток",
         "Excel Mode": "Перевод неполный? Попробуйте режим 2",
         "Word Bilingual": "Включить двуязычное сравнение",
-        "Continue Translation": "Продолжить перевод"
+        "Continue Translation": "Продолжить перевод",
+        "Thread Count": "Количество потоков"
     },
     # Korean
     "ko": {
@@ -211,7 +221,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "최대 재시도 횟수",
         "Excel Mode": "번역이 누락되었나요? 모드 2 시도",
         "Word Bilingual": "이중 언어 비교 활성화",
-        "Continue Translation": "번역 계속하기"
+        "Continue Translation": "번역 계속하기",
+        "Thread Count": "스레드 수"
     },
     # Thai
     "th": {
@@ -229,7 +240,8 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "จำนวนการลองซ้ำสูงสุด",
         "Excel Mode": "การแปลขาดหายไป? ลองโหมด 2",
         "Word Bilingual": "เปิดใช้งานการเปรียบเทียบสองภาษา",
-        "Continue Translation": "แปลต่อ"
+        "Continue Translation": "แปลต่อ",
+        "Thread Count": "จำนวนเธรด"
     },
     # Vietnamese
     "vi": {
@@ -247,6 +259,7 @@ LABEL_TRANSLATIONS = {
         "Max Retries": "Số lần thử lại tối đa",
         "Excel Mode": "Bị bỏ sót khi dịch? Thử chế độ 2",
         "Word Bilingual": "Bật so sánh song ngữ",
-        "Continue Translation": "Tiếp tục dịch"
+        "Continue Translation": "Tiếp tục dịch",
+        "Thread Count": "Số lượng luồng"
     }
 }
