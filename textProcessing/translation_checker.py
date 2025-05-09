@@ -195,9 +195,6 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         success_table.add_column("Original", style="white")
         success_table.add_column("Translated", style="bright_green")
         
-        if last_try:
-            app_logger.info("LAST TRY MODE: Accepting any non-empty translations")
-        
         for item in successful_translations:
             success_table.add_row(
                 str(item['count']),
