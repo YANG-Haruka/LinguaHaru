@@ -137,7 +137,11 @@ def translate_offline(messages, model):
             last_message = messages[-1]
             if last_message.get("role") == "user" and "content" in last_message:
                 if isinstance(last_message["content"], str):
-                    messages[-1]["content"] = last_message["content"] + " /no_think"
+                    # Add instruction to return valid JSON
+                    messages[-1]["content"] = (
+                        last_message["content"] + 
+                        " /no_think IMPORTANT: Return a single valid JSON object containing all translations. Wrap everything in {}"
+                    )
         
         if service.lower() == "ollama":
             url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
@@ -182,7 +186,9 @@ def translate_offline(messages, model):
                     translated_text = response_json["choices"][0]["message"]["content"]
                     
                 clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
-                return clean_translated_text
+                
+                # Process the text to ensure it's valid JSON
+                return fix_json_format(clean_translated_text)
             else:
                 app_logger.warning(f"Empty response from {service}")
                 return None
@@ -196,6 +202,60 @@ def translate_offline(messages, model):
     except Exception as e:
         app_logger.error(f"Unexpected error during API call: {e}")
         return f"An unexpected error occurred: {str(e)}"
+
+def fix_json_format(text):
+    """
+    Fix the JSON format of the response text.
+    Handles various cases of non-standard JSON from LLM responses.
+    
+    Args:
+        text: The text to fix
+        
+    Returns:
+        A properly formatted JSON string
+    """
+    # Remove any markdown code block indicators
+    text = re.sub(r'```json|```', '', text).strip()
+    
+    # Case 1: Multiple JSON objects concatenated - the most common issue
+    try:
+        # Try to parse as a complete JSON object first
+        json.loads(text)
+        return text  # Already valid JSON
+    except json.JSONDecodeError:
+        # Not valid JSON, try to fix
+        pass
+        
+    # Try to parse multiple JSON objects on separate lines
+    try:
+        # Extract all JSON-like objects
+        objects = re.findall(r'(\{.*?\})', text, re.DOTALL)
+        
+        if not objects:
+            # Fall back to simply wrapping everything in {}
+            app_logger.warning("No JSON objects found in response, wrapping text")
+            return "{" + text.strip() + "}"
+            
+        # Parse each object and merge them
+        merged_data = {}
+        for obj_str in objects:
+            try:
+                obj = json.loads(obj_str)
+                merged_data.update(obj)
+            except json.JSONDecodeError:
+                app_logger.warning(f"Couldn't parse object: {obj_str}")
+                
+        if merged_data:
+            return json.dumps(merged_data, ensure_ascii=False)
+        else:
+            # If all parsing failed, wrap the text in a JSON object with a default key
+            app_logger.warning("Failed to parse any objects, using fallback")
+            return json.dumps({"translated_text": text}, ensure_ascii=False)
+            
+    except Exception as e:
+        app_logger.error(f"Error fixing JSON format: {e}")
+        # Last resort: wrap everything in a JSON object
+        return json.dumps({"translated_text": text}, ensure_ascii=False)
 
 def is_ollama_running(timeout=1):
     """Check if Ollama service is running by attempting to connect to its API port."""

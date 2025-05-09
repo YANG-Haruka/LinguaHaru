@@ -600,7 +600,7 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
         return None
 
 def translate_files(
-    files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768,
+    files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=512,
     excel_mode_2=False, word_bilingual_mode=False, continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using the chosen model."""
@@ -765,7 +765,7 @@ online_models = [
 config = read_system_config()
 initial_lan_mode = config.get("lan_mode", False)
 initial_default_online = config.get("default_online", False)
-initial_max_token = config.get("max_token", 768)
+initial_max_token = config.get("max_token", 512)
 initial_max_retries = config.get("max_retries", 4)
 initial_excel_mode_2 = config.get("excel_mode_2", False)
 initial_word_bilingual_mode = config.get("word_bilingual_mode", False)

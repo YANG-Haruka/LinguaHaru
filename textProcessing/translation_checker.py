@@ -94,14 +94,17 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
     return True
 
 def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, src_lang, dst_lang):
-    """Process translation results and save successful and failed translations"""
+    """
+    Process translation results and save successful and failed translations
+    """
     if not translated_text:
         app_logger.warning("No translated text received.")
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
-        return False
+        return ""
 
     successful_translations = []
     failed_translations = []
+    result_dict = {}
 
     # Parse original JSON
     try:
@@ -109,7 +112,7 @@ def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSO
     except json.JSONDecodeError as e:
         app_logger.warning(f"Failed to parse original JSON: {e}")
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
-        return False
+        return ""
 
     # Parse translated JSON
     try:
@@ -117,7 +120,7 @@ def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSO
     except json.JSONDecodeError as e:
         app_logger.warning(f"Failed to parse translated JSON: {e}")
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
-        return False
+        return ""
 
     for key, value in original_json.items():
         # Get the translated value if it exists
@@ -133,6 +136,7 @@ def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSO
                 "original": value,
                 "translated": translated_value
             })
+            all_translated_text += translated_value + " "
         else:
             failed_translations.append({
                 "count": int(key), 
@@ -175,8 +179,7 @@ def process_translation_results(original_text, translated_text, RESULT_SPLIT_JSO
     if failed_translations:
         save_json(FAILED_JSON_PATH, failed_translations)
         app_logger.info(f"Appended {len(failed_translations)} missing or invalid translations to {FAILED_JSON_PATH}")
-        return True
-    return False
+    return all_translated_text.strip()
 
 def _mark_all_as_failed(original_text, FAILED_JSON_PATH):
     failed_segments = []

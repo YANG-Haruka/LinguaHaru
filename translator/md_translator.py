@@ -1,5 +1,5 @@
 from pipeline.md_translation_pipeline import extract_md_content_to_json, write_translated_content_to_md
-from .base_translator import DocumentTranslator
+from textProcessing.base_translator import DocumentTranslator
 
 
 class MdTranslator(DocumentTranslator):

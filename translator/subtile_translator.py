@@ -1,5 +1,5 @@
 from pipeline.subtitle_translation_pipeline import extract_srt_content_to_json, write_translated_content_to_srt
-from .base_translator import DocumentTranslator
+from textProcessing.base_translator import DocumentTranslator
 
 class SubtitlesTranslator(DocumentTranslator):
     def extract_content_to_json(self, progress_callback=None):

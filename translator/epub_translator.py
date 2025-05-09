@@ -1,5 +1,5 @@
 from pipeline.epub_translation_pipeline import extract_epub_content_to_json, write_translated_content_to_epub
-from .base_translator import DocumentTranslator
+from textProcessing.base_translator import DocumentTranslator
 
 
 class EpubTranslator(DocumentTranslator):

@@ -1,5 +1,5 @@
 from pipeline.excel_translation_pipeline_test import extract_excel_content_to_json, write_translated_content_to_excel
-from .base_translator import DocumentTranslator
+from textProcessing.base_translator import DocumentTranslator
 
 class ExcelTranslator(DocumentTranslator):
     def extract_content_to_json(self,progress_callback=None):

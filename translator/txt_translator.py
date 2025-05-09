@@ -1,5 +1,5 @@
 from pipeline.txt_translation_pipeline import extract_txt_content_to_json, write_translated_content_to_txt
-from .base_translator import DocumentTranslator
+from textProcessing.base_translator import DocumentTranslator
 
 
 class TxtTranslator(DocumentTranslator):

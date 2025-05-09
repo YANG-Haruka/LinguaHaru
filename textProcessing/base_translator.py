@@ -2,7 +2,7 @@ import os
 import shutil
 import json
 from config.log_config import app_logger
-
+from .calculation_tokens import num_tokens_from_string
 
 from llmWrapper.llm_wrapper import translate_text
 from textProcessing.text_separator import stream_segment_json, split_text_by_token_limit, recombine_split_jsons
@@ -14,21 +14,24 @@ SRC_SPLIT_JSON_PATH = "src_split.json"
 RESULT_SPLIT_JSON_PATH = "dst_translated_split.json"
 FAILED_JSON_PATH = "dst_translated_failed.json"
 RESULT_JSON_PATH = "dst_translated.json"
+PREVIOUS_CONTENT = ""
+MAX_PREVIOUS_TOKENS = 256
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, previous_text=None):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries):
+        global PREVIOUS_CONTENT
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
         self.dst_lang = dst_lang
         self.max_token = max_token
-        self.previous_text = previous_text
         self.use_online = use_online
         self.api_key = api_key
         self.max_retries = max_retries
         self.continue_mode = continue_mode
         self.translated_failed = True
         self.glossary_path = "models\Glossary.csv"
+        
 
         # Extract just the filename without the directory path
         filename = os.path.splitext(os.path.basename(input_file_path))[0]
@@ -48,8 +51,7 @@ class DocumentTranslator:
 
         # Load translation prompts
         self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default, self.glossary_prompt = load_prompt(src_lang, dst_lang)
-        if self.previous_text is None:
-            self.previous_text = self.previous_text_default
+        PREVIOUS_CONTENT = self.previous_text_default
 
     def extract_content_to_json(self):
         """Abstract method: Extract document content to JSON."""
@@ -60,29 +62,36 @@ class DocumentTranslator:
         raise NotImplementedError
 
     def translate_content(self, progress_callback):
+        global PREVIOUS_CONTENT, MAX_PREVIOUS_TOKENS
         app_logger.info("Segmenting JSON content...")
-        stream_generator = stream_segment_json(
+        all_segments = stream_segment_json(
             self.src_split_json_path,
             self.max_token,
             self.system_prompt,
             self.user_prompt,
             self.previous_prompt,
-            self.previous_text,
             self.src_lang,
             self.dst_lang,
             self.glossary_path
         )
         
-        if stream_generator is None:
-            app_logger.warning("Failed to generate segments.")
+        if not all_segments:
+            app_logger.warning("No segments were generated.")
             return
 
-        app_logger.info("Translating segments...")
-        combined_previous_texts = []
-        for segment, segment_progress, current_glossary_terms in stream_generator():
+        app_logger.info(f"Translating {len(all_segments)} segments...")
+        
+
+        total_segments = len(all_segments)
+        for i, (segment, segment_progress, current_glossary_terms) in enumerate(all_segments):
             try:
+                current_progress = (i / total_segments) if total_segments > 0 else 0
+                if progress_callback:
+                    progress_callback(current_progress, desc=f"Translating segment {i+1}/{total_segments}...")
+                    app_logger.info(f"Progress: {current_progress * 100:.2f}%")
+            
                 translated_text = translate_text(
-                    segment, self.previous_text, self.model, self.use_online, self.api_key,
+                    segment, PREVIOUS_CONTENT, self.model, self.use_online, self.api_key,
                     self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
                 )
 
@@ -90,25 +99,15 @@ class DocumentTranslator:
                     app_logger.warning("translate_text returned empty or None.")
                     self._mark_segment_as_failed(segment)
                     continue
-                
-                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
-                
-                cleaned_text = clean_json(translated_text)
-                translated_lines = cleaned_text.splitlines()
 
-                if len(translated_lines) >= 4:
-                    last_3_entries = translated_lines[-4:-1]
-                    self.previous_text = "\n".join(last_3_entries)
-                else:
-                    app_logger.info("Translated text does not have enough lines to update previous_text, use Default ones")
-                    self.previous_text = self.previous_text_default
-
-                combined_previous_texts.append(translated_text)
-
+                translation_results = process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
+                PREVIOUS_CONTENT = self._update_previous_content(translation_results, PREVIOUS_CONTENT, MAX_PREVIOUS_TOKENS)
+            
             except (json.JSONDecodeError, ValueError, RuntimeError) as e:
                 app_logger.warning(f"Error encountered: {e}. Marking segment as failed.")
                 self._mark_segment_as_failed(segment)
 
+            # 更新进度
             if progress_callback:
                 progress_callback(segment_progress, desc="Translating...Please wait.")
                 app_logger.info(f"Progress: {segment_progress * 100:.2f}%")
@@ -119,47 +118,59 @@ class DocumentTranslator:
             app_logger.info("No failed segments to retranslate. Skipping this step.")
             return False
 
-        # Check if file is empty or contains an empty JSON array
+        # 检查文件是否为空或包含空JSON数组
         with open(self.failed_json_path, 'r', encoding='utf-8') as f:
             try:
                 data = json.load(f)
-                if not data:  # If the JSON is an empty list or dict
+                if not data:  # 如果JSON是空列表或字典
                     app_logger.info("No failed segments to retranslate. Skipping this step.")
                     return False
             except json.JSONDecodeError:
                 app_logger.error("Failed to decode JSON. Skipping this step.")
                 return False
 
-        stream_generator_failed = stream_segment_json(
+        # 获取所有失败段
+        all_failed_segments = stream_segment_json(
             self.failed_json_path,
             self.max_token,
             self.system_prompt,
             self.user_prompt,
             self.previous_prompt,
-            self.previous_text,
             self.src_lang,
             self.dst_lang,
             "models\Glossary.csv"
         )
-        if stream_generator_failed is None:
+        
+        if not all_failed_segments:
             app_logger.info("All text has been translated.")
             return False
 
-        # Read the original failed segments
+        # 读取原始失败段
         with open(self.failed_json_path, 'r', encoding='utf-8') as f:
             original_segments = json.load(f)
         with open(self.failed_json_path, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=4)
         
-        # Keep track of which segments we're going to process in this run
+        # 跟踪我们要在这次运行中处理的段
         segments_to_process = original_segments.copy()
-        combined_previous_texts = []
- 
-        for segment, segment_progress, current_glossary_terms in stream_generator_failed():
+        
+        # 跟踪已翻译的内容作为上下文
+        previous_content = self.previous_text_default
+
+        # 处理所有失败段
+        total_segments = len(all_failed_segments)
+        for i, (segment, segment_progress, current_glossary_terms) in enumerate(all_failed_segments):
             try:
+                # 显示当前进度
+                current_progress = (i / total_segments) if total_segments > 0 else 0
+                if progress_callback:
+                    progress_callback(current_progress, desc=f"Retranslating segment {i+1}/{total_segments}...")
+                    app_logger.info(f"Progress: {current_progress * 100:.2f}%")
+                
+                # 执行翻译，使用上一段的内容作为上下文
                 translated_text = translate_text(
                     segment,
-                    self.previous_text,
+                    previous_content,
                     self.model,
                     self.use_online,
                     self.api_key,
@@ -175,28 +186,85 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
                 
-                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
-
-                # Update previous text context with last 3 lines if possible
-                try:
-                    last_3_entries = clean_json(translated_text).splitlines()[-4:-1]
-                    self.previous_text = "\n".join(last_3_entries)
-                except (IndexError, AttributeError):
-                    app_logger.warning("Couldn't extract context from translation. Using default.")
-                    
-                combined_previous_texts.append(translated_text)
-                
-                # Remove this segment from segments we've processed
+                # 处理翻译结果
+                process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)     
+                # 移除我们已处理的段
                 if segment in segments_to_process:
                     segments_to_process.remove(segment)
 
             except (json.JSONDecodeError, ValueError, RuntimeError) as e:
                 app_logger.warning(f"Error encountered: {e}. Segment will remain in failed list.")
 
+            # 更新进度
             if progress_callback:
                 progress_callback(segment_progress, desc="Missing detected! Translating once...")
                 app_logger.info(f"Progress: {segment_progress * 100:.2f}%")
+        
         return True
+
+    def _update_previous_content(self, translated_text, previous_content, max_tokens):
+        """
+        更新前文上下文，保持最多三段翻译内容，且总token数不超过max_tokens
+        
+        参数:
+        translated_text (str): 新翻译的文本
+        previous_content (str): 当前的上下文内容
+        max_tokens (int): 允许的最大token数量，默认为256
+        
+        返回:
+        str: 更新后的上下文内容
+        """
+        # 检查输入的有效性
+        if not translated_text or len(translated_text) <= 1:
+            return previous_content
+        
+        # 首先检查新文本本身的token数量
+        new_text_tokens = num_tokens_from_string(translated_text)
+        if new_text_tokens > max_tokens:
+            app_logger.info(f"New translation too long: {new_text_tokens} tokens > {max_tokens}")
+            return previous_content
+        
+        # 如果previous_content为空，直接设置
+        if not previous_content:
+            app_logger.info(f"Initialized previous content: {len(translated_text)} chars, {new_text_tokens} tokens")
+            return translated_text
+        
+        # 将previous_content分段
+        paragraphs = previous_content.split('\n\n')
+        
+        # 添加新段落
+        paragraphs.append(translated_text)
+        
+        # 只保留最后三段
+        if len(paragraphs) > 3:
+            paragraphs = paragraphs[-3:]
+        
+        # 从最新到最旧逐段检查token数量
+        # 从最新的段落开始，尽可能多地包含旧段落
+        final_paragraphs = []
+        total_tokens = 0
+        
+        # 从最新到最旧的顺序处理
+        for p in reversed(paragraphs):
+            p_tokens = num_tokens_from_string(p)
+            
+            # 如果加上这段后超出限制，停止添加
+            if total_tokens + p_tokens > max_tokens:
+                break
+            
+            # 否则添加这段并更新token计数
+            final_paragraphs.insert(0, p)  # 在前面插入，保持原来的顺序
+            total_tokens += p_tokens
+        
+        # 如果没有能够保留的段落，说明单段就超出了限制，返回原始内容
+        if not final_paragraphs:
+            app_logger.info(f"No paragraphs can fit within token limit of {max_tokens}")
+            return previous_content
+        
+        # 更新上下文内容
+        updated_content = '\n\n'.join(final_paragraphs)
+        app_logger.info(f"Updated previous content: {len(updated_content)} chars, {total_tokens} tokens, {len(final_paragraphs)} paragraphs")
+        return updated_content
 
     def _convert_failed_segments_to_json(self, failed_segments):
         converted_json = {failed_segments["count"]: failed_segments["value"]}
@@ -237,7 +305,7 @@ class DocumentTranslator:
                 })
             f.seek(0)
             json.dump(failed_segments, f, ensure_ascii=False, indent=4)
-
+    
     def process(self, file_name, file_extension, progress_callback=None):
         self._clear_temp_folder()
 
