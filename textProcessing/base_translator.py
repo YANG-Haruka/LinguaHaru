@@ -32,29 +32,25 @@ class DocumentTranslator:
         self.continue_mode = continue_mode
         self.translated_failed = True
         self.glossary_path = "models\Glossary.csv"
-        self.num_threads = num_threads  # 添加线程数量参数
-        self.lock = Lock()  # 添加锁，用于保护共享资源
-        self.last_ui_update_time = 0  # 跟踪上次UI更新时间
+        self.num_threads = num_threads
+        self.lock = Lock()
+        self.last_ui_update_time = 0
 
-        # Extract just the filename without the directory path
+        # Setup file paths
         filename = os.path.splitext(os.path.basename(input_file_path))[0]
-        
-        # Create a directory path using the filename
         self.file_dir = os.path.join("temp", filename)
         
-        # Update all the JSON paths
         self.src_json_path = os.path.join(self.file_dir, SRC_JSON_PATH)
         self.src_split_json_path = os.path.join(self.file_dir, SRC_SPLIT_JSON_PATH)
         self.result_split_json_path = os.path.join(self.file_dir, RESULT_SPLIT_JSON_PATH)
         self.failed_json_path = os.path.join(self.file_dir, FAILED_JSON_PATH)
         self.result_json_path = os.path.join(self.file_dir, RESULT_JSON_PATH)
         
-        # Ensure the directory exists
         os.makedirs(self.file_dir, exist_ok=True)
 
         # Load translation prompts
         self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default, self.glossary_prompt = load_prompt(src_lang, dst_lang)
-        self.previous_content = self.previous_text_default  # 使用实例变量而不是全局变量
+        self.previous_content = self.previous_text_default
 
     def extract_content_to_json(self):
         """Abstract method: Extract document content to JSON."""
@@ -65,7 +61,7 @@ class DocumentTranslator:
         raise NotImplementedError
 
     def update_ui_safely(self, progress_callback, progress, desc):
-        """Update UI safely with rate limiting to avoid overwhelming the UI thread"""
+        """Update UI with rate limiting to avoid overwhelming the UI thread"""
         current_time = time.time()
         if current_time - self.last_ui_update_time >= 0.1:
             try:
@@ -93,19 +89,17 @@ class DocumentTranslator:
             app_logger.warning("No segments were generated.")
             return
 
-        # 当前批次的段落总数
         total_current_batch = len(all_segments)
         app_logger.info(f"Translating {total_current_batch} segments using {self.num_threads} threads...")
 
-        # 初始化变量
-        total_segments = 0      # 总段落数
-        completed_count = 0     # 已完成的段落数
-        remaining_ratio = 1.0   # 剩余待翻译的比例
+        # Initialize variables
+        total_segments = 0
+        completed_count = 0
+        remaining_ratio = 1.0
         
-        # 如果是继续翻译模式，计算已经翻译的段落数量和总段落数
+        # Handle continue mode progress calculation
         if self.continue_mode:
             try:
-                # 读取源文件获取总段落数
                 if os.path.exists(self.src_split_json_path):
                     with open(self.src_split_json_path, 'r', encoding='utf-8') as f:
                         source_content = json.load(f)
@@ -113,18 +107,15 @@ class DocumentTranslator:
                 else:
                     total_segments = total_current_batch
                 
-                # 读取已翻译文件获取已完成段落数
                 if os.path.exists(self.result_split_json_path):
                     with open(self.result_split_json_path, 'r', encoding='utf-8') as f:
                         translated_content = json.load(f)
                         completed_count = len(translated_content)
                 
-                # 计算已完成比例和剩余比例
                 if total_segments > 0:
                     completed_ratio = completed_count / total_segments
-                    remaining_ratio = 1.0 - completed_ratio  # 剩余待翻译的比例
+                    remaining_ratio = 1.0 - completed_ratio
                     
-                    # 在UI上显示起始进度
                     self.update_ui_safely(
                         progress_callback, 
                         completed_ratio, 
@@ -133,21 +124,17 @@ class DocumentTranslator:
                 
             except Exception as e:
                 app_logger.warning(f"Could not determine previous progress: {str(e)}")
-                # 出错时使用默认值
                 total_segments = total_current_batch
                 remaining_ratio = 1.0
         else:
-            # 非继续模式，总段落数就是当前批次
             total_segments = total_current_batch
         
         def process_segment(segment_data):
             segment, _, current_glossary_terms = segment_data
             try:
-                # 复制当前的前文上下文，避免并发问题
                 with self.lock:
                     current_previous = self.previous_content
                 
-                # 执行翻译
                 translated_text = translate_text(
                     segment, current_previous, self.model, self.use_online, self.api_key,
                     self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
@@ -160,13 +147,11 @@ class DocumentTranslator:
                     return None
                 
                 with self.lock:
-                    # 处理和写入结果
                     translation_results = process_translation_results(
                         segment, translated_text,
                         self.src_split_json_path, self.result_split_json_path, self.failed_json_path,
                         self.src_lang, self.dst_lang
                     )
-                    # 更新前文上下文
                     self.previous_content = self._update_previous_content(
                         translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
                     )
@@ -177,39 +162,28 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                 return None
 
-        # 使用线程池执行翻译并在主线程更新进度
+        # Use thread pool for translation
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
             futures = [executor.submit(process_segment, seg) for seg in all_segments]
             
-            # 如果是新的翻译（非继续模式），设置初始进度为0
             if not self.continue_mode:
                 self.update_ui_safely(progress_callback, 0.0, f"Translating...")
             
-            # 记录当前批次已完成的数量
             current_batch_completed = 0
             
-            for idx, future in enumerate(as_completed(futures), start=1):
+            for future in as_completed(futures):
                 try:
                     future.result()
                 except Exception as e:
                     app_logger.error(f"Segment translation error: {e}")
                 
-                # 更新当前批次已完成数量
                 current_batch_completed += 1
                 
-                # 计算整体进度
+                # Calculate overall progress
                 if self.continue_mode:
-                    # 计算当前批次的完成比例
                     current_batch_progress = current_batch_completed / total_current_batch
-                    
-                    # 计算当前批次对总体进度的贡献 = 剩余比例 * 当前批次进度
                     batch_contribution = remaining_ratio * current_batch_progress
-                    
-                    # 总进度 = 已完成比例 + 当前批次贡献
                     overall_progress = (1.0 - remaining_ratio) + batch_contribution
-                    
-                    # 计算当前总完成段落数
-                    current_total_completed = completed_count + current_batch_completed
                     
                     self.update_ui_safely(
                         progress_callback, 
@@ -217,7 +191,6 @@ class DocumentTranslator:
                         f"Translating..."
                     )
                 else:
-                    # 非继续模式，进度就是当前批次的进度
                     p = current_batch_completed / total_current_batch
                     self.update_ui_safely(progress_callback, p, f"Translating...")
 
@@ -228,7 +201,7 @@ class DocumentTranslator:
             app_logger.info("No failed segments to retranslate. Skipping this step.")
             return False
 
-        # 读取并检查失败列表
+        # Read and check failed list
         with open(self.failed_json_path, 'r', encoding='utf-8') as f:
             try:
                 data = json.load(f)
@@ -239,7 +212,7 @@ class DocumentTranslator:
                 app_logger.error("Failed to decode JSON. Skipping this step.")
                 return False
 
-        # 获取所有失败分段
+        # Get failed segments
         all_failed_segments = stream_segment_json(
             self.failed_json_path,
             self.max_token,
@@ -256,14 +229,14 @@ class DocumentTranslator:
             app_logger.info("All text has been translated.")
             return False
 
-        # 处理最后一次尝试的逐行翻译
+        # Special handling for last try - line by line translation
         if last_try and all_failed_segments:
             app_logger.info("Last try mode: processing each line individually for better success rate")
             
             processed_segments = []
             total_lines = 0
             
-            # 先计算总行数
+            # Count total lines
             for segment, _, _ in all_failed_segments:
                 try:
                     segment_content = clean_json(segment)
@@ -276,14 +249,12 @@ class DocumentTranslator:
             app_logger.info(f"Total lines to process in last try: {total_lines}")
             current_line = 0
             
-            # 分割每个段落为单行
+            # Split each segment into individual lines
             for segment, segment_progress, current_glossary_terms in all_failed_segments:
                 try:
-                    # 解析JSON内容
                     segment_content = clean_json(segment)
                     segment_json = json.loads(segment_content)
                     
-                    # 处理每一行
                     for key, value in segment_json.items():
                         single_line_json = {key: value}
                         single_line_segment = f"```json\n{json.dumps(single_line_json, ensure_ascii=False, indent=4)}\n```"
@@ -291,7 +262,7 @@ class DocumentTranslator:
                         current_line += 1
                         line_progress = current_line / total_lines if total_lines > 0 else 0
                         
-                        # 过滤术语表，只保留与当前行相关的术语
+                        # Filter glossary terms for current line
                         line_glossary_terms = []
                         if current_glossary_terms:
                             line_glossary_terms = [term for term in current_glossary_terms if term[0] in value]
@@ -303,12 +274,11 @@ class DocumentTranslator:
                     current_line += 1
                     processed_segments.append((segment, current_line / total_lines if total_lines > 0 else 0, current_glossary_terms))
             
-            # 更新处理队列
             if processed_segments:
                 all_failed_segments = processed_segments
                 app_logger.info(f"Final attempt will process {len(processed_segments)} individual lines")
         
-        # 清空失败列表
+        # Clear failed list
         with self.lock:
             with open(self.failed_json_path, 'w', encoding='utf-8') as f:
                 json.dump([], f, ensure_ascii=False, indent=4)
@@ -350,7 +320,7 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                 return None
 
-        # 使用线程池并在主线程更新进度
+        # Use thread pool and update progress in main thread
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
             futures = [executor.submit(process_failed_segment, seg) for seg in all_failed_segments]
             self.update_ui_safely(progress_callback, 0.0, f"{retry_desc}...")
@@ -367,62 +337,45 @@ class DocumentTranslator:
         return True
 
     def _update_previous_content(self, translated_text_dict, previous_content, max_tokens):
-        """
-        Update the previous context, keeping at most three translated segments with total tokens under max_tokens
-        """
-        # Check input validity
+        """Update context, keeping most recent translated segments within token limit"""
         if not translated_text_dict:
             return previous_content
         
-        # Sort dictionary items by key and convert to list of (key, value) pairs
         sorted_items = sorted(translated_text_dict.items(), key=lambda x: x[0])
-        
-        # Filter out empty or invalid values
         valid_items = [(k, v) for k, v in sorted_items if v and len(v.strip()) > 1]
         
-        # Return original content if no valid items
         if not valid_items:
             return previous_content
         
-        # Keep only the last three segments (newest three)
+        # Keep only last three segments
         if len(valid_items) > 3:
             valid_items = valid_items[-3:]
         
-        # Calculate total token count for all segments
         total_tokens = sum(num_tokens_from_string(v) for _, v in valid_items)
         
-        # If total tokens exceed limit and only one segment, return original previous_content
         if total_tokens > max_tokens and len(valid_items) == 1:
             app_logger.info(f"Single paragraph exceeds token limit: {total_tokens} tokens > {max_tokens}")
             return previous_content
         
-        # If total tokens exceed limit, trim segments
         if total_tokens > max_tokens:
-            # Try to keep segments from newest to oldest
             final_items = []
             current_tokens = 0
             
-            # Start adding from newest segment
             for item in reversed(valid_items):
                 k, v = item
                 v_tokens = num_tokens_from_string(v)
                 
-                # If adding this segment would exceed limit, stop
                 if current_tokens + v_tokens > max_tokens:
-                    # If no segments added yet, return original previous_content
                     if not final_items:
                         app_logger.info(f"Cannot fit any paragraph within token limit")
                         return previous_content
                     break
                 
-                # Add this segment and update token count
-                final_items.insert(0, item)  # Insert at front to maintain original order
+                final_items.insert(0, item)
                 current_tokens += v_tokens
             
-            # Update valid items list with segments that fit within token limit
             valid_items = final_items
         
-        # Create new dictionary, keeping original keys
         new_content = {}
         for k, v in valid_items:
             new_content[k] = v
@@ -447,7 +400,7 @@ class DocumentTranslator:
             os.makedirs(temp_folder,exist_ok=True)
     
     def _mark_segment_as_failed(self, segment):
-        # 使用锁保护文件访问        
+        # Protect file access with lock
         if not os.path.exists(self.failed_json_path):
             with open(self.failed_json_path, "w", encoding="utf-8") as f:
                 json.dump([], f)
@@ -473,20 +426,17 @@ class DocumentTranslator:
             json.dump(failed_segments, f, ensure_ascii=False, indent=4)
     
     def process(self, file_name, file_extension, progress_callback=None):
-        # 检查是否使用继续模式
+        # Check if using continue mode
         if self.continue_mode:
-            # 计算当前进度
             translated_count = 0
             total_count = 0
             
             try:
-                # 计算已翻译段落数
                 if os.path.exists(self.result_split_json_path):
                     with open(self.result_split_json_path, 'r', encoding='utf-8') as f:
                         translated_content = json.load(f)
                         translated_count = len(translated_content)
                 
-                # 计算总段落数
                 if os.path.exists(self.src_split_json_path):
                     with open(self.src_split_json_path, 'r', encoding='utf-8') as f:
                         source_content = json.load(f)
@@ -502,10 +452,8 @@ class DocumentTranslator:
                     app_logger.info(f"Continuing from previous progress: {translated_count}/{total_count} ({current_progress:.1%})")
             except Exception as e:
                 app_logger.warning(f"Could not determine previous progress: {str(e)}")
-                # 如果无法确定进度，使用默认值
                 self.update_ui_safely(progress_callback, 0, "Continuing translation...")
         else:
-            # 非继续模式，清理临时文件夹
             self._clear_temp_folder()
 
             app_logger.info("Extracting content to JSON...")
@@ -520,6 +468,7 @@ class DocumentTranslator:
         self.update_ui_safely(progress_callback, 0, "Translating, please wait...")
         self.translate_content(progress_callback)
 
+        # Handle retries for failed translations
         retry_count = 0
         while retry_count < self.max_retries and self.translated_failed:
             is_last_try = (retry_count == self.max_retries - 1)
@@ -541,7 +490,7 @@ class DocumentTranslator:
         self.update_ui_safely(progress_callback, 0, "Translation completed, generating output file...")
         self.write_translated_json_to_file(self.src_json_path, self.result_json_path, progress_callback)
 
-        # 确保最终进度显示为100%
+        # Ensure final progress shows 100%
         self.update_ui_safely(progress_callback, 1.0, "Translation completed successfully")
 
         result_folder = "result" 
