@@ -116,18 +116,18 @@ class DocumentTranslator:
             app_logger.info("No failed segments to retranslate. Skipping this step.")
             return False
 
-        # 检查文件是否为空或包含空JSON数组
+        # Check if file is empty or contains empty JSON array
         with open(self.failed_json_path, 'r', encoding='utf-8') as f:
             try:
                 data = json.load(f)
-                if not data:  # 如果JSON是空列表或字典
+                if not data:  # If JSON is an empty list or dict
                     app_logger.info("No failed segments to retranslate. Skipping this step.")
                     return False
             except json.JSONDecodeError:
                 app_logger.error("Failed to decode JSON. Skipping this step.")
                 return False
 
-        # 获取所有失败段
+        # Get all failed segments
         all_failed_segments = stream_segment_json(
             self.failed_json_path,
             self.max_token,
@@ -144,46 +144,45 @@ class DocumentTranslator:
             app_logger.info("All text has been translated.")
             return False
 
-        # 清空失败文件，准备重新添加新的失败段
+        # Clear failed file to prepare for new failed segments
         with open(self.failed_json_path, "w", encoding="utf-8") as f:
             json.dump([], f, ensure_ascii=False, indent=4)
         
         app_logger.info(f"Retranslating {len(all_failed_segments)} failed segments...")
         
-        # 如果是最后一次尝试且有失败段，则逐行处理
+        # For last attempt, process line by line for better success rate
         if last_try and all_failed_segments:
             app_logger.info("Last try mode: processing each line individually for better success rate")
             
-            # 逐行处理的函数
             processed_segments = []
             for segment, segment_progress, current_glossary_terms in all_failed_segments:
                 try:
-                    # 解析段落中的JSON内容
+                    # Parse JSON content in the segment
                     segment_content = clean_json(segment)
                     segment_json = json.loads(segment_content)
                     
-                    # 对每一行分别处理
+                    # Process each line separately
                     for key, value in segment_json.items():
-                        # 创建单行JSON
+                        # Create single line JSON
                         single_line_json = {key: value}
                         single_line_segment = f"```json\n{json.dumps(single_line_json, ensure_ascii=False, indent=4)}\n```"
                         
-                        # 计算每行的进度
+                        # Calculate progress for each line
                         line_progress = (float(key) / max([int(k) for k in segment_json.keys() if k.isdigit()], default=1))
                         
-                        # 确定该行相关的术语
+                        # Determine relevant terms for this line
                         line_glossary_terms = []
                         if current_glossary_terms:
                             line_glossary_terms = [term for term in current_glossary_terms if term[0] in value]
                         
-                        # 添加到处理队列
+                        # Add to processing queue
                         processed_segments.append((single_line_segment, line_progress, line_glossary_terms))
                         
                 except (json.JSONDecodeError, ValueError) as e:
                     app_logger.warning(f"Error parsing segment content: {e}. Keeping original segment.")
                     processed_segments.append((segment, segment_progress, current_glossary_terms))
             
-            # 更新处理队列
+            # Update processing queue
             if processed_segments:
                 all_failed_segments = processed_segments
                 app_logger.info(f"Split into {len(all_failed_segments)} individual lines for processing")
@@ -191,7 +190,10 @@ class DocumentTranslator:
         for i, (segment, segment_progress, current_glossary_terms) in enumerate(all_failed_segments):
             try:
                 if progress_callback:
-                    progress_callback(segment_progress, desc=f"Retranslating...")
+                    if last_try:
+                        progress_callback(segment_progress, desc=f"Final translation attempt...{retry_count+1}/{max_retries}")
+                    else:   
+                        progress_callback(segment_progress, desc=f"Retrying translation...{retry_count+1}/{max_retries}")
             
                 translated_text = translate_text(
                     segment, PREVIOUS_CONTENT, self.model, self.use_online, self.api_key,
@@ -203,7 +205,13 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
 
-                translation_results = process_translation_results(segment, translated_text, self.src_split_json_path, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
+                # Process translation results with last_try parameter
+                translation_results = process_translation_results(
+                    segment, translated_text, self.src_split_json_path, 
+                    self.result_split_json_path, self.failed_json_path, 
+                    self.src_lang, self.dst_lang, last_try=last_try
+                )
+                
                 PREVIOUS_CONTENT = self._update_previous_content(translation_results, PREVIOUS_CONTENT, MAX_PREVIOUS_TOKENS)
             
             except (json.JSONDecodeError, ValueError, RuntimeError) as e:
@@ -218,69 +226,61 @@ class DocumentTranslator:
 
     def _update_previous_content(self, translated_text_dict, previous_content, max_tokens):
         """
-        更新前文上下文，处理translated_text_dict，保持最多三段翻译内容，且总token数不超过max_tokens
-        
-        参数:
-        translated_text_dict (dict): 新翻译的文本，格式为字典，如{"0": "段落1", "1": "段落2"}
-        previous_content (dict): 当前的上下文内容，与translated_text_dict格式相同
-        max_tokens (int): 允许的最大token数量
-        
-        返回:
-        dict: 更新后的上下文内容字典，如果translated_text_dict处理后超过token限制，则返回previous_content
+        Update the previous context, keeping at most three translated segments with total tokens under max_tokens
         """
-        # 检查输入的有效性
+        # Check input validity
         if not translated_text_dict:
             return previous_content
         
-        # 将字典项按键排序并转换为列表，每项为(key, value)
+        # Sort dictionary items by key and convert to list of (key, value) pairs
         sorted_items = sorted(translated_text_dict.items(), key=lambda x: x[0])
         
-        # 过滤掉空值或无效值
+        # Filter out empty or invalid values
         valid_items = [(k, v) for k, v in sorted_items if v and len(v.strip()) > 1]
         
-        # 如果没有有效项，返回原内容
+        # Return original content if no valid items
         if not valid_items:
             return previous_content
         
-        # 只保留最后三段（最新的三段）
+        # Keep only the last three segments (newest three)
         if len(valid_items) > 3:
             valid_items = valid_items[-3:]
         
-        # 计算所有段落的总token数
+        # Calculate total token count for all segments
         total_tokens = sum(num_tokens_from_string(v) for _, v in valid_items)
         
-        # 如果总token数超过限制，且只有一段，则返回原来的previous_content
+        # If total tokens exceed limit and only one segment, return original previous_content
         if total_tokens > max_tokens and len(valid_items) == 1:
             app_logger.info(f"Single paragraph exceeds token limit: {total_tokens} tokens > {max_tokens}")
             return previous_content
         
-        # 如果总token数超过限制，需要裁剪段落
+        # If total tokens exceed limit, trim segments
         if total_tokens > max_tokens:
-            # 从最新到最旧尝试保留段落
+            # Try to keep segments from newest to oldest
             final_items = []
             current_tokens = 0
             
-            # 从最新段落开始添加
+            # Start adding from newest segment
             for item in reversed(valid_items):
                 k, v = item
                 v_tokens = num_tokens_from_string(v)
                 
-                # 如果添加这段后会超过限制，停止添加
+                # If adding this segment would exceed limit, stop
                 if current_tokens + v_tokens > max_tokens:
-                    # 如果还没有添加任何段落，返回原来的previous_content
+                    # If no segments added yet, return original previous_content
                     if not final_items:
                         app_logger.info(f"Cannot fit any paragraph within token limit")
                         return previous_content
                     break
                 
-                # 添加这段并更新token计数
-                final_items.insert(0, item)  # 在前面插入，保持原来的顺序
+                # Add this segment and update token count
+                final_items.insert(0, item)  # Insert at front to maintain original order
                 current_tokens += v_tokens
             
-            # 更新有效项列表为可以符合token限制的项
+            # Update valid items list with segments that fit within token limit
             valid_items = final_items
         
-        # 创建新的字典，保留原始键
+        # Create new dictionary, keeping original keys
         new_content = {}
         for k, v in valid_items:
             new_content[k] = v
@@ -349,8 +349,14 @@ class DocumentTranslator:
         self.translate_content(progress_callback)
 
         retry_count = 0
-        while retry_count < self.max_retries and self.translated_failed: 
-            self.translated_failed = self.retranslate_failed_content(retry_count, self.max_retries, progress_callback)    
+        while retry_count < self.max_retries and self.translated_failed:
+            is_last_try = (retry_count == self.max_retries - 1)
+            self.translated_failed = self.retranslate_failed_content(
+                retry_count, 
+                self.max_retries, 
+                progress_callback, 
+                last_try=is_last_try
+            )
             retry_count += 1
 
         if progress_callback:

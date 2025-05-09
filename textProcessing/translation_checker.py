@@ -93,7 +93,7 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
     
     return True
 
-def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, src_lang, dst_lang):
+def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, src_lang, dst_lang, last_try=False):
     """
     Process translation results and save successful and failed translations.
     Updates translation status in the source split JSON file.
@@ -107,7 +107,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
     failed_translations = []
     result_dict = {}
     
-    # Keep track of successfully translated counts
+    # Track successfully translated items
     successful_counts = []
 
     # Parse original JSON
@@ -133,40 +133,62 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         else:
             translated_value = ""
         
-        # Check if we have a valid translation based on language-specific rules
-        if is_translation_valid(value, translated_value, src_lang, dst_lang):
-            successful_translations.append({
-                "count": key,
-                "original": value,
-                "translated": translated_value
-            })
-            result_dict[key] = translated_value
-            
-            # Add to successful counts list (convert to int for proper comparison)
-            try:
-                successful_counts.append(int(key))
-            except (ValueError, TypeError):
-                # If key can't be converted to int, use string
-                successful_counts.append(key)
+        # In last try mode, accept any non-empty translation as successful
+        if last_try:
+            if translated_value and translated_value.strip() != "":
+                successful_translations.append({
+                    "count": key,
+                    "original": value,
+                    "translated": translated_value
+                })
+                result_dict[key] = translated_value
+                
+                try:
+                    successful_counts.append(int(key))
+                except (ValueError, TypeError):
+                    successful_counts.append(key)
+            else:
+                failed_translations.append({
+                    "count": int(key), 
+                    "value": value
+                })
         else:
-            failed_translations.append({
-                "count": int(key), 
-                "value": value
-            })
+            # Normal mode: check if translation is valid
+            if is_translation_valid(value, translated_value, src_lang, dst_lang):
+                successful_translations.append({
+                    "count": key,
+                    "original": value,
+                    "translated": translated_value
+                })
+                result_dict[key] = translated_value
+                
+                try:
+                    successful_counts.append(int(key))
+                except (ValueError, TypeError):
+                    successful_counts.append(key)
+            else:
+                failed_translations.append({
+                    "count": int(key), 
+                    "value": value
+                })
 
-    # Use a fixed box width instead of calculating dynamically
+    # Use a fixed box width for logging
     fixed_box_width = 100
     
-    # Format successful translations within a text box
+    # Log successful translations
     if successful_translations:
         app_logger.info("+" + "-" * fixed_box_width + "+")
+        if last_try:
+            app_logger.info("| LAST TRY MODE: Accepting any non-empty translations")
+            app_logger.info("+" + "-" * fixed_box_width + "+")
+        
         for item in successful_translations:
             text = f"[{item['count']}] {item['original']} ==> {item['translated']}"
             padded_line = f"| {text}"
             app_logger.info(padded_line)
         app_logger.info("+" + "-" * fixed_box_width + "+")
     
-    # Format failed translations within a text box if any exist
+    # Log failed translations
     if failed_translations:
         app_logger.warning("+" + "-" * fixed_box_width + "+")
         header = "FAILED TRANSLATIONS:"
@@ -191,18 +213,17 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         save_json(FAILED_JSON_PATH, failed_translations)
         app_logger.info(f"Appended {len(failed_translations)} missing or invalid translations to {FAILED_JSON_PATH}")
     
-    # Update translation status in the source split JSON file
+    # Update translation status in the source file
     if successful_counts:
-        # 加载源JSON文件
         try:
             with open(SRC_SPLIT_JSON_PATH, "r", encoding="utf-8") as f:
                 src_data = json.load(f)
                 
-            # 更新翻译状态
+            # Update translation status
             updated_count = 0
             for item in src_data:
                 count = item.get("count")
-                # 确保类型匹配，转换字符串count为整数进行比较
+                # Ensure type matching by converting string count to integer
                 if isinstance(count, str) and count.isdigit():
                     count = int(count)
                 
@@ -210,7 +231,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                     item["translated_status"] = True
                     updated_count += 1
                     
-            # 保存更新后的文件
+            # Save updated file
             with open(SRC_SPLIT_JSON_PATH, "w", encoding="utf-8") as f:
                 json.dump(src_data, f, ensure_ascii=False, indent=4)
                 
