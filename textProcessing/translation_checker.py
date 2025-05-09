@@ -192,8 +192,8 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
             collapse_padding=True,
         )
         success_table.add_column("Count", style="cyan", no_wrap=True)
-        success_table.add_column("Original", style="white")
-        success_table.add_column("Translated", style="bright_green")
+        success_table.add_column("Original", style="white", overflow="fold")
+        success_table.add_column("Translated", style="bright_green", overflow="fold")
         
         for item in successful_translations:
             success_table.add_row(
@@ -221,8 +221,8 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
             collapse_padding=True,
         )
         failed_table.add_column("Count", style="cyan", no_wrap=True)
-        failed_table.add_column("Original", style="white")
-        failed_table.add_column("Result", style=result_style)
+        failed_table.add_column("Original", style="white", overflow="fold")
+        failed_table.add_column("Result", style=result_style, overflow="fold")
         
         for item in failed_translations:
             if not translated_json.get(str(item['count']), "").strip():
