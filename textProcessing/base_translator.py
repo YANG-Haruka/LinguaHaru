@@ -72,10 +72,11 @@ class DocumentTranslator:
             self.previous_prompt,
             self.src_lang,
             self.dst_lang,
-            self.glossary_path
+            self.glossary_path,
+            self.continue_mode
         )
         
-        if not all_segments:
+        if not all_segments and not self.continue_mode:
             app_logger.warning("No segments were generated.")
             return
 
@@ -96,7 +97,7 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
 
-                translation_results = process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
+                translation_results = process_translation_results(segment, translated_text, self.src_split_json_path, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
                 PREVIOUS_CONTENT = self._update_previous_content(translation_results, PREVIOUS_CONTENT, MAX_PREVIOUS_TOKENS)
             
             except (json.JSONDecodeError, ValueError, RuntimeError) as e:
@@ -107,7 +108,7 @@ class DocumentTranslator:
                 progress_callback(segment_progress, desc="Translating...Please wait.")
                 app_logger.info(f"Progress: {segment_progress * 100:.2f}%")
 
-    def retranslate_failed_content(self, retry_count, max_retries, progress_callback):
+    def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
         global PREVIOUS_CONTENT, MAX_PREVIOUS_TOKENS
         app_logger.info(f"Retrying translation...{retry_count}/{max_retries}")
         
@@ -135,7 +136,8 @@ class DocumentTranslator:
             self.previous_prompt,
             self.src_lang,
             self.dst_lang,
-            self.glossary_path
+            self.glossary_path,
+            self.continue_mode
         )
         
         if not all_failed_segments:
@@ -147,6 +149,44 @@ class DocumentTranslator:
             json.dump([], f, ensure_ascii=False, indent=4)
         
         app_logger.info(f"Retranslating {len(all_failed_segments)} failed segments...")
+        
+        # 如果是最后一次尝试且有失败段，则逐行处理
+        if last_try and all_failed_segments:
+            app_logger.info("Last try mode: processing each line individually for better success rate")
+            
+            # 逐行处理的函数
+            processed_segments = []
+            for segment, segment_progress, current_glossary_terms in all_failed_segments:
+                try:
+                    # 解析段落中的JSON内容
+                    segment_content = clean_json(segment)
+                    segment_json = json.loads(segment_content)
+                    
+                    # 对每一行分别处理
+                    for key, value in segment_json.items():
+                        # 创建单行JSON
+                        single_line_json = {key: value}
+                        single_line_segment = f"```json\n{json.dumps(single_line_json, ensure_ascii=False, indent=4)}\n```"
+                        
+                        # 计算每行的进度
+                        line_progress = (float(key) / max([int(k) for k in segment_json.keys() if k.isdigit()], default=1))
+                        
+                        # 确定该行相关的术语
+                        line_glossary_terms = []
+                        if current_glossary_terms:
+                            line_glossary_terms = [term for term in current_glossary_terms if term[0] in value]
+                        
+                        # 添加到处理队列
+                        processed_segments.append((single_line_segment, line_progress, line_glossary_terms))
+                        
+                except (json.JSONDecodeError, ValueError) as e:
+                    app_logger.warning(f"Error parsing segment content: {e}. Keeping original segment.")
+                    processed_segments.append((segment, segment_progress, current_glossary_terms))
+            
+            # 更新处理队列
+            if processed_segments:
+                all_failed_segments = processed_segments
+                app_logger.info(f"Split into {len(all_failed_segments)} individual lines for processing")
         
         for i, (segment, segment_progress, current_glossary_terms) in enumerate(all_failed_segments):
             try:
@@ -163,7 +203,7 @@ class DocumentTranslator:
                     self._mark_segment_as_failed(segment)
                     continue
 
-                translation_results = process_translation_results(segment, translated_text, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
+                translation_results = process_translation_results(segment, translated_text, self.src_split_json_path, self.result_split_json_path, self.failed_json_path, self.src_lang, self.dst_lang)
                 PREVIOUS_CONTENT = self._update_previous_content(translation_results, PREVIOUS_CONTENT, MAX_PREVIOUS_TOKENS)
             
             except (json.JSONDecodeError, ValueError, RuntimeError) as e:
@@ -290,17 +330,18 @@ class DocumentTranslator:
             json.dump(failed_segments, f, ensure_ascii=False, indent=4)
     
     def process(self, file_name, file_extension, progress_callback=None):
-        self._clear_temp_folder()
+        if not self.continue_mode:
+            self._clear_temp_folder()
 
-        app_logger.info("Extracting content to JSON...")
-        if progress_callback:
-            progress_callback(0, desc="Extracting text, please wait...")
-        self.extract_content_to_json(progress_callback)
+            app_logger.info("Extracting content to JSON...")
+            if progress_callback:
+                progress_callback(0, desc="Extracting text, please wait...")
+            self.extract_content_to_json(progress_callback)
 
-        app_logger.info("Split JSON...")
-        if progress_callback:
-            progress_callback(0, desc="Extracting text, please wait...")
-        split_text_by_token_limit(self.src_json_path)
+            app_logger.info("Split JSON...")
+            if progress_callback:
+                progress_callback(0, desc="Extracting text, please wait...")
+            split_text_by_token_limit(self.src_json_path)
         
         app_logger.info("Translating content...")
         if progress_callback:

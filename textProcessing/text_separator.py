@@ -109,9 +109,10 @@ def find_terms_with_hashtable(text, glossary_entries):
     
     return results
 
-def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, src_lang=None, dst_lang=None, glossary_path=None):
+def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, src_lang=None, dst_lang=None, glossary_path=None, continue_mode=False):
     """
     Process JSON in segments, pre-segmenting the content upfront and then returning all segments at once.
+    In continue_mode, skip segments that are already translated.
     """
     # Load glossary if provided
     glossary_entries = []
@@ -141,7 +142,7 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
     # Calculate maximum count value for progress calculation
     max_count = max((cell.get("count", 0) for cell in cell_data), default=0)
     
-    # Pre-calculate token count for prompts (excluding previous_text)
+    # Calculate token count for prompts (excluding previous_text)
     prompt_base_token_count = sum(
         num_tokens_from_string(json.dumps(prompt, ensure_ascii=False))
         for prompt in [system_prompt, user_prompt, previous_prompt]
@@ -166,6 +167,9 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
     for i, cell in enumerate(cell_data):
         count = cell.get("count")
         value = cell.get("value", "").strip()
+        if continue_mode and cell.get("translated_status", False):
+            continue
+            
         if count is None or not value:
             continue  # Skip invalid or empty cells
         
@@ -266,7 +270,7 @@ def calculate_progress(segment_dict, max_count):
 def split_text_by_token_limit(file_path, max_tokens=256):
     """
     Split long text items in JSON data into smaller chunks based on token limit
-    while preserving complete sentences.
+    while preserving complete sentences. Add translation status field.
     """
     # Load the original JSON file
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -282,6 +286,7 @@ def split_text_by_token_limit(file_path, max_tokens=256):
         if tokens <= max_tokens:
             new_item = copy.deepcopy(item)
             new_item["original_count"] = item["count"]
+            new_item["translated_status"] = False
             result.append(new_item)
             continue
         
@@ -297,6 +302,7 @@ def split_text_by_token_limit(file_path, max_tokens=256):
             
             # Add chunk indicator for better tracking
             new_item["chunk"] = f"{i+1}/{chunks_count}"
+            new_item["translated_status"] = False
             
             result.append(new_item)
     

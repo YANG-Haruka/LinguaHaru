@@ -4,7 +4,7 @@
     "img_height": 250,
     "default_local_model": "qwen2.5:latest",
     "default_online_model": "(Deepseek) DeepSeek-V3",
-    "max_token": 512,
+    "max_token": 768,
     "max_retries": 4,
     "lan_mode": false,
     "default_online": false,
