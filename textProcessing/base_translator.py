@@ -20,7 +20,7 @@ RESULT_JSON_PATH = "dst_translated.json"
 MAX_PREVIOUS_TOKENS = 128
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, num_threads=4):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count):
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
@@ -32,7 +32,7 @@ class DocumentTranslator:
         self.continue_mode = continue_mode
         self.translated_failed = True
         self.glossary_path = "models\Glossary.csv"
-        self.num_threads = num_threads
+        self.num_threads = thread_count
         self.lock = Lock()
         self.last_ui_update_time = 0
 
