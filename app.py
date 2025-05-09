@@ -567,6 +567,11 @@ def update_continue_button(files):
     if not files:
         return gr.update(interactive=False)
     
+    # If multiple files are selected, disable the continue button
+    if isinstance(files, list) and len(files) > 1:
+        return gr.update(interactive=False)
+    
+    # Only check for temp folders if a single file is selected
     has_temp, _ = check_temp_translation_exists(files)
     return gr.update(interactive=has_temp)
 
