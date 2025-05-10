@@ -246,7 +246,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
 
     # Save failed translations
     if failed_translations:
-        save_json(FAILED_JSON_PATH, failed_translations)
+        save_json_without_duplicates(FAILED_JSON_PATH, failed_translations)
     
     # Update translation status in the source file
     if successful_counts:
@@ -290,6 +290,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
     return result_dict
 
 def _mark_all_as_failed(original_text, FAILED_JSON_PATH):
+    """Mark all segments as failed without duplicates"""
     failed_segments = []
 
     try:
@@ -303,7 +304,7 @@ def _mark_all_as_failed(original_text, FAILED_JSON_PATH):
         app_logger.warning(f"Error parsing original JSON during failure marking: {e}")
         return
 
-    save_json(FAILED_JSON_PATH, failed_segments)
+    save_json_without_duplicates(FAILED_JSON_PATH, failed_segments)
     app_logger.warning("All segments marked as failed due to translation errors.")
 
 def save_json(filepath, data):
@@ -321,6 +322,38 @@ def save_json(filepath, data):
 
     existing_data.extend(data)
 
+    with open(filepath, "w", encoding="utf-8") as f:
+        json.dump(existing_data, f, ensure_ascii=False, indent=4)
+
+def save_json_without_duplicates(filepath, data):
+    """Save JSON data without duplicates by count value"""
+    # Load existing data if file exists
+    if os.path.exists(filepath):
+        with open(filepath, "r", encoding="utf-8") as f:
+            try:
+                existing_data = json.load(f)
+                if not isinstance(existing_data, list):
+                    existing_data = []
+            except json.JSONDecodeError:
+                existing_data = []
+    else:
+        existing_data = []
+
+    # Create a lookup of existing items by count
+    existing_counts = {}
+    for item in existing_data:
+        count = item.get("count")
+        if count is not None:
+            existing_counts[count] = item
+
+    # Add new items, avoiding duplicates
+    for item in data:
+        count = item.get("count")
+        if count is not None and count not in existing_counts:
+            existing_data.append(item)
+            existing_counts[count] = item
+
+    # Save updated data
     with open(filepath, "w", encoding="utf-8") as f:
         json.dump(existing_data, f, ensure_ascii=False, indent=4)
 
