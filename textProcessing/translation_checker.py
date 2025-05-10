@@ -133,6 +133,64 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
         return {}
 
+    if not last_try:
+        if translated_json == original_json:
+            existing_fail = []
+            try:
+                with open(FAILED_JSON_PATH, 'r', encoding='utf-8') as f:
+                    for item in json.load(f):
+                        existing_fail.append(item.get('count'))
+            except Exception:
+                pass
+            
+            orig_counts = []
+            for k in original_json.keys():
+                try:
+                    orig_counts.append(int(k))
+                except:
+                    orig_counts.append(k)
+            is_first_try = not set(orig_counts).issubset(set(existing_fail))
+            
+            if is_first_try:
+                app_logger.info("First translation attempt. Displaying results even though they match the original.")
+                fail_table = Table(
+                    box=box.ASCII2,
+                    expand=True,
+                    title="Failed Translations (First Attempt - Same as Original)",
+                    highlight=True,
+                    show_lines=True,
+                    border_style="yellow",
+                    collapse_padding=True,
+                )
+                fail_table.add_column("Count", style="cyan", no_wrap=True)
+                fail_table.add_column("Original", style="white", overflow="fold")
+                fail_table.add_column("Translated", style="yellow", overflow="fold")
+                for key, value in original_json.items():
+                    fail_table.add_row(str(key), markup.escape(str(value)), markup.escape(str(value)))
+                Console(highlight=True, tab_size=4).print(fail_table)
+                
+                _mark_all_as_failed(original_text, FAILED_JSON_PATH)
+                return { k: v for k, v in original_json.items() }
+            else:
+                app_logger.warning("All translations are identical to the original. Marking as failed for retry.")
+                fail_table = Table(
+                    box=box.ASCII2,
+                    expand=True,
+                    title="Failed Translations (Same as Original)",
+                    highlight=True,
+                    show_lines=True,
+                    border_style="yellow",
+                    collapse_padding=True,
+                )
+                fail_table.add_column("Count", style="cyan", no_wrap=True)
+                fail_table.add_column("Original", style="white", overflow="fold")
+                fail_table.add_column("Translated", style="yellow", overflow="fold")
+                for key, value in original_json.items():
+                    fail_table.add_row(str(key), markup.escape(str(value)), markup.escape(str(value)))
+                Console(highlight=True, tab_size=4).print(fail_table)
+                _mark_all_as_failed(original_text, FAILED_JSON_PATH)
+                return {}
+
     for key, value in original_json.items():
         # Get the translated value if it exists
         if translated_json is not None:

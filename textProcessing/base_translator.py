@@ -455,7 +455,7 @@ class DocumentTranslator:
                 self.update_ui_safely(
                     progress_callback, 
                     p, 
-                    f"{retry_desc}...{retry_count+1}/{max_retries} ({completed}/{total})"
+                    f"{retry_desc}...{retry_count+1}/{max_retries}"
                 )
 
         self.update_ui_safely(progress_callback, 1.0, f"{retry_desc} completed.")
@@ -587,9 +587,9 @@ class DocumentTranslator:
                     self.update_ui_safely(
                         progress_callback, 
                         current_progress, 
-                        f"Continuing from previous progress ({translated_count}/{total_count})"
+                        f"Continuing from previous progress..."
                     )
-                    app_logger.info(f"Continuing from previous progress: {translated_count}/{total_count} ({current_progress:.1%})")
+                    app_logger.info(f"Continuing from previous progress: ({current_progress:.1%})")
             except Exception as e:
                 app_logger.warning(f"Could not determine previous progress: {str(e)}")
                 self.update_ui_safely(progress_callback, 0, "Continuing translation...")
