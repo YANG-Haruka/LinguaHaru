@@ -152,8 +152,6 @@ class DocumentTranslator:
                         segment, current_previous, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
                     )
-                    print("success:",success)
-
                     # Handle different failure cases
                     if not success:
                         # Network/API error - use time-based retry

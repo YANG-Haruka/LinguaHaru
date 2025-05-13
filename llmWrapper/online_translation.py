@@ -68,6 +68,9 @@ def translate_online(api_key, messages, model):
         if frequency_penalty is not None:
             params["frequency_penalty"] = frequency_penalty
 
+        # Log the messages being sent to the API
+        app_logger.debug(f"Sending messages to API: {json.dumps(messages, ensure_ascii=False, indent=2)}")
+
         # Send request
         response = client.chat.completions.create(**params)
     except Exception as e:

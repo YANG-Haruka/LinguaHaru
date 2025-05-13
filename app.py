@@ -219,6 +219,8 @@ def read_system_config():
             "show_model_selection": True,
             "show_mode_switch": True,
             "show_lan_mode": True,
+            "show_max_retries": True,
+            "show_thread_count": True,
             "excel_mode_2": False,
             "word_bilingual_mode": False,
             "default_thread_count_online": 2,
@@ -513,6 +515,10 @@ def init_ui(request: gr.Request):
     # Get thread count based on mode
     thread_count_state = config.get("default_thread_count_online", 2) if default_online_state else config.get("default_thread_count_offline", 4)
     
+    # Get visibility settings
+    show_max_retries = config.get("show_max_retries", True)
+    show_thread_count = config.get("show_thread_count", True)
+    
     # Update use_online_model checkbox based on default_online setting
     use_online_value = default_online_state
     
@@ -531,6 +537,10 @@ def init_ui(request: gr.Request):
             model_value = local_models[0] if local_models else None
     
     label_updates = set_labels(user_lang)
+    
+    # Add visibility updates for max_retries and thread_count
+    label_updates[max_retries_slider] = gr.update(label=LABEL_TRANSLATIONS.get(user_lang, LABEL_TRANSLATIONS["en"])["Max Retries"], visible=show_max_retries)
+    label_updates[thread_count_slider] = gr.update(label=LABEL_TRANSLATIONS.get(user_lang, LABEL_TRANSLATIONS["en"])["Thread Count"], visible=show_thread_count)
     
     # Return settings values and UI updates
     return [
@@ -807,6 +817,8 @@ MAX_TOKEN = initial_max_token
 initial_show_model_selection = config.get("show_model_selection", True)
 initial_show_mode_switch = config.get("show_mode_switch", True)
 initial_show_lan_mode = config.get("show_lan_mode", True)
+initial_show_max_retries = config.get("show_max_retries", True)
+initial_show_thread_count = config.get("show_thread_count", True)
 default_local_model = config.get("default_local_model", "")
 default_online_model = config.get("default_online_model", "")
 
@@ -886,7 +898,8 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
                 maximum=10,
                 step=1,
                 value=initial_max_retries,
-                label="Max Retries"
+                label="Max Retries",
+                visible=initial_show_max_retries
             )
         
         with gr.Column(scale=1):
@@ -895,7 +908,8 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
                 maximum=16,
                 step=1,
                 value=initial_thread_count,
-                label="Thread Count"
+                label="Thread Count",
+                visible=initial_show_thread_count
             )
     
     with gr.Row():

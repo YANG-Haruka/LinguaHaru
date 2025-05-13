@@ -10,6 +10,8 @@
     "default_online": false,
     "show_model_selection": true,
     "show_mode_switch": true,
+    "show_max_retries":true,
+    "show_thread_count":true,
     "show_lan_mode": true,
     "excel_mode_2": false,
     "word_bilingual_mode": false,
