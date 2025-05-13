@@ -96,6 +96,7 @@ Happy New Year! Revised logic, added review functionality, and enhanced logging.
 
 
 ## Software Disclaimer  
-The software code is completely open source and can be freely used under the GPL-3.0 license.  
-This software only provides AI translation services, and any content translated using this software is not related to its creator.  
-Users should comply with the law and engage in legal translation activities.
+This software is fully open-source under the GPL-3.0 license and can be freely used.
+It only provides AI-based translation services; the creator holds no responsibility for the translated content.
+Please ensure your use complies with applicable laws and regulations.
+Attribution is always appreciated and makes us happy~ but it's totally optional (´ω｀)♡

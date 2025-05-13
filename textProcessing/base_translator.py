@@ -130,16 +130,17 @@ class DocumentTranslator:
             total_segments = total_current_batch
         
         def process_segment(segment_data):
-            """Process a segment with 1-hour retry limit"""
+            """Process a segment with optimized retry logic"""
             segment, segment_progress, current_glossary_terms = segment_data
             
-            # Set 1-hour time limit
-            max_retry_time = 3600
+            # Set retry limits
+            max_retry_time = 3600  # 1 hour for network errors
+            max_empty_retries = 1  # 2 retries for empty results
             start_time = time.time()
             retry_count = 0
+            empty_result_count = 0
             
-            # Retry until time limit is reached
-            while (time.time() - start_time) < max_retry_time:
+            while True:
                 retry_count += 1
                 
                 try:
@@ -151,20 +152,33 @@ class DocumentTranslator:
                         segment, current_previous, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
                     )
+                    print("success:",success)
 
-                    if not success or not translated_text:
-                        # Check if time limit reached
+                    # Handle different failure cases
+                    if not success:
+                        # Network/API error - use time-based retry
                         elapsed_time = time.time() - start_time
                         remaining_time = max_retry_time - elapsed_time
                         
                         if remaining_time <= 0:
                             app_logger.error(f"Segment translation failed after 1 hour ({retry_count} attempts). Marking as failed.")
-                            with self.lock:
-                                self._mark_segment_as_failed(segment)
+                            self._mark_segment_as_failed(segment)
                             return None
                         
                         app_logger.warning(f"Segment translation failed (attempt {retry_count}). Retrying...")
-                        time.sleep(min(1, remaining_time))  # Don't wait longer than remaining time
+                        time.sleep(min(1, remaining_time))
+                        continue
+                    
+                    # Success but empty result - use count-based retry
+                    if not translated_text:
+                        empty_result_count += 1
+                        if empty_result_count > max_empty_retries:
+                            app_logger.error(f"Segment returned empty result {max_empty_retries} times. Marking as failed.")
+                            self._mark_segment_as_failed(segment)
+                            return None
+                        
+                        app_logger.warning(f"Segment returned empty result (attempt {empty_result_count}/{max_empty_retries}). Retrying...")
+                        time.sleep(1)
                         continue
                     
                     # Process successful translation
@@ -181,40 +195,30 @@ class DocumentTranslator:
                             )
                             return translation_results
                         else:
-                            # Check if time limit reached
-                            elapsed_time = time.time() - start_time
-                            remaining_time = max_retry_time - elapsed_time
-                            
-                            if remaining_time <= 0:
-                                app_logger.error(f"Failed to process translation results after 1 hour. Marking as failed.")
-                                with self.lock:
-                                    self._mark_segment_as_failed(segment)
+                            # Result processing failed - use count-based retry
+                            empty_result_count += 1
+                            if empty_result_count > max_empty_retries:
+                                app_logger.warning(f"Failed to process results {max_empty_retries} times. Marking as failed.")
+                                self._mark_segment_as_failed(segment)
                                 return None
                             
                             app_logger.warning("Failed to process translation results. Retrying...")
-                            time.sleep(min(1, remaining_time))
+                            time.sleep(1)
                             continue
                     
                 except Exception as e:
-                    # Check if time limit reached
+                    # Exception - use time-based retry for network issues
                     elapsed_time = time.time() - start_time
                     remaining_time = max_retry_time - elapsed_time
                     
                     if remaining_time <= 0:
                         app_logger.error(f"Error processing segment after 1 hour ({retry_count} attempts): {e}. Marking as failed.")
-                        with self.lock:
-                            self._mark_segment_as_failed(segment)
+                        self._mark_segment_as_failed(segment)
                         return None
                     
                     app_logger.warning(f"Error processing segment (attempt {retry_count}): {e}. Retrying...")
                     time.sleep(min(1, remaining_time))
                     continue
-            
-            # Time limit reached
-            app_logger.error(f"Failed to process segment after 1 hour ({retry_count} attempts). Marking as failed.")
-            with self.lock:
-                self._mark_segment_as_failed(segment)
-            return None
 
         # Use thread pool for translation
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
@@ -346,16 +350,17 @@ class DocumentTranslator:
         app_logger.info(f"{retry_desc} {total} segments using {self.num_threads} threads...")
 
         def process_failed_segment(segment_data, last_try=False):
-            """Process a failed segment with 1-hour retry limit"""
+            """Process a failed segment with optimized retry logic"""
             segment, segment_progress, current_glossary_terms = segment_data
             
-            # Set 1-hour time limit
-            max_retry_time = 3600
+            # Set retry limits
+            max_retry_time = 3600  # 1 hour for network errors
+            max_empty_retries = 1  # 1 retries for empty results
             start_time = time.time()
             retry_count = 0
+            empty_result_count = 0
             
-            # Retry until time limit is reached
-            while (time.time() - start_time) < max_retry_time:
+            while True:
                 retry_count += 1
                 
                 try:
@@ -368,19 +373,31 @@ class DocumentTranslator:
                         self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
                     )
 
-                    if not success or not translated_text:
-                        # Check if time limit reached
+                    # Handle different failure cases
+                    if not success:
+                        # Network/API error - use time-based retry
                         elapsed_time = time.time() - start_time
                         remaining_time = max_retry_time - elapsed_time
                         
                         if remaining_time <= 0:
                             app_logger.error(f"Failed segment translation failed after 1 hour ({retry_count} attempts). Keeping in failed list.")
-                            with self.lock:
-                                self._mark_segment_as_failed(segment)
+                            self._mark_segment_as_failed(segment)
                             return None
                         
                         app_logger.warning(f"Failed segment translation failed (attempt {retry_count}). Retrying...")
-                        time.sleep(min(1, remaining_time))  # Don't wait longer than remaining time
+                        time.sleep(min(1, remaining_time))
+                        continue
+                    
+                    # Success but empty result - use count-based retry
+                    if not translated_text:
+                        empty_result_count += 1
+                        if empty_result_count > max_empty_retries:
+                            app_logger.error(f"Failed segment returned empty result {max_empty_retries} times. Keeping in failed list.")
+                            self._mark_segment_as_failed(segment)
+                            return None
+                        
+                        app_logger.warning(f"Failed segment returned empty result (attempt {empty_result_count}/{max_empty_retries}). Retrying...")
+                        time.sleep(1)
                         continue
                     
                     # Process successful translation
@@ -396,42 +413,35 @@ class DocumentTranslator:
                             self.previous_content = self._update_previous_content(
                                 translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
                             )
+                            app_logger.debug(f"Successfully processed segment")
                             return translation_results
                         else:
-                            # Check if time limit reached
-                            elapsed_time = time.time() - start_time
-                            remaining_time = max_retry_time - elapsed_time
+                            # Result processing failed - use count-based retry
+                            empty_result_count += 1
+                            app_logger.warning(f"Failed to process translation results (attempt {empty_result_count}/{max_empty_retries})")
                             
-                            if remaining_time <= 0:
-                                app_logger.error(f"Failed to process translation results after 1 hour. Keeping in failed list.")
-                                with self.lock:
-                                    self._mark_segment_as_failed(segment)
+                            if empty_result_count > max_empty_retries:
+                                app_logger.warning(f"Failed to process results {max_empty_retries} times. Marking as failed.")
+                                self._mark_segment_as_failed(segment)
                                 return None
                             
                             app_logger.warning("Failed to process translation results. Retrying...")
-                            time.sleep(min(1, remaining_time))
+                            time.sleep(1)
                             continue
                     
                 except Exception as e:
-                    # Check if time limit reached
+                    # Exception - use time-based retry for network issues
                     elapsed_time = time.time() - start_time
                     remaining_time = max_retry_time - elapsed_time
                     
                     if remaining_time <= 0:
                         app_logger.error(f"Error processing failed segment after 1 hour ({retry_count} attempts): {e}. Keeping in failed list.")
-                        with self.lock:
-                            self._mark_segment_as_failed(segment)
+                        self._mark_segment_as_failed(segment)
                         return None
                     
                     app_logger.warning(f"Error processing failed segment (attempt {retry_count}): {e}. Retrying...")
                     time.sleep(min(1, remaining_time))
                     continue
-            
-            # Time limit reached
-            app_logger.error(f"Failed to process failed segment after 1 hour ({retry_count} attempts). Keeping in failed list.")
-            with self.lock:
-                self._mark_segment_as_failed(segment)
-            return None
 
         # Use thread pool for retry translation
         with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
@@ -443,10 +453,16 @@ class DocumentTranslator:
             self.update_ui_safely(progress_callback, 0.0, f"{retry_desc}...")
             
             completed = 0
+            failed_count = 0
+            
             for future in as_completed(futures):
                 try:
-                    future.result()
+                    result = future.result()
+                    if result is None:
+                        failed_count += 1
+                        app_logger.debug(f"Segment processing returned None (failed)")
                 except Exception as e:
+                    failed_count += 1
                     app_logger.error(f"Failed segment error: {e}")
                 
                 completed += 1
@@ -539,30 +555,47 @@ class DocumentTranslator:
     
     def _mark_segment_as_failed(self, segment):
         """Mark segment as failed and add to failed list"""
-        # Protect file access with lock
+        app_logger.debug(f"Marking segment as failed")
+        
+        # Ensure file exists first (without lock)
         if not os.path.exists(self.failed_json_path):
-            with open(self.failed_json_path, "w", encoding="utf-8") as f:
-                json.dump([], f)
-
-        with open(self.failed_json_path, "r+", encoding="utf-8") as f:
             try:
-                failed_segments = json.load(f)
-            except json.JSONDecodeError:
-                failed_segments = []
-
-            try:
-                clean_segment = clean_json(segment)
-                segment_dict = json.loads(clean_segment)
-            except json.JSONDecodeError as e:
-                app_logger.error(f"Failed to decode JSON segment: {segment}. Error: {e}")
+                with open(self.failed_json_path, "w", encoding="utf-8") as f:
+                    json.dump([], f)
+                app_logger.debug(f"Created failed segments file")
+            except Exception as e:
+                app_logger.error(f"Error creating failed segments file: {e}")
                 return
-            for count, value in segment_dict.items():
-                failed_segments.append({
-                    "count": int(count), 
-                    "value": value.strip()
-                })
-            f.seek(0)
-            json.dump(failed_segments, f, ensure_ascii=False, indent=4)
+
+        # Now update the file with proper locking
+        try:
+            with open(self.failed_json_path, "r+", encoding="utf-8") as f:
+                try:
+                    failed_segments = json.load(f)
+                except json.JSONDecodeError:
+                    failed_segments = []
+                    app_logger.warning("Failed segments file was corrupted, starting fresh")
+
+                try:
+                    clean_segment = clean_json(segment)
+                    segment_dict = json.loads(clean_segment)
+                except json.JSONDecodeError as e:
+                    app_logger.error(f"Failed to decode JSON segment: {segment}. Error: {e}")
+                    return
+                    
+                for count, value in segment_dict.items():
+                    failed_segments.append({
+                        "count": int(count), 
+                        "value": value.strip()
+                    })
+                    
+                f.seek(0)
+                f.truncate()  # Clear the file before writing
+                json.dump(failed_segments, f, ensure_ascii=False, indent=4)
+                app_logger.debug(f"Successfully saved {len(segment_dict)} items to failed list")
+                
+        except Exception as e:
+            app_logger.error(f"Error updating failed segments file: {e}")
     
     def process(self, file_name, file_extension, progress_callback=None):
         """Main processing method for document translation"""
