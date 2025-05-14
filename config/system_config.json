@@ -2,7 +2,7 @@
     "app_title": "",
     "img_path": "img/ico.png",
     "img_height": 250,
-    "default_local_model": "qwen2.5:latest",
+    "default_local_model": "qwen3:8b",
     "default_online_model": "(Deepseek) DeepSeek-V3",
     "max_token": 768,
     "max_retries": 4,
@@ -17,6 +17,6 @@
     "word_bilingual_mode": false,
     "default_thread_count_online": 4,
     "default_thread_count_offline": 4,
-    "default_dst_lang": "English",
-    "default_src_lang": "日本語"
+    "default_src_lang": "日本語",
+    "default_dst_lang": "中文"
 }

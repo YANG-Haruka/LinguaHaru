@@ -12,7 +12,7 @@ from .app_queue import modified_translate_button_click, request_stop_translation
 from .ui_utils import (
     get_available_languages, on_src_language_change, on_dst_language_change,
     show_mode_checkbox, update_continue_button, update_model_list_and_api_input,
-    get_user_lang, set_labels, on_add_new
+    get_user_lang, set_labels, on_add_new, swap_languages
 )
 from .translation_process import translate_files
 from config.languages_config import LABEL_TRANSLATIONS
@@ -120,7 +120,6 @@ def create_app():
     initial_thread_count = initial_thread_count_online if initial_default_online else initial_thread_count_offline
     app_title = config.get("app_title", "LinguaHaru")
     app_title_web = "LinguaHaru" if app_title == "" else app_title
-    img_path = config.get("img_path", "img/ico.png")
     img_height = config.get("img_height", 250)
 
     # Get show_model_selection and show_mode_switch from config
@@ -129,13 +128,53 @@ def create_app():
     initial_show_lan_mode = config.get("show_lan_mode", True)
     initial_show_max_retries = config.get("show_max_retries", True)
     initial_show_thread_count = config.get("show_thread_count", True)
-    default_local_model = config.get("default_local_model", "")
-    default_online_model = config.get("default_online_model", "")
 
     encoded_image, mime_type = load_application_icon(config)
 
     # Create a Gradio blocks interface
-    with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
+    with gr.Blocks(
+        title=app_title_web,
+        css="""
+        footer { visibility: hidden; }
+
+        /* Language row */
+        #lang-row {
+            display: flex !important;
+            align-items: center !important;
+            gap: 8px !important;
+            margin-bottom: 20px;
+        }
+
+        #lang-row .gr-dropdown {
+            flex: 1 1 0 !important;
+            min-width: 200px;
+        }
+
+        #swap-btn {
+            flex: 0 0 42px !important;
+            max-width: 42px !important;
+            min-width: 42px !important;
+            height: 42px !important;
+        }
+
+        #swap-btn button {
+            width: 42px !important;
+            height: 42px !important;
+            padding: 0 !important;
+            font-size: 20px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            aspect-ratio: 1/1 !important;
+            border-radius: var(--button-border-radius, 8px);
+        }
+
+        #swap-btn button:hover {
+            transform: rotate(180deg);
+            transition: transform 0.3s ease;
+        }
+        """
+    ) as demo:
         gr.HTML(f"""
         <div style="text-align: center;">
             <h1>{app_title}</h1>
@@ -163,13 +202,18 @@ def create_app():
 
         default_src_lang, default_dst_lang = get_default_languages()
 
-        with gr.Row():
+        with gr.Row(elem_id="lang-row"):
             src_lang = gr.Dropdown(
                 choices=dropdown_choices,
                 label="Source Language",
                 value=default_src_lang,
                 interactive=True,
                 allow_custom_value=True
+            )
+            swap_button = gr.Button(
+                "🔁",
+                elem_id="swap-btn",
+                elem_classes="swap-button"
             )
             dst_lang = gr.Dropdown(
                 choices=dropdown_choices,
@@ -178,13 +222,14 @@ def create_app():
                 interactive=True,
                 allow_custom_value=True
             )
-            # Hidden controls for custom-language entry
-            custom_lang_input = gr.Textbox(
-                label="New language display name",
-                placeholder="e.g. Klingon",
-                visible=False
-            )
-            add_lang_button = gr.Button("Create New Language", visible=False)
+        
+        # Hidden controls for custom-language entry
+        custom_lang_input = gr.Textbox(
+            label="New language display name",
+            placeholder="e.g. Klingon",
+            visible=False
+        )
+        add_lang_button = gr.Button("Create New Language", visible=False)
 
         # Settings section (always visible)
         with gr.Row():
@@ -379,6 +424,13 @@ def create_app():
             partial(on_dst_language_change, CUSTOM_LABEL=CUSTOM_LABEL), 
             inputs=dst_lang, 
             outputs=[custom_lang_input, add_lang_button]
+        )
+        
+        # Swap languages button handler
+        swap_button.click(
+            swap_languages,
+            inputs=[src_lang, dst_lang],
+            outputs=[src_lang, dst_lang]
         )
 
         # 2) Create New Language

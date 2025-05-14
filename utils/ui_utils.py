@@ -2,7 +2,7 @@ import gradio as gr
 import os
 from typing import List, Tuple
 from config.log_config import app_logger
-from config.languages_config import LABEL_TRANSLATIONS, get_available_languages, get_language_code, add_custom_language
+from config.languages_config import LABEL_TRANSLATIONS, get_available_languages, add_custom_language
 from llmWrapper.offline_translation import populate_sum_model
 
 def parse_accept_language(accept_language: str) -> List[Tuple[str, float]]:
@@ -224,3 +224,13 @@ def on_add_new(lang_name, CUSTOM_LABEL):
         gr.update(visible=False),
         gr.update(visible=False)
     )
+
+def swap_languages(src_lang, dst_lang):
+    """Swap source and target languages."""
+    from .app_config import update_language_preferences
+    
+    # Update preferences with swapped values
+    update_language_preferences(src_lang=dst_lang, dst_lang=src_lang)
+    
+    # Return swapped values
+    return dst_lang, src_lang
