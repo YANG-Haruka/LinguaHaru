@@ -144,7 +144,7 @@ def check_temp_translation_exists(files):
 
 def update_model_list_and_api_input(use_online, config):
     """Switch model options and show/hide API Key, also update the config."""
-    from app_config import update_online_mode, read_system_config
+    from .app_config import update_online_mode, read_system_config
     
     # Update the system config with the new online mode
     update_online_mode(use_online)
@@ -188,7 +188,7 @@ def update_model_list_and_api_input(use_online, config):
 
 def on_src_language_change(src_lang, CUSTOM_LABEL):
     """Handler for source language dropdown change."""
-    from app_config import update_language_preferences
+    from .app_config import update_language_preferences
     
     if src_lang != CUSTOM_LABEL:
         update_language_preferences(src_lang=src_lang)
@@ -201,7 +201,7 @@ def on_src_language_change(src_lang, CUSTOM_LABEL):
 
 def on_dst_language_change(dst_lang, CUSTOM_LABEL):
     """Handler for target language dropdown change."""
-    from app_config import update_language_preferences
+    from .app_config import update_language_preferences
     
     if dst_lang != CUSTOM_LABEL:
         update_language_preferences(dst_lang=dst_lang)

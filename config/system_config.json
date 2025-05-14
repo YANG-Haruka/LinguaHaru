@@ -17,6 +17,6 @@
     "word_bilingual_mode": false,
     "default_thread_count_online": 4,
     "default_thread_count_offline": 4,
-    "default_dst_lang": "中文",
+    "default_dst_lang": "English",
     "default_src_lang": "日本語"
 }
