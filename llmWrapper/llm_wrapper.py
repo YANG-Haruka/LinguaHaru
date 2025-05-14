@@ -4,7 +4,8 @@ from llmWrapper.offline_translation import translate_offline
 import json
 import time
 
-def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None):
+
+def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None, check_stop_callback=None):
     """
     Translate text segments with optional glossary support
     
@@ -20,6 +21,10 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
     wait_time = 1
     
     while (time.time() - start_time) < max_retry_time:
+        # Check for stop request at the beginning of each iteration
+        if check_stop_callback:
+            check_stop_callback()
+            
         current_attempt += 1
         
         # Handle dictionary segments
@@ -72,7 +77,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
                 return None, False
                 
             app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
-            time.sleep(wait_time)
+            # Interruptible sleep
+            interruptible_sleep(wait_time, check_stop_callback)
             continue
         
         messages = [
@@ -108,7 +114,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             # Wait before retry with exponential backoff
             wait_time = min(wait_time * 2, 10, remaining_time)  
             app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
-            time.sleep(wait_time)
+            # Interruptible sleep
+            interruptible_sleep(wait_time, check_stop_callback)
                 
         except Exception as e:
             # Update time remaining
@@ -125,8 +132,22 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             # Wait before retry (don't wait longer than remaining time)
             wait_time = min(wait_time * 2, 10, remaining_time)
             app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
-            time.sleep(wait_time)
+            # Interruptible sleep
+            interruptible_sleep(wait_time, check_stop_callback)
     
     # If we reach here, time limit exceeded
     app_logger.error(f"Failed to translate after 1 hour ({current_attempt} attempts).")
     return None, False
+
+def interruptible_sleep(duration, check_stop_callback=None):
+    """Sleep that can be interrupted by checking stop callback"""
+    interval = 0.1  # Check every 100ms
+    elapsed = 0
+    
+    while elapsed < duration:
+        if check_stop_callback:
+            check_stop_callback()  # This will raise exception if stop is requested
+        
+        sleep_time = min(interval, duration - elapsed)
+        time.sleep(sleep_time)
+        elapsed += sleep_time

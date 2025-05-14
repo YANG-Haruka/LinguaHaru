@@ -7,7 +7,7 @@ from threading import Lock
 from config.log_config import app_logger
 from .calculation_tokens import num_tokens_from_string
 
-from llmWrapper.llm_wrapper import translate_text
+from llmWrapper.llm_wrapper import translate_text, interruptible_sleep
 from textProcessing.text_separator import stream_segment_json, split_text_by_token_limit, recombine_split_jsons
 from config.load_prompt import load_prompt
 from .translation_checker import process_translation_results, clean_json, check_and_sort_translations
@@ -158,10 +158,11 @@ class DocumentTranslator:
                     with self.lock:
                         current_previous = self.previous_content
                     
-                    # Try translation
+                    # Try translation with check_stop_callback
                     translated_text, success = translate_text(
                         segment, current_previous, self.model, self.use_online, self.api_key,
-                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
+                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, 
+                        current_glossary_terms, check_stop_callback=self.check_for_stop
                     )
                     # Handle different failure cases
                     if not success:
@@ -175,7 +176,7 @@ class DocumentTranslator:
                             return None
                         
                         app_logger.warning(f"Segment translation failed (attempt {retry_count}). Retrying...")
-                        time.sleep(min(1, remaining_time))
+                        interruptible_sleep(min(1, remaining_time), self.check_for_stop)
                         continue
                     
                     # Success but empty result - use count-based retry
@@ -187,7 +188,7 @@ class DocumentTranslator:
                             return None
                         
                         app_logger.warning(f"Segment returned empty result (attempt {empty_result_count}/{max_empty_retries}). Retrying...")
-                        time.sleep(1)
+                        interruptible_sleep(1, self.check_for_stop)
                         continue
                     
                     # Process successful translation
@@ -212,9 +213,9 @@ class DocumentTranslator:
                                 return None
                             
                             app_logger.warning("Failed to process translation results. Retrying...")
-                            time.sleep(1)
+                            interruptible_sleep(1, self.check_for_stop)
                             continue
-                    
+                
                 except Exception as e:
                     # Exception - use time-based retry for network issues
                     elapsed_time = time.time() - start_time
@@ -226,7 +227,7 @@ class DocumentTranslator:
                         return None
                     
                     app_logger.warning(f"Error processing segment (attempt {retry_count}): {e}. Retrying...")
-                    time.sleep(min(1, remaining_time))
+                    interruptible_sleep(min(1, remaining_time), self.check_for_stop)
                     continue
 
         # Use thread pool for translation
@@ -378,10 +379,11 @@ class DocumentTranslator:
                     with self.lock:
                         current_previous = self.previous_content
                     
-                    # Try translation
+                    # Try translation with check_stop_callback
                     translated_text, success = translate_text(
                         segment, current_previous, self.model, self.use_online, self.api_key,
-                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, current_glossary_terms
+                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, 
+                        current_glossary_terms, check_stop_callback=self.check_for_stop
                     )
 
                     # Handle different failure cases
@@ -396,7 +398,7 @@ class DocumentTranslator:
                             return None
                         
                         app_logger.warning(f"Failed segment translation failed (attempt {retry_count}). Retrying...")
-                        time.sleep(min(1, remaining_time))
+                        interruptible_sleep(min(1, remaining_time), self.check_for_stop)
                         continue
                     
                     # Success but empty result - use count-based retry
@@ -408,7 +410,7 @@ class DocumentTranslator:
                             return None
                         
                         app_logger.warning(f"Failed segment returned empty result (attempt {empty_result_count}/{max_empty_retries}). Retrying...")
-                        time.sleep(1)
+                        interruptible_sleep(1, self.check_for_stop)
                         continue
                     
                     # Process successful translation
@@ -437,9 +439,9 @@ class DocumentTranslator:
                                 return None
                             
                             app_logger.warning("Failed to process translation results. Retrying...")
-                            time.sleep(1)
+                            interruptible_sleep(1, self.check_for_stop)
                             continue
-                    
+                
                 except Exception as e:
                     # Exception - use time-based retry for network issues
                     elapsed_time = time.time() - start_time
@@ -451,7 +453,7 @@ class DocumentTranslator:
                         return None
                     
                     app_logger.warning(f"Error processing failed segment (attempt {retry_count}): {e}. Retrying...")
-                    time.sleep(min(1, remaining_time))
+                    interruptible_sleep(min(1, remaining_time), self.check_for_stop)
                     continue
 
         # Use thread pool for retry translation
