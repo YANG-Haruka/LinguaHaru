@@ -16,5 +16,7 @@
     "excel_mode_2": false,
     "word_bilingual_mode": false,
     "default_thread_count_online": 4,
-    "default_thread_count_offline": 4
+    "default_thread_count_offline": 4,
+    "default_dst_lang": "中文",
+    "default_src_lang": "English"
 }

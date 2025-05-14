@@ -270,15 +270,17 @@ def read_system_config():
             "excel_mode_2": False,
             "word_bilingual_mode": False,
             "default_thread_count_online": 2,
-            "default_thread_count_offline": 4
+            "default_thread_count_offline": 4,
+            "default_src_lang": "English",
+            "default_dst_lang": "English"
         }
 
 def write_system_config(config):
     """Write the system configuration to the config file."""
     config_path = os.path.join("config", "system_config.json")
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    with open(config_path, 'w') as f:
-        json.dump(config, f, indent=4)
+    with open(config_path, 'w', encoding='utf-8') as f:
+        json.dump(config, f, indent=4, ensure_ascii=False)
 
 def update_lan_mode(lan_mode):
     """Update system config with new LAN mode setting."""
@@ -325,6 +327,47 @@ def update_word_bilingual_mode(word_bilingual_mode):
     config["word_bilingual_mode"] = word_bilingual_mode
     write_system_config(config)
     return word_bilingual_mode
+
+def update_language_preferences(src_lang=None, dst_lang=None):
+    """Update system config with new language preferences."""
+    config = read_system_config()
+    
+    if src_lang is not None:
+        config["default_src_lang"] = src_lang
+    if dst_lang is not None:
+        config["default_dst_lang"] = dst_lang
+        
+    write_system_config(config)
+    return config.get("default_src_lang"), config.get("default_dst_lang")
+
+def get_default_languages():
+    """Get default source and target languages from config."""
+    config = read_system_config()
+    default_src = config.get("default_src_lang", "English")
+    default_dst = config.get("default_dst_lang", "English")
+    return default_src, default_dst
+
+def on_src_language_change(src_lang):
+    """Handler for source language dropdown change."""
+    if src_lang != CUSTOM_LABEL:
+        update_language_preferences(src_lang=src_lang)
+    
+    # Return UI updates for custom language controls
+    if src_lang == CUSTOM_LABEL:
+        return gr.update(visible=True), gr.update(visible=True)
+    else:
+        return gr.update(visible=False), gr.update(visible=False)
+
+def on_dst_language_change(dst_lang):
+    """Handler for target language dropdown change."""
+    if dst_lang != CUSTOM_LABEL:
+        update_language_preferences(dst_lang=dst_lang)
+    
+    # Return UI updates for custom language controls
+    if dst_lang == CUSTOM_LABEL:
+        return gr.update(visible=True), gr.update(visible=True)
+    else:
+        return gr.update(visible=False), gr.update(visible=False)
 
 def find_available_port(start_port=9980, max_attempts=20):
     """Find an available port starting from `start_port`."""
@@ -565,6 +608,7 @@ def init_ui(request: gr.Request):
     # Get visibility settings
     show_max_retries = config.get("show_max_retries", True)
     show_thread_count = config.get("show_thread_count", True)
+    default_src_lang, default_dst_lang = get_default_languages()
     
     # Update use_online_model checkbox based on default_online setting
     use_online_value = default_online_state
@@ -606,6 +650,13 @@ def init_ui(request: gr.Request):
         gr.update(choices=model_choices, value=model_value),  # model_choice update
         gr.update(choices=model_choices, value=model_value)   # Another model update
     ] + label_values
+
+def get_default_dropdown_value(saved_lang, dropdown_choices):
+    """Get the appropriate default value for language dropdowns."""
+
+    if saved_lang in dropdown_choices:
+        return saved_lang
+    return saved_lang
 
 def show_mode_checkbox(files):
     """Show Excel mode checkbox if Excel files are present and Word bilingual checkbox if Word files are present."""
@@ -938,18 +989,20 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
     word_bilingual_mode_state = gr.State(initial_word_bilingual_mode)
     thread_count_state = gr.State(initial_thread_count)
 
+    default_src_lang, default_dst_lang = get_default_languages()
+
     with gr.Row():
         src_lang = gr.Dropdown(
             choices=dropdown_choices,
             label="Source Language",
-            value="English" if "English" in dropdown_choices else dropdown_choices[0],
+            value=get_default_dropdown_value(default_src_lang, dropdown_choices),
             interactive=True,
             allow_custom_value=True
         )
         dst_lang = gr.Dropdown(
             choices=dropdown_choices,
             label="Target Language",
-            value="English" if "English" in dropdown_choices else dropdown_choices[0],
+            value=get_default_dropdown_value(default_dst_lang, dropdown_choices),
             interactive=True,
             allow_custom_value=True
         )
@@ -1150,8 +1203,9 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
         else:
             return gr.update(visible=False), gr.update(visible=False)
 
-    src_lang.change(on_dropdown_change, inputs=src_lang, outputs=[custom_lang_input, add_lang_button])
-    dst_lang.change(on_dropdown_change, inputs=dst_lang, outputs=[custom_lang_input, add_lang_button])
+    # Replace these event handlers:
+    src_lang.change(on_src_language_change, inputs=src_lang, outputs=[custom_lang_input, add_lang_button])
+    dst_lang.change(on_dst_language_change, inputs=dst_lang, outputs=[custom_lang_input, add_lang_button])
 
     # 2) Create New Language
     def on_add_new(lang_name):
