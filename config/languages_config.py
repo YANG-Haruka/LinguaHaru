@@ -35,6 +35,7 @@ def add_custom_language(custom_language_name):
     else:
         return False, message
 
+
 def get_available_languages():
     """Read language files from config/prompts directory and return display names"""
     prompts_dir = os.path.join("config", "prompts")
@@ -57,8 +58,7 @@ def get_available_languages():
                 
                 # If language code not found in LANGUAGE_MAP, add it directly
                 if not display_name_found:
-                    # Add the language code itself as the display name (uppercase)
-                    available_languages.append(lang_code.upper())
+                    available_languages.append(lang_code)  # Changed from lang_code.upper()
     
     # If no languages found, return default list
     if not available_languages:
