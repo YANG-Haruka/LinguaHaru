@@ -81,97 +81,20 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         ]
         
         try:
-            # Perform translation
+            # Perform translation - now returns (result, status)
             if not use_online:
-                translation_result = translate_offline(messages, model)
+                translation_result, api_success = translate_offline(messages, model)
             else:
-                translation_result = translate_online(api_key, messages, model)
+                translation_result, api_success = translate_online(api_key, messages, model)
             
-            # Check if successful - default is success unless critical error
-            success = True
-            
-            if translation_result is None:
-                # No response at all is a failure
-                success = False
-                app_logger.warning("Translation returned None")
-            else:
-                # Convert to string for checking
-                result_str = str(translation_result)
-                result_lower = result_str.lower()
-                
-                # Comprehensive list of error patterns (case-insensitive)
-                error_patterns = [
-                    # Network and connection errors
-                    "error during api request",      # Exact match
-                    "an error occurred during api request",  # Actual error message
-                    "api request failed",           
-                    "connection error",             
-                    "connectionerror",              # Python exception type
-                    "failed to establish",          # Connection failure
-                    "connection refused",           # Connection refused
-                    "max retries exceeded",         # Requests retry error
-                    "timeout error",                
-                    "httperror",                    # HTTP errors
-                    "httpconnectionpool",           # Connection pool errors
-                    
-                    # Authentication and HTTP status errors
-                    "authentication failed",        
-                    "401 unauthorized",             
-                    "403 forbidden",                
-                    "404 not found",                
-                    "429 too many requests",        
-                    "500 internal server error",    
-                    "502 bad gateway",              
-                    "503 service unavailable",      
-                    
-                    # Network connectivity
-                    "network is unreachable",       
-                    "network error",
-                    "dns resolution failed",
-                    "no route to host",
-                    
-                    # Service and model errors
-                    "unknown service",              
-                    "service not found",
-                    "model not found",
-                    "model error",
-                    
-                    # General errors
-                    "unexpected error occurred",    
-                    "an unexpected error",          # Actual error message pattern
-                    "error:",                       # Generic error prefix
-                    "exception:",                   # Exception prefix
-                    "traceback",                    # Python traceback
-                    "error parsing api response",   # Parsing error from translate_offline
-                ]
-                
-                # Check for any error pattern (case-insensitive)
-                is_error = any(pattern in result_lower for pattern in error_patterns)
-                
-                # Also check for specific exception types
-                exception_types = [
-                    "RequestException",
-                    "ConnectionError", 
-                    "TimeoutError",
-                    "HTTPError",
-                ]
-                
-                has_exception = any(exc_type.lower() in result_lower for exc_type in exception_types)
-                
-                success = not (is_error or has_exception)
-                
-                if not success:
-                    app_logger.warning(f"Error detected in translation result: {result_str[:200]}")
-                else:
-                    # Non-critical warnings - log but continue
-                    if "warning" in result_lower or "parse" in result_lower:
-                        app_logger.info(f"Non-critical warning in result: {result_str[:200]}")
-            
-            # If successful, return result
-            if success:
+            # If API call was successful, return the result
+            if api_success:
                 if current_attempt > 1:
                     app_logger.info(f"Translation succeeded on attempt {current_attempt} after {int(elapsed_time)}s")
                 return translation_result, True
+            
+            # API call failed (network error, service down, etc.)
+            app_logger.warning(f"API call failed (attempt {current_attempt}): {translation_result}")
             
             # Update time remaining
             elapsed_time = time.time() - start_time
@@ -181,9 +104,6 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             if remaining_time <= 0:
                 app_logger.error(f"Failed to translate after 1 hour ({current_attempt} attempts).")
                 return translation_result, False
-            
-            # Log failure and retry
-            app_logger.warning(f"Translation failed (attempt {current_attempt}): {translation_result}")
             
             # Wait before retry with exponential backoff
             wait_time = min(wait_time * 2, 10, remaining_time)  

@@ -34,6 +34,7 @@ class DocumentTranslator:
         self.glossary_path = "models\Glossary.csv"
         self.num_threads = thread_count
         self.lock = Lock()
+        self.check_stop_requested = None
         self.last_ui_update_time = 0
 
         # Setup file paths
@@ -52,6 +53,11 @@ class DocumentTranslator:
         self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default, self.glossary_prompt = load_prompt(src_lang, dst_lang)
         self.previous_content = self.previous_text_default
 
+    def check_for_stop(self):
+        """Check if translation should be stopped"""
+        if self.check_stop_requested and callable(self.check_stop_requested):
+            self.check_stop_requested()  # This will raise StopTranslationException if stop is requested
+
     def extract_content_to_json(self):
         """Abstract method: Extract document content to JSON."""
         raise NotImplementedError
@@ -62,6 +68,9 @@ class DocumentTranslator:
 
     def update_ui_safely(self, progress_callback, progress, desc):
         """Update UI with rate limiting to avoid overwhelming the UI thread"""
+        # Check for stop request
+        self.check_for_stop()
+        
         current_time = time.time()
         if current_time - self.last_ui_update_time >= 0.1:
             try:
@@ -72,6 +81,7 @@ class DocumentTranslator:
                 app_logger.warning(f"Error updating UI: {e}")
 
     def translate_content(self, progress_callback):
+        self.check_for_stop()
         app_logger.info("Segmenting JSON content...")
         all_segments = stream_segment_json(
             self.src_split_json_path,
@@ -141,6 +151,7 @@ class DocumentTranslator:
             empty_result_count = 0
             
             while True:
+                self.check_for_stop()
                 retry_count += 1
                 
                 try:
@@ -255,6 +266,7 @@ class DocumentTranslator:
                     self.update_ui_safely(progress_callback, p, f"Translating...")
 
     def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
+        self.check_for_stop()
         app_logger.info(f"Retrying translation...{retry_count}/{max_retries}")
         
         if not os.path.exists(self.failed_json_path):
@@ -359,6 +371,7 @@ class DocumentTranslator:
             empty_result_count = 0
             
             while True:
+                self.check_for_stop()
                 retry_count += 1
                 
                 try:
@@ -603,6 +616,7 @@ class DocumentTranslator:
             total_count = 0
             
             try:
+                self.check_for_stop()
                 if os.path.exists(self.result_split_json_path):
                     with open(self.result_split_json_path, 'r', encoding='utf-8') as f:
                         translated_content = json.load(f)

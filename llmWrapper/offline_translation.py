@@ -106,14 +106,12 @@ _detect_lm_studio_port()
 
 def translate_offline(messages, model):
     """
-    Send messages to a local LLM service (Ollama) for translation.
-    
-    Args:
-        messages: The messages to be processed
-        model: The model name to use (with or without prefix)
+    Send messages to a local LLM service for translation.
     
     Returns:
-        Translated text or error message
+        tuple: (translation_result, success_status)
+            - translation_result: Translated text or error message
+            - success_status: True if API call successful, False if service unavailable
     """
     try:
         # Strip the prefix from the model name if present
@@ -132,6 +130,7 @@ def translate_offline(messages, model):
             
         app_logger.debug(f"Using {service} model: {model_name}")
         
+        # Special handling for qwen3 models
         is_qwen3 = "qwen3" in model_name.lower()
         if is_qwen3 and messages and len(messages) > 0:
             last_message = messages[-1]
@@ -143,6 +142,7 @@ def translate_offline(messages, model):
                         " /no_think IMPORTANT: Return a single valid JSON object containing all translations. Wrap everything in {}"
                     )
         
+        # Configure URL and payload based on service
         if service.lower() == "ollama":
             url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
             
@@ -154,7 +154,13 @@ def translate_offline(messages, model):
                     "num_predict": -1
                 },
                 "stream": False
-            }                
+            }
+            
+            # Check if Ollama is running
+            if not is_ollama_running():
+                app_logger.error("Ollama service is not running")
+                return "Ollama service is not available", False
+                
         elif service.lower() == "lm_studio":
             url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/v1/chat/completions"
             
@@ -164,44 +170,81 @@ def translate_offline(messages, model):
                 "temperature": 0.7,
                 "max_tokens": 2048,
                 "stream": False
-            }                
+            }
+            
+            # Check if LM Studio is running
+            if not is_lm_studio_running():
+                app_logger.error("LM Studio service is not running")
+                return "LM Studio service is not available", False
         else:
             app_logger.error(f"Unknown service: {service}")
-            return f"Unknown service: {service}"
+            return f"Unknown service: {service}", False
             
         app_logger.debug(f"Sending request to {url} with payload: {payload}")
+        
+        # Make the request
         response = requests.post(url, json=payload, timeout=120)
         response.raise_for_status()  # Raise exception for HTTP errors
         response_text = response.text
         
         # Extract the translated content based on service
+        if not response_text:
+            app_logger.warning(f"Empty response from {service}")
+            return f"Empty response from {service}", True  # API call successful but empty
+        
         try:
-            if response_text:
-                app_logger.debug(f"API Response: {response_text}")
-                response_json = json.loads(response_text)
+            app_logger.debug(f"API Response: {response_text}")
+            response_json = json.loads(response_text)
+            
+            if service.lower() == "ollama":
+                if "message" not in response_json or "content" not in response_json["message"]:
+                    return "Invalid Ollama response format", True
+                translated_text = response_json["message"]["content"]
+            elif service.lower() == "lm_studio":
+                if "choices" not in response_json or not response_json["choices"]:
+                    return "Invalid LM Studio response format", True
+                translated_text = response_json["choices"][0]["message"]["content"]
                 
-                if service.lower() == "ollama":
-                    translated_text = response_json["message"]["content"]
-                elif service.lower() == "lm_studio":
-                    translated_text = response_json["choices"][0]["message"]["content"]
-                    
-                clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+            if not translated_text:
+                return f"Empty content from {service}", True
                 
-                # Process the text to ensure it's valid JSON
-                return fix_json_format(clean_translated_text)
-            else:
-                app_logger.warning(f"Empty response from {service}")
-                return None
+            clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+            
+            # Process the text to ensure it's valid JSON
+            fixed_json = fix_json_format(clean_translated_text)
+            
+            if fixed_json is None:
+                # Return raw text if JSON fixing failed
+                return clean_translated_text, True
+                
+            return fixed_json, True
+            
+        except json.JSONDecodeError as e:
+            app_logger.error(f"Failed to parse JSON response: {e}")
+            return f"Invalid JSON response from {service}", True
+        except KeyError as e:
+            app_logger.error(f"Missing key in response: {e}")
+            return f"Invalid response structure from {service}", True
         except Exception as e:
             app_logger.error(f"Response parsing failed: {e}")
-            return f"Error parsing API response: {str(e)}"
+            return f"Error parsing response: {str(e)}", True
 
+    except requests.exceptions.ConnectionError as e:
+        app_logger.error(f"Connection error: {e}")
+        return f"{service} service is not reachable", False
+    except requests.exceptions.Timeout as e:
+        app_logger.error(f"Request timeout: {e}")
+        return f"Request to {service} timed out", False
+    except requests.exceptions.HTTPError as e:
+        app_logger.error(f"HTTP error: {e}")
+        status_code = e.response.status_code if e.response else "Unknown"
+        return f"HTTP {status_code} error from {service}", False
     except requests.exceptions.RequestException as e:
-        app_logger.error(f"Error during API request: {e}")
-        return f"An error occurred during API request: {str(e)}"
+        app_logger.error(f"Request error: {e}")
+        return f"Request to {service} failed: {str(e)}", False
     except Exception as e:
-        app_logger.error(f"Unexpected error during API call: {e}")
-        return f"An unexpected error occurred: {str(e)}"
+        app_logger.error(f"Unexpected error: {e}")
+        return f"Unexpected error: {str(e)}", False
 
 def fix_json_format(text):
     """
