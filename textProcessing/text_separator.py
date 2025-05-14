@@ -36,7 +36,7 @@ def load_glossary(glossary_path, src_lang, dst_lang):
                 
                 # If we couldn't find matching language columns, try next encoding
                 if src_idx is None or dst_idx is None:
-                    print(f"Warning: Could not find columns for {src_lang} and/or {dst_lang} in glossary with {encoding} encoding.")
+                    # print(f"Warning: Could not find columns for {src_lang} and/or {dst_lang} in glossary with {encoding} encoding.")
                     continue
                 
                 # Read remaining rows as glossary entries
@@ -62,7 +62,7 @@ def load_glossary(glossary_path, src_lang, dst_lang):
             continue
     
     # If we get here, all encodings failed
-    print(f"Failed to load glossary from {glossary_path} with any encoding.")
+    # print(f"Failed to load glossary from {glossary_path} with any encoding.")
     return []
 
 def format_glossary_for_prompt(glossary_entries, text):

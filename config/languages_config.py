@@ -1,3 +1,85 @@
+import os
+import shutil
+
+def create_custom_language_prompt_file(custom_language_name):
+    """Create a new prompt file for a custom language by copying en.json"""
+    prompts_dir = os.path.join("config", "prompts")
+    source_file = os.path.join(prompts_dir, "en.json")
+    target_file = os.path.join(prompts_dir, f"{custom_language_name}.json")
+    
+    try:
+        # Ensure the prompts directory exists
+        os.makedirs(prompts_dir, exist_ok=True)
+        
+        # Copy en.json to the new custom language file
+        if os.path.exists(source_file):
+            shutil.copy2(source_file, target_file)
+            return True, f"Created prompt file for {custom_language_name}"
+        else:
+            return False, "Source file en.json not found"
+    except Exception as e:
+        return False, f"Error creating prompt file: {str(e)}"
+
+def add_custom_language(custom_language_name):
+    """Add a custom language to the system"""
+    if not custom_language_name or custom_language_name.strip() == "":
+        return False, "Language name cannot be empty"
+    
+    custom_language_name = custom_language_name.strip()
+    
+    # Create the prompt file
+    success, message = create_custom_language_prompt_file(custom_language_name)
+    
+    if success:
+        return True, f"Custom language '{custom_language_name}' added successfully"
+    else:
+        return False, message
+
+def get_available_languages():
+    """Read language files from config/prompts directory and return display names"""
+    prompts_dir = os.path.join("config", "prompts")
+    available_languages = []
+    
+    if os.path.exists(prompts_dir):
+        # Get all .json files in the prompts directory
+        for filename in os.listdir(prompts_dir):
+            if filename.endswith(".json"):
+                # Get language code without extension
+                lang_code = os.path.splitext(filename)[0]
+                
+                # Find the display name from LANGUAGE_MAP
+                display_name_found = False
+                for display_name, code in LANGUAGE_MAP.items():
+                    if code == lang_code:
+                        available_languages.append(display_name)
+                        display_name_found = True
+                        break
+                
+                # If language code not found in LANGUAGE_MAP, add it directly
+                if not display_name_found:
+                    # Add the language code itself as the display name (uppercase)
+                    available_languages.append(lang_code.upper())
+    
+    # If no languages found, return default list
+    if not available_languages:
+        available_languages = [
+            "English", "中文", "繁體中文", "日本語", "Español", 
+            "Français", "Deutsch", "Italiano", "Português", 
+            "Русский", "한국어", "ภาษาไทย", "Tiếng Việt"
+        ]
+    
+    return sorted(set(available_languages))
+
+def get_language_code(display_name):
+    """Get language code from display name, supporting custom languages"""
+    # First check if it's in the existing LANGUAGE_MAP
+    if display_name in LANGUAGE_MAP:
+        return LANGUAGE_MAP[display_name]
+    
+    # If not found, assume the display name is the language code in uppercase
+    # Convert it to lowercase to match file naming convention
+    return display_name.lower()
+
 LANGUAGE_MAP = {
     "日本語": "ja",
     "中文": "zh",

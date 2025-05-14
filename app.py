@@ -16,7 +16,7 @@ import queue
 from functools import partial
 
 # Import language configs
-from config.languages_config import LANGUAGE_MAP, LABEL_TRANSLATIONS
+from config.languages_config import LABEL_TRANSLATIONS, get_available_languages, get_language_code, add_custom_language
 
 #-------------------------------------------------------------------------
 # Constants and Configuration
@@ -631,7 +631,15 @@ def update_continue_button(files):
     if isinstance(files, list) and len(files) > 1:
         return gr.update(interactive=False)
     
-    # Only check for temp folders if a single file is selected
+    # Check if the single file is a PDF
+    single_file = files[0] if isinstance(files, list) else files
+    file_extension = os.path.splitext(single_file.name)[1].lower()
+    
+    # Disable continue button for PDF files
+    if file_extension == ".pdf":
+        return gr.update(interactive=False)
+    
+    # Only check for temp folders if a single non-PDF file is selected
     has_temp, _ = check_temp_translation_exists(files)
     return gr.update(interactive=has_temp)
 
@@ -681,8 +689,8 @@ def translate_files(
     if use_online and not api_key:
         return gr.update(value=None, visible=False), "API key is required for online models.", gr.update(value=stop_text, interactive=False)
 
-    src_lang_code = LANGUAGE_MAP.get(src_lang, "en")
-    dst_lang_code = LANGUAGE_MAP.get(dst_lang, "en")
+    src_lang_code = get_language_code(src_lang)
+    dst_lang_code = get_language_code(dst_lang)
 
     # Common progress callback function
     def progress_callback(progress_value, desc=None):
@@ -861,6 +869,8 @@ def process_multiple_files(
 
 # Load local and online models
 local_models = populate_sum_model() or []
+CUSTOM_LABEL = "+ Add Custom…"
+dropdown_choices = get_available_languages() + [CUSTOM_LABEL]
 config_dir = "config/api_config"
 online_models = [
     os.path.splitext(f)[0] for f in os.listdir(config_dir) 
@@ -930,23 +940,26 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
 
     with gr.Row():
         src_lang = gr.Dropdown(
-            [
-                "English", "中文", "繁體中文", "日本語", "Español", 
-                "Français", "Deutsch", "Italiano", "Português", 
-                "Русский", "한국어", "ภาษาไทย", "Tiếng Việt"
-            ],
+            choices=dropdown_choices,
             label="Source Language",
-            value="English"
+            value="English" if "English" in dropdown_choices else dropdown_choices[0],
+            interactive=True,
+            allow_custom_value=True
         )
         dst_lang = gr.Dropdown(
-            [
-                "English", "中文", "繁體中文", "日本語", "Español", 
-                "Français", "Deutsch", "Italiano", "Português", 
-                "Русский", "한국어", "ภาษาไทย", "Tiếng Việt"
-            ],
+            choices=dropdown_choices,
             label="Target Language",
-            value="English"
+            value="English" if "English" in dropdown_choices else dropdown_choices[0],
+            interactive=True,
+            allow_custom_value=True
         )
+        # Hidden controls for custom-language entry
+        custom_lang_input = gr.Textbox(
+            label="New language display name",
+            placeholder="e.g. Klingon",
+            visible=False
+        )
+        add_lang_button = gr.Button("Create New Language", visible=False)
 
     # Settings section (always visible)
     with gr.Row():
@@ -1128,6 +1141,35 @@ with gr.Blocks(title=app_title_web, css="footer {visibility: hidden}") as demo:
         request_stop_translation,
         inputs=[session_lang],
         outputs=[stop_button]
+    )
+
+    # 1) When user selects "+ Add Custom…", show the textbox+button
+    def on_dropdown_change(val):
+        if val == CUSTOM_LABEL:
+            return gr.update(visible=True), gr.update(visible=True)
+        else:
+            return gr.update(visible=False), gr.update(visible=False)
+
+    src_lang.change(on_dropdown_change, inputs=src_lang, outputs=[custom_lang_input, add_lang_button])
+    dst_lang.change(on_dropdown_change, inputs=dst_lang, outputs=[custom_lang_input, add_lang_button])
+
+    # 2) Create New Language
+    def on_add_new(lang_name):
+        success, msg = add_custom_language(lang_name)
+        new_choices = get_available_languages() + [CUSTOM_LABEL]
+        # pick the newly created language as the selected value
+        new_val = lang_name if success else CUSTOM_LABEL
+        return (
+            gr.update(choices=new_choices, value=new_val),
+            gr.update(choices=new_choices, value=new_val),
+            gr.update(visible=False),
+            gr.update(visible=False)
+        )
+
+    add_lang_button.click(
+        on_add_new,
+        inputs=[custom_lang_input],
+        outputs=[src_lang, dst_lang, custom_lang_input, add_lang_button]
     )
 
     # On page load, set user language and labels
