@@ -268,7 +268,7 @@ class DocumentTranslator:
 
     def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
         self.check_for_stop()
-        app_logger.info(f"Retrying translation...{retry_count}/{max_retries}")
+        app_logger.info(f"Translation error detected, Retrying translation...{retry_count}/{max_retries}")
         
         if not os.path.exists(self.failed_json_path):
             app_logger.info("No failed segments to retranslate. Skipping this step.")
@@ -357,7 +357,7 @@ class DocumentTranslator:
                 json.dump([], f, ensure_ascii=False, indent=4)
         
         total = len(all_failed_segments)
-        retry_desc = "Final translation attempt" if last_try else "Retrying translation"
+        retry_desc = "Translation error detected, Final translation attempt" if last_try else "Translation error detected, Retrying translation"
         app_logger.info(f"{retry_desc} {total} segments using {self.num_threads} threads...")
 
         def process_failed_segment(segment_data, last_try=False):
