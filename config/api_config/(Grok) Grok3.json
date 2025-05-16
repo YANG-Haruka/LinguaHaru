@@ -1,6 +1,6 @@
 {
     "base_url": "https://api.x.ai/v1",
-    "model": "grok-2-latest",
+    "model": "grok-3-beta",
     "top_p": 0.95,
     "temperature": 0.75,
     "presence_penalty": 0.0,

@@ -1,12 +1,13 @@
 import json
 import os
 import re
+from bs4 import BeautifulSoup  # Import BeautifulSoup for HTML parsing
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
 
 def extract_md_content_to_json(file_path):
     """
-    Extract Markdown content to JSON, handling complex HTML structures
+    Extract Markdown content to JSON, handling complex HTML structures including nested tables
     Preserves line formats and document structure
     """
     # Initialize data structures
@@ -72,6 +73,63 @@ def extract_md_content_to_json(file_path):
             
         # Process HTML tags
         if line.strip().startswith('<') and '>' in line:
+            
+            # Handle complex HTML tables and other nested structures
+            if ('<html>' in line.lower() or '<table>' in line.lower()) and ('</html>' in line.lower() or '</table>' in line.lower()):
+                try:
+                    # Parse HTML using BeautifulSoup
+                    soup = BeautifulSoup(line, 'html.parser')
+                    
+                    # Track cells that need translation
+                    translatable_cells = []
+                    
+                    # Find all table cells
+                    for i, td in enumerate(soup.find_all('td')):
+                        # Get the text content of the cell
+                        cell_text = td.get_text().strip()
+                        
+                        # Check if cell needs translation
+                        if cell_text and should_translate(cell_text):
+                            count += 1
+                            # Store information about translatable cell
+                            translatable_cells.append({
+                                "count": count,
+                                "index": i,
+                                "original_text": cell_text
+                            })
+                            
+                            # Add to content data for translation
+                            content_data.append({
+                                "count": count,
+                                "index": position_index,
+                                "type": "html_table_cell",
+                                "value": cell_text
+                            })
+                    
+                    # If we found any cells to translate
+                    if translatable_cells:
+                        structure_items.append({
+                            "index": position_index,
+                            "type": "html_table",
+                            "value": line,
+                            "translate": True,
+                            "translatable_cells": translatable_cells
+                        })
+                    else:
+                        # No cells need translation
+                        structure_items.append({
+                            "index": position_index,
+                            "type": "html_preserved",
+                            "value": line,
+                            "translate": False
+                        })
+                    
+                    position_index += 1
+                    continue
+                except Exception as e:
+                    # Log parsing error and fall back to default handling
+                    app_logger.error(f"Error parsing HTML table: {str(e)}")
+
             # Handle self-closing tags
             if line.count('<') == line.count('>') and re.match(r'^<[^>]*>$', line.strip()):
                 structure_items.append({
@@ -168,7 +226,7 @@ def extract_md_content_to_json(file_path):
                     })
                 position_index += 1
                 continue
-                
+
             # Preserve unrecognized HTML
             structure_items.append({
                 "index": position_index,
@@ -223,6 +281,7 @@ def extract_md_content_to_json(file_path):
 def write_translated_content_to_md(file_path, original_json_path, translated_json_path):
     """
     Write translated content to new Markdown file while preserving HTML structure
+    Enhanced to handle complex HTML tables
     """
     # Get file paths
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -253,21 +312,60 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
             final_lines.append(item["value"])
         else:
             # Insert translations
-            count = item.get("count")
-            if count in translations:
-                if item["type"] in ["html_simple", "html_complex"]:
-                    # Rebuild HTML with translated content
+            if item["type"] == "html_table":
+                try:
+                    # Parse the original HTML
+                    soup = BeautifulSoup(item["value"], 'html.parser')
+                    
+                    # Get all table cells
+                    all_tds = soup.find_all('td')
+                    
+                    # Replace content in cells that need translation
+                    for cell_info in item.get("translatable_cells", []):
+                        cell_count = cell_info.get("count")
+                        cell_index = cell_info.get("index")
+                        
+                        if cell_count in translations and cell_index < len(all_tds):
+                            # Replace the text content while preserving HTML structure
+                            # This maintains attributes and nested elements
+                            current_cell = all_tds[cell_index]
+                            
+                            # If the cell has children elements, we need to be careful
+                            if list(current_cell.children) and not all(isinstance(c, str) for c in current_cell.children):
+                                # Complex cell with nested elements - log this case
+                                app_logger.warning(f"Complex cell structure at index {cell_index}, translation may be incomplete")
+                                # Simple approach: replace text nodes only
+                                for text_node in current_cell.find_all(text=True, recursive=True):
+                                    if text_node.strip() == cell_info.get("original_text"):
+                                        text_node.replace_with(translations[cell_count])
+                            else:
+                                # Simple text content - straightforward replacement
+                                current_cell.string = translations[cell_count]
+                    
+                    # Add the modified HTML to the final document
+                    final_lines.append(str(soup))
+                except Exception as e:
+                    # Log error and fall back to original content
+                    app_logger.error(f"Error rebuilding HTML table: {str(e)}")
+                    final_lines.append(item["value"])
+            elif item["type"] in ["html_simple", "html_complex"]:
+                # Standard handling for simple and complex HTML
+                count = item.get("count")
+                if count in translations:
                     final_lines.append(
                         item["opening_tag"] + 
                         translations[count] + 
                         item["closing_tag"]
                     )
                 else:
-                    # Regular text
-                    final_lines.append(translations[count])
+                    final_lines.append(item["value"])
             else:
-                # Fallback to original if translation not found
-                final_lines.append(item["value"])
+                # Regular text
+                count = item.get("count")
+                if count in translations:
+                    final_lines.append(translations[count])
+                else:
+                    final_lines.append(item["value"])
     
     # Join lines into final document
     final_content = '\n'.join(final_lines)

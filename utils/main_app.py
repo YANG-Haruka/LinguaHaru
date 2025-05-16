@@ -139,39 +139,26 @@ def create_app():
 
         /* Language row */
         #lang-row {
-            display: flex !important;
+            display: grid !important;
+            grid-template-columns: 1fr auto 1fr !important;
             align-items: center !important;
             gap: 8px !important;
             margin-bottom: 20px;
         }
 
-        #lang-row .gr-dropdown {
-            flex: 1 1 0 !important;
-            min-width: 200px;
+        #lang-row .gr-dropdown:first-child {
+            grid-column: 1 !important;
         }
 
         #swap-btn {
-            flex: 0 0 42px !important;
-            max-width: 42px !important;
-            min-width: 42px !important;
-            height: 42px !important;
-        }
-
-        #swap-btn button {
+            grid-column: 2 !important;
             width: 42px !important;
             height: 42px !important;
-            padding: 0 !important;
-            font-size: 20px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            aspect-ratio: 1/1 !important;
-            border-radius: var(--button-border-radius, 8px);
+            justify-self: center !important;
         }
 
-        #swap-btn button:hover {
-            transform: rotate(180deg);
-            transition: transform 0.3s ease;
+        #lang-row .gr-dropdown:last-child {
+            grid-column: 3 !important;
         }
         """
     ) as demo:
