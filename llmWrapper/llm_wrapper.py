@@ -67,7 +67,7 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         
         # Construct full prompt
         try:
-            full_user_prompt = f"{previous_prompt_str}\n###{previous_text_str}###\n{user_prompt_str}###\n{glossary_text}{text_to_translate_str}"
+            full_user_prompt = f"{previous_prompt_str}\n###{previous_text_str}###\n{user_prompt_str}###\n{text_to_translate_str}###\n{glossary_text}"
         except Exception as e:
             app_logger.error(f"Error constructing prompt (attempt {current_attempt}): {e}")
             
