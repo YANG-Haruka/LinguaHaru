@@ -8,7 +8,11 @@ from config.log_config import app_logger
 from .calculation_tokens import num_tokens_from_string
 
 from llmWrapper.llm_wrapper import translate_text, interruptible_sleep
-from textProcessing.text_separator import stream_segment_json, split_text_by_token_limit, recombine_split_jsons
+from textProcessing.text_separator import (
+    stream_segment_json, split_text_by_token_limit, recombine_split_jsons,
+    deduplicate_translation_content, create_deduped_json_for_translation, 
+    restore_translations_to_original_structure
+)
 from config.load_prompt import load_prompt
 from .translation_checker import process_translation_results, clean_json, check_and_sort_translations
 
@@ -46,6 +50,12 @@ class DocumentTranslator:
         self.result_split_json_path = os.path.join(self.file_dir, RESULT_SPLIT_JSON_PATH)
         self.failed_json_path = os.path.join(self.file_dir, FAILED_JSON_PATH)
         self.result_json_path = os.path.join(self.file_dir, RESULT_JSON_PATH)
+        
+        # Initialize deduplication paths
+        self.src_deduped_json_path = os.path.join(self.file_dir, "src_deduped.json")
+        self.src_deduped_split_json_path = os.path.join(self.file_dir, "src_deduped_split.json")
+        self.result_deduped_split_json_path = os.path.join(self.file_dir, "dst_deduped_translated_split.json")
+        self.hash_to_counts_map = None
         
         os.makedirs(self.file_dir, exist_ok=True)
 
@@ -611,7 +621,7 @@ class DocumentTranslator:
             app_logger.error(f"Error updating failed segments file: {e}")
     
     def process(self, file_name, file_extension, progress_callback=None):
-        """Main processing method for document translation"""
+        """Main processing method for document translation with deduplication"""
         # Check if using continue mode
         if self.continue_mode:
             translated_count = 0
@@ -647,9 +657,22 @@ class DocumentTranslator:
             self.update_ui_safely(progress_callback, 0, "Extracting text, please wait...")
             self.extract_content_to_json(progress_callback)
 
+            # Deduplicate content before splitting
+            app_logger.info("Deduplicating content...")
+            self.update_ui_safely(progress_callback, 0, "Removing duplicate content for efficient translation...")
+            
+            # Deduplicate content
+            unique_contents, self.hash_to_counts_map = deduplicate_translation_content(self.src_json_path)
+            create_deduped_json_for_translation(unique_contents, self.src_deduped_json_path)
+            
             app_logger.info("Split JSON...")
             self.update_ui_safely(progress_callback, 0, "Splitting text into segments...")
-            split_text_by_token_limit(self.src_json_path)
+            # Split the deduplicated content instead of the original
+            split_text_by_token_limit(self.src_deduped_json_path)
+            
+            # Update paths to use deduplicated versions
+            self.src_split_json_path = self.src_deduped_split_json_path
+            self.result_split_json_path = self.result_deduped_split_json_path
         
         app_logger.info("Translating content...")
         self.update_ui_safely(progress_callback, 0, "Translating, please wait...")
@@ -671,7 +694,21 @@ class DocumentTranslator:
         missing_counts = check_and_sort_translations(self.src_split_json_path, self.result_split_json_path)
 
         self.update_ui_safely(progress_callback, 0, "Recombining segments...")
-        recombine_split_jsons(self.src_split_json_path, self.result_split_json_path)
+        recombined_path = recombine_split_jsons(self.src_split_json_path, self.result_split_json_path)
+        
+        # If we used deduplication, restore to original structure
+        if not self.continue_mode and self.hash_to_counts_map:
+            self.update_ui_safely(progress_callback, 0, "Restoring translations to original structure...")
+            app_logger.info("Restoring translations to original structure...")
+            restore_translations_to_original_structure(
+                recombined_path, 
+                self.hash_to_counts_map, 
+                self.src_json_path, 
+                self.result_json_path
+            )
+        else:
+            # In continue mode or if no deduplication was used, just use the recombined path directly
+            shutil.copy2(recombined_path, self.result_json_path)
 
         app_logger.info("Writing translated content to file...")
         self.update_ui_safely(progress_callback, 0, "Translation completed, generating output file...")

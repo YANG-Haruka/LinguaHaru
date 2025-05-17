@@ -34,20 +34,38 @@ def extract_excel_content_to_json(file_path):
 
         for row in sheet.iter_rows():
             for cell in row:
-                if cell.value is None or isinstance(cell.value, datetime) or not should_translate(str(cell.value)):
+                # Skip cells with no value
+                if cell.value is None:
                     continue
+                
+                # Skip datetime objects
+                if isinstance(cell.value, datetime):
+                    continue
+                
+                # Skip formulas (cells that start with '=')
+                if isinstance(cell.value, str) and cell.value.strip().startswith('='):
+                    continue
+                
+                # Skip cells that shouldn't be translated
+                if not should_translate(str(cell.value)):
+                    continue
+                
+                # Skip merged cells (except the top-left cell of the merge)
                 if isinstance(cell, MergedCell):
                     continue
+                    
                 is_merged_cell = False
                 for merged_range in merged_cells_ranges:
                     min_col, min_row, max_col, max_row = range_boundaries(str(merged_range))
                     if cell.row == min_row and cell.column == min_col:
                         is_merged_cell = True
                         break
+                        
                 # Convert datetime values to string
                 cell_value = str(cell.value).replace("\n", "␊").replace("\r", "␍")
                 if isinstance(cell_value, datetime):
                     cell_value = cell_value.isoformat()
+                    
                 count += 1
                 cell_info = {
                     "count": count,
@@ -69,6 +87,27 @@ def extract_excel_content_to_json(file_path):
         json.dump(cell_data, json_file, ensure_ascii=False, indent=4)
 
     return json_path
+
+def sanitize_sheet_name(sheet_name):
+    """
+    Clean sheet name by removing/replacing invalid characters.
+    Excel doesn't allow these characters in sheet names: / \ ? * [ ]
+    """
+    # Replace invalid characters with safe alternatives
+    invalid_chars = ['/', '\\', '?', '*', '[', ']', ':']
+    sanitized_name = sheet_name
+    for char in invalid_chars:
+        sanitized_name = sanitized_name.replace(char, '-')
+    
+    # Excel sheet names are limited to 31 characters
+    if len(sanitized_name) > 31:
+        sanitized_name = sanitized_name[:31]
+    
+    # Ensure the sheet name is not empty
+    if not sanitized_name.strip():
+        sanitized_name = "Sheet"
+    
+    return sanitized_name
 
 def write_translated_content_to_excel(file_path, original_json_path, translated_json_path):
     workbook = load_workbook(file_path)
@@ -135,8 +174,21 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
     for original_name, translated_name in sheet_name_translations.items():
         if original_name in workbook.sheetnames:
             sheet = workbook[original_name]
-            sheet.title = translated_name
-            app_logger.info(f"Renamed sheet from '{original_name}' to '{translated_name}'")
+            
+            # Sanitize the sheet name to avoid invalid characters
+            sanitized_name = sanitize_sheet_name(translated_name)
+            
+            # Log if the name needed to be changed
+            if sanitized_name != translated_name:
+                app_logger.warning(f"Sheet name '{translated_name}' contains invalid characters and was changed to '{sanitized_name}'")
+            
+            try:
+                sheet.title = sanitized_name
+                app_logger.info(f"Renamed sheet from '{original_name}' to '{sanitized_name}'")
+            except Exception as e:
+                app_logger.error(f"Failed to rename sheet from '{original_name}' to '{sanitized_name}': {str(e)}")
+                # Keep the original name if renaming fails
+                app_logger.info(f"Keeping original sheet name '{original_name}'")
 
     # Save the modified Excel file
     result_folder = os.path.join('result')
@@ -147,6 +199,22 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         f"{os.path.splitext(os.path.basename(file_path))[0]}_translated{os.path.splitext(file_path)[1]}"
     )
     
-    workbook.save(result_path)
-    app_logger.info(f"Translated Excel saved to: {result_path}")
+    try:
+        workbook.save(result_path)
+        app_logger.info(f"Translated Excel saved to: {result_path}")
+    except Exception as e:
+        app_logger.error(f"Failed to save translated Excel: {str(e)}")
+        # Try saving with a different filename if there was an error
+        fallback_path = os.path.join(
+            result_folder,
+            f"{os.path.splitext(os.path.basename(file_path))[0]}_translated_fallback{os.path.splitext(file_path)[1]}"
+        )
+        try:
+            workbook.save(fallback_path)
+            app_logger.info(f"Translated Excel saved to fallback path: {fallback_path}")
+            result_path = fallback_path
+        except Exception as e2:
+            app_logger.error(f"Failed to save translated Excel to fallback path: {str(e2)}")
+            raise
+            
     return result_path

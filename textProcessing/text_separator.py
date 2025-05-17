@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import csv
+import hashlib
 from .calculation_tokens import num_tokens_from_string
 from config.log_config import app_logger
 
@@ -584,4 +585,123 @@ def recombine_split_jsons(src_split_path, dst_translated_split_path):
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(result, f, ensure_ascii=False, indent=4)
     
+    return output_path
+
+def deduplicate_translation_content(src_json_path):
+    """
+    Deduplicates content in the source JSON file before translation.
+    Returns unique contents and mapping from content hash to counts.
+    """
+    with open(src_json_path, 'r', encoding='utf-8') as f:
+        json_data = json.load(f)
+    
+    # Maps from content hash to the actual content
+    unique_contents = {}
+    # Maps from content hash to a list of count values where this content appears
+    hash_to_counts_map = {}
+    
+    for item in json_data:
+        count = item.get("count")
+        value = item.get("value", "").strip()
+        
+        if not value:
+            continue
+            
+        # Generate a hash for the content
+        content_hash = hashlib.md5(value.encode('utf-8')).hexdigest()
+        
+        # If this is the first time we see this content, add it to unique_contents
+        if content_hash not in unique_contents:
+            unique_contents[content_hash] = value
+            hash_to_counts_map[content_hash] = []
+            
+        # Record that this content hash was found at this count
+        hash_to_counts_map[content_hash].append(count)
+    
+    app_logger.info(f"Reduced {len(json_data)} items to {len(unique_contents)} unique content items")
+    return unique_contents, hash_to_counts_map
+
+def create_deduped_json_for_translation(unique_contents, output_path):
+    """
+    Creates a JSON file with only unique content for translation.
+    """
+    deduped_data = []
+    
+    for i, (content_hash, value) in enumerate(unique_contents.items(), 1):
+        deduped_data.append({
+            "count": i,
+            "value": value,
+            "original_hash": content_hash,
+            "translated_status": False
+        })
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(deduped_data, f, ensure_ascii=False, indent=4)
+    
+    return output_path
+
+def restore_translations_to_original_structure(deduped_translated_path, hash_to_counts_map, original_json_path, output_path):
+    """
+    Restores translations from the deduplicated format back to the original structure.
+    """
+    # Load the deduplicated translations
+    with open(deduped_translated_path, 'r', encoding='utf-8') as f:
+        deduped_translations = json.load(f)
+    
+    # Create a mapping from content hash to translated content
+    hash_to_translation = {}
+    
+    # Check the format of deduped_translations to determine how to extract translations
+    if deduped_translations and isinstance(deduped_translations, list):
+        # If from recombine_split_jsons output format
+        if all(isinstance(item, dict) and "original" in item and "translated" in item for item in deduped_translations):
+            app_logger.info("Using recombined format for deduped translations")
+            # Create a hash mapping from original content to translated content
+            for item in deduped_translations:
+                original_text = item.get("original", "").strip()
+                translated_text = item.get("translated", "")
+                
+                if original_text and translated_text:
+                    content_hash = hashlib.md5(original_text.encode('utf-8')).hexdigest()
+                    hash_to_translation[content_hash] = translated_text
+        # If directly from translation results containing original_hash
+        elif all(isinstance(item, dict) and "original_hash" in item for item in deduped_translations):
+            app_logger.info("Using direct format for deduped translations")
+            for item in deduped_translations:
+                original_hash = item.get("original_hash")
+                translated = item.get("translated", "")
+                if original_hash and translated:
+                    hash_to_translation[original_hash] = translated
+    
+    if not hash_to_translation:
+        app_logger.error("Failed to create hash to translation mapping. No translations to restore.")
+        return deduped_translated_path
+    
+    # Load the original JSON to get the full structure
+    with open(original_json_path, 'r', encoding='utf-8') as f:
+        original_data = json.load(f)
+    
+    # Create the restored translations
+    restored_data = []
+    
+    for item in original_data:
+        count = item.get("count")
+        original = item.get("value", "").strip()
+        if not original:
+            continue
+            
+        content_hash = hashlib.md5(original.encode('utf-8')).hexdigest()
+        translated = hash_to_translation.get(content_hash, "")
+        
+        restored_data.append({
+            "count": count,
+            "original": original,
+            "translated": translated
+        })
+    
+    # Save the restored translations
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(restored_data, f, ensure_ascii=False, indent=4)
+    
+    app_logger.info(f"Restored translations to original structure: {len(restored_data)} items")
     return output_path
