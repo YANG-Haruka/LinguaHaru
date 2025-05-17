@@ -4,20 +4,20 @@ import os
 import re
 import unicodedata
 from copy import copy
-import deepl
+# import deepl
 # import ollama
 import openai
-import xinference_client
+# import xinference_client
 import requests
 from .cache import TranslationCache
-from azure.ai.translation.text import TextTranslationClient
-from azure.core.credentials import AzureKeyCredential
-from tencentcloud.common import credential
-from tencentcloud.tmt.v20180321.tmt_client import TmtClient
-from tencentcloud.tmt.v20180321.models import TextTranslateRequest
-from tencentcloud.tmt.v20180321.models import TextTranslateResponse
-import argostranslate.package
-import argostranslate.translate
+# from azure.ai.translation.text import TextTranslationClient
+# from azure.core.credentials import AzureKeyCredential
+# from tencentcloud.common import credential
+# from tencentcloud.tmt.v20180321.tmt_client import TmtClient
+# from tencentcloud.tmt.v20180321.models import TextTranslateRequest
+# from tencentcloud.tmt.v20180321.models import TextTranslateResponse
+# import argostranslate.package
+# import argostranslate.translate
 from . import shared_constants
 
 import json
@@ -199,24 +199,25 @@ class BingTranslator(BaseTranslator):
 
 
 class DeepLTranslator(BaseTranslator):
-    # https://github.com/DeepLcom/deepl-python
-    name = "deepl"
-    envs = {
-        "DEEPL_AUTH_KEY": None,
-    }
-    lang_map = {"zh": "zh-Hans"}
+    # # https://github.com/DeepLcom/deepl-python
+    # name = "deepl"
+    # envs = {
+    #     "DEEPL_AUTH_KEY": None,
+    # }
+    # lang_map = {"zh": "zh-Hans"}
 
-    def __init__(self, lang_in, lang_out, model, envs=None, **kwargs):
-        self.set_envs(envs)
-        super().__init__(lang_in, lang_out, model)
-        auth_key = self.envs["DEEPL_AUTH_KEY"]
-        self.client = deepl.Translator(auth_key)
+    # def __init__(self, lang_in, lang_out, model, envs=None, **kwargs):
+    #     self.set_envs(envs)
+    #     super().__init__(lang_in, lang_out, model)
+    #     auth_key = self.envs["DEEPL_AUTH_KEY"]
+    #     self.client = deepl.Translator(auth_key)
 
-    def do_translate(self, text):
-        response = self.client.translate_text(
-            text, target_lang=self.lang_out, source_lang=self.lang_in
-        )
-        return response.text
+    # def do_translate(self, text):
+    #     response = self.client.translate_text(
+    #         text, target_lang=self.lang_out, source_lang=self.lang_in
+    #     )
+    #     return response.text
+    pass
 
 
 class DeepLXTranslator(BaseTranslator):
@@ -304,7 +305,7 @@ class XinferenceTranslator(BaseTranslator):
             model = self.envs["XINFERENCE_MODEL"]
         super().__init__(lang_in, lang_out, model)
         self.options = {"temperature": 0}  # 随机采样可能会打断公式标记
-        self.client = xinference_client.RESTfulClient(self.envs["XINFERENCE_HOST"])
+        # self.client = xinference_client.RESTfulClient(self.envs["XINFERENCE_HOST"])
         self.prompttext = prompt
         self.add_cache_impact_parameters("temperature", self.options["temperature"])
         if prompt:
@@ -551,10 +552,10 @@ class AzureTranslator(BaseTranslator):
         super().__init__(lang_in, lang_out, model)
         endpoint = self.envs["AZURE_ENDPOINT"]
         api_key = os.getenv("AZURE_API_KEY")
-        credential = AzureKeyCredential(api_key)
-        self.client = TextTranslationClient(
-            endpoint=endpoint, credential=credential, region="chinaeast2"
-        )
+        # credential = AzureKeyCredential(api_key)
+        # self.client = TextTranslationClient(
+        #     endpoint=endpoint, credential=credential, region="chinaeast2"
+        # )
         # https://github.com/Azure/azure-sdk-for-python/issues/9422
         logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
         logger.setLevel(logging.WARNING)
@@ -580,17 +581,17 @@ class TencentTranslator(BaseTranslator):
     def __init__(self, lang_in, lang_out, model, envs=None, **kwargs):
         self.set_envs(envs)
         super().__init__(lang_in, lang_out, model)
-        cred = credential.DefaultCredentialProvider().get_credential()
-        self.client = TmtClient(cred, "ap-beijing")
-        self.req = TextTranslateRequest()
+        # cred = credential.DefaultCredentialProvider().get_credential()
+        # self.client = TmtClient(cred, "ap-beijing")
+        # self.req = TextTranslateRequest()
         self.req.Source = self.lang_in
         self.req.Target = self.lang_out
         self.req.ProjectId = 0
 
     def do_translate(self, text):
         self.req.SourceText = text
-        resp: TextTranslateResponse = self.client.TextTranslate(self.req)
-        return resp.TargetText
+        # resp: TextTranslateResponse = self.client.TextTranslate(self.req)
+        # return resp.TargetText
 
 
 class AnythingLLMTranslator(BaseTranslator):
@@ -681,36 +682,36 @@ class ArgosTranslator(BaseTranslator):
         lang_in = self.lang_map.get(lang_in.lower(), lang_in)
         lang_out = self.lang_map.get(lang_out.lower(), lang_out)
         self.lang_in = lang_in
-        self.lang_out = lang_out
-        argostranslate.package.update_package_index()
-        available_packages = argostranslate.package.get_available_packages()
-        try:
-            available_package = list(
-                filter(
-                    lambda x: x.from_code == self.lang_in
-                    and x.to_code == self.lang_out,
-                    available_packages,
-                )
-            )[0]
-        except Exception:
-            raise ValueError(
-                "lang_in and lang_out pair not supported by Argos Translate."
-            )
-        download_path = available_package.download()
-        argostranslate.package.install_from_path(download_path)
+    #     self.lang_out = lang_out
+    #     argostranslate.package.update_package_index()
+    #     available_packages = argostranslate.package.get_available_packages()
+    #     try:
+    #         available_package = list(
+    #             filter(
+    #                 lambda x: x.from_code == self.lang_in
+    #                 and x.to_code == self.lang_out,
+    #                 available_packages,
+    #             )
+    #         )[0]
+    #     except Exception:
+    #         raise ValueError(
+    #             "lang_in and lang_out pair not supported by Argos Translate."
+    #         )
+    #     download_path = available_package.download()
+    #     argostranslate.package.install_from_path(download_path)
 
-    def translate(self, text):
-        # Translate
-        installed_languages = argostranslate.translate.get_installed_languages()
-        from_lang = list(filter(lambda x: x.code == self.lang_in, installed_languages))[
-            0
-        ]
-        to_lang = list(filter(lambda x: x.code == self.lang_out, installed_languages))[
-            0
-        ]
-        translation = from_lang.get_translation(to_lang)
-        translatedText = translation.translate(text)
-        return translatedText
+    # def translate(self, text):
+    #     # Translate
+    #     installed_languages = argostranslate.translate.get_installed_languages()
+    #     from_lang = list(filter(lambda x: x.code == self.lang_in, installed_languages))[
+    #         0
+    #     ]
+    #     to_lang = list(filter(lambda x: x.code == self.lang_out, installed_languages))[
+    #         0
+    #     ]
+    #     translation = from_lang.get_translation(to_lang)
+    #     translatedText = translation.translate(text)
+    #     return translatedText
 
 
 class GorkTranslator(OpenAITranslator):
