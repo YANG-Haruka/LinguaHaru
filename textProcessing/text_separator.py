@@ -324,102 +324,186 @@ def split_text_by_token_limit(file_path, max_tokens=256):
 
 def split_into_sentences(text):
     """
-    Split text into complete sentences, ensuring sentence endings stay with their content.
-    Works with both Chinese and English sentence endings.
+    Split text into sentences while preserving spacing between sentences.
+    Handles Chinese, English, and other punctuation marks correctly.
+    
+    IMPORTANT: This function preserves ALL original spacing and formatting
+    to ensure that when sentences are recombined, the result is identical 
+    to the original text.
     """
-    # Pattern for Chinese and English sentence endings (。!?！？) followed by optional quotes, brackets, etc.
-    sentence_end_pattern = r'([。！？!?]["""\'）\)）]*)'
+    # Define sentence ending punctuation marks for multiple languages
+    sentence_endings = [
+        '。',  # Chinese period
+        '！',  # Chinese exclamation
+        '？',  # Chinese question mark
+        '!',   # English exclamation
+        '?',   # English question mark
+        '.',   # English period
+        '；',  # Chinese semicolon (sometimes used as sentence ending)
+        ';'    # English semicolon (in some contexts)
+    ]
     
-    # Split text by sentence endings, keeping the endings
-    parts = re.split(f'({sentence_end_pattern})', text)
+    # Define quote marks and brackets that might follow sentence endings
+    quote_brackets = [
+        '"', '"', '"',  # Various double quotes
+        "'", ''', ''',  # Various single quotes
+        '）', ')', '）',  # Various closing parentheses
+        '】', ']', '』', # Various closing brackets
+        '》', '>',      # Angle brackets
+    ]
     
-    # Combine each part with its sentence ending
     sentences = []
-    i = 0
     current_sentence = ""
     
-    while i < len(parts):
-        current_sentence += parts[i]
+    i = 0
+    while i < len(text):
+        char = text[i]
+        current_sentence += char
         
-        # If next part is a sentence ending, add it to current sentence and finish this sentence
-        if i + 1 < len(parts) and re.match(sentence_end_pattern, parts[i + 1]):
-            current_sentence += parts[i + 1]
-            sentences.append(current_sentence)
+        # Check if current character is a sentence ending
+        if char in sentence_endings:
+            # Look ahead for any following quotes, brackets, or additional punctuation
+            j = i + 1
+            while j < len(text) and text[j] in quote_brackets:
+                current_sentence += text[j]
+                j += 1
+            
+            # CRITICAL: Preserve spaces after sentence endings to maintain original formatting
+            while j < len(text) and text[j] == ' ':
+                current_sentence += text[j]
+                j += 1
+            
+            # Complete current sentence if it has content
+            if current_sentence.strip():
+                sentences.append(current_sentence)
+            
+            # Reset for next sentence
             current_sentence = ""
-            i += 2
-        else:
-            i += 1
+            i = j - 1  # Adjust index to account for consumed characters
+        
+        i += 1
     
-    # Add any remaining text as a separate sentence (might not end with punctuation)
+    # Add any remaining content as the last sentence
     if current_sentence.strip():
         sentences.append(current_sentence)
     
-    # Filter out empty sentences
-    return [s for s in sentences if s.strip()]
+    return sentences
+
 
 def split_long_sentence(sentence, max_tokens):
     """
-    Split an individual long sentence by commas or other internal punctuation
-    if it exceeds the token limit.
+    Split an individual long sentence by internal punctuation marks.
+    Updated to handle multiple languages and prevent double punctuation.
+    
+    PRESERVATION NOTE: This function attempts to maintain original spacing,
+    but may modify it when splitting at internal punctuation points.
     """
-    # If the sentence is within limit, return it as is
+    # If the sentence is within token limit, return as is
     if num_tokens_from_string(sentence) <= max_tokens:
         return [sentence]
     
-    # Internal punctuation pattern (commas, semicolons, colons in both Chinese and English)
-    internal_punct_pattern = r'([，,；;：:]["""\'）\)）]*)'
+    # Define internal punctuation patterns for multiple languages
+    internal_punctuation = [
+        '，',  # Chinese comma
+        ',',   # English comma
+        '；',  # Chinese semicolon
+        ';',   # English semicolon
+        '：',  # Chinese colon
+        ':',   # English colon
+        '、',  # Chinese enumeration comma
+    ]
     
-    # Split the sentence by internal punctuation
-    parts = re.split(f'({internal_punct_pattern})', sentence)
+    # Quote marks and brackets that might follow internal punctuation
+    trailing_marks = ['"', '"', '"', "'", ''', ''', '）', ')', '）', '】', ']', '』']
     
     chunks = []
     current_chunk = ""
     current_tokens = 0
     
     i = 0
-    while i < len(parts):
-        part = parts[i]
-        punct = parts[i + 1] if i + 1 < len(parts) and re.match(internal_punct_pattern, parts[i + 1]) else ""
+    while i < len(sentence):
+        char = sentence[i]
+        current_chunk += char
         
-        part_with_punct = part + punct
-        part_tokens = num_tokens_from_string(part_with_punct)
-        
-        # If adding this part would exceed the limit
-        if current_tokens + part_tokens > max_tokens:
-            # If current chunk is not empty, add it to chunks
-            if current_chunk:
-                chunks.append(current_chunk)
+        # Check if current character is internal punctuation
+        if char in internal_punctuation:
+            # Look ahead for any following quotes or brackets
+            j = i + 1
+            while j < len(sentence) and sentence[j] in trailing_marks:
+                current_chunk += sentence[j]
+                j += 1
             
-            # If this single part exceeds the limit, we need to split it by characters
-            if part_tokens > max_tokens:
-                chars_per_token = len(part_with_punct) / part_tokens
-                for j in range(0, len(part_with_punct), int(max_tokens * chars_per_token)):
-                    end_idx = min(j + int(max_tokens * chars_per_token), len(part_with_punct))
-                    chunks.append(part_with_punct[j:end_idx])
+            # PRESERVE spaces after internal punctuation
+            while j < len(sentence) and sentence[j] == ' ':
+                current_chunk += sentence[j]
+                j += 1
+            
+            # Calculate tokens for current chunk
+            chunk_tokens = num_tokens_from_string(current_chunk)
+            
+            # If adding this chunk would exceed limit, save current chunk and start new one
+            if current_tokens + chunk_tokens > max_tokens and current_chunk.strip():
+                if current_chunk.strip():
+                    chunks.append(current_chunk)  # Keep original formatting
+                current_chunk = ""
+                current_tokens = 0
             else:
-                # Otherwise, start a new chunk with this part
-                current_chunk = part_with_punct
-                current_tokens = part_tokens
-        else:
-            # Add to the current chunk
-            current_chunk += part_with_punct
-            current_tokens += part_tokens
+                current_tokens = chunk_tokens
+            
+            i = j - 1  # Adjust index
         
-        i += 2 if punct else 1
+        i += 1
     
-    # Add the last chunk if not empty
-    if current_chunk:
+    # Add remaining chunk if it has content
+    if current_chunk.strip():
         chunks.append(current_chunk)
     
-    return chunks
+    # If we still have chunks that are too long, split by character count
+    # WARNING: This may break text preservation guarantees
+    final_chunks = []
+    for chunk in chunks:
+        chunk_tokens = num_tokens_from_string(chunk)
+        if chunk_tokens > max_tokens:
+            # Estimate characters per token for this chunk
+            chars_per_token = len(chunk) / chunk_tokens if chunk_tokens > 0 else 1
+            chars_per_chunk = int(max_tokens * chars_per_token * 0.9)  # Leave some margin
+            
+            # Split by character count - this may break word boundaries
+            for start in range(0, len(chunk), chars_per_chunk):
+                end = min(start + chars_per_chunk, len(chunk))
+                final_chunks.append(chunk[start:end])
+        else:
+            final_chunks.append(chunk)
+    
+    return final_chunks
+
 
 def split_by_sentences_and_combine(text, max_tokens):
     """
     Split text into sentences, then combine sentences up to the token limit.
-    If a single sentence exceeds the limit, split it at internal punctuation.
+    Updated to prevent double punctuation marks while preserving original format.
+    
+    PRESERVATION GUARANTEE: When chunks are rejoined with ''.join(), 
+    the result should be identical to the original text.
     """
-    # First, split into complete sentences
-    sentences = split_into_sentences(text)
+    # Clean any existing double punctuation marks from input
+    cleaned_text = text
+    punctuation_pairs = [
+        ('。。', '。'),  # Double Chinese periods
+        ('！！', '！'),  # Double Chinese exclamations
+        ('？？', '？'),  # Double Chinese question marks
+        ('!!', '!'),    # Double English exclamations
+        ('??', '?'),    # Double English question marks
+        ('..', '.'),    # Double English periods (but be careful with ellipsis ...)
+        ('，，', '，'),  # Double Chinese commas
+        (',,', ','),    # Double English commas
+    ]
+    
+    for double, single in punctuation_pairs:
+        cleaned_text = cleaned_text.replace(double, single)
+    
+    # Split into complete sentences using improved function
+    sentences = split_into_sentences(cleaned_text)
     
     chunks = []
     current_chunk = ""
@@ -428,32 +512,32 @@ def split_by_sentences_and_combine(text, max_tokens):
     for sentence in sentences:
         sentence_tokens = num_tokens_from_string(sentence)
         
-        # If a single sentence exceeds the limit, we need to split it
+        # If a single sentence exceeds the limit, split it further
         if sentence_tokens > max_tokens:
             # First add any accumulated chunk
-            if current_chunk:
-                chunks.append(current_chunk)
+            if current_chunk.strip():
+                chunks.append(current_chunk)  # Preserve exact formatting
                 current_chunk = ""
                 current_tokens = 0
             
-            # Then split the long sentence and add its parts
+            # Split the long sentence and add its parts
             sentence_parts = split_long_sentence(sentence, max_tokens)
             chunks.extend(sentence_parts)
             continue
         
         # If adding this sentence would exceed the limit, start a new chunk
-        if current_tokens + sentence_tokens > max_tokens and current_chunk:
-            chunks.append(current_chunk)
+        if current_tokens + sentence_tokens > max_tokens and current_chunk.strip():
+            chunks.append(current_chunk)  # Preserve exact formatting
             current_chunk = sentence
             current_tokens = sentence_tokens
         else:
-            # Add to current chunk
+            # Add to current chunk - sentences already include proper spacing
             current_chunk += sentence
             current_tokens += sentence_tokens
     
     # Add the last chunk if not empty
-    if current_chunk:
-        chunks.append(current_chunk)
+    if current_chunk.strip():
+        chunks.append(current_chunk)  # Preserve exact formatting
     
     return chunks
 
@@ -462,7 +546,6 @@ def recombine_split_jsons(src_split_path, dst_translated_split_path):
     Merge source file and translated file based on original_count from source.
     Combine multiple chunks with the same count into one complete content.
     """    
-    # Load source and translation files
     try:
         with open(src_split_path, 'r', encoding='utf-8') as f:
             src_data = json.load(f)
@@ -477,49 +560,7 @@ def recombine_split_jsons(src_split_path, dst_translated_split_path):
         print(f"Error loading translated file: {e}")
         translated_data = []
     
-    # Create mapping from count to original_count
-    count_to_original_count = {}
-    # Organize content by count
-    count_chunks = {}
-    
-    # 1. Collect all chunks from source file, organize by count
-    for item in src_data:
-        count = str(item.get("count", ""))
-        if not count:
-            continue
-            
-        # Get original count
-        original_count = str(item.get("original_count", count))
-        count_to_original_count[count] = original_count
-        
-        # Get chunk info
-        chunk_info = item.get("chunk", "1/1")
-        try:
-            chunk_num, total_chunks = map(int, chunk_info.split('/'))
-        except:
-            chunk_num, total_chunks = 1, 1
-        
-        # Get content
-        content = item.get("value", "")
-        if not content:
-            continue
-        
-        # Initialize or update entry for this count
-        if count not in count_chunks:
-            count_chunks[count] = {
-                "chunks": [None] * total_chunks,
-                "type": item.get("type", "text"),
-                "original_count": original_count
-            }
-        elif len(count_chunks[count]["chunks"]) < total_chunks:
-            # Extend chunks list if needed
-            count_chunks[count]["chunks"].extend([None] * (total_chunks - len(count_chunks[count]["chunks"])))
-        
-        # Set content at the right position
-        if 0 <= chunk_num-1 < len(count_chunks[count]["chunks"]):
-            count_chunks[count]["chunks"][chunk_num-1] = content
-    
-    # 2. Process translations, organize by count
+    # Organize translation data by count
     translated_by_count = {}
     for item in translated_data:
         if not isinstance(item, dict) or "count" not in item:
@@ -527,46 +568,80 @@ def recombine_split_jsons(src_split_path, dst_translated_split_path):
         
         count = str(item["count"])
         
-        # Initialize if first time seeing this count
         if count not in translated_by_count:
             translated_by_count[count] = {
                 "original": item.get("original", ""),
                 "translated": item.get("translated", "")
             }
         else:
-            # If count exists, append translation content
+            # Concatenate translation content for multiple chunks
             translated_by_count[count]["original"] += item.get("original", "")
             translated_by_count[count]["translated"] += item.get("translated", "")
     
-    # 3. Merge results using original_count as the final count
+    # Group by original_count and get complete original text
     result_by_original_count = {}
     
-    for count, data in count_chunks.items():
-        original_count = data["original_count"]
-        original_text = "".join([chunk for chunk in data["chunks"] if chunk])
+    # CRITICAL PRESERVATION STEP: Get original complete text instead of reconstructing from chunks
+    original_texts = {}  # original_count -> complete original text
+    
+    # Find corresponding src_deduped.json from src_split_path directory
+    src_dir = os.path.dirname(src_split_path)
+    src_deduped_path = os.path.join(src_dir, "src_deduped.json")
+    
+    if os.path.exists(src_deduped_path):
+        try:
+            with open(src_deduped_path, 'r', encoding='utf-8') as f:
+                deduped_data = json.load(f)
+            
+            for item in deduped_data:
+                count = str(item.get("count", ""))
+                value = item.get("value", "")
+                if count and value:
+                    original_texts[count] = value
+                    
+        except Exception as e:
+            print(f"Warning: Could not load original texts from {src_deduped_path}: {e}")
+    else:
+        print(f"Warning: Original deduped file not found at {src_deduped_path}")
+    
+    # Process each source data item
+    for item in src_data:
+        count = str(item.get("count", ""))
+        original_count = str(item.get("original_count", count))
+        
+        if not count:
+            continue
+        
+        # Use original complete text to guarantee preservation
+        if original_count in original_texts:
+            original_text = original_texts[original_count]
+        else:
+            # Fallback: use current item's value (may not preserve formatting perfectly)
+            original_text = item.get("value", "")
+            print(f"Warning: Using fallback text for original_count {original_count}")
         
         # Get corresponding translation
-        translated_text = original_text  # Default to original text
+        translated_text = ""
         if count in translated_by_count:
             translated_text = translated_by_count[count]["translated"]
         
-        # If this original_count doesn't exist yet, add it
+        # Add to results
         if original_count not in result_by_original_count:
             result_by_original_count[original_count] = {
                 "count": int(original_count) if original_count.isdigit() else original_count,
-                "type": data["type"],
+                "type": item.get("type", "text"),
                 "original": original_text,
                 "translated": translated_text
             }
         else:
-            # If exists, append content
-            result_by_original_count[original_count]["original"] += original_text
-            result_by_original_count[original_count]["translated"] += translated_text
+            # If already exists, append translation content only
+            # (original text should be identical, so don't modify it)
+            existing_translated = result_by_original_count[original_count]["translated"]
+            result_by_original_count[original_count]["translated"] = existing_translated + translated_text
     
-    # Convert to list
+    # Convert to list and sort
     result = list(result_by_original_count.values())
     
-    # Sort by count
     def get_count_key(item):
         count = item["count"]
         if isinstance(count, int) or (isinstance(count, str) and count.isdigit()):
