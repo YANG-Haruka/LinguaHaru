@@ -1142,7 +1142,7 @@ with gr.Blocks(
     gr.HTML("""
     <div style="position: fixed; bottom: 0; left: 0; width: 100%; 
                 text-align: center; padding: 10px 0;">
-        Made by Haruka-YANG | Version: 3.2 | 
+        Made by Haruka-YANG | Version: 3.4 | 
         <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank">Visit Github</a>
     </div>
     """)
