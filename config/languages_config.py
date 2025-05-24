@@ -116,7 +116,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Continue Translation",
         "Thread Count": "Thread Count",
         "Stop Translation": "Stop Translation",
-        "Stopping": "Stopping..."
+        "Stopping": "Stopping...",
+        "Glossary": "Glossary"
     },
     # Simplified Chinese
     "zh": {
@@ -137,7 +138,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "继续翻译",
         "Thread Count": "线程数量",
         "Stop Translation": "停止翻译",
-        "Stopping": "正在停止..."
+        "Stopping": "正在停止...",
+        "Glossary": "词汇表"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -158,7 +160,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "繼續翻譯",
         "Thread Count": "執行緒數量",
         "Stop Translation": "停止翻譯",
-        "Stopping": "正在停止..."
+        "Stopping": "正在停止...",
+        "Glossary": "詞彙表"
     },
     # Japanese
     "ja": {
@@ -179,7 +182,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "翻訳を続ける",
         "Thread Count": "スレッド数",
         "Stop Translation": "翻訳を停止",
-        "Stopping": "停止中..."
+        "Stopping": "停止中...",
+        "Glossary": "用語集"
     },
     # Spanish
     "es": {
@@ -200,7 +204,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Continuar traducción",
         "Thread Count": "Número de hilos",
         "Stop Translation": "Detener traducción",
-        "Stopping": "Deteniendo..."
+        "Stopping": "Deteniendo...",
+        "Glossary": "Glosario"
     },
     # French
     "fr": {
@@ -221,7 +226,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Continuer la traduction",
         "Thread Count": "Nombre de threads",
         "Stop Translation": "Arrêter la traduction",
-        "Stopping": "Arrêt en cours..."
+        "Stopping": "Arrêt en cours...",
+        "Glossary": "Glossaire"
     },
     # German
     "de": {
@@ -242,7 +248,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Übersetzung fortsetzen",
         "Thread Count": "Thread-Anzahl",
         "Stop Translation": "Übersetzung stoppen",
-        "Stopping": "Stoppe..."
+        "Stopping": "Stoppe...",
+        "Glossary": "Glossar"
     },
     # Italian
     "it": {
@@ -263,7 +270,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Continua traduzione",
         "Thread Count": "Numero di thread",
         "Stop Translation": "Interrompi traduzione",
-        "Stopping": "Interruzione in corso..."
+        "Stopping": "Interruzione in corso...",
+        "Glossary": "Glossario"
     },
     # Portuguese
     "pt": {
@@ -284,7 +292,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Continuar tradução",
         "Thread Count": "Número de threads",
         "Stop Translation": "Parar tradução",
-        "Stopping": "Parando..."
+        "Stopping": "Parando...",
+        "Glossary": "Glossário"
     },
     # Russian
     "ru": {
@@ -305,7 +314,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Продолжить перевод",
         "Thread Count": "Количество потоков",
         "Stop Translation": "Остановить перевод",
-        "Stopping": "Остановка..."
+        "Stopping": "Остановка...",
+        "Glossary": "Глоссарий"
     },
     # Korean
     "ko": {
@@ -326,7 +336,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "번역 계속하기",
         "Thread Count": "스레드 수",
         "Stop Translation": "번역 중지",
-        "Stopping": "중지 중..."
+        "Stopping": "중지 중...",
+        "Glossary": "용어집"
     },
     # Thai
     "th": {
@@ -347,7 +358,8 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "แปลต่อ",
         "Thread Count": "จำนวนเธรด",
         "Stop Translation": "หยุดการแปล",
-        "Stopping": "กำลังหยุด..."
+        "Stopping": "กำลังหยุด...",
+        "Glossary": "อภิธานศัพท์"
     },
     # Vietnamese
     "vi": {
@@ -368,6 +380,7 @@ LABEL_TRANSLATIONS = {
         "Continue Translation": "Tiếp tục dịch",
         "Thread Count": "Số lượng luồng",
         "Stop Translation": "Dừng dịch",
-        "Stopping": "Đang dừng..."
+        "Stopping": "Đang dừng...",
+        "Glossary": "Bảng thuật ngữ"
     }
 }
