@@ -19,7 +19,8 @@ def should_translate(text_value):
         return False
 
     # Skip URLs or emails
-    if re.match(r'^https?://|www\.', text_value) or re.match(r'^[^@]+@[^@]+\.[^@]+$', text_value):
+    if (re.match(r'^https?://|^www\.', text_value) or 
+        re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', text_value)):
         return False
 
     # Skip identifiers or codes
