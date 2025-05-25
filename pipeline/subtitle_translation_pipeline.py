@@ -10,7 +10,13 @@ def extract_srt_content_to_json(file_path):
     with open(file_path, "r", encoding="utf-8") as file:
         srt_content = file.read()
     
-    srt_pattern = re.compile(r"(\d+)\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\n(.+?)(?=\n\n|\Z)", re.DOTALL)
+    srt_pattern = re.compile(
+        r"(\d+)\s*\r?\n"
+        r"(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*"
+        r"(\d{2}:\d{2}:\d{2},\d{3})\s*\r?\n"
+        r"(.*?)(?=\r?\n\r?\n|\Z)",
+        re.DOTALL
+    )
     
     content_data = []
     
