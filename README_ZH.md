@@ -2,7 +2,7 @@
   <img src="img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
 
 [English](README.md) | 简体中文 | [日本語](README_JP.md)  
-<br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki" target="_blank">📚 使用说明 Wiki</a>
+<br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/zh-Home" target="_blank">📚 使用说明 Wiki</a>
 
 
 <div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>

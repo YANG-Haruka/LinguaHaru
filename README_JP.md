@@ -3,7 +3,7 @@
 
 
 [English](README.md) | [简体中文](README_ZH.md) | 日本語
-
+<br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/jp-Home" target="_blank">📚 使用方法ガイド（Wiki）</a>
 
 <div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
 <p align='center'>ワンクリックで様々な一般的なファイル形式に対して高品質で正確な翻訳を提供する次世代AI翻訳ツール</p>
