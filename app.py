@@ -485,17 +485,6 @@ def get_glossary_files():
     
     # Ensure glossary directory exists
     os.makedirs(glossary_dir, exist_ok=True)
-    
-    # Check if Default.csv exists, create if not
-    default_glossary = os.path.join(glossary_dir, "Default.csv")
-    if not os.path.exists(default_glossary):
-        # Create a basic default glossary file
-        with open(default_glossary, 'w', encoding='utf-8', newline='') as f:
-            import csv
-            writer = csv.writer(f)
-            writer.writerow(["Source", "Target", "Notes"])  # Header row
-            writer.writerow(["Example", "示例", "Sample entry"])  # Sample entry
-    
     # Get all CSV files
     try:
         csv_files = [f for f in os.listdir(glossary_dir) if f.endswith('.csv')]
