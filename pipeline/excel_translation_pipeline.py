@@ -19,7 +19,7 @@ def extract_excel_content_to_json(file_path):
         if should_translate(sheet_name):
             count += 1
             sheet_info = {
-                "count": count,
+                "count_src": count,
                 "sheet": "SHEET_NAME",  # Special marker to identify sheet names
                 "row": 0,               # Use 0 to indicate it's a sheet name, not a cell
                 "column": 0,            # Use 0 to indicate it's a sheet name, not a cell
@@ -68,7 +68,7 @@ def extract_excel_content_to_json(file_path):
                     
                 count += 1
                 cell_info = {
-                    "count": count,
+                    "count_src": count,
                     "sheet": sheet_name,
                     "row": cell.row,
                     "column": cell.column,
@@ -121,14 +121,14 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         translated_data = json.load(translated_file)
 
     # Convert translations to a dictionary {count: translated_value}
-    translations = {str(item["count"]): item["translated"] for item in translated_data}
+    translations = {str(item["count_src"]): item["translated"] for item in translated_data}
     
     # Track sheet name translations to apply at the end
     sheet_name_translations = {}
     
     # First pass: Collect sheet name translations
     for cell_info in original_data:
-        count = str(cell_info["count"])  # Ensure count is a string
+        count = str(cell_info["count_src"])  # Ensure count is a string
         if cell_info.get("is_sheet_name", False):
             original_sheet_name = cell_info["value"]
             translated_sheet_name = translations.get(count)
@@ -141,7 +141,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         if cell_info.get("is_sheet_name", False):
             continue
             
-        count = str(cell_info["count"])  # Ensure count is a string
+        count = str(cell_info["count_src"])  # Ensure count is a string
         sheet_name = cell_info["sheet"]
         row = cell_info["row"]
         column = cell_info["column"]

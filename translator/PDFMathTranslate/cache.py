@@ -106,7 +106,7 @@ class TranslationCache:
     # New method to extract all ids and original_text and save to JSON
     def export_translation_to_json(self,output_path):
         data = [
-            {"count": record.id, "value": record.original_text}
+            {"count_src": record.id, "value": record.original_text}
             for record in _TranslationCache.select(_TranslationCache.id, _TranslationCache.original_text).order_by(_TranslationCache.id)
         ]
         with open(output_path, "w", encoding="utf-8") as f:
@@ -117,7 +117,7 @@ class TranslationCache:
         with open(input_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         for item in data:
-            count = int(item["count"])
+            count = int(item["count_src"])
             translated = item["translated"]
             _TranslationCache.update(translation=translated).where(_TranslationCache.id == count).execute()
         # display_database()

@@ -22,7 +22,7 @@ def extract_excel_content_to_json(file_path):
             if should_translate(sheet_name):
                 count += 1
                 cell_data.append({
-                    "count": count,
+                    "count_src": count,
                     "sheet": sheet_name,
                     "value": sheet_name,
                     "type": "sheet_name"
@@ -74,7 +74,7 @@ def extract_excel_content_to_json(file_path):
                                 continue
                         
                         sheet_data.append({
-                            "count": 0,
+                            "count_src": 0,
                             "sheet": sheet.name,
                             "row": row_idx + 1,
                             "column": col_idx + 1,
@@ -162,7 +162,7 @@ def extract_excel_content_to_json(file_path):
                                                 
                                                 # Add to group items data
                                                 group_items_data.append({
-                                                    "count": 0,
+                                                    "count_src": 0,
                                                     "sheet": sheet.name,
                                                     "shape_name": child_name,
                                                     "unique_shape_id": unique_shape_id,
@@ -223,7 +223,7 @@ def extract_excel_content_to_json(file_path):
                                     unique_shape_id = f"{original_shape_name}_{shape_name_count[original_shape_name]}"
                                     
                                     sheet_data.append({
-                                        "count": 0,
+                                        "count_src": 0,
                                         "sheet": sheet.name,
                                         "shape_name": original_shape_name,
                                         "unique_shape_id": unique_shape_id,
@@ -247,7 +247,7 @@ def extract_excel_content_to_json(file_path):
         for sheet_data in results:
             for item in sheet_data:
                 count += 1
-                item["count"] = count
+                item["count_src"] = count
                 cell_data.append(item)
                 
     finally:
@@ -295,12 +295,12 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_data = json.load(translated_file)
 
-    translations = {str(item["count"]): item["translated"] for item in translated_data}
+    translations = {str(item["count_src"]): item["translated"] for item in translated_data}
     
     sheet_name_translations = {}
     for cell_info in original_data:
         if cell_info.get("type") == "sheet_name":
-            count = str(cell_info["count"])
+            count = str(cell_info["count_src"])
             original_sheet_name = cell_info["sheet"]
             translated_sheet_name = translations.get(count)
             if translated_sheet_name:
@@ -317,7 +317,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         if cell_info.get("type") == "sheet_name":
             continue
             
-        count = str(cell_info["count"])
+        count = str(cell_info["count_src"])
         sheet_name = cell_info["sheet"]
         
         if sheet_name not in sheets_data:

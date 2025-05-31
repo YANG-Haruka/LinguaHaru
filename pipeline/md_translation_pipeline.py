@@ -93,14 +93,14 @@ def extract_md_content_to_json(file_path):
                             count += 1
                             # Store information about translatable cell
                             translatable_cells.append({
-                                "count": count,
+                                "count_src": count,
                                 "index": i,
                                 "original_text": cell_text
                             })
                             
                             # Add to content data for translation
                             content_data.append({
-                                "count": count,
+                                "count_src": count,
                                 "index": position_index,
                                 "type": "html_table_cell",
                                 "value": cell_text
@@ -173,11 +173,11 @@ def extract_md_content_to_json(file_path):
                     "closing_tag": closing_tag,
                     "value": line,
                     "translate": True,
-                    "count": count
+                    "count_src": count
                 })
                 
                 content_data.append({
-                    "count": count,
+                    "count_src": count,
                     "index": position_index,
                     "type": "html_content",
                     "value": content_text
@@ -208,11 +208,11 @@ def extract_md_content_to_json(file_path):
                         "closing_tag": closing_outer_tag,
                         "value": line,
                         "translate": True,
-                        "count": count
+                        "count_src": count
                     })
                     
                     content_data.append({
-                        "count": count,
+                        "count_src": count,
                         "index": position_index,
                         "type": "html_complex_content",
                         "value": inner_content
@@ -245,11 +245,11 @@ def extract_md_content_to_json(file_path):
                 "type": "text",
                 "value": line,
                 "translate": True,
-                "count": count
+                "count_src": count
             })
             
             content_data.append({
-                "count": count,
+                "count_src": count,
                 "index": position_index,
                 "type": "text",
                 "value": line
@@ -299,7 +299,7 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
     # Create translation mapping (count -> translated text)
     translations = {}
     for item in translated_data:
-        count = item.get("count")
+        count = item.get("count_src")
         if count:
             translations[count] = item.get("translated", "")
     
@@ -322,7 +322,7 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                     
                     # Replace content in cells that need translation
                     for cell_info in item.get("translatable_cells", []):
-                        cell_count = cell_info.get("count")
+                        cell_count = cell_info.get("count_src")
                         cell_index = cell_info.get("index")
                         
                         if cell_count in translations and cell_index < len(all_tds):
@@ -350,7 +350,7 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                     final_lines.append(item["value"])
             elif item["type"] in ["html_simple", "html_complex"]:
                 # Standard handling for simple and complex HTML
-                count = item.get("count")
+                count = item.get("count_src")
                 if count in translations:
                     final_lines.append(
                         item["opening_tag"] + 
@@ -361,7 +361,7 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                     final_lines.append(item["value"])
             else:
                 # Regular text
-                count = item.get("count")
+                count = item.get("count_src")
                 if count in translations:
                     final_lines.append(translations[count])
                 else:

@@ -37,7 +37,7 @@ def extract_txt_content_to_json(file_path):
             needs_translation = should_translate(line)
             
             line_data = {
-                "count": count,
+                "count_src": count,
                 "type": "paragraph",
                 "value": line,
                 "format": "\\x0a\\x0a",
@@ -81,7 +81,7 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
         translated_data = json.load(translated_file)
     
     # Create translation map
-    translation_map = {item["count"]: item["translated"] for item in translated_data}
+    translation_map = {item["count_src"]: item["translated"] for item in translated_data}
     
     # Create output file
     result_folder = "result"
@@ -91,7 +91,7 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
     # Write content to new file
     with open(result_path, "w", encoding="utf-8") as result_file:
         for item in all_content_data:
-            count = item["count"]
+            count = item["count_src"]
             needs_translation = item.get("needs_translation", True)
             
             # Use translation if available, otherwise use original text

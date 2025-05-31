@@ -81,7 +81,7 @@ def extract_ppt_content_to_json(file_path):
                             if should_translate(segment_text):
                                 count += 1
                                 content_data.append({
-                                    "count": count,
+                                    "count_src": count,
                                     "slide_index": slide_index,
                                     "text_box_index": text_box_index,
                                     "p_index": p_index,
@@ -116,7 +116,7 @@ def extract_ppt_content_to_json(file_path):
                     if should_translate(segment_text):
                         count += 1
                         content_data.append({
-                            "count": count,
+                            "count_src": count,
                             "slide_index": slide_index,
                             "text_box_index": text_box_index,
                             "p_index": p_index if 'p_index' in locals() else 0,  # In case there were no paragraphs
@@ -154,7 +154,7 @@ def write_translated_content_to_ppt(file_path, original_json_path, translated_js
         translated_data = json.load(translated_file)
 
     # Create a mapping of translations
-    translations = {str(item["count"]): item["translated"] for item in translated_data}
+    translations = {str(item["count_src"]): item["translated"] for item in translated_data}
 
     # Open the PowerPoint file as a ZIP archive
     with ZipFile(file_path, 'r') as pptx:
@@ -236,7 +236,7 @@ def write_translated_content_to_ppt(file_path, original_json_path, translated_js
                     # Process segments for this text box
                     for segment in text_box_segments[text_box_index]:
                         style = segment['style']
-                        count = segment['count']
+                        count = segment['count_src']
                         
                         # Get translation for this segment
                         translated_text = translations.get(str(count), None)
@@ -332,7 +332,7 @@ def write_translated_content_to_ppt(file_path, original_json_path, translated_js
                 for text_node_index, text_node in enumerate(text_nodes, start=1):
                     text_value = text_node.text if text_node.text else ""
                     if should_translate(text_value):
-                        count = next((item['count'] for item in original_data if 
+                        count = next((item['count_src'] for item in original_data if 
                                      item['slide_index'] == slide_index and 
                                      item.get('text_node_index') == text_node_index), None)
                         if count:
