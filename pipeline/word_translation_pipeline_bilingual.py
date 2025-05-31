@@ -52,7 +52,7 @@ def extract_word_content_to_json(file_path):
                 item_id += 1
                 content_data.append({
                     "id": item_id,
-                    "count": item_id,
+                    "count_src": item_id,
                     "type": "paragraph",
                     "is_heading": is_heading,
                     "has_numbering": has_numbering,
@@ -92,7 +92,7 @@ def extract_word_content_to_json(file_path):
                         item_id += 1
                         table_cells.append({
                             "id": item_id,
-                            "count": item_id,
+                            "count_src": item_id,
                             "type": "table_cell",
                             "table_index": element_index,
                             "row": row_idx,
@@ -123,7 +123,7 @@ def extract_word_content_to_json(file_path):
                 item_id += 1
                 content_data.append({
                     "id": item_id,
-                    "count": item_id,
+                    "count_src": item_id,
                     "type": "header_footer",
                     "hf_type": hf_type,
                     "hf_file": hf_file,
@@ -163,7 +163,7 @@ def extract_word_content_to_json(file_path):
                         item_id += 1
                         content_data.append({
                             "id": item_id,
-                            "count": item_id,
+                            "count_src": item_id,
                             "type": "header_footer_table_cell",
                             "hf_type": hf_type,
                             "hf_file": hf_file,
@@ -198,7 +198,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     # Create mapping of original and translated content
     content_map = {}
     for item in original_data:
-        item_id = str(item.get("id", item.get("count")))
+        item_id = str(item.get("id", item.get("count_src")))
         if item_id:
             content_map[item_id] = {
                 "original": item.get("value", "").replace("␊", "\n").replace("␍", "\r"),
@@ -216,7 +216,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     
     # Add translations to the content map
     for item in translated_data:
-        item_id = str(item.get("id", item.get("count")))
+        item_id = str(item.get("id", item.get("count_src")))
         if item_id and item_id in content_map and "translated" in item:
             content_map[item_id]["translated"] = item["translated"].replace("␊", "\n").replace("␍", "\r")
     
@@ -595,17 +595,17 @@ def update_json_structure_after_translation(original_json_path, translated_json_
     translations_by_id = {}
     for item in translated_data:
         if "translated" in item:
-            item_id = str(item.get("id", item.get("count")))
+            item_id = str(item.get("id", item.get("count_src")))
             if item_id:
                 translations_by_id[item_id] = item["translated"]
     
     restructured_data = []
     for item in original_data:
-        item_id = str(item.get("id", item.get("count")))
+        item_id = str(item.get("id", item.get("count_src")))
         if item_id in translations_by_id:
             restructured_data.append({
                 "id": item.get("id"),
-                "count": item.get("count"),
+                "count_src": item.get("count_src"),
                 "type": item["type"],
                 "translated": translations_by_id[item_id]
             })

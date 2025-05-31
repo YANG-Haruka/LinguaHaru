@@ -25,7 +25,7 @@ def extract_srt_content_to_json(file_path):
         value = value.replace("\n", "␊").replace("\r", "␍")
         
         content_data.append({
-            "count": int(count),
+            "count_src": int(count),
             "start_time": start_time,
             "end_time": end_time,
             "value": value
@@ -50,12 +50,12 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
     with open(translated_json_path, "r", encoding="utf-8") as translated_file:
         translated_data = json.load(translated_file)
     
-    translations = {str(item["count"]): item["translated"] for item in translated_data}
+    translations = {str(item["count_src"]): item["translated"] for item in translated_data}
     
     output_srt_lines = []
     
     for item in original_data:
-        count = item["count"]
+        count = item["count_src"]
         start_time = item["start_time"]
         end_time = item["end_time"]
         value = item["value"]
