@@ -544,53 +544,52 @@ def create_deduped_json_for_translation(deduped_data, output_path):
     app_logger.info(f"Created deduped file: {output_path} ({len(deduped_data)} items)")
     return output_path
 
-def restore_translations_from_deduped(dst_translated_deduped_path, count_src_to_deduped_map, src_original_path):
-    """Restore translations to original structure"""
-    # Load deduped translations
-    with open(dst_translated_deduped_path, 'r', encoding='utf-8') as f:
-        deduped_translations = json.load(f)
+def restore_translations_from_deduped(dst_translated_split_path, count_src_to_deduped_map, src_original_path):
+    """Restore translations to original structure
+    """
+    # Load translated results
+    with open(dst_translated_split_path, 'r', encoding='utf-8') as f:
+        translated_results = json.load(f)
     
-    # Build mapping: count_split -> translation
+    # Load the split file to get count_deduped -> count_split mapping
+    split_file_path = dst_translated_split_path.replace('dst_translated_split.json', 'src_deduped_split.json')
+    count_deduped_to_split_map = {}
+    
+    try:
+        with open(split_file_path, 'r', encoding='utf-8') as f:
+            split_data = json.load(f)
+            
+        # Build count_deduped -> count_split mapping
+        for item in split_data:
+            if not isinstance(item, dict):
+                continue
+            count_deduped = item.get("count_deduped")
+            count_split = item.get("count_split")
+            
+            if count_deduped is not None and count_split is not None:
+                if count_deduped not in count_deduped_to_split_map:
+                    count_deduped_to_split_map[count_deduped] = []
+                count_deduped_to_split_map[count_deduped].append(count_split)
+        
+        app_logger.info(f"Built count_deduped -> count_split mapping with {len(count_deduped_to_split_map)} entries")
+        
+    except Exception as e:
+        app_logger.warning("Attempting direct mapping as fallback")
+    
+    # Build count_split -> translation mapping
     count_split_to_translation = {}
     
-    for item in deduped_translations:
+    for item in translated_results:
         if not isinstance(item, dict):
             continue
             
         count_split = item.get("count_split")
-        original_text = item.get("original", item.get("value", ""))
-        translated_text = (item.get("translated", "") or 
-                          item.get("translation", "") or 
-                          item.get("target", "") or
-                          item.get("dst", ""))
+        translated_text = item.get("translated", "")
         
-        if count_split is not None:
-            # Use original if no translation
-            if not translated_text:
-                translated_text = original_text
+        if count_split is not None and translated_text:
             count_split_to_translation[count_split] = translated_text
     
-    # Load split data to get count_src -> count_split mapping
-    split_file_path = dst_translated_deduped_path.replace("dst_translated_split.json", "src_deduped_split.json")
-    with open(split_file_path, 'r', encoding='utf-8') as f:
-        split_data = json.load(f)
-    
-    # Build count_src -> translations mapping
-    count_src_translations = {}
-    
-    for split_item in split_data:
-        if not isinstance(split_item, dict):
-            continue
-            
-        count_src = split_item.get("count_src")
-        count_split = split_item.get("count_split")
-        
-        if count_src is not None and count_split is not None:
-            translation = count_split_to_translation.get(count_split, "")
-            
-            if count_src not in count_src_translations:
-                count_src_translations[count_src] = []
-            count_src_translations[count_src].append(translation)
+    app_logger.info(f"Found {len(count_split_to_translation)} translations")
     
     # Load original data
     with open(src_original_path, 'r', encoding='utf-8') as f:
@@ -598,6 +597,7 @@ def restore_translations_from_deduped(dst_translated_deduped_path, count_src_to_
     
     # Restore translations
     result = []
+    missing_translations = 0
     
     for item in original_data:
         if not isinstance(item, dict):
@@ -610,24 +610,53 @@ def restore_translations_from_deduped(dst_translated_deduped_path, count_src_to_
         if count_src is None:
             continue
         
-        # Get combined translation
-        if count_src in count_src_translations:
-            translations = count_src_translations[count_src]
-            translated_value = "".join(translations)  # Combine all parts
-        else:
-            translated_value = original_value  # No translation
+        # Get translation through mapping chain: count_src -> count_deduped -> count_split -> translation
+        translated_value = original_value  # Default to original
         
-        # Use count_src as the field name
+        if count_src in count_src_to_deduped_map:
+            count_deduped = count_src_to_deduped_map[count_src]
+            
+            # Check if we have count_split mapping
+            if count_deduped_to_split_map and count_deduped in count_deduped_to_split_map:
+                # Get all count_splits for this count_deduped
+                count_splits = count_deduped_to_split_map[count_deduped]
+                
+                # Combine translations from all splits
+                translations = []
+                for count_split in count_splits:
+                    if count_split in count_split_to_translation:
+                        translations.append(count_split_to_translation[count_split])
+                
+                if translations:
+                    # Join all translations (in case text was split)
+                    translated_value = "".join(translations)
+                else:
+                    missing_translations += 1
+                    app_logger.warning(f"No translation found for count_deduped: {count_deduped} (count_splits: {count_splits})")
+            else:
+                # Fallback: try using count_deduped as count_split directly
+                if count_deduped in count_split_to_translation:
+                    translated_value = count_split_to_translation[count_deduped]
+                else:
+                    missing_translations += 1
+                    app_logger.warning(f"No translation found for count_deduped: {count_deduped}")
+        else:
+            app_logger.warning(f"No deduped mapping found for count_src: {count_src}")
+        
+        # Create result entry
         result.append({
-            "count_src": count_src,  # Changed from "count" to "count_src"
+            "count_src": count_src,
             "type": item_type,
             "original": original_value,
             "translated": translated_value
         })
     
+    # Statistics
+    app_logger.info(f"Restoration complete: {len(result)} items, {missing_translations} missing translations")
+    
     # Sort by count_src
     def get_count_key(item):
-        count = item["count_src"]  # Changed to use "count_src"
+        count = item["count_src"]
         try:
             return int(count)
         except (ValueError, TypeError):
@@ -636,7 +665,7 @@ def restore_translations_from_deduped(dst_translated_deduped_path, count_src_to_
     result = sorted(result, key=get_count_key)
     
     # Save result
-    dir_path = os.path.dirname(dst_translated_deduped_path)
+    dir_path = os.path.dirname(dst_translated_split_path)
     output_path = os.path.join(dir_path, "dst_translated.json")
     
     with open(output_path, 'w', encoding='utf-8') as f:
