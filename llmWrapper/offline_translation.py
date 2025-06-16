@@ -114,6 +114,10 @@ def translate_offline(messages, model):
             - success_status: True if API call successful, False if service unavailable
     """
     try:
+        # Check if model is None or empty
+        if not model:
+            return "Error: No model specified", False
+            
         # Strip the prefix from the model name if present
         if model.startswith("(Ollama)") or model.startswith("(LM Studio)"):
             # Extract service type and model name
