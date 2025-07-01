@@ -102,6 +102,9 @@ def process_task_with_queue(
         return gr.update(value=None, visible=False), queue_msg, gr.update(value=stop_text, interactive=False)
     
     try:
+        # Check if stop was requested before starting translation
+        check_stop_requested()
+        
         result = translate_func(
             files, model, src_lang, dst_lang, 
             use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, word_bilingual_mode, glossary_name, session_lang, progress
@@ -134,6 +137,9 @@ def process_next_task_in_queue(translate_func, progress):
 def process_queued_task(translate_func, task_info, progress):
     """Process a task from the queue in a separate thread."""
     try:
+        # Check if stop was requested before starting
+        check_stop_requested()
+        
         if progress is None:
             progress = gr.Progress(track_tqdm=True)
         result = translate_func(
@@ -596,7 +602,17 @@ def parse_accept_language(accept_language: str) -> List[Tuple[str, float]]:
 
 def get_user_lang(request: gr.Request) -> str:
     """Return the top user language code that matches LANGUAGE_MAP."""
-    accept_lang = request.headers.get("accept-language", "").lower()
+    try:
+        # Handle different types of headers objects
+        if hasattr(request.headers, 'get'):
+            accept_lang = request.headers.get("accept-language", "").lower()
+        elif hasattr(request.headers, 'accept-language'):
+            accept_lang = getattr(request.headers, 'accept-language', "").lower()
+        else:
+            accept_lang = ""
+    except (AttributeError, TypeError):
+        accept_lang = ""
+    
     parsed = parse_accept_language(accept_lang)
     
     if not parsed:
@@ -1456,7 +1472,10 @@ with gr.Blocks(
 
 available_port = find_available_port(start_port=9980)
 
+# Enable queue for progress tracking
+demo.queue()
+
 if initial_lan_mode:
-    demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=True)
+    demo.launch(server_name="0.0.0.0", server_port=available_port, share=True, inbrowser=False)
 else:
-    demo.launch(server_port=available_port, share=False, inbrowser=True)
+    demo.launch(server_port=available_port, share=True, inbrowser=False)
