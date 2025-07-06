@@ -15,13 +15,21 @@ import threading
 import queue
 from functools import partial
 
+# Import separated UI layout module
+from ui_layout import (
+    get_custom_css, create_header, create_footer, create_language_section,
+    create_settings_section, create_model_glossary_section, create_main_interface,
+    create_state_variables
+)
+
 # Import language configs
 from config.languages_config import LABEL_TRANSLATIONS, get_available_languages, get_language_code, add_custom_language
+
 #-------------------------------------------------------------------------
 # Constants and Configuration
 #-------------------------------------------------------------------------
 
-# Dictionary mapping file extensions to their corresponding translator module paths
+# File extension to translator module mapping
 TRANSLATOR_MODULES = {
     ".docx": "translator.word_translator.WordTranslator",
     ".pptx": "translator.ppt_translator.PptTranslator",
@@ -30,10 +38,9 @@ TRANSLATOR_MODULES = {
     ".srt": "translator.subtile_translator.SubtitlesTranslator",
     ".txt": "translator.txt_translator.TxtTranslator",
     ".md": "translator.md_translator.MdTranslator",
-    # ".epub": "translator.epub_translator.EpubTranslator"
 }
 
-# Alternative Excel translator module path (Mode 2)
+# Alternative translator modules
 EXCEL_TRANSLATOR_MODE_2 = "translator.excel_translator_test.ExcelTranslator"
 WORD_TRANSLATOR_BILINGUAL = "translator.word_translator_bilingual.WordTranslator"
 
@@ -51,17 +58,16 @@ def enqueue_task(
     translate_func, files, model, src_lang, dst_lang, 
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, word_bilingual_mode, glossary_name, session_lang, progress
 ):
-    """Enqueue a translation task or execute it immediately if no tasks are running."""
+    """Enqueue translation task or execute immediately if no tasks running"""
     global active_tasks
     
     with task_lock:
         if active_tasks == 0:
             # No active tasks, start immediately
             active_tasks += 1
-            # Return None to indicate the task should start immediately
             return None
         else:
-            # Tasks are running, add to queue
+            # Tasks running, add to queue
             task_info = {
                 "files": files,
                 "model": model,
@@ -85,7 +91,7 @@ def process_task_with_queue(
     translate_func, files, model, src_lang, dst_lang, 
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, word_bilingual_mode, glossary_name, session_lang, progress
 ):
-    """Process a translation task and handle queue management."""
+    """Process translation task and handle queue management"""
     global active_tasks
     if progress is None:
         progress = gr.Progress(track_tqdm=True)
@@ -119,7 +125,7 @@ def process_task_with_queue(
         return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False)
 
 def process_next_task_in_queue(translate_func, progress):
-    """Process the next task in the queue if available."""
+    """Process next task in queue if available"""
     global active_tasks
     
     with task_lock:
@@ -135,7 +141,7 @@ def process_next_task_in_queue(translate_func, progress):
             ).start()
 
 def process_queued_task(translate_func, task_info, progress):
-    """Process a task from the queue in a separate thread."""
+    """Process task from queue in separate thread"""
     try:
         # Check if stop was requested before starting
         check_stop_requested()
@@ -168,7 +174,7 @@ class StopTranslationException(Exception):
     pass
 
 def request_stop_translation(session_lang):
-    """Request to stop the current translation."""
+    """Request to stop current translation"""
     global translation_stop_requested
     
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
@@ -180,14 +186,14 @@ def request_stop_translation(session_lang):
     return gr.update(value=stopping_text, interactive=False)
 
 def reset_stop_flag():
-    """Reset the stop flag for new translations."""
+    """Reset stop flag for new translations"""
     global translation_stop_requested
     
     with stop_lock:
         translation_stop_requested = False
 
 def check_stop_requested():
-    """Check if stop has been requested."""
+    """Check if stop has been requested"""
     with stop_lock:
         if translation_stop_requested:
             raise StopTranslationException("Translation stopped by user")
@@ -198,13 +204,13 @@ def modified_translate_button_click(
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, word_bilingual_mode, glossary_name,
     session_lang, continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
-    """Modified version of the translate button click handler that uses the task queue."""
+    """Modified translate button click handler using task queue"""
     global current_translation_task
     
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
     
-    # Reset the UI and stop flag
+    # Reset UI and stop flag
     output_file_update = gr.update(visible=False)
     status_message = None
     reset_stop_flag()
@@ -229,7 +235,7 @@ def modified_translate_button_click(
     )
 
 def check_temp_translation_exists(files):
-    """Check if temporary translation folders exist for any of the input files in the 'temp' directory."""
+    """Check if temporary translation folders exist in 'temp' directory"""
     if not files:
         return False, "No files selected."
     
@@ -243,7 +249,7 @@ def check_temp_translation_exists(files):
         # Get filename without extension
         filename = os.path.splitext(os.path.basename(file_obj.name))[0]
         
-        # Look for exact matching folder in the temp directory
+        # Look for exact matching folder in temp directory
         temp_folder = os.path.join(temp_base_dir, filename)
         
         if os.path.exists(temp_folder) and os.path.isdir(temp_folder):
@@ -259,7 +265,7 @@ def check_temp_translation_exists(files):
 #-------------------------------------------------------------------------
 
 def read_system_config():
-    """Read the system configuration from the config file."""
+    """Read system configuration from config file"""
     config_path = os.path.join("config", "system_config.json")
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
@@ -284,37 +290,37 @@ def read_system_config():
         }
 
 def write_system_config(config):
-    """Write the system configuration to the config file."""
+    """Write system configuration to config file"""
     config_path = os.path.join("config", "system_config.json")
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
 
 def update_lan_mode(lan_mode):
-    """Update system config with new LAN mode setting."""
+    """Update system config with new LAN mode setting"""
     config = read_system_config()
     config["lan_mode"] = lan_mode
     write_system_config(config)
     return config["lan_mode"]
 
 def update_online_mode(use_online):
-    """Update system config with new online mode setting."""
+    """Update system config with new online mode setting"""
     config = read_system_config()
     config["default_online"] = use_online
     write_system_config(config)
     return config["default_online"]
 
 def update_max_retries(max_retries):
-    """Update system config with new max retries setting."""
+    """Update system config with new max retries setting"""
     config = read_system_config()
     config["max_retries"] = max_retries
     write_system_config(config)
     return max_retries
 
 def update_thread_count(thread_count):
-    """Update system config with new thread count setting."""
+    """Update system config with new thread count setting"""
     config = read_system_config()
-    # Update the appropriate thread count based on the current mode
+    # Update appropriate thread count based on current mode
     if config.get("default_online", False):
         config["default_thread_count_online"] = thread_count
     else:
@@ -323,21 +329,21 @@ def update_thread_count(thread_count):
     return thread_count
 
 def update_excel_mode(excel_mode_2):
-    """Update system config with new Excel mode setting."""
+    """Update system config with new Excel mode setting"""
     config = read_system_config()
     config["excel_mode_2"] = excel_mode_2
     write_system_config(config)
     return excel_mode_2
 
 def update_word_bilingual_mode(word_bilingual_mode):
-    """Update system config with new Word bilingual mode setting."""
+    """Update system config with new Word bilingual mode setting"""
     config = read_system_config()
     config["word_bilingual_mode"] = word_bilingual_mode
     write_system_config(config)
     return word_bilingual_mode
 
 def update_language_preferences(src_lang=None, dst_lang=None):
-    """Update system config with new language preferences."""
+    """Update system config with new language preferences"""
     config = read_system_config()
     
     if src_lang is not None:
@@ -349,26 +355,15 @@ def update_language_preferences(src_lang=None, dst_lang=None):
     return config.get("default_src_lang"), config.get("default_dst_lang")
 
 def get_default_languages():
-    """Get default source and target languages from config."""
+    """Get default source and target languages from config"""
     config = read_system_config()
     default_src = config.get("default_src_lang", "English")
     default_dst = config.get("default_dst_lang", "English")
     return default_src, default_dst
 
-def update_language_preferences(src_lang=None, dst_lang=None):
-    """Update system config with new language preferences."""
-    config = read_system_config()
-    
-    if src_lang is not None:
-        config["default_src_lang"] = src_lang
-    if dst_lang is not None:
-        config["default_dst_lang"] = dst_lang
-        
-    write_system_config(config)
-    return config.get("default_src_lang"), config.get("default_dst_lang")
-
 def on_src_language_change(src_lang):
-    """Handler for source language dropdown change."""
+    """Handler for source language dropdown change"""
+    CUSTOM_LABEL = "+ Add Custom…"
     if src_lang != CUSTOM_LABEL:
         update_language_preferences(src_lang=src_lang)
     
@@ -379,7 +374,8 @@ def on_src_language_change(src_lang):
         return gr.update(visible=False), gr.update(visible=False)
 
 def on_dst_language_change(dst_lang):
-    """Handler for target language dropdown change."""
+    """Handler for target language dropdown change"""
+    CUSTOM_LABEL = "+ Add Custom…"
     if dst_lang != CUSTOM_LABEL:
         update_language_preferences(dst_lang=dst_lang)
     
@@ -390,7 +386,7 @@ def on_dst_language_change(dst_lang):
         return gr.update(visible=False), gr.update(visible=False)
 
 def find_available_port(start_port=9980, max_attempts=20):
-    """Find an available port starting from `start_port`."""
+    """Find available port starting from start_port"""
     for port in range(start_port, start_port + max_attempts):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -401,16 +397,16 @@ def find_available_port(start_port=9980, max_attempts=20):
     raise RuntimeError("No available port found.")
 
 def resource_path(relative_path):
-    """Get absolute path to resource, works for dev and for PyInstaller"""
+    """Get absolute path to resource, works for dev and PyInstaller"""
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        # PyInstaller creates temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
 def load_application_icon(config):
-    """Load the application icon using img_path from system_config.json."""
+    """Load application icon using img_path from system_config.json"""
     # Get icon path from config
     img_path = config.get("img_path", "img/ico.ico")
     
@@ -427,17 +423,17 @@ def load_application_icon(config):
     # Paths to try in order
     icon_paths_to_try = []
     
-    # 1. Try absolute path if img_path is absolute
+    # Try absolute path if img_path is absolute
     if os.path.isabs(img_path):
         icon_paths_to_try.append(img_path)
     
-    # 2. Try from current directory
+    # Try from current directory
     if not os.path.isabs(img_path):
         icon_paths_to_try.append(img_path)
     
-    # 3. Try from PyInstaller _MEIPASS
+    # Try from PyInstaller _MEIPASS
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        # PyInstaller creates temp folder and stores path in _MEIPASS
         base_path = sys._MEIPASS
         # If img_path is not absolute, add it to _MEIPASS path
         if not os.path.isabs(img_path):
@@ -447,7 +443,7 @@ def load_application_icon(config):
         # Not running from PyInstaller bundle
         pass
     
-    # 4. Add default img/ico.ico as last resort (if not already in the list)
+    # Add default img/ico.ico as last resort
     default_icon = "img/ico.ico"
     if img_path != default_icon:
         # Try from current directory
@@ -478,7 +474,7 @@ def load_application_icon(config):
             app_logger.warning(f"Failed to load icon from {icon_path}: {e}")
             # Try next path
     
-    # If all else fails, log an error
+    # If all else fails, log error
     app_logger.error("Failed to load any icon, application will run without an icon")
     return None, None
 
@@ -487,7 +483,7 @@ def load_application_icon(config):
 #-------------------------------------------------------------------------
 
 def get_glossary_files():
-    """Get all CSV files from the glossary directory."""
+    """Get all CSV files from glossary directory"""
     glossary_dir = "glossary"
     
     # Ensure glossary directory exists
@@ -503,19 +499,19 @@ def get_glossary_files():
         return ["Default"]
 
 def update_glossary_selection(glossary_name):
-    """Update system config with selected glossary."""
+    """Update system config with selected glossary"""
     config = read_system_config()
     config["default_glossary"] = glossary_name
     write_system_config(config)
     return glossary_name
 
 def get_default_glossary():
-    """Get default glossary from config."""
+    """Get default glossary from config"""
     config = read_system_config()
     return config.get("default_glossary", "Default")
 
 def upload_glossary_file(file_obj, session_lang):
-    """Handle glossary file upload."""
+    """Handle glossary file upload"""
     if not file_obj:
         labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
         return gr.update(), labels.get("No file selected", "No file selected."), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
@@ -524,10 +520,10 @@ def upload_glossary_file(file_obj, session_lang):
     os.makedirs(glossary_dir, exist_ok=True)
     
     try:
-        # Get the original filename
+        # Get original filename
         original_name = os.path.basename(file_obj.name)
         
-        # Check if it's a CSV file
+        # Check if it's CSV file
         if not original_name.lower().endswith('.csv'):
             labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
             return gr.update(), labels.get("Only CSV files are allowed", "Only CSV files are allowed."), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
@@ -535,7 +531,7 @@ def upload_glossary_file(file_obj, session_lang):
         # Copy file to glossary directory
         dest_path = os.path.join(glossary_dir, original_name)
         
-        # If file already exists, add a number suffix
+        # If file already exists, add number suffix
         counter = 1
         base_name, ext = os.path.splitext(original_name)
         while os.path.exists(dest_path):
@@ -543,7 +539,7 @@ def upload_glossary_file(file_obj, session_lang):
             dest_path = os.path.join(glossary_dir, new_name)
             counter += 1
         
-        # Copy the file
+        # Copy file
         import shutil
         shutil.copy2(file_obj.name, dest_path)
         
@@ -566,7 +562,7 @@ def upload_glossary_file(file_obj, session_lang):
         return gr.update(), error_msg, gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
 
 def on_glossary_change(glossary_value, session_lang):
-    """Handle glossary selection change."""
+    """Handle glossary selection change"""
     if glossary_value == "+":
         # Show file upload dialog
         return gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
@@ -581,7 +577,7 @@ def on_glossary_change(glossary_value, session_lang):
 #-------------------------------------------------------------------------
 
 def parse_accept_language(accept_language: str) -> List[Tuple[str, float]]:
-    """Parse Accept-Language into (language, q) pairs."""
+    """Parse Accept-Language into (language, q) pairs"""
     if not accept_language:
         return []
     
@@ -601,7 +597,7 @@ def parse_accept_language(accept_language: str) -> List[Tuple[str, float]]:
     return sorted(languages, key=lambda x: x[1], reverse=True)
 
 def get_user_lang(request: gr.Request) -> str:
-    """Return the top user language code that matches LANGUAGE_MAP."""
+    """Return top user language code that matches LANGUAGE_MAP"""
     try:
         # Handle different types of headers objects
         if hasattr(request.headers, 'get'):
@@ -651,7 +647,7 @@ def get_user_lang(request: gr.Request) -> str:
     return "en"
 
 def set_labels(session_lang: str):
-    """Update UI labels according to the chosen language."""
+    """Update UI labels according to chosen language"""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     
     file_upload_label = "Upload Files"
@@ -666,7 +662,7 @@ def set_labels(session_lang: str):
         use_online_model: gr.update(label=labels["Use Online Model"]),
         lan_mode_checkbox: gr.update(label=labels["Local Network Mode (Restart to Apply)"]),
         model_choice: gr.update(label=labels["Models"]),
-        glossary_choice: gr.update(label=labels.get("Glossary", "Glossary")),  # Add glossary label
+        glossary_choice: gr.update(label=labels.get("Glossary", "Glossary")),
         max_retries_slider: gr.update(label=labels["Max Retries"]),
         thread_count_slider: gr.update(label=labels["Thread Count"]),
         api_key_input: gr.update(label=labels["API Key"]),
@@ -686,12 +682,12 @@ def set_labels(session_lang: str):
 #-------------------------------------------------------------------------
 
 def update_model_list_and_api_input(use_online):
-    """Switch model options and show/hide API Key, also update the config."""
-    # Update the system config with the new online mode
+    """Switch model options and show/hide API Key, update config"""
+    # Update system config with new online mode
     update_online_mode(use_online)
     config = read_system_config()
     
-    # Get appropriate thread count based on the mode
+    # Get appropriate thread count based on mode
     thread_count = config.get("default_thread_count_online", 2) if use_online else config.get("default_thread_count_offline", 4)
     
     if use_online:
@@ -716,7 +712,7 @@ def update_model_list_and_api_input(use_online):
         )
 
 def init_ui(request: gr.Request):
-    """Set user language and update labels on page load."""
+    """Set user language and update labels on page load"""
     user_lang = get_user_lang(request)
     config = read_system_config()
     
@@ -735,7 +731,6 @@ def init_ui(request: gr.Request):
     show_max_retries = config.get("show_max_retries", True)
     show_thread_count = config.get("show_thread_count", True)
     show_glossary = config.get("show_glossary", True)
-    default_src_lang, default_dst_lang = get_default_languages()
     
     # Get default glossary
     default_glossary = get_default_glossary()
@@ -764,10 +759,10 @@ def init_ui(request: gr.Request):
     label_updates[max_retries_slider] = gr.update(label=LABEL_TRANSLATIONS.get(user_lang, LABEL_TRANSLATIONS["en"])["Max Retries"], visible=show_max_retries)
     label_updates[thread_count_slider] = gr.update(label=LABEL_TRANSLATIONS.get(user_lang, LABEL_TRANSLATIONS["en"])["Thread Count"], visible=show_thread_count)
     
-    # Prepare return values - now INCLUDING glossary and upload controls with visibility
+    # Prepare return values
     label_values = list(label_updates.values())
     
-    # Return settings values and UI updates (now WITH glossary components and visibility control)
+    # Return settings values and UI updates
     return [
         user_lang, 
         lan_mode_state, 
@@ -785,14 +780,13 @@ def init_ui(request: gr.Request):
     ] + label_values
 
 def get_default_dropdown_value(saved_lang, dropdown_choices):
-    """Get the appropriate default value for language dropdowns."""
-
+    """Get appropriate default value for language dropdowns"""
     if saved_lang in dropdown_choices:
         return saved_lang
     return saved_lang
 
 def show_mode_checkbox(files):
-    """Show Excel mode checkbox if Excel files are present and Word bilingual checkbox if Word files are present."""
+    """Show Excel mode checkbox if Excel files present and Word bilingual if Word files present"""
     if not files:
         return gr.update(visible=False), gr.update(visible=False)
     
@@ -807,15 +801,15 @@ def show_mode_checkbox(files):
     return gr.update(visible=excel_visible), gr.update(visible=word_visible)
 
 def update_continue_button(files):
-    """Check if temp folders exist for the uploaded files and update the continue button state."""
+    """Check if temp folders exist for uploaded files and update continue button state"""
     if not files:
         return gr.update(interactive=False)
     
-    # If multiple files are selected, disable the continue button
+    # If multiple files selected, disable continue button
     if isinstance(files, list) and len(files) > 1:
         return gr.update(interactive=False)
     
-    # Check if the single file is a PDF
+    # Check if single file is PDF
     single_file = files[0] if isinstance(files, list) else files
     file_extension = os.path.splitext(single_file.name)[1].lower()
     
@@ -823,7 +817,7 @@ def update_continue_button(files):
     if file_extension == ".pdf":
         return gr.update(interactive=False)
     
-    # Only check for temp folders if a single non-PDF file is selected
+    # Only check for temp folders if single non-PDF file selected
     has_temp, _ = check_temp_translation_exists(files)
     return gr.update(interactive=has_temp)
 
@@ -832,7 +826,7 @@ def update_continue_button(files):
 #-------------------------------------------------------------------------
 
 def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode=False):
-    """Dynamically import and return the appropriate translator class for the file extension."""
+    """Dynamically import and return appropriate translator class for file extension"""
     if file_extension.lower() == ".xlsx" and excel_mode_2:
         module_path = EXCEL_TRANSLATOR_MODE_2
     elif file_extension.lower() == ".docx" and word_bilingual_mode:
@@ -847,10 +841,10 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
         # Split into module path and class name
         module_name, class_name = module_path.rsplit('.', 1)
         
-        # Import the module
+        # Import module
         module = import_module(module_name)
         
-        # Get the class
+        # Get class
         translator_class = getattr(module, class_name)
         return translator_class
     except (ImportError, AttributeError) as e:
@@ -861,8 +855,8 @@ def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768, thread_count=4,
     excel_mode_2=False, word_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
-    """Translate one or multiple files using the chosen model."""
-    reset_stop_flag()  # Reset stop flag at the beginning
+    """Translate one or multiple files using chosen model"""
+    reset_stop_flag()  # Reset stop flag at beginning
     
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
@@ -911,10 +905,10 @@ def process_single_file(
     file, model, src_lang_code, dst_lang_code, 
     use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, word_bilingual_mode, glossary_path, continue_mode, progress_callback
 ):
-    """Process a single file for translation."""
+    """Process single file for translation"""
     file_name = os.path.basename(file.name)
     
-    # Create a new log file for this file
+    # Create new log file for this file
     from config.log_config import file_logger
     file_logger.create_file_log(file_name)
     
@@ -940,7 +934,7 @@ def process_single_file(
             thread_count=thread_count, glossary_path=glossary_path
         )
         
-        # Add check_stop_requested as an attribute
+        # Add check_stop_requested as attribute
         translator.check_stop_requested = check_stop_requested
         
         progress_callback(0, desc="Initializing translation...")
@@ -969,8 +963,8 @@ def process_multiple_files(
     files, model, src_lang_code, dst_lang_code, 
     use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, word_bilingual_mode, glossary_path, continue_mode, progress_callback
 ):
-    """Process multiple files and return a zip archive."""
-    # Create a temporary directory for the translated files
+    """Process multiple files and return zip archive"""
+    # Create temporary directory for translated files
     temp_dir = tempfile.mkdtemp(prefix="translated_")
     zip_path = os.path.join(temp_dir, "translated_files.zip")
     
@@ -988,12 +982,12 @@ def process_multiple_files(
             shutil.rmtree(temp_dir)
             return gr.update(value=None, visible=False), "No supported files found."
         
-        # Create a zip file
+        # Create zip file
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             total_files = len(valid_files)
             
             for i, (file_obj, rel_path) in enumerate(valid_files):
-                # Create a new log file for the current file being processed
+                # Create new log file for current file being processed
                 from config.log_config import file_logger
                 file_logger.create_file_log(rel_path)
                 
@@ -1084,7 +1078,7 @@ img_height = config.get("img_height", 250)
 # Update global MAX_TOKEN from config
 MAX_TOKEN = initial_max_token
 
-# Get show_model_selection, show_mode_switch, and show_glossary from config
+# Get visibility settings from config
 initial_show_model_selection = config.get("show_model_selection", True)
 initial_show_mode_switch = config.get("show_mode_switch", True)
 initial_show_lan_mode = config.get("show_lan_mode", True)
@@ -1100,202 +1094,49 @@ encoded_image, mime_type = load_application_icon(config)
 # Gradio UI Construction
 #-------------------------------------------------------------------------
 
-# Create a Gradio blocks interface
+# Create Gradio blocks interface with enhanced language dropdown styling
 with gr.Blocks(
     title=app_title_web,
-    css="""
-    footer { visibility: hidden; }
-
-    /* Language row */
-    #lang-row {
-        display: grid !important;
-        grid-template-columns: 1fr auto 1fr !important;
-        align-items: center !important;
-        gap: 8px !important;
-        margin-bottom: 20px;
-    }
-
-    #lang-row .gr-dropdown:first-child {
-        grid-column: 1 !important;
-    }
-
-    #swap-btn {
-        grid-column: 2 !important;
-        width: 42px !important;
-        height: 42px !important;
-        justify-self: center !important;
-    }
-
-    #lang-row .gr-dropdown:last-child {
-        grid-column: 3 !important;
-    }
-
-    /* Model and Glossary row */
-    #model-glossary-row {
-        display: grid !important;
-        grid-template-columns: 1fr 1fr !important;
-        gap: 10px !important;
-    }
-    """
+    css=get_custom_css()
 ) as demo:
-    gr.HTML(f"""
-    <div style="text-align: center;">
-        <h1>{app_title}</h1>
-        <img src="data:{mime_type};base64,{encoded_image}" alt="{app_title} Logo" 
-                style="display: block; height: {img_height}px; width: auto; margin: 0 auto;">
-    </div>
-    """)
     
-    # Custom footer with attribution and GitHub link
-    gr.HTML("""
-    <div style="position: fixed; bottom: 0; left: 0; width: 100%; 
-                text-align: center; padding: 10px 0;">
-        Made by Haruka-YANG | Version: 3.4 | 
-        <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank">Visit Github</a>
-    </div>
-    """)
+    # Create header
+    create_header(app_title, encoded_image, mime_type, img_height)
     
-    session_lang = gr.State("en")
-    lan_mode_state = gr.State(initial_lan_mode)
-    default_online_state = gr.State(initial_default_online)
-    max_token_state = gr.State(initial_max_token)
-    max_retries_state = gr.State(initial_max_retries)
-    excel_mode_2_state = gr.State(initial_excel_mode_2)
-    word_bilingual_mode_state = gr.State(initial_word_bilingual_mode)
-    thread_count_state = gr.State(initial_thread_count)
+    # Create footer
+    create_footer()
+    
+    # Create state variables
+    states = create_state_variables(config)
+    session_lang = states['session_lang']
+    lan_mode_state = states['lan_mode_state']
+    default_online_state = states['default_online_state']
+    max_token_state = states['max_token_state']
+    max_retries_state = states['max_retries_state']
+    excel_mode_2_state = states['excel_mode_2_state']
+    word_bilingual_mode_state = states['word_bilingual_mode_state']
+    thread_count_state = states['thread_count_state']
 
     default_src_lang, default_dst_lang = get_default_languages()
 
-    with gr.Row(elem_id="lang-row"):
-        src_lang = gr.Dropdown(
-            choices=dropdown_choices,
-            label="Source Language",
-            value=default_src_lang,
-            interactive=True,
-            allow_custom_value=True
-        )
-        swap_button = gr.Button(
-            "🔁",
-            elem_id="swap-btn",
-            elem_classes="swap-button"
-        )
-        dst_lang = gr.Dropdown(
-            choices=dropdown_choices,
-            label="Target Language",
-            value=default_dst_lang,
-            interactive=True,
-            allow_custom_value=True
-        )
-        # Hidden controls for custom-language entry
-        custom_lang_input = gr.Textbox(
-            label="New language display name",
-            placeholder="e.g. Klingon",
-            visible=False
-        )
-        add_lang_button = gr.Button("Create New Language", visible=False)
-
-    # Settings section (always visible)
-    with gr.Row():
-        with gr.Column(scale=1):
-            use_online_model = gr.Checkbox(
-                label="Use Online Model", 
-                value=initial_default_online, 
-                visible=initial_show_mode_switch
-            )
-        
-        with gr.Column(scale=1):
-            lan_mode_checkbox = gr.Checkbox(
-                label="Local Network Mode (Restart to Apply)", 
-                value=initial_lan_mode,
-                visible=initial_show_lan_mode
-            )
-    
-    with gr.Row():
-        with gr.Column(scale=1):
-            max_retries_slider = gr.Slider(
-                minimum=1,
-                maximum=10,
-                step=1,
-                value=initial_max_retries,
-                label="Max Retries",
-                visible=initial_show_max_retries
-            )
-        
-        with gr.Column(scale=1):
-            thread_count_slider = gr.Slider(
-                minimum=1,
-                maximum=16,
-                step=1,
-                value=initial_thread_count,
-                label="Thread Count",
-                visible=initial_show_thread_count
-            )
-    
-    with gr.Row():
-        excel_mode_checkbox = gr.Checkbox(
-            label="Use Excel Mode 2", 
-            value=initial_excel_mode_2, 
-            visible=False
-        )
-        
-    word_bilingual_checkbox = gr.Checkbox(
-        label="Use Word Bilingual Mode", 
-        value=initial_word_bilingual_mode, 
-        visible=False
+    # Create language selection section
+    src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button = create_language_section(
+        default_src_lang, default_dst_lang
     )
 
-    # Model and Glossary selection (NEW: Side by side with visibility control)
-    with gr.Row(elem_id="model-glossary-row"):
-        with gr.Column(scale=1):
-            model_choice = gr.Dropdown(
-                choices=local_models if not initial_default_online else online_models,
-                label="Models",
-                value=local_models[0] if not initial_default_online and local_models else (
-                    online_models[0] if initial_default_online and online_models else None
-                ),
-                visible=initial_show_model_selection,
-                allow_custom_value=True 
-            )
-        
-        with gr.Column(scale=1, visible=initial_show_glossary):  # NEW: Add visibility control
-            # Glossary selection dropdown
-            glossary_choice = gr.Dropdown(
-                choices=get_glossary_files() + ["+"],
-                label="Glossary",
-                value=get_default_glossary(),
-                interactive=True,
-                visible=initial_show_glossary  # NEW: Add visibility control
-            )
+    # Create settings section
+    (use_online_model, lan_mode_checkbox, max_retries_slider, 
+     thread_count_slider, excel_mode_checkbox, word_bilingual_checkbox) = create_settings_section(config)
 
-    # Hidden glossary upload controls
-    with gr.Row() as glossary_upload_row:
-        with gr.Column():
-            glossary_upload_file = gr.File(
-                label="Upload Glossary CSV",
-                file_types=[".csv"],
-                visible=False
-            )
-            glossary_upload_button = gr.Button("Upload Glossary", visible=False)
-
-    api_key_input = gr.Textbox(
-        label="API Key", 
-        placeholder="Enter your API key here", 
-        value="",
-        visible=initial_default_online
+    # Create model and glossary section
+    (model_choice, glossary_choice, glossary_upload_row, 
+     glossary_upload_file, glossary_upload_button) = create_model_glossary_section(
+        config, local_models, online_models, get_glossary_files, get_default_glossary
     )
-    
-    file_input = gr.File(
-        label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)",
-        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"],
-        file_count="multiple"
-    )
-    output_file = gr.File(label="Download Translated File", visible=False)
-    status_message = gr.Textbox(label="Status Message", interactive=False, visible=True)
 
-    with gr.Row():
-        translate_button = gr.Button("Translate")
-        continue_button = gr.Button("Continue Translation", interactive=False)  # Initially disabled
-        stop_button = gr.Button("Stop Translation", interactive=False)  # Initially disabled
+    # Create main interface
+    (api_key_input, file_input, output_file, status_message, 
+     translate_button, continue_button, stop_button) = create_main_interface(config)
 
     # Event handlers
     use_online_model.change(
@@ -1345,7 +1186,7 @@ with gr.Blocks(
         outputs=[excel_mode_checkbox, word_bilingual_checkbox, continue_button]
     )
 
-    # Glossary event handlers (only if glossary is visible)
+    # Glossary event handlers (only if glossary visible)
     if initial_show_glossary:
         glossary_choice.change(
             on_glossary_change,
@@ -1359,7 +1200,7 @@ with gr.Blocks(
             outputs=[glossary_choice, status_message, glossary_upload_row, glossary_upload_file, glossary_upload_button]
         )
 
-    # Update event handlers for translate button (existing code remains the same)
+    # Update event handlers for translate button
     translate_button.click(
         lambda: (gr.update(visible=False), None, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=True)),
         inputs=[],
@@ -1382,7 +1223,7 @@ with gr.Blocks(
         outputs=[translate_button, continue_button, stop_button]
     )
 
-    # In the continue_button.click event:
+    # In continue_button.click event:
     continue_button.click(
         lambda: (gr.update(visible=False), None, gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=True)),
         inputs=[],
@@ -1412,9 +1253,9 @@ with gr.Blocks(
         outputs=[stop_button]
     )
 
-    # Existing language handlers...
+    # Language swap functionality
     def swap_languages(src_lang, dst_lang):
-        """Swap source and target languages."""        
+        """Swap source and target languages"""        
         # Update preferences with swapped values
         update_language_preferences(src_lang=dst_lang, dst_lang=src_lang)
         
@@ -1432,11 +1273,11 @@ with gr.Blocks(
     dst_lang.change(on_dst_language_change, inputs=dst_lang, outputs=[custom_lang_input, add_lang_button])
     swap_button.click(swap_languages, inputs=[src_lang, dst_lang], outputs=[src_lang, dst_lang])
 
-    # 2) Create New Language
+    # Create new language
     def on_add_new(lang_name):
         success, msg = add_custom_language(lang_name)
         new_choices = get_available_languages() + [CUSTOM_LABEL]
-        # pick the newly created language as the selected value
+        # Pick newly created language as selected value
         new_val = lang_name if success else CUSTOM_LABEL
         return (
             gr.update(choices=new_choices, value=new_val),
@@ -1451,7 +1292,7 @@ with gr.Blocks(
         outputs=[src_lang, dst_lang, custom_lang_input, add_lang_button]
     )
 
-    # On page load, set user language and labels (UPDATED to include glossary components)
+    # On page load, set user language and labels
     demo.load(
         fn=init_ui,
         inputs=None,
@@ -1476,6 +1317,6 @@ available_port = find_available_port(start_port=9980)
 demo.queue()
 
 if initial_lan_mode:
-    demo.launch(server_name="0.0.0.0", server_port=available_port, share=True, inbrowser=False)
+    demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=True)
 else:
-    demo.launch(server_port=available_port, share=True, inbrowser=False)
+    demo.launch(server_port=available_port, share=False, inbrowser=True)
