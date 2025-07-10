@@ -22,6 +22,9 @@ safehttp_collect = collect_all("safehttp")
 safehttpx_collect = collect_all("safehttpx")
 groovy_collect = collect_all("groovy")
 
+# Collect tiktoken
+tiktoken_collect = collect_all("tiktoken")
+
 translator_modules = [
     "translator.word_translator", 
     "translator.ppt_translator",
@@ -59,8 +62,9 @@ a = Analysis(
         + safehttpx_collect[0]
         + groovy_collect[0]
         + babeldoc_collect[0]  # Include babeldoc data files
+        + tiktoken_collect[0]  # Include tiktoken data files
         + translator_datas
-        + [('models/', 'models/')]  # Include your models directory
+        + [('models/', 'models/')]  # Include your models directory (including tiktoken cache)
     ),
     hiddenimports=(
         gradio_collect[1]
@@ -69,13 +73,21 @@ a = Analysis(
         + safehttpx_collect[1]
         + groovy_collect[1]
         + babeldoc_collect[1]  # Include babeldoc hidden imports
+        + tiktoken_collect[1]  # Include tiktoken hidden imports
         + translator_imports
         + translator_modules
         + ['babeldoc.format.pdf.high_level']
         + ['babeldoc.assets.assets']
+        + ['tiktoken']  # Ensure tiktoken is included
+        + ['tiktoken.core']  # Core tiktoken module
+        + ['tiktoken.load']  # Loading functionality
+        + ['tiktoken.registry']  # Registry functionality
     ),
     excludes=[],
-    module_collection_mode={"gradio": "py"},
+    module_collection_mode={
+        "gradio": "py",
+        "tiktoken": "py"  # Ensure tiktoken is collected properly
+    },
 )
 
 pyz = PYZ(a.pure)
