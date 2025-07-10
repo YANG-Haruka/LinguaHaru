@@ -57,7 +57,7 @@ def _detect_lm_studio_port():
                 detected_port = match.group(1)
                 app_logger.info(f"LM Studio running in: {LM_STUDIO_HOST}:{detected_port}")
                 LM_STUDIO_PORT = detected_port
-                return
+                return LM_STUDIO_HOST, detected_port
                 
         app_logger.debug("Could not detect LM Studio port from command, trying socket detection")
     except Exception as e:
