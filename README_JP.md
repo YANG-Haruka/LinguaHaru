@@ -42,8 +42,8 @@ CUDAをインストールする必要があります（現在11.7と12.1でテ�
         ```
     - モデルのダウンロード 
         **ダウンロード後、「models」フォルダに保存してください**  
-        - [Quark Cloud](https://pan.quark.cn/s/c4ba89fa263c#/list/share)
-        - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
+        - [Quark Cloud](https://pan.quark.cn/s/1cce837b7e15)
+        - [Google Drive](https://drive.google.com/file/d/1myjAeDmdsKku6ZKD0YV91I4voiNS1OGr/view?usp=sharing)
 
 
 4. ツールの実行

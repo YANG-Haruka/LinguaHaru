@@ -42,8 +42,8 @@
         ```
     - 模型下载 
         下载后请保存在"models"文件夹中**  
-        - [夸克网盘](https://pan.quark.cn/s/c4ba89fa263c#/list/share)
-        - [Google Drive](https://drive.google.com/file/d/1STq_eBNHAMzLxvkM5-2fdepa9sCX9WyJ/view?usp=sharing)
+        - [夸克网盘](https://pan.quark.cn/s/1cce837b7e15)
+        - [Google Drive](https://drive.google.com/file/d/1myjAeDmdsKku6ZKD0YV91I4voiNS1OGr/view?usp=sharing)
 
 
 4. 运行工具
