@@ -57,8 +57,7 @@ class PdfTranslator(DocumentTranslator):
         # Configure API settings
         if self.use_online:
             api_key = self.api_key
-            model_name = self.model
-            model_config = load_model_config()
+            model_config = load_model_config(self.model)
             base_url = model_config.get("base_url")
             model_name = model_config.get("model")
         else:

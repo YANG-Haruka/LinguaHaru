@@ -8,11 +8,16 @@ from typing import Optional
 import traceback
 
 def get_application_path() -> Path:
-   """Get the application root directory path for both script and PyInstaller executable."""
-   if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-       return Path(sys._MEIPASS)
-   else:
-       return Path(__file__).parent.resolve()
+    """Get the application root directory path for both script and PyInstaller executable."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS)
+    else:
+        current_dir = Path(__file__).parent.resolve()
+        while current_dir != current_dir.parent:
+            if (current_dir / "models" / "tiktoken").exists():
+                return current_dir
+            current_dir = current_dir.parent
+        raise RuntimeError("Could not find project root directory containing models/tiktoken")
 
 # Global cached encoder
 _cached_encoder: Optional[tiktoken.Encoding] = None

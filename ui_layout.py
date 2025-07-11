@@ -39,10 +39,7 @@ def get_custom_css():
         align-items: center !important;
         gap: 10px !important;
         margin-bottom: 20px !important;
-        background: var(--bg-secondary) !important;
         padding: 5px !important;
-        border-radius: var(--radius) !important;
-        border: 1px solid var(--border-color) !important;
         width: 100% !important;
         box-sizing: border-box !important;
     }
@@ -56,19 +53,15 @@ def get_custom_css():
         width: 50px !important;
         height: 50px !important;
         justify-self: center !important;
-        background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)) !important;
+        font-size: 2.5rem !important;
+        background: transparent !important;
         border: none !important;
-        border-radius: 50% !important;
-        color: white !important;
-        font-size: 1.2rem !important;
-        transition: all 0.3s ease !important;
-        box-shadow: var(--shadow) !important;
-        cursor: pointer !important;
+        transition: transform 0.3s ease !important;
     }
 
     #swap-btn:hover {
-        transform: rotate(180deg) scale(1.1) !important;
-        box-shadow: 0 6px 20px rgba(122, 162, 247, 0.4) !important;
+        transform: scale(1.2) !important;
+        background: transparent !important;
     }
 
     #lang-row > div:last-child {
@@ -80,7 +73,6 @@ def get_custom_css():
     #lang-row .gr-dropdown.lang-dropdown,
     #lang-row .gr-dropdown {
         position: relative !important;
-        background: var(--bg-tertiary) !important;
     }
 
     /* Dropdown container */
@@ -91,7 +83,6 @@ def get_custom_css():
     #lang-row .gr-dropdown .gr-dropdown-container,
     #lang-row .gr-dropdown [data-testid="dropdown-container"] {
         position: relative !important;
-        background: var(--bg-tertiary) !important;
     }
 
     /* Dropdown list - flexbox layout */
@@ -118,10 +109,8 @@ def get_custom_css():
         max-height: 400px !important;
         overflow-y: auto !important;
         overflow-x: hidden !important;
-        background: var(--bg-card) !important;
         border: 2px solid var(--border-color) !important;
         border-radius: var(--radius) !important;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4) !important;
         z-index: 1000 !important;
         width: 100% !important;
         max-width: 580px !important;
@@ -150,8 +139,6 @@ def get_custom_css():
         text-align: center !important;
         cursor: pointer !important;
         transition: all 0.3s ease !important;
-        background: var(--bg-tertiary) !important;
-        color: var(--text-primary) !important;
         border: 1px solid var(--border-color) !important;
         font-size: 0.85rem !important;
         font-weight: 500 !important;
@@ -184,11 +171,7 @@ def get_custom_css():
     #lang-row .gr-dropdown .option:hover,
     #lang-row div:first-child .gr-dropdown [role="option"]:hover,
     #lang-row div:last-child .gr-dropdown [role="option"]:hover {
-        background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary)) !important;
-        color: white !important;
         transform: translateY(-2px) scale(1.02) !important;
-        box-shadow: 0 6px 20px rgba(122, 162, 247, 0.4) !important;
-        border-color: var(--accent-primary) !important;
         z-index: 1001 !important;
     }
 
@@ -210,9 +193,6 @@ def get_custom_css():
     #lang-row .gr-dropdown .option.selected,
     #lang-row div:first-child .gr-dropdown [role="option"][aria-selected="true"],
     #lang-row div:last-child .gr-dropdown [role="option"][aria-selected="true"] {
-        background: linear-gradient(135deg, var(--accent-secondary), var(--accent-primary)) !important;
-        color: white !important;
-        border-color: var(--accent-secondary) !important;
         font-weight: 700 !important;
         box-shadow: 0 4px 15px rgba(187, 154, 247, 0.4) !important;
     }
@@ -237,7 +217,6 @@ def get_custom_css():
     #lang-row div:last-child .gr-dropdown [role="option"][aria-selected="true"]:hover {
         background: linear-gradient(135deg, var(--accent-primary), var(--accent-success)) !important;
         transform: translateY(-3px) scale(1.05) !important;
-        box-shadow: 0 8px 25px rgba(122, 162, 247, 0.6) !important;
     }
 
     /* Tablet responsive */
@@ -284,6 +263,7 @@ def get_custom_css():
             justify-self: center !important;
             width: 40px !important;
             height: 40px !important;
+            font-size: 1.5rem !important;
         }
         
         #lang-row > div:last-child {
@@ -342,6 +322,14 @@ def get_custom_css():
         grid-template-columns: 1fr 1fr !important;
         gap: 10px !important;
     }
+
+    .gradio-container {
+        border: 1px solid var(--border-color) !important;
+        border-radius: var(--radius) !important;
+        padding: 20px !important;
+        margin: 10px !important;
+        box-sizing: border-box !important;
+    }
     """
 
 
@@ -394,7 +382,6 @@ def create_language_section(default_src_lang, default_dst_lang):
             allow_custom_value=True,
             elem_classes=["lang-dropdown"]
         )
-        # Hidden custom language controls
         custom_lang_input = gr.Textbox(
             label="New language display name",
             placeholder="e.g. Klingon",
@@ -416,13 +403,11 @@ def create_settings_section(config):
     initial_excel_mode_2 = config.get("excel_mode_2", False)
     initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
     
-    # Visibility settings
     initial_show_mode_switch = config.get("show_mode_switch", True)
     initial_show_lan_mode = config.get("show_lan_mode", True)
     initial_show_max_retries = config.get("show_max_retries", True)
     initial_show_thread_count = config.get("show_thread_count", True)
     
-    # Online/LAN mode settings
     with gr.Row():
         with gr.Column(scale=1):
             use_online_model = gr.Checkbox(
@@ -438,7 +423,6 @@ def create_settings_section(config):
                 visible=initial_show_lan_mode
             )
     
-    # Retry and thread settings
     with gr.Row():
         with gr.Column(scale=1):
             max_retries_slider = gr.Slider(
@@ -460,7 +444,6 @@ def create_settings_section(config):
                 visible=initial_show_thread_count
             )
     
-    # Excel and Word mode settings
     with gr.Row():
         excel_mode_checkbox = gr.Checkbox(
             label="Use Excel Mode 2", 
@@ -497,7 +480,6 @@ def create_model_glossary_section(config, local_models, online_models, get_gloss
             )
         
         with gr.Column(scale=1, visible=initial_show_glossary):
-            # Glossary selection dropdown
             glossary_choice = gr.Dropdown(
                 choices=get_glossary_files_func() + ["+"],
                 label="Glossary",
@@ -506,7 +488,6 @@ def create_model_glossary_section(config, local_models, online_models, get_gloss
                 visible=initial_show_glossary
             )
     
-    # Hidden glossary upload controls
     with gr.Row() as glossary_upload_row:
         with gr.Column():
             glossary_upload_file = gr.File(
@@ -524,7 +505,6 @@ def create_main_interface(config):
     """Create main translation interface"""
     initial_default_online = config.get("default_online", False)
     
-    # API key input
     api_key_input = gr.Textbox(
         label="API Key", 
         placeholder="Enter your API key here", 
@@ -532,18 +512,15 @@ def create_main_interface(config):
         visible=initial_default_online
     )
     
-    # File upload
     file_input = gr.File(
         label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)",
         file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"],
         file_count="multiple"
     )
     
-    # Output and status
     output_file = gr.File(label="Download Translated File", visible=False)
     status_message = gr.Textbox(label="Status Message", interactive=False, visible=True)
     
-    # Action buttons
     with gr.Row():
         translate_button = gr.Button("Translate")
         continue_button = gr.Button("Continue Translation", interactive=False)
