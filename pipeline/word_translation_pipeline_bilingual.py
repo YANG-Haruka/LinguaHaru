@@ -1,11 +1,13 @@
 import json
 import os
+import re
 from lxml import etree
 from zipfile import ZipFile
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
 
 def extract_word_content_to_json(file_path):
+    # Extract Word document content and save as JSON for translation
     with ZipFile(file_path, 'r') as docx:
         document_xml = docx.read('word/document.xml')
         
@@ -24,7 +26,7 @@ def extract_word_content_to_json(file_path):
     content_data = []
     item_id = 0
     
-    # Get all block elements for indexing
+    # Get all paragraphs and tables for processing
     block_elements = document_tree.xpath('.//*[self::w:p or self::w:tbl]', namespaces=namespaces)
     
     # Process all paragraphs and tables in main document
@@ -33,39 +35,70 @@ def extract_word_content_to_json(file_path):
         element_index = block_elements.index(element)
         
         if element_type == 'p':
+            # Check paragraph properties
             is_heading = bool(element.xpath('.//w:pStyle[@w:val="Heading1" or @w:val="Heading2" or @w:val="Heading3"]', namespaces=namespaces))
             has_numbering = bool(element.xpath('.//w:numPr', namespaces=namespaces))
-            full_text = ""
-            runs = element.xpath('.//w:r', namespaces=namespaces)
-            for run in runs:
-                text_nodes = run.xpath('.//w:t', namespaces=namespaces)
-                for text_node in text_nodes:
-                    full_text += text_node.text if text_node.text else ""
             
-            numbering_style = None
-            if has_numbering:
-                numbering_props = element.xpath('.//w:numPr', namespaces=namespaces)
-                if numbering_props:
-                    numbering_style = etree.tostring(numbering_props[0], encoding='unicode')
+            # Check if this is a table of contents entry
+            is_toc_entry = bool(element.xpath('.//w:fldChar[@w:fldCharType="begin"]/../following-sibling::w:r[w:instrText[contains(text(), "TOC")]]', namespaces=namespaces)) or \
+                          bool(element.xpath('.//w:hyperlink', namespaces=namespaces))
             
-            if full_text and should_translate(full_text):
-                item_id += 1
-                content_data.append({
-                    "id": item_id,
-                    "count_src": item_id,
-                    "type": "paragraph",
-                    "is_heading": is_heading,
-                    "has_numbering": has_numbering,
-                    "numbering_style": numbering_style,
-                    "element_index": element_index,
-                    "value": full_text.replace("\n", "␊").replace("\r", "␍")
-                })
-        # Process for sheet in Word
+            if is_toc_entry:
+                # Process TOC entries as individual text nodes (no concatenation)
+                runs = element.xpath('.//w:r', namespaces=namespaces)
+                for run_idx, run in enumerate(runs):
+                    # Skip page number fields
+                    if run.xpath('.//w:fldChar', namespaces=namespaces):
+                        continue
+                        
+                    text_nodes = run.xpath('.//w:t', namespaces=namespaces)
+                    for text_idx, text_node in enumerate(text_nodes):
+                        text_content = text_node.text if text_node.text else ""
+                        
+                        if text_content.strip() and should_translate(text_content):
+                            item_id += 1
+                            content_data.append({
+                                "id": item_id,
+                                "count_src": item_id,
+                                "type": "toc_text_node",
+                                "element_index": element_index,
+                                "run_index": run_idx,
+                                "text_index": text_idx,
+                                "value": text_content.replace("\n", "␊").replace("\r", "␍")
+                            })
+            else:
+                # Process regular paragraphs with text concatenation
+                full_text = ""
+                runs = element.xpath('.//w:r', namespaces=namespaces)
+                for run in runs:
+                    text_nodes = run.xpath('.//w:t', namespaces=namespaces)
+                    for text_node in text_nodes:
+                        full_text += text_node.text if text_node.text else ""
+                
+                numbering_style = None
+                if has_numbering:
+                    numbering_props = element.xpath('.//w:numPr', namespaces=namespaces)
+                    if numbering_props:
+                        numbering_style = etree.tostring(numbering_props[0], encoding='unicode')
+                
+                if full_text and should_translate(full_text):
+                    item_id += 1
+                    content_data.append({
+                        "id": item_id,
+                        "count_src": item_id,
+                        "type": "paragraph",
+                        "is_heading": is_heading,
+                        "has_numbering": has_numbering,
+                        "numbering_style": numbering_style,
+                        "element_index": element_index,
+                        "value": full_text.replace("\n", "␊").replace("\r", "␍")
+                    })
+        
+        # Process table cells
         elif element_type == 'tbl':
             table_cells = []
             rows = element.xpath('.//w:tr', namespaces=namespaces)
             
-            # Table processing remains the same
             for row_idx, row in enumerate(rows):
                 cells = row.xpath('.//w:tc', namespaces=namespaces)
                 
@@ -102,7 +135,7 @@ def extract_word_content_to_json(file_path):
             
             content_data.extend(table_cells)
     
-    # Headers and footers processing remains the same
+    # Process headers and footers
     for hf_file, hf_xml in header_footer_content.items():
         hf_tree = etree.fromstring(hf_xml)
         hf_type = "header" if "header" in hf_file else "footer"
@@ -186,9 +219,7 @@ def extract_word_content_to_json(file_path):
 
 
 def write_translated_content_to_word(file_path, original_json_path, translated_json_path):
-    """
-    Write both original and translated content to create a bilingual Word document
-    """
+    # Write both original and translated content to create a bilingual Word document
     with open(original_json_path, "r", encoding="utf-8") as original_file:
         original_data = json.load(original_file)
     
@@ -204,6 +235,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 "original": item.get("value", "").replace("␊", "\n").replace("␍", "\r"),
                 "type": item.get("type"),
                 "element_index": item.get("element_index"),
+                "run_index": item.get("run_index"),
+                "text_index": item.get("text_index"),
                 "table_index": item.get("table_index"),
                 "row": item.get("row"),
                 "col": item.get("col"),
@@ -220,6 +253,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         if item_id and item_id in content_map and "translated" in item:
             content_map[item_id]["translated"] = item["translated"].replace("␊", "\n").replace("␍", "\r")
     
+    # Load Word document structure
     with ZipFile(file_path, 'r') as docx:
         document_xml = docx.read('word/document.xml')
         
@@ -239,7 +273,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     
     block_elements = document_tree.xpath('.//*[self::w:p or self::w:tbl]', namespaces=namespaces)
 
-    # Process all content elements
+    # Update content with translations
     for item_id, item_data in content_map.items():
         if "translated" not in item_data:
             app_logger.warning(f"No translation found for item ID {item_id}")
@@ -248,10 +282,47 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         original_text = item_data["original"]
         translated_text = item_data["translated"]
         
-        # Combine original and translated text
-        bilingual_text = f"{original_text}\n{translated_text}"
+        if item_data["type"] == "toc_text_node":
+            # Update individual TOC text nodes with bilingual content
+            try:
+                element_index = item_data.get("element_index")
+                run_index = item_data.get("run_index")
+                text_index = item_data.get("text_index")
+                
+                if element_index is None or element_index >= len(block_elements):
+                    app_logger.error(f"Invalid element index: {element_index}")
+                    continue
+                    
+                paragraph = block_elements[element_index]
+                
+                if paragraph.tag.split('}')[-1] != 'p':
+                    app_logger.error(f"Element at index {element_index} is not a paragraph")
+                    continue
+                
+                # Find specific text node in TOC
+                runs = paragraph.xpath('.//w:r', namespaces=namespaces)
+                if run_index >= len(runs):
+                    app_logger.error(f"Run index {run_index} out of bounds")
+                    continue
+                
+                run = runs[run_index]
+                text_nodes = run.xpath('.//w:t', namespaces=namespaces)
+                
+                if text_index >= len(text_nodes):
+                    app_logger.error(f"Text index {text_index} out of bounds")
+                    continue
+                
+                # Update specific text node with bilingual content (original + translation)
+                bilingual_text = f"{original_text} / {translated_text}"
+                text_nodes[text_index].text = bilingual_text
+                
+            except (IndexError, TypeError) as e:
+                app_logger.error(f"Error updating TOC text node: {e}")
         
-        if item_data["type"] == "paragraph":
+        elif item_data["type"] == "paragraph":
+            # Combine original and translated text for regular paragraphs
+            bilingual_text = f"{original_text}\n{translated_text}"
+            
             try:
                 element_index = item_data.get("element_index")
                 if element_index is None or element_index >= len(block_elements):
@@ -270,6 +341,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 app_logger.error(f"Error finding paragraph with index {item_data.get('element_index')}: {e}")
                 
         elif item_data["type"] == "table_cell":
+            # Combine original and translated text for table cells
+            bilingual_text = f"{original_text}\n{translated_text}"
+            
             try:
                 table_index = item_data.get("table_index")
                 if table_index is None or table_index >= len(block_elements):
@@ -305,6 +379,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         
         # Handle header and footer content
         elif item_data["type"] == "header_footer":
+            bilingual_text = f"{original_text}\n{translated_text}"
+            
             try:
                 hf_file = item_data.get("hf_file")
                 if hf_file not in header_footer_trees:
@@ -326,6 +402,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 app_logger.error(f"Error updating header/footer paragraph: {e}")
         
         elif item_data["type"] == "header_footer_table_cell":
+            bilingual_text = f"{original_text}\n{translated_text}"
+            
             try:
                 hf_file = item_data.get("hf_file")
                 if hf_file not in header_footer_trees:
@@ -362,7 +440,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             except (IndexError, TypeError) as e:
                 app_logger.error(f"Error updating header/footer table cell: {e}")
 
-    # Create temp directory structure
+    # Save modified document files
     temp_folder = "temp"
     os.makedirs(temp_folder, exist_ok=True)
     temp_word_folder = os.path.join(temp_folder, "word")
@@ -382,13 +460,14 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             modified_hf.write(etree.tostring(hf_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
         header_footer_paths[hf_file] = modified_hf_path
 
-    # Create result file
+    # Create final translated document
     result_folder = "result"
     os.makedirs(result_folder, exist_ok=True)
     result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.docx")
 
     with ZipFile(file_path, 'r') as original_doc:
         with ZipFile(result_path, 'w') as new_doc:
+            # Copy unchanged files
             for item in original_doc.infolist():
                 # Skip the files we've modified
                 if item.filename == 'word/document.xml' or item.filename in header_footer_paths:
@@ -404,10 +483,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     return result_path
 
 def update_paragraph_text_with_formatting(paragraph, new_text, namespaces, has_numbering=False):
-    """
-    Update paragraph text with formatting, supporting bilingual text
-    """
-    # Get all runs in the paragraph
+    # Update paragraph text with formatting, supporting bilingual text
     runs = paragraph.xpath('.//w:r', namespaces=namespaces)
     
     if not runs:
@@ -437,7 +513,6 @@ def update_paragraph_text_with_formatting(paragraph, new_text, namespaces, has_n
     
     # Handle paragraphs with numbering
     if has_numbering:
-        import re
         numbering_match = re.match(r'^(\d+[\.\)]|\w+[\.\)]|\•|\-|\*)\s+(.*)$', original_text)
         
         if numbering_match and len(runs) > 1:
@@ -519,9 +594,7 @@ def update_paragraph_text_with_formatting(paragraph, new_text, namespaces, has_n
 
 
 def update_table_cell_text(cell, new_text, namespaces):
-    """
-    Update table cell text with bilingual content (original + translation)
-    """
+    # Update table cell text with bilingual content (original + translation)
     cell_paragraphs = cell.xpath('.//w:p', namespaces=namespaces)
     
     # Split text into original and translation
@@ -586,6 +659,7 @@ def update_table_cell_text(cell, new_text, namespaces):
 
 
 def update_json_structure_after_translation(original_json_path, translated_json_path):
+    # Restructure translated JSON to match original format
     with open(original_json_path, "r", encoding="utf-8") as orig_file:
         original_data = json.load(orig_file)
     
