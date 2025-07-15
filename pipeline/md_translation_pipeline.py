@@ -5,10 +5,50 @@ from bs4 import BeautifulSoup  # Import BeautifulSoup for HTML parsing
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
 
+def is_base64_image(text):
+    """
+    Check if text is base64 encoded image
+    """
+    # Check for base64 image patterns
+    base64_image_patterns = [
+        r'data:image/[^;]+;base64,',  # data:image/png;base64,
+        r'!\[.*?\]\(data:image/',     # markdown syntax ![](data:image/...)
+        r'<img[^>]*src="data:image/', # HTML img tag
+    ]
+    
+    for pattern in base64_image_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    
+    # Check for pure base64 string (length > 100 and only base64 chars)
+    if len(text) > 100:
+        # Base64 character set
+        base64_chars = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+        # Remove whitespace and check
+        clean_text = ''.join(text.split())
+        if len(clean_text) > 100 and all(c in base64_chars for c in clean_text):
+            # Check base64 length rule
+            if len(clean_text) % 4 == 0:  # base64 length must be multiple of 4
+                return True
+    
+    return False
+
+def should_translate_enhanced(text):
+    """
+    Enhanced translation check, exclude base64 images
+    """
+    # First check if it's base64 image
+    if is_base64_image(text):
+        return False
+    
+    # Then use original check logic
+    return should_translate(text)
+
 def extract_md_content_to_json(file_path):
     """
     Extract Markdown content to JSON, handling complex HTML structures including nested tables
     Preserves line formats and document structure
+    Enhanced to skip base64 image content
     """
     # Initialize data structures
     content_data = []     # Content to translate
@@ -70,6 +110,18 @@ def extract_md_content_to_json(file_path):
             })
             position_index += 1
             continue
+        
+        # Check if line is base64 image
+        if is_base64_image(line):
+            structure_items.append({
+                "index": position_index,
+                "type": "base64_image",
+                "value": line,
+                "translate": False
+            })
+            position_index += 1
+            app_logger.info(f"Skipping base64 image at line {line_index + 1}")
+            continue
             
         # Process HTML tags
         if line.strip().startswith('<') and '>' in line:
@@ -88,8 +140,8 @@ def extract_md_content_to_json(file_path):
                         # Get the text content of the cell
                         cell_text = td.get_text().strip()
                         
-                        # Check if cell needs translation
-                        if cell_text and should_translate(cell_text):
+                        # Check if cell needs translation (with base64 check)
+                        if cell_text and should_translate_enhanced(cell_text):
                             count += 1
                             # Store information about translatable cell
                             translatable_cells.append({
@@ -156,7 +208,7 @@ def extract_md_content_to_json(file_path):
             simple_pattern = r'^<([a-zA-Z0-9]+)[^>]*>(.*?)</\1>$'
             simple_match = re.match(simple_pattern, line.strip())
             
-            if simple_match and should_translate(simple_match.group(2)):
+            if simple_match and should_translate_enhanced(simple_match.group(2)):
                 tag_name = simple_match.group(1)
                 content_text = simple_match.group(2)
                 
@@ -197,8 +249,8 @@ def extract_md_content_to_json(file_path):
                 opening_outer_tag = line[:line.find('>') + 1]
                 closing_outer_tag = line[line.rfind('<'):]
                 
-                # Check if content needs translation
-                if should_translate(inner_content):
+                # Check if content needs translation (with base64 check)
+                if should_translate_enhanced(inner_content):
                     count += 1
                     structure_items.append({
                         "index": position_index,
@@ -237,8 +289,8 @@ def extract_md_content_to_json(file_path):
             position_index += 1
             continue
             
-        # Handle regular text
-        if should_translate(line):
+        # Handle regular text (with base64 check)
+        if should_translate_enhanced(line):
             count += 1
             structure_items.append({
                 "index": position_index,
@@ -281,7 +333,7 @@ def extract_md_content_to_json(file_path):
 def write_translated_content_to_md(file_path, original_json_path, translated_json_path):
     """
     Write translated content to new Markdown file while preserving HTML structure
-    Enhanced to handle complex HTML tables
+    Enhanced to handle complex HTML tables and base64 images
     """
     # Get file paths
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -308,7 +360,7 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
     
     for item in structure_items:
         if not item.get("translate", False):
-            # Keep original content for non-translated items
+            # Keep original content for non-translated items (includes base64 images)
             final_lines.append(item["value"])
         else:
             # Insert translations
