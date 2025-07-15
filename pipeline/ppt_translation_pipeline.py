@@ -5,10 +5,11 @@ from zipfile import ZipFile
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
 from typing import Dict, List, Any, Optional
+import re
 
 def extract_ppt_content_to_json(file_path: str) -> str:
     """
-    Extract text content from PowerPoint, processing each text element with proper positioning.
+    Extract text content from PowerPoint, processing each paragraph/cell as a single unit.
     """
     try:
         with ZipFile(file_path, 'r') as pptx:
@@ -37,19 +38,19 @@ def extract_ppt_content_to_json(file_path: str) -> str:
                     slide_xml = pptx.read(slide_path)
                     slide_tree = etree.fromstring(slide_xml)
                     
-                    # Extract text from text boxes with better structure tracking
+                    # Extract text from text boxes (by paragraph)
                     count = _extract_text_boxes(slide_tree, slide_index, namespaces, content_data, count)
                     
-                    # Extract text from tables
+                    # Extract text from tables (by cell paragraph)
                     count = _extract_tables(slide_tree, slide_index, namespaces, content_data, count)
                     
-                    # Extract text from shapes (excluding text boxes)
+                    # Extract text from shapes (by shape)
                     count = _extract_shapes(slide_tree, slide_index, namespaces, content_data, count)
                     
-                    # Extract text from charts
+                    # Extract text from charts (by chart element)
                     count = _extract_charts(slide_tree, slide_index, namespaces, content_data, count)
                     
-                    # Extract text from notes
+                    # Extract text from notes (by paragraph)
                     notes_path = slide_path.replace('slides/slide', 'notesSlides/notesSlide')
                     if notes_path in pptx.namelist():
                         count = _extract_notes(pptx, notes_path, slide_index, namespaces, content_data, count)
@@ -80,43 +81,45 @@ def extract_ppt_content_to_json(file_path: str) -> str:
         raise
 
 def _extract_text_boxes(slide_tree, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
-    """Extract text from text boxes with proper run tracking."""
+    """Extract text from text boxes, merging runs within the same paragraph."""
     text_boxes = slide_tree.xpath('.//p:txBody', namespaces=namespaces)
     
     for text_box_index, text_box in enumerate(text_boxes, start=1):
         paragraphs = text_box.xpath('.//a:p', namespaces=namespaces)
         
         for p_index, paragraph in enumerate(paragraphs):
+            # Collect all text runs in this paragraph
             text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
             
-            for run_index, text_run in enumerate(text_runs):
-                text_node = text_run.xpath('./a:t', namespaces=namespaces)
-                if not text_node or not text_node[0].text:
-                    continue
-                    
-                node_text = text_node[0].text
+            if not text_runs:
+                continue
                 
-                # Extract complete style information
-                style_info = _extract_run_style(text_run, namespaces)
+            # Process runs and preserve exact spacing
+            run_info = _process_text_runs(text_runs, namespaces)
+            
+            if not run_info['merged_text'].strip():
+                continue
                 
-                if should_translate(node_text):
-                    count += 1
-                    content_data.append({
-                        "count_src": count,
-                        "slide_index": slide_index,
-                        "text_box_index": text_box_index,
-                        "paragraph_index": p_index,
-                        "run_index": run_index,
-                        "type": "text_run",
-                        "value": node_text.replace("\n", "␊").replace("\r", "␍"),
-                        "style": style_info,
-                        "xpath": f".//p:txBody[{text_box_index}]//a:p[{p_index + 1}]//a:r[{run_index + 1}]/a:t"
-                    })
+            # Only process if there's meaningful text content and it should be translated
+            if should_translate(run_info['merged_text']):
+                count += 1
+                content_data.append({
+                    "count_src": count,
+                    "slide_index": slide_index,
+                    "text_box_index": text_box_index,
+                    "paragraph_index": p_index,
+                    "type": "text_paragraph",
+                    "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                    "run_texts": run_info['run_texts'],
+                    "run_styles": run_info['run_styles'],
+                    "run_lengths": run_info['run_lengths'],
+                    "xpath": f".//p:txBody[{text_box_index}]//a:p[{p_index + 1}]"
+                })
     
     return count
 
 def _extract_tables(slide_tree, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
-    """Extract text from tables."""
+    """Extract text from tables, processing each paragraph in each cell separately."""
     tables = slide_tree.xpath('.//a:tbl', namespaces=namespaces)
     
     for table_index, table in enumerate(tables, start=1):
@@ -126,18 +129,24 @@ def _extract_tables(slide_tree, slide_index: int, namespaces: Dict, content_data
             cells = row.xpath('.//a:tc', namespaces=namespaces)
             
             for cell_index, cell in enumerate(cells):
-                # Process text runs in cell
-                text_runs = cell.xpath('.//a:r', namespaces=namespaces)
+                # Get all paragraphs in this cell
+                paragraphs = cell.xpath('.//a:p', namespaces=namespaces)
                 
-                for run_index, text_run in enumerate(text_runs):
-                    text_node = text_run.xpath('./a:t', namespaces=namespaces)
-                    if not text_node or not text_node[0].text:
+                for p_index, paragraph in enumerate(paragraphs):
+                    # Collect all text runs in this paragraph
+                    text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+                    
+                    if not text_runs:
                         continue
                         
-                    cell_text = text_node[0].text
-                    style_info = _extract_run_style(text_run, namespaces)
+                    # Process runs and preserve exact spacing
+                    run_info = _process_text_runs(text_runs, namespaces)
                     
-                    if should_translate(cell_text):
+                    if not run_info['merged_text'].strip():
+                        continue
+                    
+                    # Only process if there's meaningful text content and it should be translated
+                    if should_translate(run_info['merged_text']):
                         count += 1
                         content_data.append({
                             "count_src": count,
@@ -145,17 +154,19 @@ def _extract_tables(slide_tree, slide_index: int, namespaces: Dict, content_data
                             "table_index": table_index,
                             "row_index": row_index,
                             "cell_index": cell_index,
-                            "run_index": run_index,
-                            "type": "table_cell",
-                            "value": cell_text.replace("\n", "␊").replace("\r", "␍"),
-                            "style": style_info,
-                            "xpath": f".//a:tbl[{table_index}]//a:tr[{row_index + 1}]//a:tc[{cell_index + 1}]//a:r[{run_index + 1}]/a:t"
+                            "paragraph_index": p_index,
+                            "type": "table_cell_paragraph",
+                            "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                            "run_texts": run_info['run_texts'],
+                            "run_styles": run_info['run_styles'],
+                            "run_lengths": run_info['run_lengths'],
+                            "xpath": f".//a:tbl[{table_index}]//a:tr[{row_index + 1}]//a:tc[{cell_index + 1}]//a:p[{p_index + 1}]"
                         })
     
     return count
 
 def _extract_shapes(slide_tree, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
-    """Extract text from shapes (excluding text boxes)."""
+    """Extract text from shapes (excluding text boxes), merging runs within the same shape."""
     shapes = slide_tree.xpath('.//p:sp', namespaces=namespaces)
     
     # Count non-textbox shapes to maintain proper indexing
@@ -165,93 +176,161 @@ def _extract_shapes(slide_tree, slide_index: int, namespaces: Dict, content_data
             non_textbox_shapes.append(shape)
     
     for shape_index, shape in enumerate(non_textbox_shapes, start=1):
+        # Collect all text runs in this shape
         text_runs = shape.xpath('.//a:r', namespaces=namespaces)
         
-        for run_index, text_run in enumerate(text_runs):
-            text_node = text_run.xpath('./a:t', namespaces=namespaces)
-            if not text_node or not text_node[0].text:
-                continue
-                
-            shape_text = text_node[0].text
-            style_info = _extract_run_style(text_run, namespaces)
+        if not text_runs:
+            continue
             
-            if should_translate(shape_text):
-                count += 1
-                content_data.append({
-                    "count_src": count,
-                    "slide_index": slide_index,
-                    "shape_index": shape_index,
-                    "run_index": run_index,
-                    "type": "shape",
-                    "value": shape_text.replace("\n", "␊").replace("\r", "␍"),
-                    "style": style_info,
-                    "xpath": f".//p:sp[not(.//p:txBody)][{shape_index}]//a:r[{run_index + 1}]/a:t"
-                })
+        # Process runs and preserve exact spacing
+        run_info = _process_text_runs(text_runs, namespaces)
+        
+        if not run_info['merged_text'].strip():
+            continue
+        
+        # Only process if there's meaningful text content and it should be translated
+        if should_translate(run_info['merged_text']):
+            count += 1
+            content_data.append({
+                "count_src": count,
+                "slide_index": slide_index,
+                "shape_index": shape_index,
+                "type": "shape",
+                "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                "run_texts": run_info['run_texts'],
+                "run_styles": run_info['run_styles'],
+                "run_lengths": run_info['run_lengths'],
+                "xpath": f".//p:sp[not(.//p:txBody)][{shape_index}]"
+            })
     
     return count
 
 def _extract_charts(slide_tree, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
-    """Extract text from charts."""
+    """Extract text from charts, merging runs within the same chart element."""
     charts = slide_tree.xpath('.//c:chart', namespaces=namespaces)
     
     for chart_index, chart in enumerate(charts, start=1):
-        text_runs = chart.xpath('.//a:r', namespaces=namespaces)
+        # Group text runs by their parent elements (titles, labels, etc.)
+        chart_text_elements = _group_chart_text_elements(chart, namespaces)
         
-        for run_index, text_run in enumerate(text_runs):
-            text_node = text_run.xpath('./a:t', namespaces=namespaces)
-            if not text_node or not text_node[0].text:
+        for element_index, (element_type, text_runs) in enumerate(chart_text_elements, start=1):
+            if not text_runs:
                 continue
                 
-            chart_text = text_node[0].text
-            style_info = _extract_run_style(text_run, namespaces)
+            # Process runs and preserve exact spacing
+            run_info = _process_text_runs(text_runs, namespaces)
             
-            if should_translate(chart_text):
+            if not run_info['merged_text'].strip():
+                continue
+            
+            # Only process if there's meaningful text content and it should be translated
+            if should_translate(run_info['merged_text']):
                 count += 1
                 content_data.append({
                     "count_src": count,
                     "slide_index": slide_index,
                     "chart_index": chart_index,
-                    "run_index": run_index,
+                    "element_index": element_index,
+                    "element_type": element_type,
                     "type": "chart",
-                    "value": chart_text.replace("\n", "␊").replace("\r", "␍"),
-                    "style": style_info,
-                    "xpath": f".//c:chart[{chart_index}]//a:r[{run_index + 1}]/a:t"
+                    "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                    "run_texts": run_info['run_texts'],
+                    "run_styles": run_info['run_styles'],
+                    "run_lengths": run_info['run_lengths'],
+                    "xpath": f".//c:chart[{chart_index}]//element[{element_index}]"
                 })
     
     return count
 
 def _extract_notes(pptx, notes_path: str, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
-    """Extract text from slide notes."""
+    """Extract text from slide notes, merging runs within the same paragraph."""
     try:
         notes_xml = pptx.read(notes_path)
         notes_tree = etree.fromstring(notes_xml)
         
-        text_runs = notes_tree.xpath('.//a:r', namespaces=namespaces)
+        # Get all paragraphs in notes
+        paragraphs = notes_tree.xpath('.//a:p', namespaces=namespaces)
         
-        for run_index, text_run in enumerate(text_runs):
-            text_node = text_run.xpath('./a:t', namespaces=namespaces)
-            if not text_node or not text_node[0].text:
+        for p_index, paragraph in enumerate(paragraphs):
+            text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+            
+            if not text_runs:
                 continue
                 
-            notes_text = text_node[0].text
-            style_info = _extract_run_style(text_run, namespaces)
+            # Process runs and preserve exact spacing
+            run_info = _process_text_runs(text_runs, namespaces)
             
-            if should_translate(notes_text):
+            if not run_info['merged_text'].strip():
+                continue
+            
+            # Only process if there's meaningful text content and it should be translated
+            if should_translate(run_info['merged_text']):
                 count += 1
                 content_data.append({
                     "count_src": count,
                     "slide_index": slide_index,
-                    "run_index": run_index,
+                    "paragraph_index": p_index,
                     "type": "notes",
-                    "value": notes_text.replace("\n", "␊").replace("\r", "␍"),
-                    "style": style_info,
-                    "xpath": f".//a:r[{run_index + 1}]/a:t"
+                    "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                    "run_texts": run_info['run_texts'],
+                    "run_styles": run_info['run_styles'],
+                    "run_lengths": run_info['run_lengths'],
+                    "xpath": f".//a:p[{p_index + 1}]"
                 })
                 
     except Exception as e:
         app_logger.error(f"Failed to extract notes for slide {slide_index}: {e}")
     
     return count
+
+def _process_text_runs(text_runs, namespaces: Dict) -> Dict:
+    """Process text runs and preserve exact spacing and formatting."""
+    merged_text = ""
+    run_texts = []
+    run_styles = []
+    run_lengths = []
+    
+    for text_run in text_runs:
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node and text_node[0].text is not None:
+            run_text = text_node[0].text
+        else:
+            run_text = ""
+        
+        # Preserve exact text content including spaces
+        merged_text += run_text
+        run_texts.append(run_text)
+        run_lengths.append(len(run_text))
+        run_styles.append(_extract_run_style(text_run, namespaces))
+    
+    return {
+        'merged_text': merged_text,
+        'run_texts': run_texts,
+        'run_styles': run_styles,
+        'run_lengths': run_lengths
+    }
+
+def _group_chart_text_elements(chart, namespaces: Dict) -> List[tuple]:
+    """Group chart text runs by their parent elements."""
+    text_elements = []
+    
+    # Common chart text elements
+    elements_to_check = [
+        ('title', './/c:title'),
+        ('axis_title', './/c:axisTitle'),
+        ('legend', './/c:legend'),
+        ('data_labels', './/c:dLbls'),
+        ('series', './/c:ser')
+    ]
+    
+    for element_type, xpath in elements_to_check:
+        elements = chart.xpath(xpath, namespaces=namespaces)
+        for element in elements:
+            text_runs = element.xpath('.//a:r', namespaces=namespaces)
+            if text_runs:
+                text_elements.append((element_type, text_runs))
+    
+    return text_elements
 
 def _extract_run_style(text_run, namespaces: Dict) -> Dict:
     """Extract comprehensive style information from a text run."""
@@ -429,9 +508,11 @@ def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translatio
         
         try:
             # Apply translation based on item type
-            if item['type'] == 'text_run':
-                _apply_text_run_translation(slide_tree, item, translated_text, namespaces)
-            elif item['type'] == 'table_cell':
+            if item['type'] == 'text_paragraph':
+                _apply_text_paragraph_translation(slide_tree, item, translated_text, namespaces)
+            elif item['type'] == 'table_cell_paragraph':
+                _apply_table_cell_paragraph_translation(slide_tree, item, translated_text, namespaces)
+            elif item['type'] == 'table_cell':  # For backward compatibility
                 _apply_table_cell_translation(slide_tree, item, translated_text, namespaces)
             elif item['type'] == 'shape':
                 _apply_shape_translation(slide_tree, item, translated_text, namespaces)
@@ -441,8 +522,8 @@ def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translatio
         except Exception as e:
             app_logger.error(f"Failed to apply translation for count {count}: {e}")
 
-def _apply_text_run_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
-    """Apply translation to a text run."""
+def _apply_text_paragraph_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
+    """Apply translation to a text paragraph, distributing across runs."""
     text_boxes = slide_tree.xpath('.//p:txBody', namespaces=namespaces)
     
     if item['text_box_index'] <= len(text_boxes):
@@ -451,19 +532,10 @@ def _apply_text_run_translation(slide_tree, item: Dict, translated_text: str, na
         
         if item['paragraph_index'] < len(paragraphs):
             paragraph = paragraphs[item['paragraph_index']]
-            text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
-            
-            if item['run_index'] < len(text_runs):
-                text_run = text_runs[item['run_index']]
-                text_node = text_run.xpath('./a:t', namespaces=namespaces)
-                
-                if text_node:
-                    text_node[0].text = translated_text
-                else:
-                    app_logger.warning(f"Text node not found for text run translation")
+            _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
 
-def _apply_table_cell_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
-    """Apply translation to a table cell."""
+def _apply_table_cell_paragraph_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
+    """Apply translation to a table cell paragraph, distributing across runs."""
     tables = slide_tree.xpath('.//a:tbl', namespaces=namespaces)
     
     if item['table_index'] <= len(tables):
@@ -476,19 +548,30 @@ def _apply_table_cell_translation(slide_tree, item: Dict, translated_text: str, 
             
             if item['cell_index'] < len(cells):
                 cell = cells[item['cell_index']]
-                text_runs = cell.xpath('.//a:r', namespaces=namespaces)
+                paragraphs = cell.xpath('.//a:p', namespaces=namespaces)
                 
-                if item['run_index'] < len(text_runs):
-                    text_run = text_runs[item['run_index']]
-                    text_node = text_run.xpath('./a:t', namespaces=namespaces)
-                    
-                    if text_node:
-                        text_node[0].text = translated_text
-                    else:
-                        app_logger.warning(f"Text node not found for table cell translation")
+                if item['paragraph_index'] < len(paragraphs):
+                    paragraph = paragraphs[item['paragraph_index']]
+                    _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
+
+def _apply_table_cell_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
+    """Apply translation to a table cell, distributing across runs. (For backward compatibility)"""
+    tables = slide_tree.xpath('.//a:tbl', namespaces=namespaces)
+    
+    if item['table_index'] <= len(tables):
+        table = tables[item['table_index'] - 1]
+        rows = table.xpath('.//a:tr', namespaces=namespaces)
+        
+        if item['row_index'] < len(rows):
+            row = rows[item['row_index']]
+            cells = row.xpath('.//a:tc', namespaces=namespaces)
+            
+            if item['cell_index'] < len(cells):
+                cell = cells[item['cell_index']]
+                _distribute_text_to_runs(cell, translated_text, item, namespaces)
 
 def _apply_shape_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
-    """Apply translation to a shape."""
+    """Apply translation to a shape, distributing across runs."""
     shapes = slide_tree.xpath('.//p:sp', namespaces=namespaces)
     
     # Filter out shapes that are text boxes to maintain proper indexing
@@ -497,33 +580,134 @@ def _apply_shape_translation(slide_tree, item: Dict, translated_text: str, names
     
     if item['shape_index'] <= len(non_textbox_shapes):
         shape = non_textbox_shapes[item['shape_index'] - 1]
-        text_runs = shape.xpath('.//a:r', namespaces=namespaces)
-        
-        if item['run_index'] < len(text_runs):
-            text_run = text_runs[item['run_index']]
-            text_node = text_run.xpath('./a:t', namespaces=namespaces)
-            
-            if text_node:
-                text_node[0].text = translated_text
-            else:
-                app_logger.warning(f"Text node not found for shape translation")
+        _distribute_text_to_runs(shape, translated_text, item, namespaces)
 
 def _apply_chart_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
-    """Apply translation to a chart."""
+    """Apply translation to a chart, distributing across runs."""
     charts = slide_tree.xpath('.//c:chart', namespaces=namespaces)
     
     if item['chart_index'] <= len(charts):
         chart = charts[item['chart_index'] - 1]
-        text_runs = chart.xpath('.//a:r', namespaces=namespaces)
+        # Find the specific chart element based on element_index and element_type
+        chart_text_elements = _group_chart_text_elements(chart, namespaces)
         
-        if item['run_index'] < len(text_runs):
-            text_run = text_runs[item['run_index']]
-            text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if item['element_index'] <= len(chart_text_elements):
+            element_type, text_runs = chart_text_elements[item['element_index'] - 1]
             
-            if text_node:
+            # Create a temporary container for the runs
+            temp_container = etree.Element("temp")
+            for run in text_runs:
+                temp_container.append(run)
+            
+            _distribute_text_to_runs(temp_container, translated_text, item, namespaces)
+
+def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, namespaces: Dict):
+    """Distribute translated text across multiple runs, preserving spacing and structure."""
+    text_runs = parent_element.xpath('.//a:r', namespaces=namespaces)
+    
+    if not text_runs:
+        return
+    
+    original_run_texts = item.get('run_texts', [])
+    original_run_lengths = item.get('run_lengths', [])
+    
+    # If we don't have the original structure, fallback to simple distribution
+    if not original_run_texts or len(original_run_texts) != len(text_runs):
+        app_logger.warning(f"Mismatch in run structure, using simple distribution")
+        _simple_text_distribution(text_runs, translated_text, namespaces)
+        return
+    
+    # Use intelligent distribution based on original structure
+    _intelligent_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
+
+def _simple_text_distribution(text_runs, translated_text: str, namespaces: Dict):
+    """Simple fallback distribution method."""
+    if not text_runs:
+        return
+    
+    # Put all translated text in the first run, clear others
+    for i, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node:
+            if i == 0:
                 text_node[0].text = translated_text
             else:
-                app_logger.warning(f"Text node not found for chart translation")
+                text_node[0].text = ""
+
+def _intelligent_text_distribution(text_runs, translated_text: str, original_run_texts: List[str], 
+                                 original_run_lengths: List[int], namespaces: Dict):
+    """Intelligent text distribution that preserves spacing and structure."""
+    
+    # Calculate total length excluding empty runs
+    meaningful_runs = [(i, length) for i, length in enumerate(original_run_lengths) if length > 0]
+    total_meaningful_length = sum(length for _, length in meaningful_runs)
+    
+    if total_meaningful_length == 0:
+        _simple_text_distribution(text_runs, translated_text, namespaces)
+        return
+    
+    # Handle special cases for spacing
+    translated_chars = list(translated_text)
+    char_index = 0
+    
+    for run_index, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if not text_node:
+            continue
+            
+        original_text = original_run_texts[run_index] if run_index < len(original_run_texts) else ""
+        original_length = original_run_lengths[run_index] if run_index < len(original_run_lengths) else 0
+        
+        # Handle empty or whitespace-only runs
+        if original_length == 0 or not original_text.strip():
+            # If original run was empty or whitespace, keep it empty
+            # unless it was purely whitespace and we need to preserve spacing
+            if original_text and not original_text.strip():
+                # This run contained only whitespace, try to preserve some spacing
+                if char_index < len(translated_chars) and translated_chars[char_index] == ' ':
+                    text_node[0].text = ' '
+                    char_index += 1
+                else:
+                    text_node[0].text = ""
+            else:
+                text_node[0].text = ""
+            continue
+        
+        # Calculate how much text this run should get
+        if run_index == len(text_runs) - 1:
+            # Last meaningful run gets all remaining text
+            remaining_text = ''.join(translated_chars[char_index:])
+            text_node[0].text = remaining_text
+        else:
+            # Calculate proportional distribution
+            proportion = original_length / total_meaningful_length
+            target_length = max(1, int(len(translated_text) * proportion))
+            
+            # Try to break at word boundaries
+            run_text = ""
+            chars_taken = 0
+            
+            while chars_taken < target_length and char_index < len(translated_chars):
+                char = translated_chars[char_index]
+                run_text += char
+                chars_taken += 1
+                char_index += 1
+                
+                # If we've reached the target length, try to extend to a word boundary
+                if chars_taken >= target_length and char_index < len(translated_chars):
+                    # Look ahead for word boundary
+                    if char != ' ' and translated_chars[char_index] != ' ':
+                        # Continue until we find a space or reach the end
+                        while (char_index < len(translated_chars) and 
+                               translated_chars[char_index] != ' ' and 
+                               chars_taken < target_length * 1.5):  # Don't go too far
+                            char = translated_chars[char_index]
+                            run_text += char
+                            chars_taken += 1
+                            char_index += 1
+                    break
+            
+            text_node[0].text = run_text
 
 def _apply_notes_translations(notes_tree, notes_items: List[Dict], translations: Dict, namespaces: Dict):
     """Apply translations to notes."""
@@ -538,16 +722,11 @@ def _apply_notes_translations(notes_tree, notes_items: List[Dict], translations:
         translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
         
         try:
-            text_runs = notes_tree.xpath('.//a:r', namespaces=namespaces)
+            paragraphs = notes_tree.xpath('.//a:p', namespaces=namespaces)
             
-            if item['run_index'] < len(text_runs):
-                text_run = text_runs[item['run_index']]
-                text_node = text_run.xpath('./a:t', namespaces=namespaces)
-                
-                if text_node:
-                    text_node[0].text = translated_text
-                else:
-                    app_logger.warning(f"Text node not found for notes translation")
+            if item['paragraph_index'] < len(paragraphs):
+                paragraph = paragraphs[item['paragraph_index']]
+                _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
                     
         except Exception as e:
             app_logger.error(f"Failed to apply notes translation for count {count}: {e}")
