@@ -371,7 +371,7 @@ def create_footer():
     return gr.HTML("""
     <div style="position: fixed; bottom: 0; left: 0; width: 100%; 
                 text-align: center; padding: 10px 0;">
-        Made by Haruka-YANG | Version: 3.6 | 
+        Made by Haruka-YANG | Version: 3.7 | 
         <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank">Visit Github</a>
     </div>
     """)
