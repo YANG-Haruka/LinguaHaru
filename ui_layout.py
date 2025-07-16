@@ -13,23 +13,58 @@ def get_custom_css():
     return """
     footer { visibility: hidden; }
     
-    /* Dark Theme Variables */
-    :root {
-        --bg-primary: #0f0f23 !important;
-        --bg-secondary: #1a1b26 !important;
-        --bg-tertiary: #24283b !important;
-        --bg-card: #1f2335 !important;
-        --border-color: #414868 !important;
-        --text-primary: #c0caf5 !important;
-        --text-secondary: #9aa5ce !important;
-        --accent-primary: #7aa2f7 !important;
-        --accent-secondary: #bb9af7 !important;
-        --accent-success: #9ece6a !important;
-        --accent-warning: #e0af68 !important;
-        --accent-danger: #f7768e !important;
-        --shadow: 0 4px 12px rgba(0, 0, 0, 0.3) !important;
-        --radius: 12px !important;
-        --radius-small: 8px !important;
+    /* Theme toggle button styles */
+    #theme-toggle-btn {
+        position: fixed !important;
+        top: 20px !important;
+        right: 20px !important;
+        width: 50px !important;
+        height: 50px !important;
+        border-radius: 50% !important;
+        border: 2px solid rgba(128, 128, 128, 0.3) !important;
+        background: rgba(255, 255, 255, 0.9) !important;
+        color: #333 !important;
+        font-size: 24px !important;
+        cursor: pointer !important;
+        transition: all 0.3s ease !important;
+        z-index: 9999 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1) !important;
+        backdrop-filter: blur(5px) !important;
+    }
+    
+    #theme-toggle-btn:hover {
+        transform: scale(1.1) !important;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2) !important;
+    }
+    
+    /* Dark theme styles for button - using body.dark selector */
+    body.dark #theme-toggle-btn,
+    .dark #theme-toggle-btn {
+        background: rgba(0, 0, 0, 0.8) !important;
+        color: #fff !important;
+        border: 2px solid rgba(255, 255, 255, 0.2) !important;
+    }
+    
+    /* Light theme styles for button */
+    body.light #theme-toggle-btn,
+    .light #theme-toggle-btn {
+        background: rgba(255, 255, 255, 0.9) !important;
+        color: #333 !important;
+        border: 2px solid rgba(128, 128, 128, 0.3) !important;
+    }
+    
+    /* Mobile responsive adjustments */
+    @media (max-width: 768px) {
+        #theme-toggle-btn {
+            top: 10px !important;
+            right: 10px !important;
+            width: 40px !important;
+            height: 40px !important;
+            font-size: 20px !important;
+        }
     }
 
     /* Language row */
@@ -109,8 +144,7 @@ def get_custom_css():
         max-height: 400px !important;
         overflow-y: auto !important;
         overflow-x: hidden !important;
-        border: 2px solid var(--border-color) !important;
-        border-radius: var(--radius) !important;
+        border-radius: 8px !important;
         z-index: 1000 !important;
         width: 100% !important;
         max-width: 580px !important;
@@ -135,11 +169,10 @@ def get_custom_css():
     #lang-row div:last-child .gr-dropdown [role="option"] {
         flex: 0 0 calc(20% - 3px) !important;
         padding: 8px 4px !important;
-        border-radius: var(--radius-small) !important;
+        border-radius: 6px !important;
         text-align: center !important;
         cursor: pointer !important;
         transition: all 0.3s ease !important;
-        border: 1px solid var(--border-color) !important;
         font-size: 0.85rem !important;
         font-weight: 500 !important;
         white-space: nowrap !important;
@@ -194,7 +227,6 @@ def get_custom_css():
     #lang-row div:first-child .gr-dropdown [role="option"][aria-selected="true"],
     #lang-row div:last-child .gr-dropdown [role="option"][aria-selected="true"] {
         font-weight: 700 !important;
-        box-shadow: 0 4px 15px rgba(187, 154, 247, 0.4) !important;
     }
 
     /* Selected hover effect */
@@ -215,7 +247,6 @@ def get_custom_css():
     #lang-row .gr-dropdown .option.selected:hover,
     #lang-row div:first-child .gr-dropdown [role="option"][aria-selected="true"]:hover,
     #lang-row div:last-child .gr-dropdown [role="option"][aria-selected="true"]:hover {
-        background: linear-gradient(135deg, var(--accent-primary), var(--accent-success)) !important;
         transform: translateY(-3px) scale(1.05) !important;
     }
 
@@ -322,16 +353,7 @@ def get_custom_css():
         grid-template-columns: 1fr 1fr !important;
         gap: 10px !important;
     }
-
-    .gradio-container {
-        border: 1px solid var(--border-color) !important;
-        border-radius: var(--radius) !important;
-        padding: 20px !important;
-        margin: 10px !important;
-        box-sizing: border-box !important;
-    }
     """
-
 
 def create_header(app_title, encoded_image, mime_type, img_height):
     """Create app header"""
@@ -354,6 +376,13 @@ def create_footer():
     </div>
     """)
 
+
+def create_theme_toggle():
+    """Create theme toggle button"""
+    return gr.Button(
+        "🌙",
+        elem_id="theme-toggle-btn"
+    )
 
 def create_language_section(default_src_lang, default_dst_lang):
     """Create language selection section"""

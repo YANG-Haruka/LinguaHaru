@@ -19,7 +19,7 @@ from functools import partial
 from ui_layout import (
     get_custom_css, create_header, create_footer, create_language_section,
     create_settings_section, create_model_glossary_section, create_main_interface,
-    create_state_variables
+    create_state_variables, create_theme_toggle
 )
 
 # Import language configs
@@ -1093,12 +1093,14 @@ encoded_image, mime_type = load_application_icon(config)
 #-------------------------------------------------------------------------
 # Gradio UI Construction
 #-------------------------------------------------------------------------
-
 # Create Gradio blocks interface with enhanced language dropdown styling
 with gr.Blocks(
     title=app_title_web,
     css=get_custom_css()
 ) as demo:
+    
+    # Create theme toggle button first (positioned absolutely)
+    theme_toggle_btn = create_theme_toggle()
     
     # Create header
     create_header(app_title, encoded_image, mime_type, img_height)
@@ -1290,6 +1292,48 @@ with gr.Blocks(
         on_add_new,
         inputs=[custom_lang_input],
         outputs=[src_lang, dst_lang, custom_lang_input, add_lang_button]
+    )
+    theme_toggle_btn.click(
+        fn=None,
+        inputs=[],
+        outputs=[],
+        js="""
+        function() {
+            // Get the root element
+            const root = document.querySelector('.gradio-container').closest('body') || document.body;
+            
+            // Check current theme - Gradio uses 'dark' class on body
+            const isDark = root.classList.contains('dark');
+            
+            // Toggle theme class
+            if (isDark) {
+                root.classList.remove('dark');
+                root.classList.add('light');
+            } else {
+                root.classList.remove('light');
+                root.classList.add('dark');
+            }
+            
+            // Update button icon
+            const btn = document.querySelector('#theme-toggle-btn');
+            if (btn) {
+                btn.innerHTML = isDark ? '☀️' : '🌙';
+            }
+            
+            // Also try to set the data-theme attribute for compatibility
+            const gradioContainer = document.querySelector('.gradio-container');
+            if (gradioContainer) {
+                gradioContainer.setAttribute('data-theme', isDark ? 'light' : 'dark');
+            }
+            
+            // Force a style recalculation
+            document.body.style.display = 'none';
+            document.body.offsetHeight; // trigger reflow
+            document.body.style.display = '';
+            
+            return [];
+        }
+        """
     )
 
     # On page load, set user language and labels
