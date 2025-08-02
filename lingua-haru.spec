@@ -1,29 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 # pyinstaller lingua-haru.spec  
 from PyInstaller.utils.hooks import collect_all
-import shutil
-import os
 
-# Find babeldoc executable
-babeldoc_path = shutil.which('babeldoc')
-if not babeldoc_path:
-    print("Warning: babeldoc not found in PATH. Please ensure babeldoc is installed.")
-    babeldoc_binaries = []
-else:
-    babeldoc_binaries = [(babeldoc_path, '.')]
-
-# Collect babeldoc related packages
-babeldoc_collect = collect_all("babeldoc")
-
-# Collect gradio, gradio_client, safehttp, safehttpx
+#  gradio、gradio_client、safehttp、safehttpx
 gradio_collect = collect_all("gradio")
 gradio_client_collect = collect_all("gradio_client")
 safehttp_collect = collect_all("safehttp")
 safehttpx_collect = collect_all("safehttpx")
 groovy_collect = collect_all("groovy")
-
-# Collect tiktoken
-tiktoken_collect = collect_all("tiktoken")
 
 translator_modules = [
     "translator.word_translator", 
@@ -54,17 +38,14 @@ for collect in translator_collects:
 a = Analysis(
     ["app.py"],
     pathex=[],
-    binaries=babeldoc_binaries,  # Include babeldoc executable
+    binaries=[],
     datas=(
         gradio_collect[0]
         + gradio_client_collect[0]
         + safehttp_collect[0]
         + safehttpx_collect[0]
         + groovy_collect[0]
-        + babeldoc_collect[0]  # Include babeldoc data files
-        + tiktoken_collect[0]  # Include tiktoken data files
         + translator_datas
-        + [('models/', 'models/')]  # Include your models directory (including tiktoken cache)
     ),
     hiddenimports=(
         gradio_collect[1]
@@ -72,22 +53,11 @@ a = Analysis(
         + safehttp_collect[1]
         + safehttpx_collect[1]
         + groovy_collect[1]
-        + babeldoc_collect[1]  # Include babeldoc hidden imports
-        + tiktoken_collect[1]  # Include tiktoken hidden imports
         + translator_imports
         + translator_modules
-        + ['babeldoc.format.pdf.high_level']
-        + ['babeldoc.assets.assets']
-        + ['tiktoken']  # Ensure tiktoken is included
-        + ['tiktoken.core']  # Core tiktoken module
-        + ['tiktoken.load']  # Loading functionality
-        + ['tiktoken.registry']  # Registry functionality
     ),
     excludes=[],
-    module_collection_mode={
-        "gradio": "py",
-        "tiktoken": "py"  # Ensure tiktoken is collected properly
-    },
+    module_collection_mode={"gradio": "py"},
 )
 
 pyz = PYZ(a.pure)

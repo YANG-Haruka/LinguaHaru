@@ -1,3 +1,4 @@
+# /textProcessing/text_separator.py
 import json
 import copy
 import os
@@ -6,6 +7,73 @@ import shutil
 import csv
 from .calculation_tokens import num_tokens_from_string
 from config.log_config import app_logger
+
+def safe_convert_to_int(value):
+    """安全地将各种格式的数字转换为整数"""
+    if isinstance(value, int):
+        return value
+    
+    if not isinstance(value, str):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return 0
+    
+    # 移除空格
+    value = value.strip()
+    
+    # 尝试直接转换
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    
+    # 处理中文圆圈数字
+    circle_nums = {
+        '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
+        '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
+        '⑪': 11, '⑫': 12, '⑬': 13, '⑭': 14, '⑮': 15,
+        '⑯': 16, '⑰': 17, '⑱': 18, '⑲': 19, '⑳': 20,
+        '㉑': 21, '㉒': 22, '㉓': 23, '㉔': 24, '㉕': 25,
+        '㉖': 26, '㉗': 27, '㉘': 28, '㉙': 29, '㉚': 30,
+        '㉛': 31, '㉜': 32, '㉝': 33, '㉞': 34, '㉟': 35,
+        '㊱': 36, '㊲': 37, '㊳': 38, '㊴': 39, '㊵': 40,
+        '㊶': 41, '㊷': 42, '㊸': 43, '㊹': 44, '㊺': 45,
+        '㊻': 46, '㊼': 47, '㊽': 48, '㊾': 49, '㊿': 50
+    }
+    
+    if value in circle_nums:
+        return circle_nums[value]
+    
+    # 处理罗马数字
+    roman_nums = {
+        'I': 1, 'II': 2, 'III': 3, 'IV': 4, 'V': 5,
+        'VI': 6, 'VII': 7, 'VIII': 8, 'IX': 9, 'X': 10,
+        'XI': 11, 'XII': 12, 'XIII': 13, 'XIV': 14, 'XV': 15,
+        'XVI': 16, 'XVII': 17, 'XVIII': 18, 'XIX': 19, 'XX': 20
+    }
+    
+    if value.upper() in roman_nums:
+        return roman_nums[value.upper()]
+    
+    # 处理中文数字
+    chinese_nums = {
+        '零': 0, '一': 1, '二': 2, '三': 3, '四': 4, '五': 5,
+        '六': 6, '七': 7, '八': 8, '九': 9, '十': 10,
+        '壹': 1, '贰': 2, '叁': 3, '肆': 4, '伍': 5,
+        '陆': 6, '柒': 7, '捌': 8, '玖': 9, '拾': 10
+    }
+    
+    if value in chinese_nums:
+        return chinese_nums[value]
+    
+    # 尝试提取数字部分
+    nums = re.findall(r'\d+', value)
+    if nums:
+        return int(nums[0])
+    
+    # 默认返回0
+    return 0
 
 def load_glossary(glossary_path, src_lang, dst_lang):
     """Load glossary from CSV file with multiple encodings"""
@@ -121,7 +189,7 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
         raise ValueError("Empty data")
 
     # Calculate max count_split for progress
-    max_count_split = max((cell.get("count_split", cell.get("count", 0)) for cell in cell_data), default=0)
+    max_count_split = max((safe_convert_to_int(cell.get("count_split", cell.get("count", 0))) for cell in cell_data), default=0)
     
     # Calculate token limits
     prompt_base_token_count = sum(
@@ -228,7 +296,7 @@ def calculate_progress(segment_dict, max_count_split):
         return 1.0
     
     try:
-        last_count_split = max(int(key) for key in segment_dict.keys())
+        last_count_split = max(safe_convert_to_int(key) for key in segment_dict.keys())
         return last_count_split / max_count_split
     except (ValueError, TypeError):
         return 1.0
@@ -654,13 +722,10 @@ def restore_translations_from_deduped(dst_translated_split_path, count_src_to_de
     # Statistics
     app_logger.info(f"Restoration complete: {len(result)} items, {missing_translations} missing translations")
     
-    # Sort by count_src
+    # Sort by count_src using safe conversion
     def get_count_key(item):
         count = item["count_src"]
-        try:
-            return int(count)
-        except (ValueError, TypeError):
-            return 0
+        return safe_convert_to_int(count)
     
     result = sorted(result, key=get_count_key)
     
