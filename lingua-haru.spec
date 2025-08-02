@@ -9,6 +9,9 @@ safehttp_collect = collect_all("safehttp")
 safehttpx_collect = collect_all("safehttpx")
 groovy_collect = collect_all("groovy")
 
+# Collect tiktoken
+tiktoken_collect = collect_all("tiktoken")
+
 translator_modules = [
     "translator.word_translator", 
     "translator.ppt_translator",
@@ -46,6 +49,8 @@ a = Analysis(
         + safehttpx_collect[0]
         + groovy_collect[0]
         + translator_datas
+        + tiktoken_collect[0]
+        + [('models/', 'models/')]
     ),
     hiddenimports=(
         gradio_collect[1]
@@ -55,9 +60,17 @@ a = Analysis(
         + groovy_collect[1]
         + translator_imports
         + translator_modules
+        + tiktoken_collect[1]
+        + ['tiktoken']
+        + ['tiktoken.core']
+        + ['tiktoken.load']
+        + ['tiktoken.registry']
     ),
     excludes=[],
-    module_collection_mode={"gradio": "py"},
+    module_collection_mode={
+                            "gradio": "py",
+                            "tiktoken": "py"
+                            },
 )
 
 pyz = PYZ(a.pure)
