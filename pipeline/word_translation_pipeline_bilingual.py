@@ -1,4 +1,4 @@
-# word_translation_pipeline_bilingual.py
+# pipeline/word_translation_pipeline_bilingual.py
 import json
 import os
 import re
@@ -65,7 +65,9 @@ def extract_word_content_to_json(file_path):
             'wpc': 'http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas',
             'wpg': 'http://schemas.microsoft.com/office/word/2010/wordprocessingGroup',
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
-            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml'
+            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
+            'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
         }
         
         document_tree = etree.fromstring(document_xml)
@@ -108,6 +110,10 @@ def extract_word_content_to_json(file_path):
                 namespaces, hf_type, hf_file, hf_number
             )
 
+        # Extract SmartArt content
+        with ZipFile(file_path, 'r') as docx:
+            item_id = extract_smartart_content(docx, content_data, item_id, namespaces)
+
         # Save extraction data and temp directory path
         filename = os.path.splitext(os.path.basename(file_path))[0]
         temp_folder = os.path.join("temp", filename)
@@ -130,6 +136,154 @@ def extract_word_content_to_json(file_path):
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         raise e
+
+def extract_smartart_content(docx, content_data, item_id, namespaces):
+    """Extract text from SmartArt diagrams in Word document."""
+    # Find all SmartArt diagram files
+    diagram_drawings = [name for name in docx.namelist() 
+                       if name.startswith('word/diagrams/drawing') and name.endswith('.xml')]
+    diagram_drawings.sort()
+    
+    app_logger.info(f"Found {len(diagram_drawings)} SmartArt diagram files in Word document")
+    
+    for drawing_path in diagram_drawings:
+        try:
+            # Extract diagram number from path (e.g., drawing1.xml -> 1)
+            diagram_match = re.search(r'drawing(\d+)\.xml', drawing_path)
+            if not diagram_match:
+                continue
+            
+            diagram_index = int(diagram_match.group(1))
+            
+            drawing_xml = docx.read(drawing_path)
+            drawing_tree = etree.fromstring(drawing_xml)
+            
+            # Find all shapes with text content in SmartArt
+            shapes = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+            
+            for shape_index, shape in enumerate(shapes):
+                model_id = shape.get('modelId', '')
+                
+                # Get text content from txBody elements
+                tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                
+                for tx_body_index, tx_body in enumerate(tx_bodies):
+                    paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                    
+                    for p_index, paragraph in enumerate(paragraphs):
+                        text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+                        
+                        if not text_runs:
+                            continue
+                        
+                        # Process runs and preserve exact spacing
+                        run_info = process_smartart_text_runs(text_runs, namespaces)
+                        
+                        if not run_info['merged_text'].strip():
+                            continue
+                        
+                        # Only process if there's meaningful text content and it should be translated
+                        if should_translate_enhanced(run_info['merged_text']):
+                            item_id += 1
+                            content_data.append({
+                                "id": item_id,
+                                "count_src": item_id,
+                                "diagram_index": diagram_index,
+                                "shape_index": shape_index,
+                                "tx_body_index": tx_body_index,
+                                "paragraph_index": p_index,
+                                "model_id": model_id,
+                                "type": "smartart",
+                                "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                                "run_texts": run_info['run_texts'],
+                                "run_styles": run_info['run_styles'],
+                                "run_lengths": run_info['run_lengths'],
+                                "drawing_path": drawing_path,
+                                "original_text": run_info['merged_text'],  # Store original text for data.xml matching
+                                "xpath": f".//dsp:sp[{shape_index + 1}]//dsp:txBody[{tx_body_index + 1}]//a:p[{p_index + 1}]"
+                            })
+                        
+        except Exception as e:
+            app_logger.error(f"Failed to extract SmartArt from {drawing_path}: {e}")
+            continue
+    
+    return item_id
+
+def process_smartart_text_runs(text_runs, namespaces):
+    """Process SmartArt text runs and preserve exact spacing and formatting."""
+    merged_text = ""
+    run_texts = []
+    run_styles = []
+    run_lengths = []
+    
+    for text_run in text_runs:
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node and text_node[0].text is not None:
+            run_text = text_node[0].text
+        else:
+            run_text = ""
+        
+        # Preserve exact text content including spaces
+        merged_text += run_text
+        run_texts.append(run_text)
+        run_lengths.append(len(run_text))
+        run_styles.append(extract_smartart_run_style(text_run, namespaces))
+    
+    return {
+        'merged_text': merged_text,
+        'run_texts': run_texts,
+        'run_styles': run_styles,
+        'run_lengths': run_lengths
+    }
+
+def extract_smartart_run_style(text_run, namespaces):
+    """Extract comprehensive style information from a SmartArt text run."""
+    style_info = {}
+    
+    try:
+        rpr = text_run.xpath('./a:rPr', namespaces=namespaces)
+        if rpr:
+            rpr_element = rpr[0]
+            
+            # Font size
+            sz = rpr_element.get('sz')
+            if sz:
+                style_info['font_size'] = sz
+            
+            # Bold
+            b = rpr_element.get('b')
+            if b:
+                style_info['bold'] = b
+            
+            # Italic
+            i = rpr_element.get('i')
+            if i:
+                style_info['italic'] = i
+            
+            # Underline
+            u = rpr_element.get('u')
+            if u:
+                style_info['underline'] = u
+            
+            # Font family
+            latin = rpr_element.xpath('./a:latin', namespaces=namespaces)
+            if latin:
+                style_info['font_family'] = latin[0].get('typeface')
+            
+            # Font color
+            solid_fill = rpr_element.xpath('./a:solidFill/a:srgbClr', namespaces=namespaces)
+            if solid_fill:
+                style_info['color'] = solid_fill[0].get('val')
+            
+            # Strike through
+            strike = rpr_element.get('strike')
+            if strike:
+                style_info['strike'] = strike
+                
+    except Exception as e:
+        app_logger.warning(f"Failed to extract SmartArt style information: {e}")
+    
+    return style_info
 
 def parse_styles_xml(styles_xml, namespaces):
     """Parse styles.xml to understand style definitions"""
@@ -1991,7 +2145,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             'wpc': 'http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas',
             'wpg': 'http://schemas.microsoft.com/office/word/2010/wordprocessingGroup',
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
-            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml'
+            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
+            'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
         }
         
         # Load and update main document
@@ -2031,6 +2187,11 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         all_wps_textboxes = document_tree.xpath('.//wps:txbx', namespaces=namespaces)
         all_vml_textboxes = document_tree.xpath('.//v:textbox', namespaces=namespaces)
 
+        # Apply SmartArt translations with bilingual format
+        smartart_items = [item for item in original_data if item['type'] == 'smartart']
+        if smartart_items:
+            apply_smartart_translations_bilingual(temp_dir, smartart_items, translations, namespaces)
+
         # Process translations in BILINGUAL FORMAT
         for item in original_data:
             item_id = str(item.get("id", item.get("count_src")))
@@ -2039,8 +2200,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             if not translated_text:
                 continue
                 
-            # Skip numbering items as they're handled separately
-            if item["type"] in ["numbering_level_text", "numbering_text_node"]:
+            # Skip numbering and smartart items as they're handled separately
+            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart"]:
                 continue
                 
             translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
@@ -2122,6 +2283,211 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         # Clean up temp directory
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+def apply_smartart_translations_bilingual(temp_dir, smartart_items, translations, namespaces):
+    """Apply translations to SmartArt diagrams in Word document with bilingual format."""
+    if not smartart_items:
+        return
+    
+    app_logger.info(f"Processing {len(smartart_items)} SmartArt translations in Word document")
+    
+    # Group items by diagram_index
+    items_by_diagram = {}
+    for item in smartart_items:
+        diagram_index = item['diagram_index']
+        if diagram_index not in items_by_diagram:
+            items_by_diagram[diagram_index] = []
+        items_by_diagram[diagram_index].append(item)
+    
+    for diagram_index, items in items_by_diagram.items():
+        drawing_path = f"word/diagrams/drawing{diagram_index}.xml"
+        data_path = f"word/diagrams/data{diagram_index}.xml"
+        
+        # Process drawing file
+        try:
+            drawing_file_path = os.path.join(temp_dir, drawing_path.replace('/', os.sep))
+            if os.path.exists(drawing_file_path):
+                with open(drawing_file_path, 'rb') as f:
+                    drawing_xml = f.read()
+                drawing_tree = etree.fromstring(drawing_xml)
+                
+                for item in items:
+                    item_id = str(item.get("id", item.get("count_src")))
+                    translated_text = translations.get(item_id)
+                    
+                    if not translated_text:
+                        app_logger.warning(f"Missing translation for SmartArt item {item_id}")
+                        continue
+                    
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    original_text = item.get("value", "").replace("␊", "\n").replace("␍", "\r")
+                    
+                    # Create bilingual text (original + newline + translation)
+                    bilingual_text = create_bilingual_text(original_text, translated_text)
+                    
+                    # Find the shape using shape_index
+                    shapes_with_txbody = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+                    
+                    if item['shape_index'] < len(shapes_with_txbody):
+                        shape = shapes_with_txbody[item['shape_index']]
+                        
+                        # Find the txBody
+                        tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                        if item['tx_body_index'] < len(tx_bodies):
+                            tx_body = tx_bodies[item['tx_body_index']]
+                            
+                            # Find the paragraph
+                            paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                            if item['paragraph_index'] < len(paragraphs):
+                                paragraph = paragraphs[item['paragraph_index']]
+                                distribute_smartart_text_to_runs_bilingual(paragraph, bilingual_text, item, namespaces)
+                                app_logger.info(f"Updated SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']} with bilingual format")
+                
+                # Save modified drawing
+                with open(drawing_file_path, "wb") as f:
+                    f.write(etree.tostring(drawing_tree, xml_declaration=True, 
+                                          encoding="UTF-8", standalone="yes"))
+                app_logger.info(f"Saved modified SmartArt drawing file: {drawing_path}")
+                                                        
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translation to {drawing_path}: {e}")
+            continue
+        
+        # Process corresponding data file
+        try:
+            data_file_path = os.path.join(temp_dir, data_path.replace('/', os.sep))
+            if os.path.exists(data_file_path):
+                with open(data_file_path, 'rb') as f:
+                    data_xml = f.read()
+                data_tree = etree.fromstring(data_xml)
+                
+                for item in items:
+                    item_id = str(item.get("id", item.get("count_src")))
+                    translated_text = translations.get(item_id)
+                    
+                    if not translated_text:
+                        continue
+                    
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    original_text = item.get('original_text', '')
+                    
+                    # Create bilingual text (original + newline + translation)
+                    bilingual_text = create_bilingual_text(original_text, translated_text)
+                    
+                    # Find all dgm:pt elements that contain text
+                    points = data_tree.xpath('.//dgm:pt[.//a:t]', namespaces=namespaces)
+                    
+                    # Try to find matching text by content
+                    for point in points:
+                        point_paragraphs = point.xpath('.//a:p', namespaces=namespaces)
+                        for p_idx, point_paragraph in enumerate(point_paragraphs):
+                            # Get current text from this paragraph
+                            point_text_runs = point_paragraph.xpath('.//a:r', namespaces=namespaces)
+                            if point_text_runs:
+                                point_run_info = process_smartart_text_runs(point_text_runs, namespaces)
+                                # If the original text matches, update this paragraph
+                                if point_run_info['merged_text'].strip() == original_text.strip():
+                                    distribute_smartart_text_to_runs_bilingual(point_paragraph, bilingual_text, item, namespaces)
+                                    app_logger.info(f"Updated SmartArt data text for diagram {diagram_index}: '{original_text}' -> bilingual format")
+                                    break
+                
+                # Save modified data
+                with open(data_file_path, "wb") as f:
+                    f.write(etree.tostring(data_tree, xml_declaration=True, 
+                                         encoding="UTF-8", standalone="yes"))
+                app_logger.info(f"Saved modified SmartArt data file: {data_path}")
+                                                     
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translation to {data_path}: {e}")
+            continue
+
+def distribute_smartart_text_to_runs_bilingual(paragraph, bilingual_text, item, namespaces):
+    """Distribute bilingual text across SmartArt runs, preserving spacing and structure."""
+    text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+    
+    if not text_runs:
+        return
+    
+    original_run_texts = item.get('run_texts', [])
+    original_run_lengths = item.get('run_lengths', [])
+    
+    # If we don't have the original structure, fallback to simple distribution
+    if not original_run_texts or len(original_run_texts) != len(text_runs):
+        app_logger.warning(f"Mismatch in SmartArt run structure, using simple distribution")
+        simple_smartart_text_distribution_bilingual(text_runs, bilingual_text, namespaces)
+        return
+    
+    # Use intelligent distribution based on original structure
+    intelligent_smartart_text_distribution_bilingual(text_runs, bilingual_text, original_run_texts, original_run_lengths, namespaces)
+
+def simple_smartart_text_distribution_bilingual(text_runs, bilingual_text, namespaces):
+    """Simple fallback distribution method for SmartArt with bilingual format."""
+    if not text_runs:
+        return
+    
+    # Split bilingual text by lines
+    lines = bilingual_text.split('\n')
+    
+    # Put first line in first run, second line with line break in second run if available
+    for i, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node:
+            if i == 0 and len(lines) > 0:
+                # First run gets original text
+                text_node[0].text = lines[0]
+            elif i == 1 and len(lines) > 1:
+                # Second run gets translated text (with line break handled by separate runs)
+                text_node[0].text = lines[1]
+            else:
+                # Clear other runs
+                text_node[0].text = ""
+
+def intelligent_smartart_text_distribution_bilingual(text_runs, bilingual_text, original_run_texts, original_run_lengths, namespaces):
+    """Intelligent SmartArt text distribution that preserves spacing and structure while supporting bilingual format."""
+    
+    # Split bilingual text into original and translated parts
+    lines = bilingual_text.split('\n')
+    if len(lines) >= 2:
+        original_part = lines[0]
+        translated_part = lines[1]
+    else:
+        # Fallback if not proper bilingual format
+        original_part = bilingual_text
+        translated_part = bilingual_text
+    
+    # Calculate total length excluding empty runs
+    meaningful_runs = [(i, length) for i, length in enumerate(original_run_lengths) if length > 0]
+    total_meaningful_length = sum(length for _, length in meaningful_runs)
+    
+    if total_meaningful_length == 0:
+        simple_smartart_text_distribution_bilingual(text_runs, bilingual_text, namespaces)
+        return
+    
+    # For bilingual format, we need to decide how to distribute
+    # Option 1: Replace original text with bilingual text in first meaningful run
+    # Option 2: Try to distribute across runs
+    
+    # Use Option 1 for simplicity - put bilingual text in first meaningful run
+    for run_index, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if not text_node:
+            continue
+            
+        original_length = original_run_lengths[run_index] if run_index < len(original_run_lengths) else 0
+        
+        if original_length > 0:
+            # First meaningful run gets bilingual text
+            text_node[0].text = bilingual_text
+            # Clear other meaningful runs
+            for other_run_index, other_run in enumerate(text_runs[run_index + 1:], run_index + 1):
+                if other_run_index < len(original_run_lengths) and original_run_lengths[other_run_index] > 0:
+                    other_text_node = other_run.xpath('./a:t', namespaces=namespaces)
+                    if other_text_node:
+                        other_text_node[0].text = ""
+            break
+        else:
+            # Empty run stays empty
+            text_node[0].text = ""
 
 def create_bilingual_text(original_text, translated_text):
     """Create bilingual text format: original text + newline + translated text"""
@@ -3453,7 +3819,10 @@ def update_json_structure_after_translation(original_json_path, translated_json_
                 "is_heading", "has_numbering", "numbering_info", "is_toc", "toc_info", "toc_structure", 
                 "textbox_type", "textbox_format", "textbox_index", "positioning_info", "paragraph_context",
                 "field_info", "original_pPr", "original_structure", "table_props", "row_props", "cell_props",
-                "paragraph_index", "nesting_level", "sdt_index", "is_toc_sdt", "sdt_props", "value"
+                "paragraph_index", "nesting_level", "sdt_index", "is_toc_sdt", "sdt_props", "value",
+                # SmartArt specific keys
+                "diagram_index", "shape_index", "tx_body_index", "model_id", "run_texts", "run_styles", 
+                "run_lengths", "drawing_path", "original_text", "xpath"
             ]
             
             for key in preserve_keys:

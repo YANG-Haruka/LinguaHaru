@@ -1,7 +1,13 @@
 # pipeline/excel_translation_pipeline_test.py
 import os
 import json
+import re
+import tempfile
+import shutil
 from datetime import datetime
+from zipfile import ZipFile
+from lxml import etree
+from typing import Dict, List, Any
 import xlwings as xw
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
@@ -300,14 +306,20 @@ def extract_excel_content_to_json(file_path):
                 item["count_src"] = count
                 cell_data.append(item)
                 
-        app_logger.info(f"Total extracted items: {len(cell_data)}")
-                
+        app_logger.info(f"Extracted {len(cell_data)} items using xlwings")
+        
     finally:
         try:
             wb.close()
             app.quit()
         except Exception as e:
             app_logger.error(f"Error closing workbook: {str(e)}")
+    
+    # Extract SmartArt content using ZIP operations
+    try:
+        count = _extract_smartart_from_excel(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting SmartArt from Excel: {str(e)}")
     
     # Save to JSON
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -318,7 +330,172 @@ def extract_excel_content_to_json(file_path):
     with open(json_path, "w", encoding="utf-8") as json_file:
         json.dump(cell_data, json_file, ensure_ascii=False, indent=4)
 
+    app_logger.info(f"Total extracted items: {len(cell_data)}")
     return json_path
+
+
+def _extract_smartart_from_excel(file_path: str, content_data: List, count: int) -> int:
+    """Extract text from SmartArt diagrams in Excel."""
+    try:
+        # Excel SmartArt namespaces (similar to PowerPoint)
+        namespaces = {
+            'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+            'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram',
+            'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+        }
+        
+        with ZipFile(file_path, 'r') as excel_zip:
+            # Find SmartArt diagram files in Excel (they are in xl/diagrams/)
+            diagram_drawings = [name for name in excel_zip.namelist() 
+                               if name.startswith('xl/diagrams/drawing') and name.endswith('.xml')]
+            diagram_drawings.sort()
+            
+            app_logger.info(f"Found {len(diagram_drawings)} SmartArt diagram files in Excel")
+            
+            for drawing_path in diagram_drawings:
+                try:
+                    # Extract diagram number from path
+                    diagram_match = re.search(r'drawing(\d+)\.xml', drawing_path)
+                    if not diagram_match:
+                        continue
+                    
+                    diagram_index = int(diagram_match.group(1))
+                    
+                    drawing_xml = excel_zip.read(drawing_path)
+                    drawing_tree = etree.fromstring(drawing_xml)
+                    
+                    # Find all shapes with text content in SmartArt
+                    shapes = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+                    
+                    for shape_index, shape in enumerate(shapes):
+                        model_id = shape.get('modelId', '')
+                        
+                        # Get text content from txBody elements
+                        tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                        
+                        for tx_body_index, tx_body in enumerate(tx_bodies):
+                            paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                            
+                            for p_index, paragraph in enumerate(paragraphs):
+                                text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+                                
+                                if not text_runs:
+                                    continue
+                                
+                                # Process runs and preserve exact spacing
+                                run_info = _process_excel_smartart_text_runs(text_runs, namespaces)
+                                
+                                if not run_info['merged_text'].strip():
+                                    continue
+                                
+                                # Only process if there's meaningful text content and it should be translated
+                                if should_translate(run_info['merged_text']):
+                                    count += 1
+                                    content_data.append({
+                                        "count_src": count,
+                                        "diagram_index": diagram_index,
+                                        "shape_index": shape_index,
+                                        "tx_body_index": tx_body_index,
+                                        "paragraph_index": p_index,
+                                        "model_id": model_id,
+                                        "type": "excel_smartart",
+                                        "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                                        "run_texts": run_info['run_texts'],
+                                        "run_styles": run_info['run_styles'],
+                                        "run_lengths": run_info['run_lengths'],
+                                        "drawing_path": drawing_path,
+                                        "original_text": run_info['merged_text'],
+                                        "xpath": f".//dsp:sp[{shape_index + 1}]//dsp:txBody[{tx_body_index + 1}]//a:p[{p_index + 1}]"
+                                    })
+                                    
+                except Exception as e:
+                    app_logger.error(f"Failed to extract SmartArt from {drawing_path}: {e}")
+                    continue
+                    
+    except Exception as e:
+        app_logger.error(f"Failed to extract SmartArt from Excel: {e}")
+    
+    app_logger.info(f"Extracted {sum(1 for item in content_data if item.get('type') == 'excel_smartart')} SmartArt items from Excel")
+    return count
+
+
+def _process_excel_smartart_text_runs(text_runs, namespaces: dict) -> dict:
+    """Process text runs for Excel SmartArt and preserve exact spacing and formatting."""
+    merged_text = ""
+    run_texts = []
+    run_styles = []
+    run_lengths = []
+    
+    for text_run in text_runs:
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node and text_node[0].text is not None:
+            run_text = text_node[0].text
+        else:
+            run_text = ""
+        
+        # Preserve exact text content including spaces
+        merged_text += run_text
+        run_texts.append(run_text)
+        run_lengths.append(len(run_text))
+        run_styles.append(_extract_excel_smartart_run_style(text_run, namespaces))
+    
+    return {
+        'merged_text': merged_text,
+        'run_texts': run_texts,
+        'run_styles': run_styles,
+        'run_lengths': run_lengths
+    }
+
+
+def _extract_excel_smartart_run_style(text_run, namespaces: dict) -> dict:
+    """Extract comprehensive style information from a text run in Excel SmartArt."""
+    style_info = {}
+    
+    try:
+        rpr = text_run.xpath('./a:rPr', namespaces=namespaces)
+        if rpr:
+            rpr_element = rpr[0]
+            
+            # Font size
+            sz = rpr_element.get('sz')
+            if sz:
+                style_info['font_size'] = sz
+            
+            # Bold
+            b = rpr_element.get('b')
+            if b:
+                style_info['bold'] = b
+            
+            # Italic
+            i = rpr_element.get('i')
+            if i:
+                style_info['italic'] = i
+            
+            # Underline
+            u = rpr_element.get('u')
+            if u:
+                style_info['underline'] = u
+            
+            # Font family
+            latin = rpr_element.xpath('./a:latin', namespaces=namespaces)
+            if latin:
+                style_info['font_family'] = latin[0].get('typeface')
+            
+            # Font color
+            solid_fill = rpr_element.xpath('./a:solidFill/a:srgbClr', namespaces=namespaces)
+            if solid_fill:
+                style_info['color'] = solid_fill[0].get('val')
+            
+            # Strike through
+            strike = rpr_element.get('strike')
+            if strike:
+                style_info['strike'] = strike
+                
+    except Exception as e:
+        app_logger.warning(f"Failed to extract Excel SmartArt style information: {e}")
+    
+    return style_info
 
 
 def sanitize_sheet_name(sheet_name):
@@ -370,10 +547,15 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                 if sanitized_name != translated_sheet_name.replace("␊", "\n").replace("␍", "\r"):
                     app_logger.warning(f"Sheet name '{translated_sheet_name}' contains invalid characters and was changed to '{sanitized_name}'")
 
-    # Organize data by sheet
+    # Organize data by sheet (excluding SmartArt items)
     sheets_data = {}
+    smartart_items = []
+    
     for cell_info in original_data:
         if cell_info.get("type") == "sheet_name":
+            continue
+        elif cell_info.get("type") == "excel_smartart":
+            smartart_items.append(cell_info)
             continue
             
         count = str(cell_info["count_src"])
@@ -653,7 +835,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                 app_logger.error(f"Error processing sheet {sheet_name}: {str(e)}")
                 continue
         
-        # Save the workbook
+        # Save the workbook first
         result_folder = os.path.join('result')
         os.makedirs(result_folder, exist_ok=True)
         
@@ -664,7 +846,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         
         try:
             wb.save(result_path)
-            app_logger.info(f"Translated Excel saved to: {result_path}")
+            app_logger.info(f"Translated Excel (without SmartArt) saved to: {result_path}")
         except Exception as e:
             app_logger.error(f"Failed to save translated Excel: {str(e)}")
             # Try saving with a different filename if there was an error
@@ -686,5 +868,285 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
             app.quit()
         except Exception as e:
             app_logger.error(f"Error closing workbook or quitting app: {str(e)}")
-            
+    
+    # Now process SmartArt if there are any SmartArt items
+    if smartart_items:
+        app_logger.info(f"Processing {len(smartart_items)} SmartArt translations")
+        try:
+            result_path = _apply_excel_smartart_translations_to_file(result_path, smartart_items, translations)
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translations: {str(e)}")
+    
     return result_path
+
+
+def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: List[Dict], translations: Dict) -> str:
+    """Apply translations to Excel SmartArt diagrams."""
+    if not smartart_items:
+        return file_path
+    
+    app_logger.info(f"Processing {len(smartart_items)} Excel SmartArt translations")
+    
+    namespaces = {
+        'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
+        'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+        'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram',
+        'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    }
+    
+    # Group items by diagram_index
+    items_by_diagram = {}
+    for item in smartart_items:
+        diagram_index = item['diagram_index']
+        if diagram_index not in items_by_diagram:
+            items_by_diagram[diagram_index] = []
+        items_by_diagram[diagram_index].append(item)
+    
+    # Create a temporary file to modify the Excel
+    temp_excel_path = file_path + ".tmp"
+    
+    try:
+        with ZipFile(file_path, 'r') as original_zip:
+            with ZipFile(temp_excel_path, 'w') as new_zip:
+                # Copy all files except diagram files that we need to modify
+                modified_files = set()
+                
+                for diagram_index, items in items_by_diagram.items():
+                    drawing_path = f"xl/diagrams/drawing{diagram_index}.xml"
+                    data_path = f"xl/diagrams/data{diagram_index}.xml"
+                    modified_files.add(drawing_path)
+                    modified_files.add(data_path)
+                
+                # Copy unchanged files
+                for item in original_zip.infolist():
+                    if item.filename not in modified_files:
+                        try:
+                            new_zip.writestr(item, original_zip.read(item.filename))
+                        except Exception as e:
+                            app_logger.warning(f"Failed to copy file {item.filename}: {e}")
+                
+                # Process and add modified files
+                for diagram_index, items in items_by_diagram.items():
+                    drawing_path = f"xl/diagrams/drawing{diagram_index}.xml"
+                    data_path = f"xl/diagrams/data{diagram_index}.xml"
+                    
+                    # Process drawing file
+                    if drawing_path in original_zip.namelist():
+                        try:
+                            drawing_xml = original_zip.read(drawing_path)
+                            drawing_tree = etree.fromstring(drawing_xml)
+                            
+                            for item in items:
+                                count = str(item['count_src'])
+                                translated_text = translations.get(count)
+                                
+                                if not translated_text:
+                                    app_logger.warning(f"Missing translation for Excel SmartArt count {count}")
+                                    continue
+                                
+                                translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                                
+                                # Find the shape using shape_index
+                                shapes_with_txbody = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+                                
+                                if item['shape_index'] < len(shapes_with_txbody):
+                                    shape = shapes_with_txbody[item['shape_index']]
+                                    
+                                    # Find the txBody
+                                    tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                                    if item['tx_body_index'] < len(tx_bodies):
+                                        tx_body = tx_bodies[item['tx_body_index']]
+                                        
+                                        # Find the paragraph
+                                        paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                                        if item['paragraph_index'] < len(paragraphs):
+                                            paragraph = paragraphs[item['paragraph_index']]
+                                            _distribute_excel_smartart_text_to_runs(paragraph, translated_text, item, namespaces)
+                                            app_logger.info(f"Updated Excel SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}")
+                            
+                            # Write modified drawing
+                            modified_drawing_xml = etree.tostring(drawing_tree, xml_declaration=True, 
+                                                                 encoding="UTF-8", standalone="yes")
+                            new_zip.writestr(drawing_path, modified_drawing_xml)
+                            app_logger.info(f"Saved modified Excel SmartArt drawing file: {drawing_path}")
+                            
+                        except Exception as e:
+                            app_logger.error(f"Failed to apply Excel SmartArt translation to {drawing_path}: {e}")
+                            # Use original file as fallback
+                            try:
+                                new_zip.writestr(drawing_path, original_zip.read(drawing_path))
+                            except Exception as fallback_e:
+                                app_logger.error(f"Failed to copy original drawing file as fallback: {fallback_e}")
+                    
+                    # Process data file
+                    if data_path in original_zip.namelist():
+                        try:
+                            data_xml = original_zip.read(data_path)
+                            data_tree = etree.fromstring(data_xml)
+                            
+                            for item in items:
+                                count = str(item['count_src'])
+                                translated_text = translations.get(count)
+                                
+                                if not translated_text:
+                                    continue
+                                
+                                translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                                original_text = item.get('original_text', '')
+                                
+                                # Find all dgm:pt elements that contain text
+                                points = data_tree.xpath('.//dgm:pt[.//a:t]', namespaces=namespaces)
+                                
+                                # Try to find matching text by content
+                                for point in points:
+                                    point_paragraphs = point.xpath('.//a:p', namespaces=namespaces)
+                                    for p_idx, point_paragraph in enumerate(point_paragraphs):
+                                        # Get current text from this paragraph
+                                        point_text_runs = point_paragraph.xpath('.//a:r', namespaces=namespaces)
+                                        if point_text_runs:
+                                            point_run_info = _process_excel_smartart_text_runs(point_text_runs, namespaces)
+                                            # If the original text matches, update this paragraph
+                                            if point_run_info['merged_text'].strip() == original_text.strip():
+                                                _distribute_excel_smartart_text_to_runs(point_paragraph, translated_text, item, namespaces)
+                                                app_logger.info(f"Updated Excel SmartArt data text for diagram {diagram_index}: '{original_text}' -> '{translated_text[:50]}...'")
+                                                break
+                            
+                            # Write modified data
+                            modified_data_xml = etree.tostring(data_tree, xml_declaration=True, 
+                                                              encoding="UTF-8", standalone="yes")
+                            new_zip.writestr(data_path, modified_data_xml)
+                            app_logger.info(f"Saved modified Excel SmartArt data file: {data_path}")
+                            
+                        except Exception as e:
+                            app_logger.error(f"Failed to apply Excel SmartArt translation to {data_path}: {e}")
+                            # Use original file as fallback
+                            try:
+                                new_zip.writestr(data_path, original_zip.read(data_path))
+                            except Exception as fallback_e:
+                                app_logger.error(f"Failed to copy original data file as fallback: {fallback_e}")
+        
+        # Replace original file with modified file
+        shutil.move(temp_excel_path, file_path)
+        app_logger.info(f"Excel SmartArt translations applied successfully")
+        return file_path
+        
+    except Exception as e:
+        app_logger.error(f"Failed to apply Excel SmartArt translations: {e}")
+        # Clean up temporary file if it exists
+        if os.path.exists(temp_excel_path):
+            try:
+                os.remove(temp_excel_path)
+            except:
+                pass
+        return file_path
+
+
+def _distribute_excel_smartart_text_to_runs(parent_element, translated_text: str, item: Dict, namespaces: Dict):
+    """Distribute translated text across multiple runs in Excel SmartArt, preserving spacing and structure."""
+    text_runs = parent_element.xpath('.//a:r', namespaces=namespaces)
+    
+    if not text_runs:
+        return
+    
+    original_run_texts = item.get('run_texts', [])
+    original_run_lengths = item.get('run_lengths', [])
+    
+    # If we don't have the original structure, fallback to simple distribution
+    if not original_run_texts or len(original_run_texts) != len(text_runs):
+        app_logger.warning(f"Mismatch in Excel SmartArt run structure, using simple distribution")
+        _simple_excel_smartart_text_distribution(text_runs, translated_text, namespaces)
+        return
+    
+    # Use intelligent distribution based on original structure
+    _intelligent_excel_smartart_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
+
+
+def _simple_excel_smartart_text_distribution(text_runs, translated_text: str, namespaces: Dict):
+    """Simple fallback distribution method for Excel SmartArt."""
+    if not text_runs:
+        return
+    
+    # Put all translated text in the first run, clear others
+    for i, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node:
+            if i == 0:
+                text_node[0].text = translated_text
+            else:
+                text_node[0].text = ""
+
+
+def _intelligent_excel_smartart_text_distribution(text_runs, translated_text: str, original_run_texts: List[str], 
+                                                 original_run_lengths: List[int], namespaces: Dict):
+    """Intelligent text distribution for Excel SmartArt that preserves spacing and structure."""
+    
+    # Calculate total length excluding empty runs
+    meaningful_runs = [(i, length) for i, length in enumerate(original_run_lengths) if length > 0]
+    total_meaningful_length = sum(length for _, length in meaningful_runs)
+    
+    if total_meaningful_length == 0:
+        _simple_excel_smartart_text_distribution(text_runs, translated_text, namespaces)
+        return
+    
+    # Handle special cases for spacing
+    translated_chars = list(translated_text)
+    char_index = 0
+    
+    for run_index, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if not text_node:
+            continue
+            
+        original_text = original_run_texts[run_index] if run_index < len(original_run_texts) else ""
+        original_length = original_run_lengths[run_index] if run_index < len(original_run_lengths) else 0
+        
+        # Handle empty or whitespace-only runs
+        if original_length == 0 or not original_text.strip():
+            # If original run was empty or whitespace, keep it empty
+            # unless it was purely whitespace and we need to preserve spacing
+            if original_text and not original_text.strip():
+                # This run contained only whitespace, try to preserve some spacing
+                if char_index < len(translated_chars) and translated_chars[char_index] == ' ':
+                    text_node[0].text = ' '
+                    char_index += 1
+                else:
+                    text_node[0].text = ""
+            else:
+                text_node[0].text = ""
+            continue
+        
+        # Calculate how much text this run should get
+        if run_index == len(text_runs) - 1:
+            # Last meaningful run gets all remaining text
+            remaining_text = ''.join(translated_chars[char_index:])
+            text_node[0].text = remaining_text
+        else:
+            # Calculate proportional distribution
+            proportion = original_length / total_meaningful_length
+            target_length = max(1, int(len(translated_text) * proportion))
+            
+            # Try to break at word boundaries
+            run_text = ""
+            chars_taken = 0
+            
+            while chars_taken < target_length and char_index < len(translated_chars):
+                char = translated_chars[char_index]
+                run_text += char
+                chars_taken += 1
+                char_index += 1
+                
+                # If we've reached the target length, try to extend to a word boundary
+                if chars_taken >= target_length and char_index < len(translated_chars):
+                    # Look ahead for word boundary
+                    if char != ' ' and translated_chars[char_index] != ' ':
+                        # Continue until we find a space or reach the end
+                        while (char_index < len(translated_chars) and 
+                               translated_chars[char_index] != ' ' and 
+                               chars_taken < target_length * 1.5):  # Don't go too far
+                            char = translated_chars[char_index]
+                            run_text += char
+                            chars_taken += 1
+                            char_index += 1
+                    break
+            
+            text_node[0].text = run_text

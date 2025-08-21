@@ -1,3 +1,4 @@
+# pipeline/ppt_translation_pipeline.py
 import json
 import os
 from lxml import etree
@@ -23,12 +24,14 @@ def extract_ppt_content_to_json(file_path: str) -> str:
     content_data = []
     count = 0
     
-    # Complete namespace definitions
+    # Complete namespace definitions including SmartArt
     namespaces = {
         'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
         'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
         'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-        'c': 'http://schemas.openxmlformats.org/drawingml/2006/chart'
+        'c': 'http://schemas.openxmlformats.org/drawingml/2006/chart',
+        'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+        'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
     }
 
     try:
@@ -59,6 +62,9 @@ def extract_ppt_content_to_json(file_path: str) -> str:
                     app_logger.error(f"Failed to process slide {slide_index}: {e}")
                     continue
 
+            # Extract text from SmartArt diagrams
+            count = _extract_smartart(pptx, namespaces, content_data, count)
+
     except Exception as e:
         app_logger.error(f"Failed to process PPTX content: {e}")
         raise
@@ -79,6 +85,77 @@ def extract_ppt_content_to_json(file_path: str) -> str:
     except Exception as e:
         app_logger.error(f"Failed to save JSON file: {e}")
         raise
+
+def _extract_smartart(pptx, namespaces: Dict, content_data: List, count: int) -> int:
+    """Extract text from SmartArt diagrams."""
+    # Find all diagram drawing files
+    diagram_drawings = [name for name in pptx.namelist() 
+                       if name.startswith('ppt/diagrams/drawing') and name.endswith('.xml')]
+    diagram_drawings.sort()
+    
+    app_logger.info(f"Found {len(diagram_drawings)} SmartArt diagram files")
+    
+    for drawing_path in diagram_drawings:
+        try:
+            # Extract diagram number from path (e.g., drawing1.xml -> 1)
+            diagram_match = re.search(r'drawing(\d+)\.xml', drawing_path)
+            if not diagram_match:
+                continue
+            
+            diagram_index = int(diagram_match.group(1))
+            
+            drawing_xml = pptx.read(drawing_path)
+            drawing_tree = etree.fromstring(drawing_xml)
+            
+            # Find all shapes with text content in SmartArt
+            shapes = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+            
+            for shape_index, shape in enumerate(shapes):
+                model_id = shape.get('modelId', '')
+                
+                # Get text content from txBody elements
+                tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                
+                for tx_body_index, tx_body in enumerate(tx_bodies):
+                    paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                    
+                    for p_index, paragraph in enumerate(paragraphs):
+                        text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+                        
+                        if not text_runs:
+                            continue
+                        
+                        # Process runs and preserve exact spacing
+                        run_info = _process_text_runs(text_runs, namespaces)
+                        
+                        if not run_info['merged_text'].strip():
+                            continue
+                        
+                        # Only process if there's meaningful text content and it should be translated
+                        if should_translate(run_info['merged_text']):
+                            count += 1
+                            content_data.append({
+                                "count_src": count,
+                                "diagram_index": diagram_index,
+                                "shape_index": shape_index,
+                                "tx_body_index": tx_body_index,
+                                "paragraph_index": p_index,
+                                "model_id": model_id,
+                                "type": "smartart",
+                                "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                                "run_texts": run_info['run_texts'],
+                                "run_styles": run_info['run_styles'],
+                                "run_lengths": run_info['run_lengths'],
+                                "drawing_path": drawing_path,
+                                "original_text": run_info['merged_text'],  # Store original text for data.xml matching
+                                "xpath": f".//dsp:sp[{shape_index + 1}]//dsp:txBody[{tx_body_index + 1}]//a:p[{p_index + 1}]"
+                            })
+                        
+        except Exception as e:
+            app_logger.error(f"Failed to extract SmartArt from {drawing_path}: {e}")
+            continue
+    
+    return count
 
 def _extract_text_boxes(slide_tree, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
     """Extract text from text boxes, merging runs within the same paragraph."""
@@ -413,12 +490,14 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
     temp_folder = os.path.join("temp", filename)
     os.makedirs(temp_folder, exist_ok=True)
 
-    # Define namespaces
+    # Define namespaces including SmartArt
     namespaces = {
         'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
         'p': 'http://schemas.openxmlformats.org/presentationml/2006/main',
         'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships',
-        'c': 'http://schemas.openxmlformats.org/drawingml/2006/chart'
+        'c': 'http://schemas.openxmlformats.org/drawingml/2006/chart',
+        'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+        'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
     }
 
     try:
@@ -430,6 +509,10 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
             notes_slides = [name for name in pptx.namelist() 
                           if name.startswith('ppt/notesSlides/notesSlide') and name.endswith('.xml')]
             notes_slides.sort()
+            
+            # Get SmartArt diagram files
+            diagram_files = [name for name in pptx.namelist()
+                           if name.startswith('ppt/diagrams/') and name.endswith('.xml')]
 
             # Process each slide
             for slide_index, slide_path in enumerate(slides, start=1):
@@ -438,7 +521,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     slide_tree = etree.fromstring(slide_xml)
                     
                     # Get items for this slide
-                    slide_items = [item for item in original_data if item['slide_index'] == slide_index]
+                    slide_items = [item for item in original_data if item.get('slide_index') == slide_index]
                     
                     # Apply translations to slide
                     _apply_translations_to_slide(slide_tree, slide_items, translations, namespaces)
@@ -463,7 +546,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     
                     # Get notes items for this slide
                     notes_items = [item for item in original_data 
-                                 if item['slide_index'] == slide_index and item['type'] == 'notes']
+                                 if item.get('slide_index') == slide_index and item['type'] == 'notes']
                     
                     if notes_items:
                         _apply_notes_translations(notes_tree, notes_items, translations, namespaces)
@@ -480,8 +563,13 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     app_logger.error(f"Failed to process notes for slide {slide_index}: {e}")
                     continue
 
+            # Process SmartArt diagrams
+            smartart_items = [item for item in original_data if item['type'] == 'smartart']
+            if smartart_items:
+                _apply_smartart_translations(pptx, smartart_items, translations, temp_folder, namespaces)
+
             # Create final PowerPoint file
-            _create_final_pptx(file_path, result_path, temp_folder, slides, notes_slides)
+            _create_final_pptx(file_path, result_path, temp_folder, slides, notes_slides, diagram_files)
             
     except Exception as e:
         app_logger.error(f"Failed to write translated content: {e}")
@@ -489,6 +577,119 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
 
     app_logger.info(f"Translated PowerPoint saved to: {result_path}")
     return result_path
+
+def _apply_smartart_translations(pptx, smartart_items: List[Dict], translations: Dict, 
+                                temp_folder: str, namespaces: Dict):
+    """Apply translations to SmartArt diagrams."""
+    if not smartart_items:
+        return
+    
+    app_logger.info(f"Processing {len(smartart_items)} SmartArt translations")
+    
+    # Group items by diagram_index
+    items_by_diagram = {}
+    for item in smartart_items:
+        diagram_index = item['diagram_index']
+        if diagram_index not in items_by_diagram:
+            items_by_diagram[diagram_index] = []
+        items_by_diagram[diagram_index].append(item)
+    
+    for diagram_index, items in items_by_diagram.items():
+        drawing_path = f"ppt/diagrams/drawing{diagram_index}.xml"
+        data_path = f"ppt/diagrams/data{diagram_index}.xml"
+        
+        # Process drawing file
+        try:
+            if drawing_path in pptx.namelist():
+                drawing_xml = pptx.read(drawing_path)
+                drawing_tree = etree.fromstring(drawing_xml)
+                
+                for item in items:
+                    count = str(item['count_src'])
+                    translated_text = translations.get(count)
+                    
+                    if not translated_text:
+                        app_logger.warning(f"Missing translation for SmartArt count {count}")
+                        continue
+                    
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    
+                    # Find the shape using shape_index
+                    shapes_with_txbody = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+                    
+                    if item['shape_index'] < len(shapes_with_txbody):
+                        shape = shapes_with_txbody[item['shape_index']]
+                        
+                        # Find the txBody
+                        tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                        if item['tx_body_index'] < len(tx_bodies):
+                            tx_body = tx_bodies[item['tx_body_index']]
+                            
+                            # Find the paragraph
+                            paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                            if item['paragraph_index'] < len(paragraphs):
+                                paragraph = paragraphs[item['paragraph_index']]
+                                _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
+                                app_logger.info(f"Updated drawing text for diagram {diagram_index}, shape {item['shape_index']}")
+                
+                # Save modified drawing
+                modified_drawing_path = os.path.join(temp_folder, drawing_path)
+                os.makedirs(os.path.dirname(modified_drawing_path), exist_ok=True)
+                
+                with open(modified_drawing_path, "wb") as modified_drawing:
+                    modified_drawing.write(etree.tostring(drawing_tree, xml_declaration=True, 
+                                                        encoding="UTF-8", standalone="yes"))
+                app_logger.info(f"Saved modified drawing file: {drawing_path}")
+                                                        
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translation to {drawing_path}: {e}")
+            continue
+        
+        # Process corresponding data file
+        try:
+            if data_path in pptx.namelist():
+                data_xml = pptx.read(data_path)
+                data_tree = etree.fromstring(data_xml)
+                
+                for item in items:
+                    count = str(item['count_src'])
+                    translated_text = translations.get(count)
+                    
+                    if not translated_text:
+                        continue
+                    
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    original_text = item.get('original_text', '')
+                    
+                    # Find all dgm:pt elements that contain text
+                    points = data_tree.xpath('.//dgm:pt[.//a:t]', namespaces=namespaces)
+                    
+                    # Try to find matching text by content
+                    for point in points:
+                        point_paragraphs = point.xpath('.//a:p', namespaces=namespaces)
+                        for p_idx, point_paragraph in enumerate(point_paragraphs):
+                            # Get current text from this paragraph
+                            point_text_runs = point_paragraph.xpath('.//a:r', namespaces=namespaces)
+                            if point_text_runs:
+                                point_run_info = _process_text_runs(point_text_runs, namespaces)
+                                # If the original text matches, update this paragraph
+                                if point_run_info['merged_text'].strip() == original_text.strip():
+                                    _distribute_text_to_runs(point_paragraph, translated_text, item, namespaces)
+                                    app_logger.info(f"Updated data text for diagram {diagram_index}: '{original_text}' -> '{translated_text[:50]}...'")
+                                    break
+                
+                # Save modified data
+                modified_data_path = os.path.join(temp_folder, data_path)
+                os.makedirs(os.path.dirname(modified_data_path), exist_ok=True)
+                
+                with open(modified_data_path, "wb") as modified_data:
+                    modified_data.write(etree.tostring(data_tree, xml_declaration=True, 
+                                                     encoding="UTF-8", standalone="yes"))
+                app_logger.info(f"Saved modified data file: {data_path}")
+                                                     
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translation to {data_path}: {e}")
+            continue
 
 def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translations: Dict, namespaces: Dict):
     """Apply translations to a slide tree."""
@@ -732,13 +933,15 @@ def _apply_notes_translations(notes_tree, notes_items: List[Dict], translations:
             app_logger.error(f"Failed to apply notes translation for count {count}: {e}")
 
 def _create_final_pptx(original_path: str, result_path: str, temp_folder: str, 
-                      slides: List[str], notes_slides: List[str]):
+                      slides: List[str], notes_slides: List[str], diagram_files: List[str]):
     """Create the final translated PowerPoint file."""
     with ZipFile(original_path, 'r') as original_pptx:
         with ZipFile(result_path, 'w') as new_pptx:
-            # Copy all files except slides and notes that we've modified
+            # Copy all files except slides, notes, and diagrams that we've modified
+            exclude_files = set(slides + notes_slides + diagram_files)
+            
             for item in original_pptx.infolist():
-                if item.filename not in slides and item.filename not in notes_slides:
+                if item.filename not in exclude_files:
                     try:
                         new_pptx.writestr(item, original_pptx.read(item.filename))
                     except Exception as e:
@@ -783,3 +986,24 @@ def _create_final_pptx(original_path: str, result_path: str, temp_folder: str,
                         new_pptx.writestr(notes, original_pptx.read(notes))
                     except Exception as e:
                         app_logger.error(f"Failed to add original notes: {e}")
+            
+            # Add modified diagram files (or original if no modification)
+            for diagram_file in diagram_files:
+                modified_diagram_path = os.path.join(temp_folder, diagram_file)
+                if os.path.exists(modified_diagram_path):
+                    try:
+                        new_pptx.write(modified_diagram_path, diagram_file)
+                        app_logger.info(f"Added modified SmartArt file: {diagram_file}")
+                    except Exception as e:
+                        app_logger.error(f"Failed to add modified diagram {diagram_file}: {e}")
+                        # Fallback to original diagram
+                        try:
+                            new_pptx.writestr(diagram_file, original_pptx.read(diagram_file))
+                        except Exception as fallback_e:
+                            app_logger.error(f"Failed to add original diagram as fallback: {fallback_e}")
+                else:
+                    # Use original diagram if no modified version exists
+                    try:
+                        new_pptx.writestr(diagram_file, original_pptx.read(diagram_file))
+                    except Exception as e:
+                        app_logger.error(f"Failed to add original diagram: {e}")

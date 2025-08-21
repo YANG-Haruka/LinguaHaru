@@ -1,4 +1,4 @@
-# word_translation_pipeline.py
+# pipeline/word_translation_pipeline.py
 import json
 import os
 import re
@@ -50,7 +50,7 @@ def extract_word_content_to_json(file_path):
                     with open(filepath, 'rb') as f:
                         header_footer_files[f'word/{filename}'] = f.read()
 
-        # Complete namespaces including all possible schemas
+        # Complete namespaces including all possible schemas and SmartArt
         namespaces = {
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
@@ -65,7 +65,9 @@ def extract_word_content_to_json(file_path):
             'wpc': 'http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas',
             'wpg': 'http://schemas.microsoft.com/office/word/2010/wordprocessingGroup',
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
-            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml'
+            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
+            'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
         }
         
         document_tree = etree.fromstring(document_xml)
@@ -91,6 +93,15 @@ def extract_word_content_to_json(file_path):
                 numbering_item["id"] = item_id
                 numbering_item["count_src"] = item_id
                 content_data.append(numbering_item)
+        
+        # Extract SmartArt content using ZipFile object
+        with ZipFile(file_path, 'r') as docx:
+            smartart_items = extract_smartart_content(docx, namespaces)
+            for smartart_item in smartart_items:
+                item_id += 1
+                smartart_item["id"] = item_id
+                smartart_item["count_src"] = item_id
+                content_data.append(smartart_item)
         
         # Process main document content
         item_id = process_document_content(
@@ -130,6 +141,164 @@ def extract_word_content_to_json(file_path):
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         raise e
+
+def extract_smartart_content(docx, namespaces):
+    """Extract translatable content from SmartArt diagrams in Word document"""
+    smartart_items = []
+    
+    try:
+        # Find all diagram drawing files
+        diagram_drawings = [name for name in docx.namelist() 
+                           if name.startswith('word/diagrams/drawing') and name.endswith('.xml')]
+        diagram_drawings.sort()
+        
+        app_logger.info(f"Found {len(diagram_drawings)} SmartArt diagram files in Word document")
+        
+        count = 0
+        
+        for drawing_path in diagram_drawings:
+            try:
+                # Extract diagram number from path (e.g., drawing1.xml -> 1)
+                diagram_match = re.search(r'drawing(\d+)\.xml', drawing_path)
+                if not diagram_match:
+                    continue
+                
+                diagram_index = int(diagram_match.group(1))
+                
+                drawing_xml = docx.read(drawing_path)
+                drawing_tree = etree.fromstring(drawing_xml)
+                
+                # Find all shapes with text content in SmartArt
+                shapes = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+                
+                for shape_index, shape in enumerate(shapes):
+                    model_id = shape.get('modelId', '')
+                    
+                    # Get text content from txBody elements
+                    tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                    
+                    for tx_body_index, tx_body in enumerate(tx_bodies):
+                        paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                        
+                        for p_index, paragraph in enumerate(paragraphs):
+                            text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+                            
+                            if not text_runs:
+                                continue
+                            
+                            # Process runs and preserve exact spacing
+                            run_info = process_smartart_text_runs(text_runs, namespaces)
+                            
+                            if not run_info['merged_text'].strip():
+                                continue
+                            
+                            # Only process if there's meaningful text content and it should be translated
+                            if should_translate_enhanced(run_info['merged_text']):
+                                count += 1
+                                smartart_item = {
+                                    "type": "smartart",
+                                    "diagram_index": diagram_index,
+                                    "shape_index": shape_index,
+                                    "tx_body_index": tx_body_index,
+                                    "paragraph_index": p_index,
+                                    "model_id": model_id,
+                                    "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                                    "run_texts": run_info['run_texts'],
+                                    "run_styles": run_info['run_styles'],
+                                    "run_lengths": run_info['run_lengths'],
+                                    "drawing_path": drawing_path,
+                                    "original_text": run_info['merged_text'],  # Store original text for data.xml matching
+                                    "xpath": f".//dsp:sp[{shape_index + 1}]//dsp:txBody[{tx_body_index + 1}]//a:p[{p_index + 1}]"
+                                }
+                                smartart_items.append(smartart_item)
+                                app_logger.debug(f"Extracted SmartArt text: '{run_info['merged_text'][:50]}...'")
+                            
+            except Exception as e:
+                app_logger.error(f"Failed to extract SmartArt from {drawing_path}: {e}")
+                continue
+        
+        app_logger.info(f"Extracted {len(smartart_items)} translatable SmartArt text items")
+        
+    except Exception as e:
+        app_logger.error(f"Error extracting SmartArt content: {e}")
+    
+    return smartart_items
+
+def process_smartart_text_runs(text_runs, namespaces):
+    """Process SmartArt text runs and preserve exact spacing and formatting"""
+    merged_text = ""
+    run_texts = []
+    run_styles = []
+    run_lengths = []
+    
+    for text_run in text_runs:
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node and text_node[0].text is not None:
+            run_text = text_node[0].text
+        else:
+            run_text = ""
+        
+        # Preserve exact text content including spaces
+        merged_text += run_text
+        run_texts.append(run_text)
+        run_lengths.append(len(run_text))
+        run_styles.append(extract_smartart_run_style(text_run, namespaces))
+    
+    return {
+        'merged_text': merged_text,
+        'run_texts': run_texts,
+        'run_styles': run_styles,
+        'run_lengths': run_lengths
+    }
+
+def extract_smartart_run_style(text_run, namespaces):
+    """Extract comprehensive style information from a SmartArt text run"""
+    style_info = {}
+    
+    try:
+        rpr = text_run.xpath('./a:rPr', namespaces=namespaces)
+        if rpr:
+            rpr_element = rpr[0]
+            
+            # Font size
+            sz = rpr_element.get('sz')
+            if sz:
+                style_info['font_size'] = sz
+            
+            # Bold
+            b = rpr_element.get('b')
+            if b:
+                style_info['bold'] = b
+            
+            # Italic
+            i = rpr_element.get('i')
+            if i:
+                style_info['italic'] = i
+            
+            # Underline
+            u = rpr_element.get('u')
+            if u:
+                style_info['underline'] = u
+            
+            # Font family
+            latin = rpr_element.xpath('./a:latin', namespaces=namespaces)
+            if latin:
+                style_info['font_family'] = latin[0].get('typeface')
+            
+            # Font color
+            solid_fill = rpr_element.xpath('./a:solidFill/a:srgbClr', namespaces=namespaces)
+            if solid_fill:
+                style_info['color'] = solid_fill[0].get('val')
+            
+            # Strike through
+            strike = rpr_element.get('strike')
+            if strike:
+                style_info['strike'] = strike
+                
+    except Exception as e:
+        app_logger.warning(f"Failed to extract SmartArt style information: {e}")
+    
+    return style_info
 
 def parse_styles_xml(styles_xml, namespaces):
     """Parse styles.xml to understand style definitions"""
@@ -1976,7 +2145,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             docx.extractall(temp_dir)
     
     try:
-        # Complete namespaces
+        # Complete namespaces including SmartArt
         namespaces = {
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
@@ -1991,7 +2160,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             'wpc': 'http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas',
             'wpg': 'http://schemas.microsoft.com/office/word/2010/wordprocessingGroup',
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
-            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml'
+            'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
+            'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
         }
         
         # Load and update main document
@@ -2021,6 +2192,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                         hf_content = f.read()
                     header_footer_trees[f'word/{filename}'] = etree.fromstring(hf_content)
         
+        # Apply SmartArt translations
+        update_smartart_with_translations(temp_dir, original_data, translations, namespaces)
+        
         # Get all SDT elements
         all_sdt_elements = document_tree.xpath('.//w:sdt', namespaces=namespaces)
         
@@ -2039,8 +2213,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             if not translated_text:
                 continue
                 
-            # Skip numbering items as they're handled separately
-            if item["type"] in ["numbering_level_text", "numbering_text_node"]:
+            # Skip numbering and SmartArt items as they're handled separately
+            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart"]:
                 continue
                 
             translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
@@ -2118,6 +2292,225 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         # Clean up temp directory
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+def update_smartart_with_translations(temp_dir, original_data, translations, namespaces):
+    """Update SmartArt diagrams with translated content"""
+    # Get SmartArt items
+    smartart_items = [item for item in original_data if item['type'] == 'smartart']
+    
+    if not smartart_items:
+        return
+    
+    app_logger.info(f"Processing {len(smartart_items)} SmartArt translations")
+    
+    # Group items by diagram_index
+    items_by_diagram = {}
+    for item in smartart_items:
+        diagram_index = item['diagram_index']
+        if diagram_index not in items_by_diagram:
+            items_by_diagram[diagram_index] = []
+        items_by_diagram[diagram_index].append(item)
+    
+    for diagram_index, items in items_by_diagram.items():
+        drawing_path = f"word/diagrams/drawing{diagram_index}.xml"
+        data_path = f"word/diagrams/data{diagram_index}.xml"
+        
+        # Process drawing file
+        try:
+            drawing_file_path = os.path.join(temp_dir, drawing_path.replace('/', os.sep))
+            if os.path.exists(drawing_file_path):
+                with open(drawing_file_path, 'rb') as f:
+                    drawing_xml = f.read()
+                drawing_tree = etree.fromstring(drawing_xml)
+                
+                for item in items:
+                    count = str(item['count_src'])
+                    translated_text = translations.get(count)
+                    
+                    if not translated_text:
+                        app_logger.warning(f"Missing translation for SmartArt count {count}")
+                        continue
+                    
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    
+                    # Find the shape using shape_index
+                    shapes_with_txbody = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+                    
+                    if item['shape_index'] < len(shapes_with_txbody):
+                        shape = shapes_with_txbody[item['shape_index']]
+                        
+                        # Find the txBody
+                        tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                        if item['tx_body_index'] < len(tx_bodies):
+                            tx_body = tx_bodies[item['tx_body_index']]
+                            
+                            # Find the paragraph
+                            paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                            if item['paragraph_index'] < len(paragraphs):
+                                paragraph = paragraphs[item['paragraph_index']]
+                                distribute_smartart_text_to_runs(paragraph, translated_text, item, namespaces)
+                                app_logger.info(f"Updated SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}")
+                
+                # Save modified drawing
+                with open(drawing_file_path, "wb") as f:
+                    f.write(etree.tostring(drawing_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+                app_logger.info(f"Saved modified SmartArt drawing file: {drawing_path}")
+                                                        
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translation to {drawing_path}: {e}")
+            continue
+        
+        # Process corresponding data file
+        try:
+            data_file_path = os.path.join(temp_dir, data_path.replace('/', os.sep))
+            if os.path.exists(data_file_path):
+                with open(data_file_path, 'rb') as f:
+                    data_xml = f.read()
+                data_tree = etree.fromstring(data_xml)
+                
+                for item in items:
+                    count = str(item['count_src'])
+                    translated_text = translations.get(count)
+                    
+                    if not translated_text:
+                        continue
+                    
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    original_text = item.get('original_text', '')
+                    
+                    # Find all dgm:pt elements that contain text
+                    points = data_tree.xpath('.//dgm:pt[.//a:t]', namespaces=namespaces)
+                    
+                    # Try to find matching text by content
+                    for point in points:
+                        point_paragraphs = point.xpath('.//a:p', namespaces=namespaces)
+                        for p_idx, point_paragraph in enumerate(point_paragraphs):
+                            # Get current text from this paragraph
+                            point_text_runs = point_paragraph.xpath('.//a:r', namespaces=namespaces)
+                            if point_text_runs:
+                                point_run_info = process_smartart_text_runs(point_text_runs, namespaces)
+                                # If the original text matches, update this paragraph
+                                if point_run_info['merged_text'].strip() == original_text.strip():
+                                    distribute_smartart_text_to_runs(point_paragraph, translated_text, item, namespaces)
+                                    app_logger.info(f"Updated SmartArt data text for diagram {diagram_index}: '{original_text}' -> '{translated_text[:50]}...'")
+                                    break
+                
+                # Save modified data
+                with open(data_file_path, "wb") as f:
+                    f.write(etree.tostring(data_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+                app_logger.info(f"Saved modified SmartArt data file: {data_path}")
+                                                     
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translation to {data_path}: {e}")
+            continue
+
+def distribute_smartart_text_to_runs(paragraph, translated_text, item, namespaces):
+    """Distribute translated text across SmartArt runs, preserving spacing and structure"""
+    text_runs = paragraph.xpath('.//a:r', namespaces=namespaces)
+    
+    if not text_runs:
+        return
+    
+    original_run_texts = item.get('run_texts', [])
+    original_run_lengths = item.get('run_lengths', [])
+    
+    # If we don't have the original structure, fallback to simple distribution
+    if not original_run_texts or len(original_run_texts) != len(text_runs):
+        app_logger.warning(f"Mismatch in SmartArt run structure, using simple distribution")
+        simple_smartart_text_distribution(text_runs, translated_text, namespaces)
+        return
+    
+    # Use intelligent distribution based on original structure
+    intelligent_smartart_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
+
+def simple_smartart_text_distribution(text_runs, translated_text, namespaces):
+    """Simple fallback distribution method for SmartArt"""
+    if not text_runs:
+        return
+    
+    # Put all translated text in the first run, clear others
+    for i, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if text_node:
+            if i == 0:
+                text_node[0].text = translated_text
+            else:
+                text_node[0].text = ""
+
+def intelligent_smartart_text_distribution(text_runs, translated_text, original_run_texts, 
+                                         original_run_lengths, namespaces):
+    """Intelligent text distribution for SmartArt that preserves spacing and structure"""
+    
+    # Calculate total length excluding empty runs
+    meaningful_runs = [(i, length) for i, length in enumerate(original_run_lengths) if length > 0]
+    total_meaningful_length = sum(length for _, length in meaningful_runs)
+    
+    if total_meaningful_length == 0:
+        simple_smartart_text_distribution(text_runs, translated_text, namespaces)
+        return
+    
+    # Handle special cases for spacing
+    translated_chars = list(translated_text)
+    char_index = 0
+    
+    for run_index, text_run in enumerate(text_runs):
+        text_node = text_run.xpath('./a:t', namespaces=namespaces)
+        if not text_node:
+            continue
+            
+        original_text = original_run_texts[run_index] if run_index < len(original_run_texts) else ""
+        original_length = original_run_lengths[run_index] if run_index < len(original_run_lengths) else 0
+        
+        # Handle empty or whitespace-only runs
+        if original_length == 0 or not original_text.strip():
+            # If original run was empty or whitespace, keep it empty
+            # unless it was purely whitespace and we need to preserve spacing
+            if original_text and not original_text.strip():
+                # This run contained only whitespace, try to preserve some spacing
+                if char_index < len(translated_chars) and translated_chars[char_index] == ' ':
+                    text_node[0].text = ' '
+                    char_index += 1
+                else:
+                    text_node[0].text = ""
+            else:
+                text_node[0].text = ""
+            continue
+        
+        # Calculate how much text this run should get
+        if run_index == len(text_runs) - 1:
+            # Last meaningful run gets all remaining text
+            remaining_text = ''.join(translated_chars[char_index:])
+            text_node[0].text = remaining_text
+        else:
+            # Calculate proportional distribution
+            proportion = original_length / total_meaningful_length
+            target_length = max(1, int(len(translated_text) * proportion))
+            
+            # Try to break at word boundaries
+            run_text = ""
+            chars_taken = 0
+            
+            while chars_taken < target_length and char_index < len(translated_chars):
+                char = translated_chars[char_index]
+                run_text += char
+                chars_taken += 1
+                char_index += 1
+                
+                # If we've reached the target length, try to extend to a word boundary
+                if chars_taken >= target_length and char_index < len(translated_chars):
+                    # Look ahead for word boundary
+                    if char != ' ' and translated_chars[char_index] != ' ':
+                        # Continue until we find a space or reach the end
+                        while (char_index < len(translated_chars) and 
+                               translated_chars[char_index] != ' ' and 
+                               chars_taken < target_length * 1.5):  # Don't go too far
+                            char = translated_chars[char_index]
+                            run_text += char
+                            chars_taken += 1
+                            char_index += 1
+                    break
+            
+            text_node[0].text = run_text
 
 def update_sdt_paragraph_with_enhanced_preservation(item, translated_text, all_sdt_elements, namespaces):
     """Update SDT paragraph with enhanced format preservation"""
@@ -2900,7 +3293,7 @@ def update_paragraph_content_with_fields_enhanced(paragraph, new_text, namespace
             
             key = f"{display_text}_{field_counters[display_text]}"
             field_mapping[key] = field
-            field_counters[display_text] += 1  # 修正了这里的递增逻辑
+            field_counters[display_text] += 1
     
     # For repeated field placeholders that exceed available field info, reuse the first field info
     for placeholder in set(field_placeholders):
@@ -3376,12 +3769,14 @@ def update_json_structure_after_translation(original_json_path, translated_json_
                 "translated": translations_by_id[item_id]
             }
             
-            # Preserve important metadata including TOC structure and all format info
+            # Preserve important metadata including TOC structure, SmartArt, and all format info
             preserve_keys = [
                 "is_heading", "has_numbering", "numbering_info", "is_toc", "toc_info", "toc_structure", 
                 "textbox_type", "textbox_format", "textbox_index", "positioning_info", "paragraph_context",
                 "field_info", "original_pPr", "original_structure", "table_props", "row_props", "cell_props",
-                "paragraph_index", "nesting_level", "sdt_index", "is_toc_sdt", "sdt_props"
+                "paragraph_index", "nesting_level", "sdt_index", "is_toc_sdt", "sdt_props",
+                "diagram_index", "shape_index", "tx_body_index", "model_id", "run_texts", "run_styles", 
+                "run_lengths", "drawing_path", "original_text", "xpath"
             ]
             
             for key in preserve_keys:
