@@ -103,6 +103,7 @@ def translate_online(api_key, messages, model):
     temperature = model_config.get("temperature")
     presence_penalty = model_config.get("presence_penalty")
     frequency_penalty = model_config.get("frequency_penalty")
+    thinking_type = model_config.get("thinking_type")
 
     if not base_url or not api_model:
         app_logger.error(f"Invalid model config: {model}")
@@ -119,7 +120,10 @@ def translate_online(api_key, messages, model):
             "stream": False
         }
         
-        # Only add parameters that are present in the config
+        # Prepare extra_body for non-standard parameters
+        extra_body = {}
+        
+        # Add standard OpenAI parameters directly to params
         if top_p is not None:
             params["top_p"] = top_p
         if temperature is not None:
@@ -128,9 +132,18 @@ def translate_online(api_key, messages, model):
             params["presence_penalty"] = presence_penalty
         if frequency_penalty is not None:
             params["frequency_penalty"] = frequency_penalty
+            
+        # Add non-standard parameters to extra_body
+        if thinking_type is not None:
+            extra_body["thinking_type"] = thinking_type
+        
+        # Add extra_body if there are non-standard parameters
+        if extra_body:
+            params["extra_body"] = extra_body
 
         # Log the messages being sent to the API
         app_logger.debug(f"Sending messages to API: {json.dumps(messages, ensure_ascii=False, indent=2)}")
+        app_logger.debug(f"API parameters: {json.dumps(params, ensure_ascii=False, indent=2)}")
 
         # Send request
         response = client.chat.completions.create(**params)
