@@ -1,4 +1,4 @@
-# pipeline/excel_translation_pipeline_test.py  By AI-Transtools
+# pipeline/excel_translation_pipeline_test_bilingual.py  By AI-Transtools
 import os
 import json
 import re
@@ -325,7 +325,7 @@ def extract_excel_content_to_json(file_path):
                                                     "group_index": group_index,
                                                     "child_path": item_path,
                                                     "value": text_value,
-                                                    "original_value": text_value,
+                                                    "original_value": text_value,  # 保存原始值
                                                     "type": "group_textbox"
                                                 })
                                     except Exception as child_error:
@@ -991,6 +991,42 @@ def sanitize_sheet_name(sheet_name):
     return sanitized_name
 
 
+def _format_bilingual_text(original_text: str, translated_text: str, content_type: str = "cell") -> str:
+    """
+    Format original and translated text for bilingual display.
+    
+    Args:
+        original_text: The original text
+        translated_text: The translated text
+        content_type: Type of content ('cell', 'textbox', 'smartart', 'sheet_name')
+    
+    Returns:
+        Formatted bilingual text
+    """
+    # Clean up text by restoring line breaks
+    original_clean = original_text.replace("␊", "\n").replace("␍", "\r")
+    translated_clean = translated_text.replace("␊", "\n").replace("␍", "\r")
+    
+    # Format based on content type
+    if content_type == "sheet_name":
+        # For sheet names, use "Original (Translation)" format
+        if original_clean.strip() == translated_clean.strip():
+            return original_clean  # No need for duplication if they're the same
+        return f"{original_clean} ({translated_clean})"
+    
+    elif content_type in ["cell", "textbox", "smartart", "drawing"]:
+        # For cells, textboxes, SmartArt, and drawings, use line-separated format
+        if original_clean.strip() == translated_clean.strip():
+            return original_clean  # No need for duplication if they're the same
+        
+        # Use simple line-separated format for all content
+        return f"{original_clean}\n{translated_clean}"
+    
+    else:
+        # Default format
+        return f"{original_clean}\n{translated_clean}"
+
+
 def write_translated_content_to_excel(file_path, original_json_path, translated_json_path):
     # Load JSON data
     with open(original_json_path, "r", encoding="utf-8") as original_file:
@@ -1024,7 +1060,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
     if extra_in_translation:
         app_logger.warning(f"Extra translations for count_src: {sorted(extra_in_translation)}")
     
-    # Collect sheet name translations
+    # Collect sheet name translations with bilingual formatting
     sheet_name_translations = {}
     for cell_info in original_data:
         if cell_info.get("type") == "sheet_name":
@@ -1032,13 +1068,17 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
             original_sheet_name = cell_info["sheet"]
             translated_sheet_name = translations.get(count_src)
             if translated_sheet_name:
+                # Format as bilingual sheet name
+                bilingual_name = _format_bilingual_text(
+                    cell_info["value"], translated_sheet_name, "sheet_name"
+                )
                 # Sanitize the sheet name to avoid invalid characters
-                sanitized_name = sanitize_sheet_name(translated_sheet_name.replace("␊", "\n").replace("␍", "\r"))
+                sanitized_name = sanitize_sheet_name(bilingual_name)
                 sheet_name_translations[original_sheet_name] = sanitized_name
                 
                 # Log if the name was changed
-                if sanitized_name != translated_sheet_name.replace("␊", "\n").replace("␍", "\r"):
-                    app_logger.warning(f"Sheet name '{translated_sheet_name}' contains invalid characters and was changed to '{sanitized_name}'")
+                if sanitized_name != bilingual_name:
+                    app_logger.warning(f"Sheet name '{bilingual_name}' contains invalid characters and was changed to '{sanitized_name}'")
 
     # Organize data by sheet and type
     sheets_data = {}
@@ -1072,14 +1112,19 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
             )
             # 使用原文作为翻译
             translated_value = cell_info['value']
-            
-        translated_value = translated_value.replace("␊", "\n").replace("␍", "\r")
+        
+        # Format as bilingual content
+        bilingual_value = _format_bilingual_text(
+            cell_info['value'], 
+            translated_value, 
+            "cell" if cell_info.get("type") == "cell" else "textbox"
+        )
         
         if cell_info.get("type") == "cell":
             cell_data = {
                 "row": cell_info["row"],
                 "column": cell_info["column"],
-                "value": translated_value,
+                "value": bilingual_value,
                 "is_merged": cell_info.get("is_merged", False),
                 "count_src": count_src,  # 添加count_src用于验证
                 "original_value": cell_info.get("original_value", cell_info["value"])  # 使用保存的原始值
@@ -1095,7 +1140,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
             sheets_data[sheet_name]["cells"].append(cell_data)
         else:
             textbox_data = cell_info.copy()
-            textbox_data["value"] = translated_value
+            textbox_data["value"] = bilingual_value
             textbox_data["original_value"] = cell_info.get("original_value", cell_info["value"])
             sheets_data[sheet_name]["textboxes"].append(textbox_data)
     
@@ -1110,7 +1155,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
     try:
         wb = app.books.open(file_path)
         
-        # Handle sheet renaming
+        # Handle sheet renaming with bilingual names
         original_to_translated_sheet_map = {}
         new_sheet_names = []
         
@@ -1136,17 +1181,17 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
             except Exception as e:
                 app_logger.warning(f"Error temporarily renaming sheet '{original_name}' to '{temp_name}': {str(e)}")
         
-        # Second pass: Rename to final translated names
+        # Second pass: Rename to final bilingual names
         for original_name, new_name in new_sheet_names:
             actual_original_name = temp_names.get(original_name, original_name)
             try:
                 # Skip renaming if the names are identical
                 if actual_original_name == new_name:
-                    app_logger.info(f"Sheet '{original_name}' translation is identical to original, skipping rename")
+                    app_logger.info(f"Sheet '{original_name}' bilingual name is identical to original, skipping rename")
                     continue
                     
                 wb.sheets[actual_original_name].name = new_name
-                app_logger.info(f"Successfully renamed sheet '{original_name}' to '{new_name}'")
+                app_logger.info(f"Successfully renamed sheet '{original_name}' to bilingual name '{new_name}'")
             except Exception as e:
                 app_logger.warning(f"Error renaming sheet '{original_name}' to '{new_name}': {str(e)}")
                 # If renaming failed but we used a temporary name, try to restore the original name
@@ -1168,13 +1213,13 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                 # If rename failed, use the original name
                 updated_sheets_data[sheet_name] = data
         
-        # Process cell and shape content
+        # Process cell and shape content with bilingual formatting
         for sheet_name, data in updated_sheets_data.items():
             try:
                 sheet = wb.sheets[sheet_name]
                 
-                # Process cells - improved approach with validation
-                app_logger.info(f"Processing {len(data['cells'])} cells in sheet '{sheet_name}'")
+                # Process cells - improved approach with validation and bilingual content
+                app_logger.info(f"Processing {len(data['cells'])} cells in sheet '{sheet_name}' with bilingual content")
                 
                 # Sort cells by row and column to ensure proper order
                 cells_to_process = sorted(data["cells"], key=lambda x: (x["row"], x["column"]))
@@ -1192,13 +1237,13 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                 batch_size = 1000
                 for batch_start in range(0, len(cells_to_process), batch_size):
                     batch_end = min(batch_start + batch_size, len(cells_to_process))
-                    app_logger.info(f"Processing cell batch {batch_start//batch_size + 1}/{(len(cells_to_process)-1)//batch_size + 1}")
+                    app_logger.info(f"Processing bilingual cell batch {batch_start//batch_size + 1}/{(len(cells_to_process)-1)//batch_size + 1}")
                     
                     for cell_data in cells_to_process[batch_start:batch_end]:
                         try:
                             row = cell_data["row"]
                             column = cell_data["column"]
-                            value = cell_data["value"]
+                            bilingual_value = cell_data["value"]  # This already contains formatted bilingual content
                             is_merged = cell_data.get("is_merged", False)
                             count_src = cell_data.get("count_src", "unknown")
                             
@@ -1219,38 +1264,23 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                                     row = merge_start_row
                                     column = merge_start_col
                             
-                            # 可选的验证：检查当前单元格值是否符合预期
-                            try:
-                                current_value = sheet.cells(row, column).value
-                                if current_value is not None:
-                                    current_str = str(current_value).replace("\n", "␊").replace("\r", "␍")
-                                    original_str = cell_data.get("original_value", "")
-                                    # 如果当前值与预期的原始值差异很大，记录警告
-                                    if len(current_str) > 0 and len(original_str) > 0:
-                                        if current_str.strip() != original_str.strip():
-                                            app_logger.debug(f"Cell ({row}, {column}) count_src {count_src} current value differs from expected.")
-                                            app_logger.debug(f"Current: '{current_str[:100]}...'")
-                                            app_logger.debug(f"Expected: '{original_str[:100]}...'")
-                            except:
-                                pass  # 忽略验证错误
-                            
-                            # Update the cell
-                            sheet.cells(row, column).value = value
+                            # Update the cell with bilingual content
+                            sheet.cells(row, column).value = bilingual_value
                             successful_updates += 1
                             
                             # 每100个成功更新记录一次进度
                             if successful_updates % 100 == 0:
-                                app_logger.debug(f"Successfully updated {successful_updates} cells in sheet '{sheet_name}'")
+                                app_logger.debug(f"Successfully updated {successful_updates} bilingual cells in sheet '{sheet_name}'")
                             
                         except Exception as cell_error:
                             failed_updates += 1
-                            app_logger.warning(f"Error updating cell ({row}, {column}) count_src {count_src}: {str(cell_error)}")
+                            app_logger.warning(f"Error updating bilingual cell ({row}, {column}) count_src {count_src}: {str(cell_error)}")
                             continue
                 
-                app_logger.info(f"Cell processing completed for sheet '{sheet_name}': {successful_updates} successful, {failed_updates} failed")
+                app_logger.info(f"Bilingual cell processing completed for sheet '{sheet_name}': {successful_updates} successful, {failed_updates} failed")
                 
-                # Process textboxes
-                app_logger.info(f"Processing {len(data['textboxes'])} textboxes in sheet '{sheet_name}'")
+                # Process textboxes with bilingual content
+                app_logger.info(f"Processing {len(data['textboxes'])} textboxes in sheet '{sheet_name}' with bilingual content")
                 
                 # Get all shapes in the sheet
                 try:
@@ -1266,24 +1296,25 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                 textbox_success = 0
                 textbox_failed = 0
                 
-                # Process normal textboxes
+                # Process normal textboxes with bilingual content
                 for textbox in normal_textboxes:
                     try:
                         matched = False
                         shape_index = textbox.get("shape_index")
                         count_src = textbox.get("count_src", "unknown")
+                        bilingual_value = textbox["value"]  # This already contains formatted bilingual content
                         
                         # Method 1: Find by index
                         if shape_index is not None and 0 <= shape_index < len(all_shapes):
                             try:
                                 shape = all_shapes[shape_index]
                                 if hasattr(shape, 'text'):
-                                    shape.text = textbox["value"]
+                                    shape.text = bilingual_value
                                     matched = True
                                     textbox_success += 1
-                                    app_logger.debug(f"Updated textbox by index {shape_index}, count_src {count_src}")
+                                    app_logger.debug(f"Updated bilingual textbox by index {shape_index}, count_src {count_src}")
                             except Exception as e:
-                                app_logger.warning(f"Error updating shape by index {shape_index}, count_src {count_src}: {str(e)}")
+                                app_logger.warning(f"Error updating bilingual shape by index {shape_index}, count_src {count_src}: {str(e)}")
                         
                         # Method 2: Find by unique ID
                         if not matched and textbox.get("unique_shape_id"):
@@ -1296,12 +1327,12 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                                     if 1 <= id_number <= len(same_name_shapes):
                                         shape = same_name_shapes[id_number - 1]
                                         if hasattr(shape, 'text'):
-                                            shape.text = textbox["value"]
+                                            shape.text = bilingual_value
                                             matched = True
                                             textbox_success += 1
-                                            app_logger.debug(f"Updated shape by unique ID: {textbox['unique_shape_id']}, count_src {count_src}")
+                                            app_logger.debug(f"Updated bilingual shape by unique ID: {textbox['unique_shape_id']}, count_src {count_src}")
                             except Exception as e:
-                                app_logger.warning(f"Error updating shape with unique ID {textbox['unique_shape_id']}, count_src {count_src}: {str(e)}")
+                                app_logger.warning(f"Error updating bilingual shape with unique ID {textbox['unique_shape_id']}, count_src {count_src}: {str(e)}")
                         
                         # Method 3: Find by name
                         if not matched:
@@ -1309,27 +1340,29 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                                 for shape in all_shapes:
                                     if shape.name == textbox["shape_name"]:
                                         if hasattr(shape, 'text'):
-                                            shape.text = textbox["value"]
+                                            shape.text = bilingual_value
                                             matched = True
                                             textbox_success += 1
-                                            app_logger.debug(f"Updated shape by name: {textbox['shape_name']}, count_src {count_src}")
+                                            app_logger.debug(f"Updated bilingual shape by name: {textbox['shape_name']}, count_src {count_src}")
                                             break
                             except Exception as e:
-                                app_logger.warning(f"Error updating shape by name {textbox['shape_name']}, count_src {count_src}: {str(e)}")
+                                app_logger.warning(f"Error updating bilingual shape by name {textbox['shape_name']}, count_src {count_src}: {str(e)}")
                         
                         if not matched:
                             textbox_failed += 1
-                            app_logger.warning(f"Could not find shape to update: {textbox.get('shape_name', 'unknown')}, count_src {count_src}")
+                            app_logger.warning(f"Could not find shape to update with bilingual content: {textbox.get('shape_name', 'unknown')}, count_src {count_src}")
                             
                     except Exception as textbox_error:
                         textbox_failed += 1
-                        app_logger.warning(f"Error processing textbox count_src {textbox.get('count_src', 'unknown')}: {str(textbox_error)}")
+                        app_logger.warning(f"Error processing bilingual textbox count_src {textbox.get('count_src', 'unknown')}: {str(textbox_error)}")
                         continue
                 
-                # Process group textboxes with nested path support
+                # Process group textboxes with nested path support and bilingual content
                 for textbox in group_textboxes:
                     try:
                         count_src = textbox.get("count_src", "unknown")
+                        bilingual_value = textbox["value"]  # This already contains formatted bilingual content
+                        
                         # Find the group
                         group_name = textbox.get("group_name")
                         group_index = textbox.get("group_index")
@@ -1383,16 +1416,16 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                             child_item = navigate_to_child(group, child_path)
                             
                             if child_item:
-                                # Try to update text
+                                # Try to update text with bilingual content
                                 updated = False
                                 
                                 # Method 1: TextFrame
                                 try:
                                     if hasattr(child_item, 'TextFrame') and child_item.TextFrame.HasText:
-                                        child_item.TextFrame.Characters().Text = textbox["value"]
+                                        child_item.TextFrame.Characters().Text = bilingual_value
                                         updated = True
                                         textbox_success += 1
-                                        app_logger.debug(f"Updated group '{group_name}' child with path {child_path} using TextFrame, count_src {count_src}")
+                                        app_logger.debug(f"Updated bilingual group '{group_name}' child with path {child_path} using TextFrame, count_src {count_src}")
                                 except:
                                     pass
                                 
@@ -1400,29 +1433,29 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                                 if not updated:
                                     try:
                                         if hasattr(child_item, 'TextFrame2'):
-                                            child_item.TextFrame2.TextRange.Text = textbox["value"]
+                                            child_item.TextFrame2.TextRange.Text = bilingual_value
                                             updated = True
                                             textbox_success += 1
-                                            app_logger.debug(f"Updated group '{group_name}' child with path {child_path} using TextFrame2, count_src {count_src}")
+                                            app_logger.debug(f"Updated bilingual group '{group_name}' child with path {child_path} using TextFrame2, count_src {count_src}")
                                     except:
                                         pass
                                 
                                 if not updated:
                                     textbox_failed += 1
-                                    app_logger.warning(f"Could not update group '{group_name}' child with path {child_path}, count_src {count_src}")
+                                    app_logger.warning(f"Could not update bilingual group '{group_name}' child with path {child_path}, count_src {count_src}")
                             else:
                                 textbox_failed += 1
-                                app_logger.warning(f"Could not navigate to child with path {child_path} in group '{group_name}', count_src {count_src}")
+                                app_logger.warning(f"Could not navigate to child with path {child_path} in group '{group_name}' for bilingual update, count_src {count_src}")
                         else:
                             textbox_failed += 1
-                            app_logger.warning(f"Could not find group '{group_name}' or it lacks GroupItems, count_src {count_src}")
+                            app_logger.warning(f"Could not find group '{group_name}' or it lacks GroupItems for bilingual update, count_src {count_src}")
                     except Exception as e:
                         textbox_failed += 1
                         count_src = textbox.get("count_src", "unknown")
-                        app_logger.warning(f"Error processing group shape, group: {textbox.get('group_name')}, path: {textbox.get('child_path')}, count_src {count_src}: {str(e)}")
+                        app_logger.warning(f"Error processing bilingual group shape, group: {textbox.get('group_name')}, path: {textbox.get('child_path')}, count_src {count_src}: {str(e)}")
                         continue
                 
-                app_logger.info(f"Textbox processing completed for sheet '{sheet_name}': {textbox_success} successful, {textbox_failed} failed")
+                app_logger.info(f"Bilingual textbox processing completed for sheet '{sheet_name}': {textbox_success} successful, {textbox_failed} failed")
                 
             except Exception as e:
                 app_logger.error(f"Error processing sheet {sheet_name}: {str(e)}")
@@ -1464,29 +1497,29 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
     
     # Now process SmartArt if there are any SmartArt items
     if smartart_items:
-        app_logger.info(f"Processing {len(smartart_items)} SmartArt translations")
+        app_logger.info(f"Processing {len(smartart_items)} SmartArt translations with bilingual format")
         try:
-            result_path = _apply_excel_smartart_translations_to_file(result_path, smartart_items, translations)
+            result_path = _apply_excel_smartart_bilingual_translations_to_file(result_path, smartart_items, translations)
         except Exception as e:
-            app_logger.error(f"Failed to apply SmartArt translations: {str(e)}")
+            app_logger.error(f"Failed to apply bilingual SmartArt translations: {str(e)}")
     
     # Now process Drawing if there are any drawing items
     if drawing_items:
-        app_logger.info(f"Processing {len(drawing_items)} drawing translations")
+        app_logger.info(f"Processing {len(drawing_items)} drawing translations with bilingual format")
         try:
-            result_path = _apply_excel_drawing_translations_to_file(result_path, drawing_items, translations)
+            result_path = _apply_excel_drawing_bilingual_translations_to_file(result_path, drawing_items, translations)
         except Exception as e:
-            app_logger.error(f"Failed to apply drawing translations: {str(e)}")
+            app_logger.error(f"Failed to apply bilingual drawing translations: {str(e)}")
     
     return result_path
 
 
-def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: List[Dict], translations: Dict) -> str:
-    """Apply translations to Excel drawing textboxes."""
+def _apply_excel_drawing_bilingual_translations_to_file(file_path: str, drawing_items: List[Dict], translations: Dict) -> str:
+    """Apply bilingual translations to Excel drawing textboxes."""
     if not drawing_items:
         return file_path
     
-    app_logger.info(f"Processing {len(drawing_items)} Excel drawing translations")
+    app_logger.info(f"Processing {len(drawing_items)} Excel drawing translations with bilingual format")
     
     namespaces = {
         'xdr': 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing',
@@ -1541,7 +1574,10 @@ def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: Lis
                                     app_logger.warning(f"Missing translation for Excel drawing count {count}")
                                     continue
                                 
-                                translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                                # Format as bilingual text
+                                bilingual_text = _format_bilingual_text(
+                                    item['value'], translated_text, "drawing"
+                                )
                                 
                                 # Build XPath to find the specific element
                                 try:
@@ -1559,27 +1595,27 @@ def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: Lis
                                     
                                     if paragraphs:
                                         paragraph = paragraphs[0]
-                                        _distribute_drawing_text_to_runs(paragraph, translated_text, item, namespaces)
-                                        app_logger.info(f"Updated Excel drawing text for drawing {drawing_index}, count_src {count}")
+                                        _distribute_drawing_bilingual_text_to_runs(paragraph, bilingual_text, item, namespaces)
+                                        app_logger.info(f"Updated bilingual Excel drawing text for drawing {drawing_index}, count_src {count}")
                                     else:
                                         # Fallback: find by other means
-                                        success = _fallback_drawing_text_update(drawing_tree, item, translated_text, namespaces)
+                                        success = _fallback_drawing_bilingual_text_update(drawing_tree, item, bilingual_text, namespaces)
                                         if success:
-                                            app_logger.info(f"Updated Excel drawing text (fallback) for drawing {drawing_index}, count_src {count}")
+                                            app_logger.info(f"Updated bilingual Excel drawing text (fallback) for drawing {drawing_index}, count_src {count}")
                                         else:
-                                            app_logger.warning(f"Could not find element to update for drawing {drawing_index}, count_src {count}")
+                                            app_logger.warning(f"Could not find element to update for bilingual drawing {drawing_index}, count_src {count}")
                                             
                                 except Exception as e:
-                                    app_logger.error(f"Failed to update drawing text for count_src {count}: {e}")
+                                    app_logger.error(f"Failed to update bilingual drawing text for count_src {count}: {e}")
                             
                             # Write modified drawing
                             modified_drawing_xml = etree.tostring(drawing_tree, xml_declaration=True, 
                                                                  encoding="UTF-8", standalone="yes")
                             new_zip.writestr(drawing_path, modified_drawing_xml)
-                            app_logger.info(f"Saved modified Excel drawing file: {drawing_path}")
+                            app_logger.info(f"Saved modified bilingual Excel drawing file: {drawing_path}")
                             
                         except Exception as e:
-                            app_logger.error(f"Failed to apply Excel drawing translation to {drawing_path}: {e}")
+                            app_logger.error(f"Failed to apply bilingual Excel drawing translation to {drawing_path}: {e}")
                             # Use original file as fallback
                             try:
                                 new_zip.writestr(drawing_path, original_zip.read(drawing_path))
@@ -1588,11 +1624,11 @@ def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: Lis
         
         # Replace original file with modified file
         shutil.move(temp_excel_path, file_path)
-        app_logger.info(f"Excel drawing translations applied successfully")
+        app_logger.info(f"Excel bilingual drawing translations applied successfully")
         return file_path
         
     except Exception as e:
-        app_logger.error(f"Failed to apply Excel drawing translations: {e}")
+        app_logger.error(f"Failed to apply bilingual Excel drawing translations: {e}")
         # Clean up temporary file if it exists
         if os.path.exists(temp_excel_path):
             try:
@@ -1602,8 +1638,8 @@ def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: Lis
         return file_path
 
 
-def _fallback_drawing_text_update(drawing_tree, item: Dict, translated_text: str, namespaces: Dict) -> bool:
-    """Fallback method to find and update drawing text by matching content."""
+def _fallback_drawing_bilingual_text_update(drawing_tree, item: Dict, bilingual_text: str, namespaces: Dict) -> bool:
+    """Fallback method to find and update bilingual drawing text by matching content."""
     try:
         original_text = item.get('original_text', '').strip()
         if not original_text:
@@ -1614,146 +1650,62 @@ def _fallback_drawing_text_update(drawing_tree, item: Dict, translated_text: str
         
         for text_node in all_text_nodes:
             if text_node.text and text_node.text.strip() == original_text:
-                # Found matching text, update it
-                text_node.text = translated_text
-                app_logger.debug(f"Updated text via fallback method: '{original_text}' -> '{translated_text[:50]}...'")
+                # Found matching text, update it with bilingual content
+                text_node.text = bilingual_text
+                app_logger.debug(f"Updated bilingual text via fallback method: '{original_text}' -> bilingual format")
                 return True
         
         # Try partial matching
         for text_node in all_text_nodes:
             if text_node.text and original_text in text_node.text:
-                text_node.text = text_node.text.replace(original_text, translated_text)
-                app_logger.debug(f"Updated text via partial matching: '{original_text}' -> '{translated_text[:50]}...'")
+                text_node.text = text_node.text.replace(original_text, bilingual_text)
+                app_logger.debug(f"Updated bilingual text via partial matching: '{original_text}' -> bilingual format")
                 return True
                 
         return False
         
     except Exception as e:
-        app_logger.warning(f"Error in fallback text update: {e}")
+        app_logger.warning(f"Error in fallback bilingual text update: {e}")
         return False
 
 
-def _distribute_drawing_text_to_runs(parent_element, translated_text: str, item: Dict, namespaces: Dict):
-    """Distribute translated text across multiple runs in Excel drawing, preserving spacing and structure."""
+def _distribute_drawing_bilingual_text_to_runs(parent_element, bilingual_text: str, item: Dict, namespaces: Dict):
+    """Distribute bilingual translated text across multiple runs in Excel drawing, preserving spacing and structure."""
     text_runs = parent_element.xpath('.//a:r', namespaces=namespaces)
     
     if not text_runs:
         # If no runs, try to create one or update direct text
         text_nodes = parent_element.xpath('.//a:t', namespaces=namespaces)
         if text_nodes:
-            text_nodes[0].text = translated_text
+            text_nodes[0].text = bilingual_text
         return
     
-    original_run_texts = item.get('run_texts', [])
-    original_run_lengths = item.get('run_lengths', [])
-    
-    # If we don't have the original structure, fallback to simple distribution
-    if not original_run_texts or len(original_run_texts) != len(text_runs):
-        app_logger.warning(f"Mismatch in Excel drawing run structure, using simple distribution")
-        _simple_drawing_text_distribution(text_runs, translated_text, namespaces)
-        return
-    
-    # Use intelligent distribution based on original structure
-    _intelligent_drawing_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
+    # For bilingual content, we typically want to put all content in the first run
+    # since bilingual text is usually longer and more complex
+    _simple_drawing_bilingual_text_distribution(text_runs, bilingual_text, namespaces)
 
 
-def _simple_drawing_text_distribution(text_runs, translated_text: str, namespaces: Dict):
-    """Simple fallback distribution method for Excel drawing."""
+def _simple_drawing_bilingual_text_distribution(text_runs, bilingual_text: str, namespaces: Dict):
+    """Simple distribution method for bilingual Excel drawing text."""
     if not text_runs:
         return
     
-    # Put all translated text in the first run, clear others
+    # Put all bilingual text in the first run, clear others
     for i, text_run in enumerate(text_runs):
         text_node = text_run.xpath('./a:t', namespaces=namespaces)
         if text_node:
             if i == 0:
-                text_node[0].text = translated_text
+                text_node[0].text = bilingual_text
             else:
                 text_node[0].text = ""
 
 
-def _intelligent_drawing_text_distribution(text_runs, translated_text: str, original_run_texts: List[str], 
-                                         original_run_lengths: List[int], namespaces: Dict):
-    """Intelligent text distribution for Excel drawing that preserves spacing and structure."""
-    
-    # Calculate total length excluding empty runs
-    meaningful_runs = [(i, length) for i, length in enumerate(original_run_lengths) if length > 0]
-    total_meaningful_length = sum(length for _, length in meaningful_runs)
-    
-    if total_meaningful_length == 0:
-        _simple_drawing_text_distribution(text_runs, translated_text, namespaces)
-        return
-    
-    # Handle special cases for spacing
-    translated_chars = list(translated_text)
-    char_index = 0
-    
-    for run_index, text_run in enumerate(text_runs):
-        text_node = text_run.xpath('./a:t', namespaces=namespaces)
-        if not text_node:
-            continue
-            
-        original_text = original_run_texts[run_index] if run_index < len(original_run_texts) else ""
-        original_length = original_run_lengths[run_index] if run_index < len(original_run_lengths) else 0
-        
-        # Handle empty or whitespace-only runs
-        if original_length == 0 or not original_text.strip():
-            # If original run was empty or whitespace, keep it empty
-            # unless it was purely whitespace and we need to preserve spacing
-            if original_text and not original_text.strip():
-                # This run contained only whitespace, try to preserve some spacing
-                if char_index < len(translated_chars) and translated_chars[char_index] == ' ':
-                    text_node[0].text = ' '
-                    char_index += 1
-                else:
-                    text_node[0].text = ""
-            else:
-                text_node[0].text = ""
-            continue
-        
-        # Calculate how much text this run should get
-        if run_index == len(text_runs) - 1:
-            # Last meaningful run gets all remaining text
-            remaining_text = ''.join(translated_chars[char_index:])
-            text_node[0].text = remaining_text
-        else:
-            # Calculate proportional distribution
-            proportion = original_length / total_meaningful_length
-            target_length = max(1, int(len(translated_text) * proportion))
-            
-            # Try to break at word boundaries
-            run_text = ""
-            chars_taken = 0
-            
-            while chars_taken < target_length and char_index < len(translated_chars):
-                char = translated_chars[char_index]
-                run_text += char
-                chars_taken += 1
-                char_index += 1
-                
-                # If we've reached the target length, try to extend to a word boundary
-                if chars_taken >= target_length and char_index < len(translated_chars):
-                    # Look ahead for word boundary
-                    if char != ' ' and translated_chars[char_index] != ' ':
-                        # Continue until we find a space or reach the end
-                        while (char_index < len(translated_chars) and 
-                               translated_chars[char_index] != ' ' and 
-                               chars_taken < target_length * 1.5):  # Don't go too far
-                            char = translated_chars[char_index]
-                            run_text += char
-                            chars_taken += 1
-                            char_index += 1
-                    break
-            
-            text_node[0].text = run_text
-
-
-def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: List[Dict], translations: Dict) -> str:
-    """Apply translations to Excel SmartArt diagrams."""
+def _apply_excel_smartart_bilingual_translations_to_file(file_path: str, smartart_items: List[Dict], translations: Dict) -> str:
+    """Apply bilingual translations to Excel SmartArt diagrams."""
     if not smartart_items:
         return file_path
     
-    app_logger.info(f"Processing {len(smartart_items)} Excel SmartArt translations")
+    app_logger.info(f"Processing {len(smartart_items)} Excel SmartArt translations with bilingual format")
     
     namespaces = {
         'a': 'http://schemas.openxmlformats.org/drawingml/2006/main',
@@ -1812,7 +1764,10 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                                     app_logger.warning(f"Missing translation for Excel SmartArt count {count}")
                                     continue
                                 
-                                translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                                # Format as bilingual text
+                                bilingual_text = _format_bilingual_text(
+                                    item['value'], translated_text, "smartart"
+                                )
                                 
                                 # Find the shape using shape_index
                                 shapes_with_txbody = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
@@ -1829,17 +1784,17 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                                         paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
                                         if item['paragraph_index'] < len(paragraphs):
                                             paragraph = paragraphs[item['paragraph_index']]
-                                            _distribute_excel_smartart_text_to_runs(paragraph, translated_text, item, namespaces)
-                                            app_logger.info(f"Updated Excel SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}, count_src {count}")
+                                            _distribute_excel_smartart_bilingual_text_to_runs(paragraph, bilingual_text, item, namespaces)
+                                            app_logger.info(f"Updated bilingual Excel SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}, count_src {count}")
                             
                             # Write modified drawing
                             modified_drawing_xml = etree.tostring(drawing_tree, xml_declaration=True, 
                                                                  encoding="UTF-8", standalone="yes")
                             new_zip.writestr(drawing_path, modified_drawing_xml)
-                            app_logger.info(f"Saved modified Excel SmartArt drawing file: {drawing_path}")
+                            app_logger.info(f"Saved modified bilingual Excel SmartArt drawing file: {drawing_path}")
                             
                         except Exception as e:
-                            app_logger.error(f"Failed to apply Excel SmartArt translation to {drawing_path}: {e}")
+                            app_logger.error(f"Failed to apply bilingual Excel SmartArt translation to {drawing_path}: {e}")
                             # Use original file as fallback
                             try:
                                 new_zip.writestr(drawing_path, original_zip.read(drawing_path))
@@ -1859,7 +1814,10 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                                 if not translated_text:
                                     continue
                                 
-                                translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                                # Format as bilingual text
+                                bilingual_text = _format_bilingual_text(
+                                    item['value'], translated_text, "smartart"
+                                )
                                 original_text = item.get('original_text', '')
                                 
                                 # Find all dgm:pt elements that contain text
@@ -1875,18 +1833,18 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                                             point_run_info = _process_excel_smartart_text_runs(point_text_runs, namespaces)
                                             # If the original text matches, update this paragraph
                                             if point_run_info['merged_text'].strip() == original_text.strip():
-                                                _distribute_excel_smartart_text_to_runs(point_paragraph, translated_text, item, namespaces)
-                                                app_logger.info(f"Updated Excel SmartArt data text for diagram {diagram_index}, count_src {count}: '{original_text}' -> '{translated_text[:50]}...'")
+                                                _distribute_excel_smartart_bilingual_text_to_runs(point_paragraph, bilingual_text, item, namespaces)
+                                                app_logger.info(f"Updated bilingual Excel SmartArt data text for diagram {diagram_index}, count_src {count}: '{original_text}' -> bilingual format")
                                                 break
                             
                             # Write modified data
                             modified_data_xml = etree.tostring(data_tree, xml_declaration=True, 
                                                               encoding="UTF-8", standalone="yes")
                             new_zip.writestr(data_path, modified_data_xml)
-                            app_logger.info(f"Saved modified Excel SmartArt data file: {data_path}")
+                            app_logger.info(f"Saved modified bilingual Excel SmartArt data file: {data_path}")
                             
                         except Exception as e:
-                            app_logger.error(f"Failed to apply Excel SmartArt translation to {data_path}: {e}")
+                            app_logger.error(f"Failed to apply bilingual Excel SmartArt translation to {data_path}: {e}")
                             # Use original file as fallback
                             try:
                                 new_zip.writestr(data_path, original_zip.read(data_path))
@@ -1895,11 +1853,11 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
         
         # Replace original file with modified file
         shutil.move(temp_excel_path, file_path)
-        app_logger.info(f"Excel SmartArt translations applied successfully")
+        app_logger.info(f"Excel bilingual SmartArt translations applied successfully")
         return file_path
         
     except Exception as e:
-        app_logger.error(f"Failed to apply Excel SmartArt translations: {e}")
+        app_logger.error(f"Failed to apply bilingual Excel SmartArt translations: {e}")
         # Clean up temporary file if it exists
         if os.path.exists(temp_excel_path):
             try:
@@ -1909,112 +1867,28 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
         return file_path
 
 
-def _distribute_excel_smartart_text_to_runs(parent_element, translated_text: str, item: Dict, namespaces: Dict):
-    """Distribute translated text across multiple runs in Excel SmartArt, preserving spacing and structure."""
+def _distribute_excel_smartart_bilingual_text_to_runs(parent_element, bilingual_text: str, item: Dict, namespaces: Dict):
+    """Distribute bilingual translated text across multiple runs in Excel SmartArt, preserving spacing and structure."""
     text_runs = parent_element.xpath('.//a:r', namespaces=namespaces)
     
     if not text_runs:
         return
     
-    original_run_texts = item.get('run_texts', [])
-    original_run_lengths = item.get('run_lengths', [])
-    
-    # If we don't have the original structure, fallback to simple distribution
-    if not original_run_texts or len(original_run_texts) != len(text_runs):
-        app_logger.warning(f"Mismatch in Excel SmartArt run structure, using simple distribution")
-        _simple_excel_smartart_text_distribution(text_runs, translated_text, namespaces)
-        return
-    
-    # Use intelligent distribution based on original structure
-    _intelligent_excel_smartart_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
+    # For bilingual content, we typically want to put all content in the first run
+    # since bilingual text is usually longer and more complex
+    _simple_excel_smartart_bilingual_text_distribution(text_runs, bilingual_text, namespaces)
 
 
-def _simple_excel_smartart_text_distribution(text_runs, translated_text: str, namespaces: Dict):
-    """Simple fallback distribution method for Excel SmartArt."""
+def _simple_excel_smartart_bilingual_text_distribution(text_runs, bilingual_text: str, namespaces: Dict):
+    """Simple distribution method for bilingual Excel SmartArt text."""
     if not text_runs:
         return
     
-    # Put all translated text in the first run, clear others
+    # Put all bilingual text in the first run, clear others
     for i, text_run in enumerate(text_runs):
         text_node = text_run.xpath('./a:t', namespaces=namespaces)
         if text_node:
             if i == 0:
-                text_node[0].text = translated_text
+                text_node[0].text = bilingual_text
             else:
                 text_node[0].text = ""
-
-
-def _intelligent_excel_smartart_text_distribution(text_runs, translated_text: str, original_run_texts: List[str], 
-                                                 original_run_lengths: List[int], namespaces: Dict):
-    """Intelligent text distribution for Excel SmartArt that preserves spacing and structure."""
-    
-    # Calculate total length excluding empty runs
-    meaningful_runs = [(i, length) for i, length in enumerate(original_run_lengths) if length > 0]
-    total_meaningful_length = sum(length for _, length in meaningful_runs)
-    
-    if total_meaningful_length == 0:
-        _simple_excel_smartart_text_distribution(text_runs, translated_text, namespaces)
-        return
-    
-    # Handle special cases for spacing
-    translated_chars = list(translated_text)
-    char_index = 0
-    
-    for run_index, text_run in enumerate(text_runs):
-        text_node = text_run.xpath('./a:t', namespaces=namespaces)
-        if not text_node:
-            continue
-            
-        original_text = original_run_texts[run_index] if run_index < len(original_run_texts) else ""
-        original_length = original_run_lengths[run_index] if run_index < len(original_run_lengths) else 0
-        
-        # Handle empty or whitespace-only runs
-        if original_length == 0 or not original_text.strip():
-            # If original run was empty or whitespace, keep it empty
-            # unless it was purely whitespace and we need to preserve spacing
-            if original_text and not original_text.strip():
-                # This run contained only whitespace, try to preserve some spacing
-                if char_index < len(translated_chars) and translated_chars[char_index] == ' ':
-                    text_node[0].text = ' '
-                    char_index += 1
-                else:
-                    text_node[0].text = ""
-            else:
-                text_node[0].text = ""
-            continue
-        
-        # Calculate how much text this run should get
-        if run_index == len(text_runs) - 1:
-            # Last meaningful run gets all remaining text
-            remaining_text = ''.join(translated_chars[char_index:])
-            text_node[0].text = remaining_text
-        else:
-            # Calculate proportional distribution
-            proportion = original_length / total_meaningful_length
-            target_length = max(1, int(len(translated_text) * proportion))
-            
-            # Try to break at word boundaries
-            run_text = ""
-            chars_taken = 0
-            
-            while chars_taken < target_length and char_index < len(translated_chars):
-                char = translated_chars[char_index]
-                run_text += char
-                chars_taken += 1
-                char_index += 1
-                
-                # If we've reached the target length, try to extend to a word boundary
-                if chars_taken >= target_length and char_index < len(translated_chars):
-                    # Look ahead for word boundary
-                    if char != ' ' and translated_chars[char_index] != ' ':
-                        # Continue until we find a space or reach the end
-                        while (char_index < len(translated_chars) and 
-                               translated_chars[char_index] != ' ' and 
-                               chars_taken < target_length * 1.5):  # Don't go too far
-                            char = translated_chars[char_index]
-                            run_text += char
-                            chars_taken += 1
-                            char_index += 1
-                    break
-            
-            text_node[0].text = run_text

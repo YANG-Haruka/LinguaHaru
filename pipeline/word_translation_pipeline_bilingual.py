@@ -1,4 +1,3 @@
-# pipeline/word_translation_pipeline_bilingual.py
 import json
 import os
 import re
@@ -9,46 +8,263 @@ from config.log_config import app_logger
 import shutil
 import tempfile
 from textProcessing.text_separator import safe_convert_to_int
+import datetime
+
+def set_current_target_language(lang_code):
+    """Set the current target language for date conversion decisions in bilingual processing."""
+    globals()['_current_target_language'] = lang_code
+
+
+# 添加日期转换配置类
+class DateConversionConfig:
+    """日期转换配置"""
+    TARGET_LANGUAGE = 'en'  # 默认转换为英文格式
+    ENABLE_AUTO_DATE_CONVERSION = True  # 启用自动日期转换
+
+def clean_translation_brackets(text):
+    """清除译文中的《》符号，保留其中的内容"""
+    if not text:
+        return text
+    
+    # 清除《》符号，但保留其中的内容
+    cleaned_text = text.replace('《', '').replace('》', '')
+    return cleaned_text
+
+def detect_and_convert_untranslated_dates(original_text, translated_text, target_language='en'):
+    """检测译文中未翻译的日期，并转换为目标语言格式，支持多个日期的转换"""
+    # 使用全局覆盖语言（如通过前置设置 set_current_target_language 设置），若未设置则回退为传入参数
+    current_lang = globals().get('_current_target_language', None)
+    effective_target = current_lang if current_lang is not None else target_language
+
+    if not DateConversionConfig.ENABLE_AUTO_DATE_CONVERSION or effective_target != 'en':
+        # 如果未启用日期转换或目标语言不是英文，只清理译文中的《》符号
+        return clean_translation_brackets(translated_text)
+        
+    # 检测原文中的日期
+    original_dates = find_dates_in_text(original_text)
+    
+    if not original_dates:
+        # 清理译文中的《》符号
+        return clean_translation_brackets(translated_text)
+    
+    converted_text = translated_text
+    conversion_count = 0
+    
+    # 创建日期转换映射
+    date_conversions = {}
+    
+    # 检查每个原文日期是否在译文中仍然存在（未翻译）
+    for date_info in original_dates:
+        date_str = date_info['date_str']
+        if date_str in converted_text:
+            # 这个日期在译文中仍然存在，说明没有被翻译
+            converted_date = convert_date_to_target_format(date_str, effective_target)
+            if converted_date != date_str:
+                date_conversions[date_str] = converted_date
+                app_logger.info(f"Prepared date conversion: '{date_str}' -> '{converted_date}'")
+    
+    # 按日期字符串长度从长到短排序，避免短日期字符串误替换长日期的一部分
+    sorted_dates = sorted(date_conversions.keys(), key=len, reverse=True)
+    
+    # 执行转换
+    for original_date in sorted_dates:
+        converted_date = date_conversions[original_date]
+        
+        # 计算这个日期在文本中出现的次数
+        occurrences = converted_text.count(original_date)
+        if occurrences > 0:
+            # 替换所有出现的这个日期
+            converted_text = converted_text.replace(original_date, converted_date)
+            conversion_count += occurrences
+            app_logger.info(f"Auto-converted {occurrences} occurrences of date: '{original_date}' -> '{converted_date}'")
+    
+    if conversion_count > 0:
+        app_logger.info(f"Total {conversion_count} date instances auto-converted in text: '{original_text[:30]}...'")
+    
+    # 清理译文中的《》符号
+    return clean_translation_brackets(converted_text)
+
+def find_dates_in_text(text):
+    """在文本中查找日期并返回详细信息"""
+    date_patterns = [
+        # 移除边界限制，支持更广泛的匹配，包括 2024-03-03 这种格式
+        (r'(\d{4})[.\-/](\d{1,2})[.\-/](\d{1,2})', 'YYYY.M.D'),  # 2021.4.1, 2022-12-31, 2024-03-03
+        (r'(\d{1,2})[.\-/](\d{1,2})[.\-/](\d{4})', 'M.D.YYYY'),  # 4.1.2021, 12/31/2022, 03/03/2024
+        (r'(\d{4})[.\-/](\d{1,2})', 'YYYY.M'),                   # 2021.4, 2022/12, 2024-03
+    ]
+    
+    dates = []
+    
+    for pattern, format_type in date_patterns:
+        matches = re.finditer(pattern, text)
+        for match in matches:
+            dates.append({
+                'date_str': match.group(),
+                'format_type': format_type,
+                'groups': match.groups(),
+                'start': match.start(),
+                'end': match.end()
+            })
+    
+    # 按位置排序，避免重复处理
+    dates.sort(key=lambda x: x['start'])
+    
+    # 去除重叠的匹配（优先保留更长的匹配）
+    filtered_dates = []
+    for date in dates:
+        is_overlap = False
+        for i, existing_date in enumerate(filtered_dates):
+            # 检查是否有重叠
+            if (date['start'] < existing_date['end'] and date['end'] > existing_date['start']):
+                # 有重叠，保留更长的匹配
+                if len(date['date_str']) > len(existing_date['date_str']):
+                    filtered_dates[i] = date  # 替换为更长的匹配
+                is_overlap = True
+                break
+        
+        if not is_overlap:
+            filtered_dates.append(date)
+    
+    # 重新按位置排序
+    filtered_dates.sort(key=lambda x: x['start'])
+    return filtered_dates
+
+def convert_date_to_target_format(date_str, target_language='en'):
+    """将日期字符串转换为目标语言格式"""
+    # 只有目标语言是英文时才进行转换
+    if target_language != 'en':
+        return date_str
+        
+    try:
+        parsed_date = None
+        is_year_month_only = False
+        
+        # 尝试不同的日期格式解析
+        for sep in ['.', '-', '/']:
+            if sep in date_str:
+                parts = date_str.split(sep)
+                if len(parts) == 3:
+                    # 判断是 YYYY.M.D 还是 M.D.YYYY 格式
+                    if len(parts[0]) == 4:  # YYYY.M.D 格式 (如 2024-03-03)
+                        year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+                    elif len(parts[2]) == 4:  # M.D.YYYY 格式 (如 03/03/2024)
+                        month, day, year = int(parts[0]), int(parts[1]), int(parts[2])
+                    else:
+                        continue
+                    
+                    # 验证日期合法性
+                    if 1 <= month <= 12 and 1 <= day <= 31 and 1900 <= year <= 2100:
+                        try:
+                            parsed_date = datetime.datetime(year, month, day)
+                            break
+                        except ValueError:
+                            # 处理无效日期（如2月30日）
+                            continue
+                        
+                elif len(parts) == 2 and len(parts[0]) == 4:  # YYYY.M 格式
+                    year, month = int(parts[0]), int(parts[1])
+                    if 1 <= month <= 12 and 1900 <= year <= 2100:
+                        parsed_date = datetime.datetime(year, month, 1)
+                        is_year_month_only = True
+                        break
+        
+        if parsed_date:
+            if target_language == 'en':
+                if is_year_month_only:
+                    return parsed_date.strftime("%B %Y")  # March 2024
+                else:
+                    # 格式化为英文日期格式
+                    return parsed_date.strftime("%B %d, %Y")  # March 3, 2024
+            
+            # 可以在这里添加其他语言的支持
+            # elif target_language == 'zh':
+            #     return f"{parsed_date.year}年{parsed_date.month}月{parsed_date.day}日"
+        
+    except (ValueError, IndexError, TypeError) as e:
+        app_logger.warning(f"Failed to parse date '{date_str}': {e}")
+        pass
+    
+    return date_str  # 如果解析失败，返回原字符串
 
 def extract_word_content_to_json(file_path):
-    """Extract translatable content from Word document to JSON"""
+    """Extract translatable content from Word document to JSON - enhanced error handling"""
     temp_dir = None
     try:
+        app_logger.info(f"Starting content extraction from: {os.path.basename(file_path)}")
+        
         # Create temporary directory for processing
         temp_dir = tempfile.mkdtemp()
         
         # Extract entire docx archive
-        with ZipFile(file_path, 'r') as docx:
-            docx.extractall(temp_dir)
+        try:
+            with ZipFile(file_path, 'r') as docx:
+                docx.extractall(temp_dir)
+        except Exception as e:
+            app_logger.error(f"Failed to extract DOCX archive: {e}")
+            raise
+        
+        app_logger.info("Archive extraction completed, reading XML files...")
         
         # Read main document
         document_xml_path = os.path.join(temp_dir, 'word', 'document.xml')
-        with open(document_xml_path, 'rb') as f:
-            document_xml = f.read()
+        if not os.path.exists(document_xml_path):
+            raise FileNotFoundError("document.xml not found in DOCX file")
+            
+        try:
+            with open(document_xml_path, 'rb') as f:
+                document_xml = f.read()
+        except Exception as e:
+            app_logger.error(f"Failed to read document.xml: {e}")
+            raise
         
         # Read numbering.xml if exists
         numbering_xml = None
         numbering_xml_path = os.path.join(temp_dir, 'word', 'numbering.xml')
         if os.path.exists(numbering_xml_path):
-            with open(numbering_xml_path, 'rb') as f:
-                numbering_xml = f.read()
+            try:
+                with open(numbering_xml_path, 'rb') as f:
+                    numbering_xml = f.read()
+            except Exception as e:
+                app_logger.warning(f"Failed to read numbering.xml: {e}")
         
         # Read styles.xml if exists
         styles_xml = None
         styles_xml_path = os.path.join(temp_dir, 'word', 'styles.xml')
         if os.path.exists(styles_xml_path):
-            with open(styles_xml_path, 'rb') as f:
-                styles_xml = f.read()
+            try:
+                with open(styles_xml_path, 'rb') as f:
+                    styles_xml = f.read()
+            except Exception as e:
+                app_logger.warning(f"Failed to read styles.xml: {e}")
+        
+        # Read footnotes.xml if exists
+        footnotes_xml = None
+        footnotes_xml_path = os.path.join(temp_dir, 'word', 'footnotes.xml')
+        if os.path.exists(footnotes_xml_path):
+            try:
+                with open(footnotes_xml_path, 'rb') as f:
+                    footnotes_xml = f.read()
+                app_logger.info("Found footnotes.xml, will process footnote content")
+            except Exception as e:
+                app_logger.warning(f"Failed to read footnotes.xml: {e}")
         
         # Get all header and footer files
         word_dir = os.path.join(temp_dir, 'word')
         header_footer_files = {}
         if os.path.exists(word_dir):
-            for filename in os.listdir(word_dir):
-                if filename.startswith('header') or filename.startswith('footer'):
-                    filepath = os.path.join(word_dir, filename)
-                    with open(filepath, 'rb') as f:
-                        header_footer_files[f'word/{filename}'] = f.read()
+            try:
+                for filename in os.listdir(word_dir):
+                    if filename.startswith('header') or filename.startswith('footer'):
+                        filepath = os.path.join(word_dir, filename)
+                        try:
+                            with open(filepath, 'rb') as f:
+                                header_footer_files[f'word/{filename}'] = f.read()
+                        except Exception as e:
+                            app_logger.warning(f"Failed to read {filename}: {e}")
+            except Exception as e:
+                app_logger.warning(f"Error reading header/footer files: {e}")
+        
+        app_logger.info(f"Found {len(header_footer_files)} header/footer files")
 
         # Complete namespaces including all possible schemas
         namespaces = {
@@ -67,52 +283,106 @@ def extract_word_content_to_json(file_path):
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
             'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
             'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
-            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram',
+            'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'  # 添加数学公式命名空间
         }
         
-        document_tree = etree.fromstring(document_xml)
+        app_logger.info("Parsing main document XML...")
+        try:
+            document_tree = etree.fromstring(document_xml)
+        except Exception as e:
+            app_logger.error(f"Failed to parse document XML: {e}")
+            raise
         
         # Parse numbering and styles information
         numbering_info = {}
         styles_info = {}
         
         if numbering_xml:
-            numbering_info = parse_numbering_xml(numbering_xml, namespaces)
+            app_logger.info("Parsing numbering information...")
+            try:
+                numbering_info = parse_numbering_xml(numbering_xml, namespaces)
+            except Exception as e:
+                app_logger.warning(f"Error parsing numbering information: {e}")
         
         if styles_xml:
-            styles_info = parse_styles_xml(styles_xml, namespaces)
+            app_logger.info("Parsing styles information...")
+            try:
+                styles_info = parse_styles_xml(styles_xml, namespaces)
+            except Exception as e:
+                app_logger.warning(f"Error parsing styles information: {e}")
 
         content_data = []
         item_id = 0
         
         # Extract translatable content from numbering.xml first
         if numbering_xml:
-            numbering_items = extract_numbering_translatable_content(numbering_xml, namespaces)
-            for numbering_item in numbering_items:
-                item_id += 1
-                numbering_item["id"] = item_id
-                numbering_item["count_src"] = item_id
-                content_data.append(numbering_item)
+            app_logger.info("Processing numbering content...")
+            try:
+                numbering_items = extract_numbering_translatable_content(numbering_xml, namespaces)
+                for numbering_item in numbering_items:
+                    item_id += 1
+                    numbering_item["id"] = item_id
+                    numbering_item["count_src"] = item_id
+                    content_data.append(numbering_item)
+                app_logger.info(f"Extracted {len(numbering_items)} numbering items")
+            except Exception as e:
+                app_logger.warning(f"Error processing numbering content: {e}")
+        
+        # Extract footnotes content
+        if footnotes_xml:
+            app_logger.info("Processing footnote content...")
+            try:
+                footnote_items = extract_footnotes_translatable_content(footnotes_xml, namespaces)
+                for footnote_item in footnote_items:
+                    item_id += 1
+                    footnote_item["id"] = item_id
+                    footnote_item["count_src"] = item_id
+                    content_data.append(footnote_item)
+                app_logger.info(f"Extracted {len(footnote_items)} footnote items")
+            except Exception as e:
+                app_logger.warning(f"Error processing footnote content: {e}")
         
         # Process main document content
-        item_id = process_document_content(
-            document_tree, content_data, item_id, numbering_info, styles_info, namespaces
-        )
+        app_logger.info("Processing main document content...")
+        try:
+            item_id = process_document_content(
+                document_tree, content_data, item_id, numbering_info, styles_info, namespaces
+            )
+        except Exception as e:
+            app_logger.error(f"Error processing main document content: {e}")
+            # 继续处理其他内容
         
         # Process headers and footers
-        for hf_file, hf_xml in header_footer_files.items():
-            hf_tree = etree.fromstring(hf_xml)
-            hf_type = "header" if "header" in hf_file else "footer"
-            hf_number = os.path.basename(hf_file).split('.')[0]
-            
-            item_id = process_header_footer_content(
-                hf_tree, content_data, item_id, numbering_info, styles_info, 
-                namespaces, hf_type, hf_file, hf_number
-            )
+        if header_footer_files:
+            app_logger.info(f"Processing {len(header_footer_files)} header/footer files...")
+            try:
+                for hf_file, hf_xml in header_footer_files.items():
+                    try:
+                        hf_tree = etree.fromstring(hf_xml)
+                        hf_type = "header" if "header" in hf_file else "footer"
+                        hf_number = os.path.basename(hf_file).split('.')[0]
+                        
+                        item_id = process_header_footer_content(
+                            hf_tree, content_data, item_id, numbering_info, styles_info, 
+                            namespaces, hf_type, hf_file, hf_number
+                        )
+                    except Exception as e:
+                        app_logger.warning(f"Error processing {hf_file}: {e}")
+                        continue
+            except Exception as e:
+                app_logger.warning(f"Error in header/footer processing: {e}")
 
         # Extract SmartArt content
-        with ZipFile(file_path, 'r') as docx:
-            item_id = extract_smartart_content(docx, content_data, item_id, namespaces)
+        app_logger.info("Processing SmartArt content...")
+        try:
+            with ZipFile(file_path, 'r') as docx:
+                item_id = extract_smartart_content(docx, content_data, item_id, namespaces)
+        except Exception as e:
+            app_logger.warning(f"Error processing SmartArt content: {e}")
+
+        # Clear cache at the end
+        _element_cache.clear()
 
         # Save extraction data and temp directory path
         filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -125,17 +395,244 @@ def extract_word_content_to_json(file_path):
             f.write(temp_dir)
         
         json_path = os.path.join(temp_folder, "src.json")
+        app_logger.info(f"Saving extracted content to: {json_path}")
         with open(json_path, "w", encoding="utf-8") as json_file:
             json.dump(content_data, json_file, ensure_ascii=False, indent=4)
 
-        app_logger.info(f"Extracted {len(content_data)} content items from document: {filename}")
+        app_logger.info(f"Successfully extracted {len(content_data)} content items from document: {filename}")
         return json_path
         
     except Exception as e:
+        app_logger.error(f"Error during content extraction: {e}")
         # Clean up temp directory on error
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+        # Clear cache on error
+        _element_cache.clear()
         raise e
+
+def extract_footnotes_translatable_content(footnotes_xml, namespaces):
+    """Extract translatable content from footnotes.xml"""
+    footnote_items = []
+    
+    if not footnotes_xml:
+        return footnote_items
+    
+    try:
+        footnotes_tree = etree.fromstring(footnotes_xml)
+        
+        # Get all footnotes, excluding separator and continuation separator footnotes
+        footnotes = footnotes_tree.xpath('//w:footnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]', namespaces=namespaces)
+        
+        app_logger.info(f"Found {len(footnotes)} footnotes to extract content from")
+        
+        for footnote in footnotes:
+            footnote_id = footnote.get(f'{{{namespaces["w"]}}}id')
+            if not footnote_id:
+                app_logger.warning("Found footnote without ID, skipping")
+                continue
+            
+            # Ensure footnote_id is string for consistency
+            footnote_id = str(footnote_id)
+            
+            # Process paragraphs within the footnote
+            footnote_paragraphs = footnote.xpath('.//w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
+            
+            app_logger.debug(f"Processing footnote {footnote_id} with {len(footnote_paragraphs)} paragraphs")
+            
+            for para_idx, paragraph in enumerate(footnote_paragraphs):
+                # Enhanced TOC detection for footnote paragraphs
+                is_toc, toc_info = detect_toc_paragraph_enhanced(paragraph, namespaces, False)
+                
+                if is_toc:
+                    toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces)
+                    paragraph_text = toc_title_text
+                    field_info = None
+                else:
+                    # Extract text from paragraph including variables and formulas
+                    paragraph_text, field_info = process_paragraph_element_with_formulas(paragraph, namespaces)
+                    toc_structure = None
+                
+                if paragraph_text and paragraph_text.strip() and should_translate_enhanced(paragraph_text):
+                    footnote_item = {
+                        "type": "footnote",
+                        "footnote_id": footnote_id,  # Ensure this is string
+                        "paragraph_index": para_idx,
+                        "is_toc": is_toc,
+                        "value": paragraph_text.replace("\n", "␊").replace("\r", "␍"),
+                        "original_pPr": extract_paragraph_properties(paragraph, namespaces),
+                        "original_structure": extract_paragraph_structure(paragraph, namespaces)
+                    }
+                    
+                    if field_info:
+                        footnote_item["field_info"] = field_info
+                    
+                    if is_toc:
+                        footnote_item.update({
+                            "toc_info": toc_info,
+                            "toc_structure": toc_structure
+                        })
+                    
+                    footnote_items.append(footnote_item)
+                    app_logger.debug(f"Extracted footnote {footnote_id}.{para_idx}: '{paragraph_text[:50]}...'")
+                else:
+                    app_logger.debug(f"Skipping footnote {footnote_id}.{para_idx}: empty or non-translatable content")
+        
+        app_logger.info(f"Extracted {len(footnote_items)} translatable footnote items")
+        
+    except Exception as e:
+        app_logger.error(f"Error extracting footnotes content: {e}")
+    
+    return footnote_items
+
+def process_paragraph_element_with_formulas(paragraph, namespaces):
+    """处理包含公式的段落元素，按顺序提取所有内容"""
+    result_text = ""
+    formula_info = []
+    field_info = []
+    formula_counter = 1
+    footnote_ref_counter = 1
+    
+    # 按顺序处理段落的所有直接子元素
+    for child in paragraph:
+        tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        
+        if tag_name == 'oMath':  # 数学公式
+            formula_placeholder = f"[formula_{formula_counter}]"
+            result_text += formula_placeholder
+            
+            # 保存公式信息，使用字符串而不是Element对象
+            formula_info.append({
+                'type': 'formula',
+                'placeholder': formula_placeholder,
+                'formula_number': formula_counter,
+                'xml_content': etree.tostring(child, encoding='unicode'),
+                'position': 'paragraph_level'
+            })
+            formula_counter += 1
+            
+        elif tag_name == 'r':  # 文本运行
+            # 检查是否包含脚注引用
+            footnote_refs = child.xpath('.//w:footnoteReference', namespaces=namespaces)
+            if footnote_refs:
+                # 处理脚注引用run
+                # 先处理其他内容（如果有）
+                for run_child in child:
+                    run_child_tag = run_child.tag.split('}')[-1]
+                    if run_child_tag == 't':
+                        if run_child.text:
+                            result_text += run_child.text
+                    elif run_child_tag == 'br':
+                        result_text += "\n"
+                    elif run_child_tag == 'tab':
+                        result_text += "\t"
+                    elif run_child_tag == 'cr':
+                        result_text += "\r"
+                
+                # 添加脚注引用占位符
+                for footnote_ref in footnote_refs:
+                    footnote_id = footnote_ref.get(f'{{{namespaces["w"]}}}id')
+                    if footnote_id:
+                        footnote_placeholder = f"{{{{FOOTNOTE_REF_{footnote_ref_counter}}}}}"
+                        result_text += footnote_placeholder
+                        
+                        footnote_info = {
+                            'type': 'footnote_reference',
+                            'placeholder': footnote_placeholder,
+                            'footnote_id': footnote_id,
+                            'footnote_ref_number': footnote_ref_counter,
+                            'run_xml': etree.tostring(child, encoding='unicode')
+                        }
+                        field_info.append(footnote_info)
+                        footnote_ref_counter += 1
+                continue
+            
+            # 检查run中是否包含公式
+            run_formulas = child.xpath('.//m:oMath', namespaces=namespaces)
+            if run_formulas:
+                # 处理包含公式的run
+                run_content = process_run_with_formulas(child, namespaces, formula_counter)
+                result_text += run_content['text']
+                formula_info.extend(run_content['formulas'])
+                formula_counter += len(run_content['formulas'])
+            else:
+                # 处理普通文本run
+                # 检查是否为字段run
+                if child.xpath('.//w:fldChar | .//w:instrText', namespaces=namespaces):
+                    field_result = process_field_run(child, namespaces, 0)
+                    if field_result:
+                        result_text += field_result['display_text']
+                        field_info.append(field_result)
+                elif child.xpath('.//w:fldSimple', namespaces=namespaces):
+                    field_result = process_simple_field_run(child, namespaces, 0)
+                    if field_result:
+                        result_text += field_result['display_text']
+                        field_info.append(field_result)
+                else:
+                    # 普通文本run
+                    for run_child in child:
+                        run_child_tag = run_child.tag.split('}')[-1]
+                        if run_child_tag == 't':
+                            if run_child.text:
+                                result_text += run_child.text
+                        elif run_child_tag == 'br':
+                            result_text += "\n"
+                        elif run_child_tag == 'tab':
+                            result_text += "\t"
+                        elif run_child_tag == 'cr':
+                            result_text += "\r"
+        
+        # 处理其他元素类型如需要
+        elif tag_name in ['pPr', 'proofErr', 'bookmarkStart', 'bookmarkEnd']:
+            # 跳过属性和其他非内容元素
+            continue
+    
+    # 合并所有信息
+    combined_info = []
+    if formula_info:
+        combined_info.extend(formula_info)
+    if field_info:
+        combined_info.extend(field_info)
+    
+    return result_text, combined_info if combined_info else None
+
+def process_run_with_formulas(run, namespaces, formula_counter_start):
+    """处理包含公式的文本运行"""
+    result_text = ""
+    formula_info = []
+    formula_counter = formula_counter_start
+    
+    # 按顺序处理run的所有子元素
+    for child in run:
+        tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        
+        if tag_name == 'oMath':  # 公式
+            formula_placeholder = f"[formula_{formula_counter}]"
+            result_text += formula_placeholder
+            
+            formula_info.append({
+                'type': 'formula',
+                'placeholder': formula_placeholder,
+                'formula_number': formula_counter,
+                'xml_content': etree.tostring(child, encoding='unicode'),
+                'position': 'run_level'
+            })
+            formula_counter += 1
+            
+        elif tag_name == 't':  # 文本
+            if child.text:
+                result_text += child.text
+        elif tag_name == 'br':
+            result_text += "\n"
+        elif tag_name == 'tab':
+            result_text += "\t"
+        elif tag_name == 'cr':
+            result_text += "\r"
+    
+    return {
+        'text': result_text,
+        'formulas': formula_info
+    }
 
 def extract_smartart_content(docx, content_data, item_id, namespaces):
     """Extract text from SmartArt diagrams in Word document."""
@@ -330,7 +827,9 @@ def parse_styles_xml(styles_xml, namespaces):
     return styles_info
 
 def process_document_content(document_tree, content_data, item_id, numbering_info, styles_info, namespaces):
-    """Process main document content with better structure handling"""
+    """Process main document content with better structure handling and progress tracking - fixed"""
+    
+    app_logger.info("Starting document content processing...")
     
     # First, process SDT (Structured Document Tags) content like TOC
     item_id = process_sdt_content(document_tree, content_data, item_id, numbering_info, styles_info, namespaces)
@@ -338,8 +837,21 @@ def process_document_content(document_tree, content_data, item_id, numbering_inf
     # Get all body elements (including nested ones)
     body_elements = get_all_body_elements(document_tree, namespaces)
     
+    total_elements = len(body_elements)
+    app_logger.info(f"Processing {total_elements} main document elements...")
+    
+    processed_count = 0
+    last_progress_report = 0
+    
     for element_index, element in enumerate(body_elements):
-        element_type = element.tag.split('}')[-1]
+        # 进度追踪
+        processed_count += 1
+        progress_percent = (processed_count * 100) // total_elements if total_elements > 0 else 100
+        if progress_percent >= last_progress_report + 20:  # 每20%报告一次
+            app_logger.info(f"Document processing progress: {progress_percent}% ({processed_count}/{total_elements})")
+            last_progress_report = progress_percent
+        
+        element_type = element.tag.split('}')[-1] if '}' in element.tag else element.tag
         
         if element_type == 'p':
             item_id = process_paragraph_element(
@@ -348,22 +860,41 @@ def process_document_content(document_tree, content_data, item_id, numbering_inf
             )
         
         elif element_type == 'tbl':
-            item_id = process_table_element(
-                element, content_data, item_id, element_index, 
-                numbering_info, styles_info, namespaces
-            )
+            # 添加表格处理的特殊日志
+            try:
+                table_rows = element.xpath('./w:tr', namespaces=namespaces)
+                app_logger.debug(f"Processing table {element_index} with {len(table_rows)} rows")
+                
+                item_id = process_table_element(
+                    element, content_data, item_id, element_index, 
+                    numbering_info, styles_info, namespaces
+                )
+                
+                app_logger.debug(f"Completed processing table {element_index}")
+                
+            except Exception as e:
+                app_logger.error(f"Error processing table {element_index}: {e}")
+                continue
         
         elif element_type == 'sdt':
             # Skip SDT elements as they're processed separately
             continue
     
+    app_logger.info(f"Document content processing completed. Processed {processed_count} elements.")
+    
     # Process textboxes separately to avoid duplication
-    textbox_items = extract_textbox_content(document_tree, namespaces)
-    for textbox_item in textbox_items:
-        item_id += 1
-        textbox_item["id"] = item_id
-        textbox_item["count_src"] = item_id
-        content_data.append(textbox_item)
+    app_logger.info("Processing textboxes...")
+    try:
+        textbox_items = extract_textbox_content(document_tree, namespaces)
+        for textbox_item in textbox_items:
+            item_id += 1
+            textbox_item["id"] = item_id
+            textbox_item["count_src"] = item_id
+            content_data.append(textbox_item)
+        
+        app_logger.info(f"Textbox processing completed. Found {len(textbox_items)} textboxes.")
+    except Exception as e:
+        app_logger.error(f"Error processing textboxes: {e}")
     
     return item_id
 
@@ -402,15 +933,8 @@ def process_sdt_content(document_tree, content_data, item_id, numbering_info, st
                     full_text = toc_title_text
                     field_info = None
                 else:
-                    # Extract normal paragraph text
-                    numbering_props = paragraph.xpath('.//w:numPr', namespaces=namespaces)
-                    paragraph_numbering_info = None
-                    if numbering_props:
-                        paragraph_numbering_info = extract_paragraph_numbering_info(
-                            numbering_props[0], numbering_info, namespaces)
-                    
-                    full_text, field_info = extract_paragraph_text_with_variables(paragraph, namespaces, paragraph_numbering_info, True)
-                    toc_structure = None
+                    # Extract paragraph text with formulas support
+                    full_text, field_info = process_paragraph_element_with_formulas(paragraph, namespaces)
                 
                 if full_text and full_text.strip() and should_translate_enhanced(full_text):
                     item_id += 1
@@ -475,7 +999,8 @@ def process_sdt_table_recursive(table, content_data, item_id, sdt_index, table_i
                     cell_text = toc_title_text
                     cell_field_info = None
                 else:
-                    cell_text, cell_field_info = extract_paragraph_text_with_variables(cell_paragraph, namespaces)
+                    # Fixed: Use formula-aware extraction
+                    cell_text, cell_field_info = process_paragraph_element_with_formulas(cell_paragraph, namespaces)
                     toc_structure = None
                 
                 if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
@@ -668,6 +1193,9 @@ def extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces):
         # Try alternative extraction for complex structures
         title_text, structure = extract_toc_title_alternative(paragraph, namespaces)
     
+    # Clean brackets from the extracted title text
+    title_text = clean_translation_brackets(title_text)
+    
     return title_text, structure
 
 def extract_toc_title_alternative(paragraph, namespaces):
@@ -727,6 +1255,9 @@ def extract_toc_title_alternative(paragraph, namespaces):
     title_text = re.sub(r'\s*\.\d+\s*$', '', title_text).strip()
     title_text = re.sub(r'\s*\d+\s*$', '', title_text).strip()
     
+    # Clean brackets from the extracted title text
+    title_text = clean_translation_brackets(title_text)
+    
     # Create simplified structure
     structure = {
         'total_runs': len(all_runs),
@@ -744,15 +1275,29 @@ def extract_toc_title_alternative(paragraph, namespaces):
     
     return title_text, structure
 
+_element_cache = {}
+
 def get_all_body_elements(document_tree, namespaces):
-    """Get all body elements including those in nested structures"""
+    """Get all body elements including those in nested structures - fixed caching"""
+    # 使用元素的内存地址作为缓存键
+    cache_key = id(document_tree)
+    
+    # 检查缓存
+    if cache_key in _element_cache:
+        return _element_cache[cache_key]
+    
     # Get direct body children first
     body = document_tree.xpath('.//w:body', namespaces=namespaces)
     if not body:
         return []
     
-    # Get all paragraphs and tables, excluding those in textboxes and SDT content
+    # 使用更高效的XPath查询，一次性获取所有需要的元素
     elements = body[0].xpath('./*[self::w:p or self::w:tbl][not(ancestor::wps:txbx) and not(ancestor::v:textbox) and not(ancestor::w:txbxContent) and not(ancestor::w:sdtContent)]', namespaces=namespaces)
+    
+    # 缓存结果
+    _element_cache[cache_key] = elements
+    app_logger.debug(f"Found {len(elements)} main body elements")
+    
     return elements
 
 def process_paragraph_element(paragraph, content_data, item_id, element_index, numbering_info, styles_info, namespaces):
@@ -783,13 +1328,13 @@ def process_paragraph_element(paragraph, content_data, item_id, element_index, n
     # Enhanced TOC detection
     is_toc, toc_info = detect_toc_paragraph_enhanced(paragraph, namespaces, False)
     
-    # Extract text excluding textbox content but including page variables
+    # Extract text including formulas and excluding textbox content but including page variables
     if is_toc:
         toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces)
         full_text = toc_title_text
         field_info = None
     else:
-        full_text, field_info = extract_paragraph_text_with_variables(paragraph, namespaces, paragraph_numbering_info, True)
+        full_text, field_info = process_paragraph_element_with_formulas(paragraph, namespaces)
         toc_structure = None
     
     if full_text and full_text.strip() and should_translate_enhanced(full_text):
@@ -839,78 +1384,129 @@ def process_table_element(table, content_data, item_id, element_index, numbering
     return item_id
 
 def process_table_rows_recursive(table, content_data, item_id, table_index, numbering_info, styles_info, namespaces, table_props, nesting_level=0):
-    """Recursively process table rows and handle nested tables"""
+    """Recursively process table rows and handle nested tables - enhanced error handling"""
     
-    rows = table.xpath('./w:tr', namespaces=namespaces)
-    
-    for row_idx, row in enumerate(rows):
-        # Get row properties
-        row_props = extract_row_properties(row, namespaces)
+    try:
+        # 获取表格信息用于日志
+        rows = table.xpath('./w:tr', namespaces=namespaces)
+        total_rows = len(rows)
         
-        cells = row.xpath('./w:tc', namespaces=namespaces)
+        if nesting_level == 0:  # 只在顶级表格记录日志
+            app_logger.debug(f"Processing table {table_index} with {total_rows} rows at nesting level {nesting_level}")
         
-        for cell_idx, cell in enumerate(cells):
-            # Get cell properties
-            cell_props = extract_cell_properties(cell, namespaces)
-            
-            # Process cell content (paragraphs)
-            cell_paragraphs = cell.xpath('./w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
-            
-            for para_idx, cell_paragraph in enumerate(cell_paragraphs):
-                # Enhanced TOC detection for table cells
-                is_toc, toc_info = detect_toc_paragraph_enhanced(cell_paragraph, namespaces, False)
+        # 防止处理过大的表格导致性能问题
+        if total_rows > 1000:
+            app_logger.warning(f"Large table detected ({total_rows} rows). Processing may take some time...")
+        
+        processed_rows = 0
+        
+        for row_idx, row in enumerate(rows):
+            try:
+                # 进度追踪（仅对大表格）
+                if total_rows > 50 and nesting_level == 0:  # 大表格才显示进度
+                    processed_rows += 1
+                    if processed_rows % 50 == 0:  # 每50行报告一次
+                        app_logger.debug(f"Table {table_index} processing progress: {processed_rows}/{total_rows} rows")
                 
-                if is_toc:
-                    toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(cell_paragraph, namespaces)
-                    cell_text = toc_title_text
-                    cell_field_info = None
-                else:
-                    cell_text, cell_field_info = extract_paragraph_text_with_variables(cell_paragraph, namespaces, extract_paragraph_numbering_info(cell_paragraph.xpath('.//w:numPr', namespaces=namespaces)[0] if cell_paragraph.xpath('.//w:numPr', namespaces=namespaces) else None, numbering_info, namespaces) if cell_paragraph.xpath('.//w:numPr', namespaces=namespaces) else None, True)
-                    toc_structure = None
+                # Get row properties
+                row_props = extract_row_properties(row, namespaces)
                 
-                if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
-                    item_id += 1
-                    cell_data = {
-                        "id": item_id,
-                        "count_src": item_id,
-                        "type": "table_cell",
-                        "table_index": table_index,
-                        "row": row_idx,
-                        "col": cell_idx,
-                        "paragraph_index": para_idx,
-                        "nesting_level": nesting_level,
-                        "is_toc": is_toc,
-                        "value": cell_text.replace("\n", "␊").replace("\r", "␍"),
-                        "table_props": table_props,
-                        "row_props": row_props,
-                        "cell_props": cell_props,
-                        "original_pPr": extract_paragraph_properties(cell_paragraph, namespaces),
-                        "original_structure": extract_paragraph_structure(cell_paragraph, namespaces)
-                    }
-                    
-                    if cell_field_info:
-                        cell_data["field_info"] = cell_field_info
-                    
-                    if is_toc:
-                        cell_data.update({
-                            "toc_info": toc_info,
-                            "toc_structure": toc_structure
-                        })
-                    
-                    content_data.append(cell_data)
-                    app_logger.debug(f"Extracted table cell {item_id}: '{cell_text[:50]}...'")
+                # 使用更高效的XPath查询
+                cells = row.xpath('./w:tc', namespaces=namespaces)
+                
+                for cell_idx, cell in enumerate(cells):
+                    try:
+                        # Get cell properties
+                        cell_props = extract_cell_properties(cell, namespaces)
+                        
+                        # Process cell content (paragraphs) - 优化查询
+                        cell_paragraphs = cell.xpath('./w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
+                        
+                        for para_idx, cell_paragraph in enumerate(cell_paragraphs):
+                            try:
+                                # Enhanced TOC detection for table cells
+                                is_toc, toc_info = detect_toc_paragraph_enhanced(cell_paragraph, namespaces, False)
+                                
+                                if is_toc:
+                                    toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(cell_paragraph, namespaces)
+                                    cell_text = toc_title_text
+                                    cell_field_info = None
+                                else:
+                                    # Use formula-aware extraction
+                                    cell_text, cell_field_info = process_paragraph_element_with_formulas(cell_paragraph, namespaces)
+                                    toc_structure = None
+                                
+                                if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
+                                    item_id += 1
+                                    cell_data = {
+                                        "id": item_id,
+                                        "count_src": item_id,
+                                        "type": "table_cell",
+                                        "table_index": table_index,
+                                        "row": row_idx,
+                                        "col": cell_idx,
+                                        "paragraph_index": para_idx,
+                                        "nesting_level": nesting_level,
+                                        "is_toc": is_toc,
+                                        "value": cell_text.replace("\n", "␊").replace("\r", "␍"),
+                                        "table_props": table_props,
+                                        "row_props": row_props,
+                                        "cell_props": cell_props,
+                                        "original_pPr": extract_paragraph_properties(cell_paragraph, namespaces),
+                                        "original_structure": extract_paragraph_structure(cell_paragraph, namespaces)
+                                    }
+                                    
+                                    if cell_field_info:
+                                        cell_data["field_info"] = cell_field_info
+                                    
+                                    if is_toc:
+                                        cell_data.update({
+                                            "toc_info": toc_info,
+                                            "toc_structure": toc_structure
+                                        })
+                                    
+                                    content_data.append(cell_data)
+                                    
+                                    # 减少详细日志以提高性能
+                                    if item_id % 500 == 0:  # 每500个项目记录一次
+                                        app_logger.debug(f"Processed {item_id} items, current: table cell '{cell_text[:30]}...'")
+                                        
+                            except Exception as e:
+                                app_logger.warning(f"Error processing cell paragraph {para_idx} in table {table_index}[{row_idx}][{cell_idx}]: {e}")
+                                continue
+                        
+                        # Check for nested tables in this cell - 优化查询
+                        try:
+                            nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
+                            for nested_table_idx, nested_table in enumerate(nested_tables):
+                                if nesting_level < 3:  # 防止过深的嵌套
+                                    nested_table_props = extract_table_properties(nested_table, namespaces)
+                                    item_id = process_table_rows_recursive(
+                                        nested_table, content_data, item_id, 
+                                        f"{table_index}_nested_{row_idx}_{cell_idx}_{nested_table_idx}",
+                                        numbering_info, styles_info, namespaces, 
+                                        nested_table_props, nesting_level + 1
+                                    )
+                                else:
+                                    app_logger.warning(f"Skipping nested table at depth {nesting_level + 1} to prevent excessive nesting")
+                                    
+                        except Exception as e:
+                            app_logger.warning(f"Error processing nested tables in cell {table_index}[{row_idx}][{cell_idx}]: {e}")
+                            
+                    except Exception as e:
+                        app_logger.warning(f"Error processing cell {table_index}[{row_idx}][{cell_idx}]: {e}")
+                        continue
+                        
+            except Exception as e:
+                app_logger.warning(f"Error processing row {row_idx} in table {table_index}: {e}")
+                continue
+        
+        if nesting_level == 0:
+            app_logger.debug(f"Completed processing table {table_index} with {total_rows} rows")
             
-            # Check for nested tables in this cell
-            nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
-            for nested_table_idx, nested_table in enumerate(nested_tables):
-                nested_table_props = extract_table_properties(nested_table, namespaces)
-                item_id = process_table_rows_recursive(
-                    nested_table, content_data, item_id, 
-                    f"{table_index}_nested_{row_idx}_{cell_idx}_{nested_table_idx}",
-                    numbering_info, styles_info, namespaces, 
-                    nested_table_props, nesting_level + 1
-                )
-    
+    except Exception as e:
+        app_logger.error(f"Critical error processing table {table_index}: {e}")
+        
     return item_id
 
 def extract_table_properties(table, namespaces):
@@ -957,30 +1553,45 @@ def extract_paragraph_properties(paragraph, namespaces):
     return None
 
 def extract_paragraph_structure(paragraph, namespaces):
-    """Extract complete paragraph structure information"""
+    """Extract complete paragraph structure information - optimized version"""
     structure = {
         'total_runs': 0,
         'runs_info': [],
         'has_fields': False,
-        'has_drawings': False
+        'has_drawings': False,
+        'has_formulas': False
     }
     
-    # Get all runs excluding textbox content
+    # 使用更高效的XPath查询，一次性获取所有runs
     runs = paragraph.xpath('./w:r[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
     structure['total_runs'] = len(runs)
+    
+    # Check for formulas at paragraph level
+    paragraph_formulas = paragraph.xpath('./m:oMath', namespaces=namespaces)
+    if paragraph_formulas:
+        structure['has_formulas'] = True
+    
+    # 预编译XPath表达式以提高性能
+    text_xpath = etree.XPath('.//w:t', namespaces=namespaces)
+    field_xpath = etree.XPath('.//w:fldChar | .//w:instrText | .//w:fldSimple', namespaces=namespaces)
+    drawing_xpath = etree.XPath('.//w:drawing | .//w:pict | .//mc:AlternateContent', namespaces=namespaces)
+    formula_xpath = etree.XPath('.//m:oMath', namespaces=namespaces)
+    break_xpath = etree.XPath('.//w:br | .//w:cr | .//w:tab', namespaces=namespaces)
+    rpr_xpath = etree.XPath('./w:rPr', namespaces=namespaces)
     
     for run_idx, run in enumerate(runs):
         run_info = {
             'index': run_idx,
-            'has_text': bool(run.xpath('.//w:t', namespaces=namespaces)),
-            'has_fields': bool(run.xpath('.//w:fldChar | .//w:instrText | .//w:fldSimple', namespaces=namespaces)),
-            'has_drawings': bool(run.xpath('.//w:drawing | .//w:pict | .//mc:AlternateContent', namespaces=namespaces)),
-            'has_breaks': bool(run.xpath('.//w:br | .//w:cr | .//w:tab', namespaces=namespaces)),
+            'has_text': bool(text_xpath(run)),
+            'has_fields': bool(field_xpath(run)),
+            'has_drawings': bool(drawing_xpath(run)),
+            'has_formulas': bool(formula_xpath(run)),
+            'has_breaks': bool(break_xpath(run)),
             'rPr_xml': None
         }
         
         # Extract run properties
-        rPr = run.xpath('./w:rPr', namespaces=namespaces)
+        rPr = rpr_xpath(run)
         if rPr:
             run_info['rPr_xml'] = etree.tostring(rPr[0], encoding='unicode')
         
@@ -990,6 +1601,8 @@ def extract_paragraph_structure(paragraph, namespaces):
             structure['has_fields'] = True
         if run_info['has_drawings']:
             structure['has_drawings'] = True
+        if run_info['has_formulas']:
+            structure['has_formulas'] = True
     
     return structure
 
@@ -1053,8 +1666,7 @@ def process_header_footer_content(hf_tree, content_data, item_id, numbering_info
             paragraph_text = toc_title_text
             field_info = None
         else:
-            paragraph_text, field_info = extract_paragraph_text_with_variables(
-                paragraph, namespaces, paragraph_numbering_info, True)
+            paragraph_text, field_info = process_paragraph_element_with_formulas(paragraph, namespaces)
             toc_structure = None
         
         if paragraph_text and paragraph_text.strip() and should_translate_enhanced(paragraph_text):
@@ -1132,7 +1744,8 @@ def process_header_footer_table_recursive(table, content_data, item_id, table_in
                     cell_text = toc_title_text
                     cell_field_info = None
                 else:
-                    cell_text, cell_field_info = extract_paragraph_text_with_variables(cell_paragraph, namespaces)
+                    # Use formula-aware extraction
+                    cell_text, cell_field_info = process_paragraph_element_with_formulas(cell_paragraph, namespaces)
                     toc_structure = None
                 
                 if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
@@ -1275,7 +1888,10 @@ def detect_toc_level_from_formatting(paragraph, namespaces):
 def extract_paragraph_text_only(paragraph, namespaces):
     """Extract only the text content without processing fields or variables"""
     text_nodes = paragraph.xpath('.//w:t', namespaces=namespaces)
-    return ''.join(node.text or '' for node in text_nodes)
+    full_text = ''.join(node.text or '' for node in text_nodes)
+    
+    # Clean brackets from the extracted text
+    return clean_translation_brackets(full_text)
 
 def extract_toc_title_with_complete_structure(paragraph, namespaces):
     """Extract only the title text from TOC entry, preserving complete structure for accurate restoration"""
@@ -1403,6 +2019,9 @@ def extract_toc_title_with_complete_structure(paragraph, namespaces):
     title_text = title_text.strip()
     title_text = re.sub(r'\s+', ' ', title_text)
     
+    # Clean brackets from the extracted title text
+    title_text = clean_translation_brackets(title_text)
+    
     app_logger.debug(f"Extracted TOC title: '{title_text}', Structure: {len(structure['title_runs'])} title runs, "
                     f"{len(structure['tab_runs'])} tab runs, {len(structure['page_number_runs'])} page number runs")
     
@@ -1484,75 +2103,9 @@ def is_dot_leader(text):
     return False
 
 def extract_paragraph_text_with_variables(paragraph, namespaces, numbering_info=None, exclude_textbox_runs=True):
-    """Extract paragraph text including page variables but excluding textbox content"""
-    full_text = ""
-    field_info = []
-    
-    # Get all runs in the paragraph
-    if exclude_textbox_runs:
-        all_runs = paragraph.xpath('.//w:r', namespaces=namespaces)
-        runs = []
-        for run in all_runs:
-            # Skip runs inside textboxes
-            if run.xpath('ancestor::wps:txbx', namespaces=namespaces):
-                continue
-            if run.xpath('ancestor::w:txbxContent', namespaces=namespaces):
-                continue
-            if run.xpath('ancestor::v:textbox', namespaces=namespaces):
-                continue
-            
-            # Skip runs containing textboxes
-            if run.xpath('.//w:drawing', namespaces=namespaces):
-                continue
-            if run.xpath('.//w:pict', namespaces=namespaces):
-                continue
-            if run.xpath('.//mc:AlternateContent', namespaces=namespaces):
-                continue
-            
-            runs.append(run)
-    else:
-        runs = paragraph.xpath('.//w:r', namespaces=namespaces)
-    
-    for run_idx, run in enumerate(runs):
-        # Check if this run contains only numbering text
-        if is_numbering_run(run, namespaces, numbering_info):
-            continue
-        
-        # Handle field characters and field instructions
-        if run.xpath('.//w:fldChar | .//w:instrText', namespaces=namespaces):
-            field_result = process_field_run(run, namespaces, run_idx)
-            if field_result:
-                full_text += field_result['display_text']
-                field_info.append(field_result)
-            continue
-        
-        # Handle simple fields
-        if run.xpath('.//w:fldSimple', namespaces=namespaces):
-            field_result = process_simple_field_run(run, namespaces, run_idx)
-            if field_result:
-                full_text += field_result['display_text']
-                field_info.append(field_result)
-            continue
-        
-        # Process all child elements in order, but only text-related ones
-        for child in run:
-            tag_name = child.tag.split('}')[-1]  # Get local name without namespace
-            
-            if tag_name == 't':
-                if child.text:
-                    full_text += child.text
-            elif tag_name == 'br':
-                full_text += "\n"
-            elif tag_name == 'tab':
-                full_text += "\t"
-            elif tag_name == 'cr':
-                full_text += "\r"
-            # Ignore other elements like rPr (run properties), drawing, etc.
-    
-    # Clean up text by removing leading numbering patterns
-    cleaned_text = remove_leading_numbering_patterns(full_text)
-    
-    return cleaned_text.lstrip(), field_info if field_info else None
+    """Extract paragraph text including page variables and formulas but excluding textbox content"""
+    # Use the enhanced formula-aware extraction function
+    return process_paragraph_element_with_formulas(paragraph, namespaces)
 
 def process_field_run(run, namespaces, run_idx):
     """Process a run containing field characters or field instructions"""
@@ -1641,7 +2194,7 @@ def process_simple_field_run(run, namespaces, run_idx):
     return None
 
 def extract_textbox_content(tree, namespaces):
-    """Extract content from all textboxes in the document, avoiding duplication"""
+    """Extract content from all textboxes in the document, avoiding duplication - fixed indexing"""
     textbox_items = []
     
     # Find all textboxes in the document (both new format and VML fallback)
@@ -1655,13 +2208,16 @@ def extract_textbox_content(tree, namespaces):
             textbox_items.append(textbox_item)
     
     # Process VML textboxes (avoid duplication by checking if they have corresponding WPS version)
-    for textbox_idx, textbox in enumerate(vml_textboxes):
+    # Create a filtered list first to ensure correct indexing
+    filtered_vml_textboxes = []
+    for textbox in vml_textboxes:
         # Check if this is a fallback textbox (has corresponding WPS version)
         parent_alternateContent = textbox.xpath('ancestor::mc:AlternateContent', namespaces=namespaces)
-        if parent_alternateContent:
-            # This is a fallback, skip it as we already processed the WPS version
-            continue
-        
+        if not parent_alternateContent:
+            filtered_vml_textboxes.append(textbox)
+    
+    # Now process the filtered list with correct indexing
+    for textbox_idx, textbox in enumerate(filtered_vml_textboxes):
         textbox_item = process_single_textbox(textbox, textbox_idx, "vml", tree, namespaces)
         if textbox_item:
             textbox_items.append(textbox_item)
@@ -1758,8 +2314,8 @@ def process_single_textbox(textbox, textbox_idx, textbox_format, tree, namespace
             para_text = toc_title_text
             para_field_info = None
         else:
-            # Extract text from paragraph including variables (don't exclude textbox runs since we're already processing textbox)
-            para_text, para_field_info = extract_paragraph_text_with_variables(paragraph, namespaces, None, False)
+            # Extract text from paragraph including formulas (don't exclude textbox runs since we're already processing textbox)
+            para_text, para_field_info = process_paragraph_element_with_formulas(paragraph, namespaces)
             toc_structure = None
         
         if para_text:
@@ -2041,45 +2597,157 @@ def is_numbering_run(run, namespaces, numbering_info=None):
     return False
 
 def remove_leading_numbering_patterns(text):
-    """Remove leading numbering patterns from text"""
+    """Remove leading numbering patterns from text, but preserve dates, section numbers, and other valid content"""
     if not text:
+        return text
+    
+    # Check if the text looks like a date first - if so, don't remove anything
+    if is_likely_date_format(text.strip()):
+        return text
+    
+    # Check if this looks like a section number (e.g., 1.1, 2.0, 3.2.1, etc.)
+    if is_likely_section_number(text.strip()):
         return text
     
     # Patterns to remove from the beginning of text
     patterns = [
-        r'^\d+\.\s*',  # 1. 
-        r'^\d+\)\s*',  # 1) 
-        r'^[a-zA-Z]\.\s*',  # a. 
-        r'^[a-zA-Z]\)\s*',  # a) 
-        r'^[ivxlcdm]+\.\s*',  # i., ii., iii., etc.
-        r'^[IVXLCDM]+\.\s*',  # I., II., III., etc.
+        r'^\d{1,3}\.\s+',  # 1. 12. 123. (require at least one space after the dot)
+        r'^\d+\)\s+',  # 1) (require at least one space after)
+        r'^[a-zA-Z]\.\s+',  # a. (require at least one space after)
+        r'^[a-zA-Z]\)\s+',  # a) (require at least one space after)
+        r'^[ivxlcdm]+\.\s+',  # i., ii., iii., etc. (require at least one space after)
+        r'^[IVXLCDM]+\.\s+',  # I., II., III., etc. (require at least one space after)
         r'^•\s*',  # bullet
         r'^-\s*',  # dash
         r'^\*\s*',  # asterisk
     ]
     
     for pattern in patterns:
-        text = re.sub(pattern, '', text, count=1)
+        # Only apply the pattern if what remains after removal would still have meaningful content
+        potential_result = re.sub(pattern, '', text, count=1)
+        if potential_result.strip() and len(potential_result.strip()) > 0:
+            text = potential_result
+        break  # Only apply the first matching pattern
     
     return text
 
+def is_likely_section_number(text):
+    """Check if text starts with a section number format like 1.1, 2.0, 3.2.1, etc."""
+    if not text:
+        return False
+    
+    # Section number patterns that should be preserved
+    section_patterns = [
+        r'^\d+\.\d+(?:\.\d+)*(?:\s|$)',  # 1.1 text, 2.0 text, 1.2.3 text, etc.
+        r'^\d+\.\d+(?:\.\d+)*\w',        # 1.1text, 2.0something (no space but followed by word)
+    ]
+    
+    for pattern in section_patterns:
+        if re.match(pattern, text):
+            app_logger.debug(f"Detected section number pattern in text: '{text[:50]}...'")
+            return True
+    
+    return False
+
+def is_likely_date_format(text):
+    """Check if text looks like a date format and should not be treated as numbering"""
+    if not text:
+        return False
+    
+    # Common date patterns
+    date_patterns = [
+        r'^\d{4}\.\d{1,2}\.\d{1,2}$',  # 2022.12.31
+        r'^\d{4}-\d{1,2}-\d{1,2}$',   # 2022-12-31
+        r'^\d{4}/\d{1,2}/\d{1,2}$',   # 2022/12/31
+        r'^\d{1,2}\.\d{1,2}\.\d{4}$', # 31.12.2022
+        r'^\d{1,2}-\d{1,2}-\d{4}$',   # 31-12-2022
+        r'^\d{1,2}/\d{1,2}/\d{4}$',   # 31/12/2022
+        r'^\d{1,2}\.\d{1,2}\.\d{2}$', # 31.12.22
+        r'^\d{4}\.\d{1,2}$',          # 2022.12
+        r'^\d{1,2}\.\d{4}$',          # 12.2022
+    ]
+    
+    for pattern in date_patterns:
+        if re.match(pattern, text):
+            return True
+    
+    return False
+
 def should_translate_enhanced(text):
-    """Enhanced translation check - more inclusive than original"""
+    """Enhanced translation check - more inclusive than original, with date handling"""
     if not text or not text.strip():
         return False
     
-    # Remove field placeholders for analysis
-    clean_text = text.strip()
-    clean_text = re.sub(r'\{\{[^}]+\}\}', '', clean_text)
+    # Clean brackets first before any analysis
+    text_for_analysis = clean_translation_brackets(text.strip())
+    
+    # Remove field placeholders and formula placeholders for analysis
+    clean_text = re.sub(r'\{\{[^}]+\}\}', '', text_for_analysis)
+    clean_text = re.sub(r'\[formula_\d+\]', '', clean_text)
     clean_text = clean_text.strip()
     
     # Skip very short text (likely symbols or numbers only)
     if len(clean_text) < 1:
         return False
     
-    # Skip pure numbers
+    # Skip pure numbers (but allow dates)
     if clean_text.isdigit():
         return False
+    
+    # Check for date patterns - these should be translated
+    # Use the cleaned text without brackets for date detection
+    date_patterns = [
+        # ISO and standard formats with separators (移除单词边界，使用更宽松的匹配)
+        r'\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}',              # YYYY.M.D, YYYY-M-D, YYYY/M/D (包括2021.4.1, 2022.12.31)
+        r'\d{1,2}[.\-/]\d{1,2}[.\-/]\d{4}',              # M.D.YYYY, M/D/YYYY, D.M.YYYY  
+        r'\d{4}[.\-/]\d{1,2}',                            # YYYY.M, YYYY/M, YYYY-M
+        r'\d{1,2}[.\-/]\d{4}',                            # M/YYYY, M-YYYY
+        
+        # Chinese date formats
+        r'\d{4}年\d{1,2}月\d{1,2}日',                      # 2024年12月31日
+        r'\d{4}年\d{1,2}月',                              # 2024年12月
+        r'\d{1,2}月\d{1,2}日',                            # 12月31日
+        r'\d{4}年',                                       # 2024年
+        r'\d{1,2}月',                                     # 12月
+        
+        # English month names (full)
+        r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s*\d{4}',  # January 1, 2024
+        r'\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}',   # 1 January 2024
+        r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}',             # January 2024
+        
+        # English month abbreviations
+        r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{1,2},?\s*\d{4}',  # Jan 1, 2024 or Jan. 1, 2024
+        r'\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{4}',   # 1 Jan 2024
+        r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{4}',             # Jan 2024
+        
+        # Ordinal dates
+        r'(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th),?\s*\d{4}',  # January 1st, 2024
+        r'\d{1,2}(?:st|nd|rd|th)\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}',   # 1st January 2024
+        r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{1,2}(?:st|nd|rd|th),?\s*\d{4}',  # Jan 1st, 2024
+        r'\d{1,2}(?:st|nd|rd|th)\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{4}',   # 1st Jan 2024
+        
+        # Time formats
+        r'\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM|am|pm)?',  # 14:30, 2:30 PM, 14:30:25
+        r'\d{1,2}时\d{1,2}分(?:\d{1,2}秒)?',              # 14时30分25秒
+        
+        # Week/day patterns
+        r'(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)',     # Full day names
+        r'(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\.?',                              # Day abbreviations
+        r'(?:周一|周二|周三|周四|周五|周六|周日|星期一|星期二|星期三|星期四|星期五|星期六|星期日)',  # Chinese weekdays
+        
+        # Additional formats (with separators only)
+        r'\d{1,2}/\d{1,2}',                              # M/D or D/M (without year)
+        r'\d{1,2}-\d{1,2}',                              # M-D or D-M (without year)
+        r'第\d+周',                                       # 第1周 (Chinese week format)
+        r'Q[1-4]\s*\d{4}',                               # Q1 2024 (Quarter)
+        r'\d{4}Q[1-4]',                                  # 2024Q1
+        r'第[一二三四]季度',                                # 第一季度 (Chinese quarter)
+    ]
+    
+    for pattern in date_patterns:
+        if re.search(pattern, clean_text, re.IGNORECASE):
+            app_logger.debug(f"Date pattern detected in text: '{clean_text}', marking for translation")
+            return True
     
     # Skip pure punctuation
     if all(c in '.,;:!?()[]{}"\'-_=+*&^%$#@~`|\\/<>' for c in clean_text):
@@ -2097,6 +2765,7 @@ def should_translate_enhanced(text):
     except:
         return True  # Default to translate if function fails
 
+
 def write_translated_content_to_word(file_path, original_json_path, translated_json_path):
     """Write translated content back to Word document in bilingual format (original followed by translation)"""
     
@@ -2112,6 +2781,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         item_id = str(item.get("id", item.get("count_src")))
         if item_id and "translated" in item:
             translations[item_id] = item["translated"]
+    
+    app_logger.info(f"Loaded {len(translations)} translations")
     
     # Get temp directory path
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -2130,7 +2801,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             docx.extractall(temp_dir)
     
     try:
-        # Complete namespaces
+        # Complete namespaces including math
         namespaces = {
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
@@ -2147,7 +2818,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
             'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
             'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
-            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram',
+            'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'  # Math namespace
         }
         
         # Load and update main document
@@ -2166,6 +2838,23 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             numbering_info = parse_numbering_xml(numbering_xml, namespaces)
             update_numbering_xml_with_translations(numbering_tree, original_data, translations, namespaces)
         
+        # Load and update footnotes.xml if exists
+        footnotes_tree = None
+        footnotes_xml_path = os.path.join(temp_dir, 'word', 'footnotes.xml')
+        if os.path.exists(footnotes_xml_path):
+            app_logger.info("Processing footnotes.xml")
+            with open(footnotes_xml_path, 'rb') as f:
+                footnotes_xml = f.read()
+            footnotes_tree = etree.fromstring(footnotes_xml)
+            
+            # Count footnote translations available
+            footnote_translations = [item for item in original_data if item["type"] == "footnote"]
+            app_logger.info(f"Found {len(footnote_translations)} footnote items to translate")
+            
+            update_footnotes_with_bilingual_format(footnotes_tree, original_data, translations, namespaces)
+        else:
+            app_logger.info("No footnotes.xml found in document")
+        
         # Load header/footer files
         header_footer_trees = {}
         word_dir = os.path.join(temp_dir, 'word')
@@ -2183,9 +2872,17 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         # Get all document elements
         all_main_elements = get_all_body_elements(document_tree, namespaces)
         
-        # Get all textboxes for processing
+        # Get all textboxes for processing - use same logic as extraction to ensure index consistency
         all_wps_textboxes = document_tree.xpath('.//wps:txbx', namespaces=namespaces)
-        all_vml_textboxes = document_tree.xpath('.//v:textbox', namespaces=namespaces)
+        all_vml_textboxes = []
+        vml_textbox_candidates = document_tree.xpath('.//v:textbox', namespaces=namespaces)
+        for textbox in vml_textbox_candidates:
+            # Check if this is a fallback textbox (has corresponding WPS version)
+            parent_alternateContent = textbox.xpath('ancestor::mc:AlternateContent', namespaces=namespaces)
+            if parent_alternateContent:
+                # This is a fallback, skip it as we already processed the WPS version
+                continue
+            all_vml_textboxes.append(textbox)
 
         # Apply SmartArt translations with bilingual format
         smartart_items = [item for item in original_data if item['type'] == 'smartart']
@@ -2200,8 +2897,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             if not translated_text:
                 continue
                 
-            # Skip numbering and smartart items as they're handled separately
-            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart"]:
+            # Skip numbering, smartart, and footnote items as they're handled separately
+            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart", "footnote"]:
                 continue
                 
             translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
@@ -2258,6 +2955,12 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             with open(numbering_xml_path, "wb") as f:
                 f.write(etree.tostring(numbering_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
         
+        if footnotes_tree is not None:
+            app_logger.info("Saving updated footnotes.xml")
+            with open(footnotes_xml_path, "wb") as f:
+                f.write(etree.tostring(footnotes_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+            app_logger.info("Successfully saved footnotes.xml")
+        
         for hf_file, hf_tree in header_footer_trees.items():
             hf_path = os.path.join(temp_dir, hf_file.replace('/', os.sep))
             with open(hf_path, "wb") as f:
@@ -2272,9 +2975,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         with ZipFile(result_path, 'w', ZIP_DEFLATED) as new_doc:
             for root, dirs, files in os.walk(temp_dir):
                 for file in files:
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, temp_dir).replace(os.sep, '/')
-                    new_doc.write(file_path, arcname)
+                    file_path_in_temp = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path_in_temp, temp_dir).replace(os.sep, '/')
+                    new_doc.write(file_path_in_temp, arcname)
 
         app_logger.info(f"Bilingual Word document saved to: {result_path}")
         return result_path
@@ -2283,6 +2986,133 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         # Clean up temp directory
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+def update_footnote_paragraph_with_bilingual_format(paragraph, bilingual_text, namespaces, field_info=None, original_structure=None):
+    """Update footnote paragraph with bilingual format while preserving footnote reference markers"""
+    
+    # Get all runs in the paragraph
+    all_runs = paragraph.xpath('./w:r', namespaces=namespaces)
+    
+    # Separate runs into different categories
+    footnote_ref_runs = []
+    text_runs = []
+    field_runs = []
+    other_runs = []
+    
+    for run in all_runs:
+        if run.xpath('.//w:footnoteRef', namespaces=namespaces):
+            # This run contains footnote reference marker, must be preserved
+            footnote_ref_runs.append(run)
+        elif run.xpath('.//w:fldChar | .//w:instrText | .//w:fldSimple', namespaces=namespaces):
+            # This run contains field information
+            field_runs.append(run)
+        elif run.xpath('.//w:t', namespaces=namespaces):
+            # This run contains text content that can be replaced
+            text_runs.append(run)
+        else:
+            # Other special runs (bookmarks, etc.)
+            other_runs.append(run)
+    
+    # Remove only the text runs, preserving footnote reference runs and other special runs
+    for run in text_runs:
+        paragraph.remove(run)
+    
+    # Process bilingual text with formulas and fields
+    if field_info:
+        # Extract formulas from field_info
+        formulas = []
+        for item in field_info:
+            if item.get('type') == 'formula' and item.get('xml_content'):
+                try:
+                    formula_element = etree.fromstring(item['xml_content'])
+                    formulas.append(formula_element)
+                except Exception as e:
+                    app_logger.warning(f"Error parsing formula XML: {e}")
+        
+        update_paragraph_content_with_fields_and_formulas_bilingual(
+            paragraph, bilingual_text, namespaces, field_info, formulas, original_structure
+        )
+    else:
+        add_text_with_formulas_and_bilingual_formatting(paragraph, bilingual_text, namespaces, [], original_structure)
+
+def update_footnotes_with_bilingual_format(footnotes_tree, original_data, translations, namespaces):
+    """Update footnotes.xml with bilingual translated content"""
+    
+    # Get all footnotes except separator and continuation separator
+    footnotes = footnotes_tree.xpath('//w:footnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]', namespaces=namespaces)
+    
+    # Create a mapping of footnote_id to footnote element for faster lookup
+    footnotes_by_id = {}
+    for footnote in footnotes:
+        footnote_id = footnote.get(f'{{{namespaces["w"]}}}id')
+        if footnote_id:
+            # Store both string and int versions to handle type mismatches
+            footnotes_by_id[str(footnote_id)] = footnote
+            footnotes_by_id[footnote_id] = footnote
+    
+    app_logger.info(f"Found {len(footnotes)} footnotes to process")
+    
+    # Process footnote translations
+    updated_count = 0
+    for item in original_data:
+        if item["type"] != "footnote":
+            continue
+            
+        item_id = str(item.get("id", item.get("count_src")))
+        translated_text = translations.get(item_id)
+        
+        if not translated_text:
+            app_logger.debug(f"No translation found for footnote item {item_id}")
+            continue
+            
+        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+        original_text = item.get("value", "").replace("␊", "\n").replace("␍", "\r")
+        
+        # Create bilingual text (original + newline + translation)
+        bilingual_text = create_bilingual_text(original_text, translated_text)
+        
+        footnote_id = item.get("footnote_id")
+        paragraph_index = item.get("paragraph_index")
+        
+        # Try both string and original footnote_id
+        footnote = footnotes_by_id.get(str(footnote_id))
+        if footnote is None:
+            footnote = footnotes_by_id.get(footnote_id)
+        
+        if footnote is None:
+            app_logger.error(f"Footnote ID {footnote_id} not found in footnotes. Available IDs: {list(set(k for k in footnotes_by_id.keys() if isinstance(k, str)))}")
+            continue
+            
+        # Get paragraphs in the footnote
+        footnote_paragraphs = footnote.xpath('.//w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
+        
+        if paragraph_index >= len(footnote_paragraphs):
+            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in footnote {footnote_id} (has {len(footnote_paragraphs)} paragraphs)")
+            continue
+            
+        target_paragraph = footnote_paragraphs[paragraph_index]
+        
+        # Restore original paragraph properties if available
+        original_pPr = item.get("original_pPr")
+        if original_pPr:
+            restore_paragraph_properties(target_paragraph, original_pPr, namespaces)
+        
+        if item.get("is_toc", False):
+            toc_structure = item.get("toc_structure")
+            update_toc_paragraph_with_bilingual_format(target_paragraph, bilingual_text, namespaces, toc_structure)
+        else:
+            field_info = item.get("field_info")
+            original_structure = item.get("original_structure")
+            
+            # Use specialized footnote paragraph update function
+            update_footnote_paragraph_with_bilingual_format(
+                target_paragraph, bilingual_text, namespaces, field_info, original_structure
+            )
+        
+        updated_count += 1
+        app_logger.info(f"Updated footnote {footnote_id}.{paragraph_index} with bilingual format: '{bilingual_text[:50]}...'")
+    
+    app_logger.info(f"Successfully updated {updated_count} footnotes with bilingual format")
 
 def apply_smartart_translations_bilingual(temp_dir, smartart_items, translations, namespaces):
     """Apply translations to SmartArt diagrams in Word document with bilingual format."""
@@ -2432,6 +3262,9 @@ def simple_smartart_text_distribution_bilingual(text_runs, bilingual_text, names
     for i, text_run in enumerate(text_runs):
         text_node = text_run.xpath('./a:t', namespaces=namespaces)
         if text_node:
+            # Apply font settings for non-Chinese target languages
+            apply_smartart_latin_font_to_run(text_run, namespaces)
+            
             if i == 0 and len(lines) > 0:
                 # First run gets original text
                 text_node[0].text = lines[0]
@@ -2476,6 +3309,9 @@ def intelligent_smartart_text_distribution_bilingual(text_runs, bilingual_text, 
         original_length = original_run_lengths[run_index] if run_index < len(original_run_lengths) else 0
         
         if original_length > 0:
+            # Apply font settings for non-Chinese target languages
+            apply_smartart_latin_font_to_run(text_run, namespaces)
+            
             # First meaningful run gets bilingual text
             text_node[0].text = bilingual_text
             # Clear other meaningful runs
@@ -2489,10 +3325,39 @@ def intelligent_smartart_text_distribution_bilingual(text_runs, bilingual_text, 
             # Empty run stays empty
             text_node[0].text = ""
 
+def apply_smartart_latin_font_to_run(text_run, namespaces):
+    """为SmartArt文本运行设置罗马字体（针对非中文目标语言）"""
+    # 使用全局目标语言
+    effective_target = globals().get('_current_target_language') or DateConversionConfig.TARGET_LANGUAGE
+    
+    # 如果目标语言是中文相关，不设置罗马字体
+    if effective_target and effective_target.lower() in ['zh', 'zh-cn', 'zh-tw', 'chinese']:
+        return
+    
+    # 查找或创建运行属性（SmartArt使用'a'命名空间）
+    rPr = text_run.xpath('./a:rPr', namespaces=namespaces)
+    if not rPr:
+        rPr_element = etree.SubElement(text_run, f"{{{namespaces['a']}}}rPr")
+    else:
+        rPr_element = rPr[0]
+    
+    # 设置罗马字体
+    # 查找现有的字体设置
+    existing_fonts = rPr_element.xpath('./a:latin', namespaces=namespaces)
+    if existing_fonts:
+        latin_font = existing_fonts[0]
+    else:
+        latin_font = etree.SubElement(rPr_element, f"{{{namespaces['a']}}}latin")
+    
+    # 为非中文内容设置罗马字体
+    font_name = "Times New Roman"  # 可以根据需要修改字体
+    latin_font.set('typeface', font_name)
+
 def create_bilingual_text(original_text, translated_text):
-    """Create bilingual text format: original text + newline + translated text"""
+    """Create bilingual text format: original text + newline + translated text with automatic date conversion and footnote reference handling"""
     if not original_text:
-        return translated_text
+        # 清理译文中的《》符号
+        return clean_translation_brackets(translated_text)
     if not translated_text:
         return original_text
     
@@ -2500,7 +3365,32 @@ def create_bilingual_text(original_text, translated_text):
     original_clean = original_text.strip()
     translated_clean = translated_text.strip()
     
-    return f"{original_clean}\n{translated_clean}"
+    # 检测并转换译文中未翻译的日期格式
+    converted_translated = detect_and_convert_untranslated_dates(
+        original_clean, 
+        translated_clean, 
+        DateConversionConfig.TARGET_LANGUAGE
+    )
+    
+    # 再次清理译文中的《》符号（虽然在detect_and_convert_untranslated_dates中已经清理了，但为了确保）
+    converted_translated = clean_translation_brackets(converted_translated)
+    
+    # 处理脚注引用：只在原文中保留，译文中移除
+    # 查找原文中的脚注引用占位符
+    footnote_ref_pattern = r'\{\{FOOTNOTE_REF_\d+\}\}'
+    footnote_refs = re.findall(footnote_ref_pattern, original_clean)
+    
+    if footnote_refs:
+        # 从译文中移除所有脚注引用占位符
+        for footnote_ref in footnote_refs:
+            converted_translated = converted_translated.replace(footnote_ref, '')
+        
+        # 清理译文中可能产生的多余空格
+        converted_translated = re.sub(r'\s+', ' ', converted_translated).strip()
+        
+        app_logger.debug(f"Removed footnote references from translation: {footnote_refs}")
+    
+    return f"{original_clean}\n{converted_translated}"
 
 def update_sdt_paragraph_with_bilingual_format(item, bilingual_text, all_sdt_elements, namespaces):
     """Update SDT paragraph with bilingual format (original + translation)"""
@@ -3197,86 +4087,158 @@ def restore_paragraph_properties(paragraph, original_pPr_xml, namespaces):
         app_logger.error(f"Error restoring paragraph properties: {e}")
 
 def update_paragraph_text_with_bilingual_format(paragraph, bilingual_text, namespaces, numbering_info=None, field_info=None, original_structure=None):
-    """Update paragraph text with bilingual format (original + translation)"""
+    """Update paragraph text with bilingual format while preserving textbox runs and other non-text elements"""
     
-    # Find all runs that are direct children of the paragraph
-    all_runs = paragraph.xpath('./w:r', namespaces=namespaces)
+    # Find all direct children that are not paragraph properties
+    all_children = [child for child in paragraph if not child.tag.endswith('pPr')]
     
-    text_runs = []
-    drawing_runs = []
-    preserved_runs = []
+    # Separate textbox runs from other content
+    textbox_runs = []
+    non_textbox_children = []
     
-    for run in all_runs:
-        # Identify runs containing drawings (textboxes) - keep these
-        if run.xpath('.//w:drawing | .//w:pict | .//mc:AlternateContent', namespaces=namespaces):
-            drawing_runs.append(run)
-            preserved_runs.append(run)
-            continue
+    for child in all_children:
+        tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
         
-        # If we have field_info, we will regenerate all fields, so treat field runs as text runs to be removed
-        if field_info and run.xpath('.//w:fldChar | .//w:instrText | .//w:fldSimple', namespaces=namespaces):
-            text_runs.append(run)
-            continue
-        
-        # Identify field runs - keep these only if no field_info to regenerate
-        if not field_info and run.xpath('.//w:fldChar | .//w:instrText | .//w:fldSimple', namespaces=namespaces):
-            preserved_runs.append(run)
-            continue
-        
-        # Identify numbering runs if this is a numbered paragraph - keep these
-        if numbering_info and numbering_info.get('has_numbering') and is_numbering_run(run, namespaces, numbering_info):
-            preserved_runs.append(run)
-            continue
-        
-        # This is a text run that needs to be replaced
-        text_runs.append(run)
+        if tag_name == 'r':  # Text run
+            # Check if this run contains textbox, drawing, or other non-text content
+            if (child.xpath('.//wps:txbx', namespaces=namespaces) or 
+                child.xpath('.//v:textbox', namespaces=namespaces) or
+                child.xpath('.//w:drawing', namespaces=namespaces) or
+                child.xpath('.//w:pict', namespaces=namespaces) or
+                child.xpath('.//mc:AlternateContent', namespaces=namespaces)):
+                # This run contains textbox content, preserve it
+                textbox_runs.append(child)
+                app_logger.debug("Preserving run with textbox/drawing content")
+            else:
+                # This run contains only text content, treat normally
+                non_textbox_children.append(child)
+        else:
+            # All other elements (formulas, bookmarks, etc.)
+            non_textbox_children.append(child)
     
-    # Get formatting from the first text run if available, or use original structure
-    formatting = None
-    if original_structure and original_structure.get('runs_info'):
-        # Find the first text run with formatting
-        for run_info in original_structure['runs_info']:
-            if run_info.get('has_text') and run_info.get('rPr_xml'):
-                try:
-                    formatting = etree.fromstring(run_info['rPr_xml'])
-                    break
-                except:
-                    pass
-    
-    if formatting is None and text_runs:
-        # Fallback to first text run formatting
-        first_run = text_runs[0]
-        rPr_elements = first_run.xpath('./w:rPr', namespaces=namespaces)
-        formatting = rPr_elements[0] if rPr_elements else None
-    
-    # Remove only the text runs, keep everything else
-    for run in text_runs:
+    # Remove textbox runs temporarily (they will be added back at the end)
+    for run in textbox_runs:
         paragraph.remove(run)
     
-    # Add bilingual text content with proper structure
+    # Process non-textbox content using the original logic
+    runs = []
+    formulas = []
+    other_elements = []
+    
+    for child in non_textbox_children:
+        tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+        
+        if tag_name == 'r':  # Text run (non-textbox)
+            runs.append(child)
+        elif tag_name == 'oMath':  # Formula
+            formulas.append(child)
+        else:  # Other elements like bookmarks, etc.
+            other_elements.append(child)
+    
+    # Remove non-textbox content except paragraph properties (original logic)
+    for child in non_textbox_children:
+        paragraph.remove(child)
+    
+    # Use original logic for non-textbox content
+    # Preserve other non-text elements at the beginning
+    for element in other_elements:
+        if element.tag.endswith('bookmarkStart') or element.tag.endswith('proofErr'):
+            paragraph.append(element)
+    
+    # Process bilingual text with formulas and fields (original logic)
     if field_info:
-        update_paragraph_content_with_fields_bilingual(
-            paragraph, bilingual_text, namespaces, field_info, formatting, original_structure
+        # Extract formulas from field_info for the update function
+        formulas_from_field = []
+        for item in field_info:
+            if item.get('type') == 'formula' and item.get('xml_content'):
+                try:
+                    formula_element = etree.fromstring(item['xml_content'])
+                    formulas_from_field.append(formula_element)
+                except Exception as e:
+                    app_logger.warning(f"Error parsing formula XML: {e}")
+        
+        update_paragraph_content_with_fields_and_formulas_bilingual(
+            paragraph, bilingual_text, namespaces, field_info, formulas, original_structure
         )
     else:
-        add_text_with_bilingual_formatting(paragraph, bilingual_text, namespaces, formatting)
+        add_text_with_formulas_and_bilingual_formatting(
+            paragraph, bilingual_text, namespaces, formulas, original_structure
+        )
+    
+    # Add remaining other elements at the end (original logic)
+    for element in other_elements:
+        if not (element.tag.endswith('bookmarkStart') or element.tag.endswith('proofErr')):
+            paragraph.append(element)
+    
+    # Add back textbox runs at the end
+    for run in textbox_runs:
+        paragraph.append(run)
+    
+    app_logger.debug(f"Updated paragraph preserving {len(textbox_runs)} textbox runs")
 
-def update_paragraph_content_with_fields_bilingual(paragraph, bilingual_text, namespaces, field_info, formatting=None, original_structure=None):
-    """Update paragraph content with fields while maintaining bilingual format"""
+def apply_latin_font_to_run(run, namespaces, target_language=None):
+    """为非中文目标语言的文本运行设置罗马字体"""
+    # 使用全局目标语言或传入的目标语言
+    effective_target = target_language or globals().get('_current_target_language') or DateConversionConfig.TARGET_LANGUAGE
     
-    # Parse the bilingual text to find field placeholders
-    field_placeholders = re.findall(r'\{\{[^}]+\}\}', bilingual_text)
-    
-    if not field_placeholders:
-        # No field placeholders, just add text with line breaks
-        add_text_with_bilingual_formatting(paragraph, bilingual_text, namespaces, formatting)
+    # 如果目标语言是中文相关，不设置罗马字体
+    if effective_target and effective_target.lower() in ['zh', 'zh-cn', 'zh-tw', 'chinese']:
         return
     
-    # Create a mapping of field placeholders to field info with position tracking
+    # 查找或创建运行属性
+    rPr = run.xpath('./w:rPr', namespaces=namespaces)
+    if not rPr:
+        rPr_element = etree.SubElement(run, f"{{{namespaces['w']}}}rPr")
+    else:
+        rPr_element = rPr[0]
+    
+    # 设置罗马字体
+    # 查找现有的字体设置
+    existing_fonts = rPr_element.xpath('./w:rFonts', namespaces=namespaces)
+    if existing_fonts:
+        rFonts = existing_fonts[0]
+    else:
+        rFonts = etree.SubElement(rPr_element, f"{{{namespaces['w']}}}rFonts")
+    
+    # 为非中文内容设置罗马字体
+    font_name = "Times New Roman"  # 可以根据需要修改字体
+    rFonts.set(f'{{{namespaces["w"]}}}ascii', font_name)
+    rFonts.set(f'{{{namespaces["w"]}}}hAnsi', font_name)
+    rFonts.set(f'{{{namespaces["w"]}}}cs', font_name)
+
+def update_paragraph_content_with_fields_and_formulas_bilingual(paragraph, bilingual_text, namespaces, field_info, formulas, original_structure):
+    """Update paragraph content with fields and formulas while maintaining bilingual format"""
+    
+    # Extract formula info and field info
+    formula_items = [item for item in field_info if item.get('type') == 'formula']
+    field_items = [item for item in field_info if item.get('type') != 'formula']
+    footnote_ref_items = [item for item in field_items if item.get('type') == 'footnote_reference']
+    other_field_items = [item for item in field_items if item.get('type') != 'footnote_reference']
+    
+    # Create formula mapping
+    formula_mapping = {}
+    for formula_item in formula_items:
+        placeholder = formula_item.get('placeholder', '')
+        if placeholder:
+            formula_mapping[placeholder] = formula_item
+    
+    # Create footnote reference mapping
+    footnote_ref_mapping = {}
+    for footnote_item in footnote_ref_items:
+        placeholder = footnote_item.get('placeholder', '')
+        if placeholder:
+            footnote_ref_mapping[placeholder] = footnote_item
+    
+    # Parse the bilingual text to find placeholders
+    field_placeholders = re.findall(r'\{\{[^}]+\}\}', bilingual_text)
+    formula_placeholders = re.findall(r'\[formula_\d+\]', bilingual_text)
+    footnote_ref_placeholders = re.findall(r'\{\{FOOTNOTE_REF_\d+\}\}', bilingual_text)
+    
+    # Create a mapping of field placeholders to field info
     field_mapping = {}
     field_counters = {}
     
-    for field in field_info:
+    for field in other_field_items:
         display_text = field.get('display_text', '')
         if display_text in field_placeholders:
             if display_text not in field_counters:
@@ -3286,25 +4248,6 @@ def update_paragraph_content_with_fields_bilingual(paragraph, bilingual_text, na
             field_mapping[key] = field
             field_counters[display_text] += 1
     
-    # For repeated field placeholders that exceed available field info, reuse the first field info
-    for placeholder in set(field_placeholders):
-        placeholder_count = field_placeholders.count(placeholder)
-        available_count = field_counters.get(placeholder, 0)
-        
-        if placeholder_count > available_count:
-            # Find the first field info for this placeholder
-            base_field_info = None
-            for field in field_info:
-                if field.get('display_text', '') == placeholder:
-                    base_field_info = field
-                    break
-            
-            if base_field_info:
-                # Add mapping for additional occurrences
-                for i in range(available_count, placeholder_count):
-                    key = f"{placeholder}_{i}"
-                    field_mapping[key] = base_field_info
-    
     # Split text by both field placeholders and line breaks
     lines = bilingual_text.split('\n')
     
@@ -3312,22 +4255,66 @@ def update_paragraph_content_with_fields_bilingual(paragraph, bilingual_text, na
         if line_idx > 0:
             # Add line break before each line except the first
             br_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-            if formatting is not None:
-                cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                br_run.insert(0, cloned_rPr)
+            apply_latin_font_to_run(br_run, namespaces)
             etree.SubElement(br_run, f"{{{namespaces['w']}}}br")
         
-        # Process field placeholders within this line
-        if any(placeholder in line for placeholder in field_placeholders):
-            # Split line by field placeholders and rebuild with proper field elements
-            parts = re.split(r'(\{\{[^}]+\}\})', line)
+        # Process all placeholders within this line
+        all_placeholders = field_placeholders + formula_placeholders + footnote_ref_placeholders
+        if any(placeholder in line for placeholder in all_placeholders):
+            # Split line by all placeholders and rebuild with proper elements
+            pattern = r'(\{\{[^}]+\}\}|\[formula_\d+\])'
+            parts = re.split(pattern, line)
             
             current_run = None
             field_usage = {}
             
             for part in parts:
-                if part in field_placeholders:
-                    # Track field usage to handle multiple occurrences
+                if part in formula_placeholders:
+                    # This is a formula placeholder
+                    if part in formula_mapping:
+                        formula_item = formula_mapping[part]
+                        try:
+                            # Parse and insert the original formula XML
+                            formula_xml = formula_item.get('xml_content', '')
+                            if formula_xml:
+                                formula_element = etree.fromstring(formula_xml)
+                                paragraph.append(formula_element)
+                                app_logger.debug(f"Inserted formula: {part}")
+                        except Exception as e:
+                            app_logger.error(f"Error inserting formula {part}: {e}")
+                            # Fallback: create text with placeholder
+                            if current_run is None:
+                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                                apply_latin_font_to_run(current_run, namespaces)
+                            text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                            text_node.text = part
+                        
+                        current_run = None  # Force new run for next content
+                
+                elif part in footnote_ref_placeholders:
+                    # This is a footnote reference placeholder
+                    if part in footnote_ref_mapping:
+                        footnote_item = footnote_ref_mapping[part]
+                        try:
+                            # Parse and insert the original footnote reference run XML
+                            run_xml = footnote_item.get('run_xml', '')
+                            if run_xml:
+                                footnote_run = etree.fromstring(run_xml)
+                                paragraph.append(footnote_run)
+                                app_logger.debug(f"Inserted footnote reference: {part}")
+                        except Exception as e:
+                            app_logger.error(f"Error inserting footnote reference {part}: {e}")
+                            # Fallback: create text with placeholder
+                            if current_run is None:
+                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                                apply_latin_font_to_run(current_run, namespaces)
+                            text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                            text_node.text = part
+                        
+                        current_run = None  # Force new run for next content
+                    
+                elif part in field_placeholders:
+                    # This is a field placeholder (not footnote reference)
                     if part not in field_usage:
                         field_usage[part] = 0
                     
@@ -3338,11 +4325,12 @@ def update_paragraph_content_with_fields_bilingual(paragraph, bilingual_text, na
                         field = field_mapping[key]
                         field_type = field.get('type')
                         
+                        if current_run is None:
+                            current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                            apply_latin_font_to_run(current_run, namespaces)
+                        
                         if field_type == 'simple_field':
                             # Create simple field using original XML
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
                             original_field_xml = field.get('original_field_xml')
                             if original_field_xml:
                                 try:
@@ -3357,41 +4345,19 @@ def update_paragraph_content_with_fields_bilingual(paragraph, bilingual_text, na
                                 fld_simple = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldSimple")
                                 fld_simple.set(f'{{{namespaces["w"]}}}instr', field.get('instruction', ''))
                         
+                        # Handle other field types (begin, end, separate, instruction)
                         elif field_type == 'field_begin':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
                             fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
                             fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'begin')
-                            
                         elif field_type == 'field_instruction':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
                             instr_text = etree.SubElement(current_run, f"{{{namespaces['w']}}}instrText")
                             instr_text.text = field.get('instruction', '')
-                            
                         elif field_type == 'field_end':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
                             fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
                             fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'end')
-                            
                         elif field_type == 'field_separate':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
                             fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
                             fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'separate')
-                        
-                        # Apply formatting if available
-                        if formatting is not None and current_run is not None:
-                            existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
-                            for rPr in existing_rPr:
-                                current_run.remove(rPr)
-                            cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                            current_run.insert(0, cloned_rPr)
                         
                         current_run = None  # Force new run for next content
                     
@@ -3399,52 +4365,94 @@ def update_paragraph_content_with_fields_bilingual(paragraph, bilingual_text, na
                     # This is regular text (including empty strings to preserve structure)
                     if current_run is None:
                         current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                        apply_latin_font_to_run(current_run, namespaces)
                     
                     text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
                     text_node.text = part
-                    
-                    # Apply formatting if available
-                    if formatting is not None:
-                        existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
-                        for rPr in existing_rPr:
-                            current_run.remove(rPr)
-                        cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                        current_run.insert(0, cloned_rPr)
         else:
-            # No field placeholders in this line, just add as regular text
+            # No placeholders in this line, just add as regular text
             if line or line_idx == 0:  # Always add first line, add others only if not empty
                 text_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                if formatting is not None:
-                    cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                    text_run.insert(0, cloned_rPr)
+                apply_latin_font_to_run(text_run, namespaces)
                 text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
                 text_node.text = line
 
-def add_text_with_bilingual_formatting(paragraph, bilingual_text, namespaces, formatting=None):
-    """Add bilingual text to paragraph while preserving line breaks and formatting"""
-    # Split text by line breaks but preserve the structure
-    parts = bilingual_text.split('\n')
+def add_text_with_formulas_and_bilingual_formatting(paragraph, bilingual_text, namespaces, formulas, original_structure):
+    """Add bilingual text to paragraph with formula support while preserving line breaks and formatting"""
     
-    for i, part in enumerate(parts):
-        if i > 0:
-            # Add line break before each part except the first
+    # Extract formula placeholders and footnote reference placeholders from text
+    formula_placeholders = re.findall(r'\[formula_\d+\]', bilingual_text)
+    footnote_ref_placeholders = re.findall(r'\{\{FOOTNOTE_REF_\d+\}\}', bilingual_text)
+    
+    # Create formula mapping from the formulas list
+    formula_mapping = {}
+    for i, formula in enumerate(formulas):
+        placeholder = f"[formula_{i + 1}]"
+        formula_mapping[placeholder] = formula
+    
+    # Split text by line breaks
+    lines = bilingual_text.split('\n')
+    
+    for line_idx, line in enumerate(lines):
+        if line_idx > 0:
+            # Add line break before each line except the first
             br_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-            if formatting is not None:
-                cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                br_run.insert(0, cloned_rPr)
+            apply_latin_font_to_run(br_run, namespaces)
             etree.SubElement(br_run, f"{{{namespaces['w']}}}br")
         
-        # Add text part (including empty strings to preserve structure)
-        if part or i == 0:  # Always add first part, add others only if not empty
-            text_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-            if formatting is not None:
-                cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                text_run.insert(0, cloned_rPr)
-            text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
-            text_node.text = part
+        # Process placeholders within this line
+        all_placeholders = formula_placeholders + footnote_ref_placeholders
+        if any(placeholder in line for placeholder in all_placeholders):
+            # Split line by formula placeholders and rebuild with proper elements
+            parts = re.split(r'(\[formula_\d+\]|\{\{FOOTNOTE_REF_\d+\}\})', line)
+            
+            current_run = None
+            
+            for part in parts:
+                if part in formula_placeholders:
+                    # This is a formula placeholder
+                    if part in formula_mapping:
+                        # Insert the original formula element
+                        paragraph.append(formula_mapping[part])
+                        app_logger.debug(f"Inserted formula: {part}")
+                    else:
+                        # Fallback: create text with placeholder if formula not found
+                        if current_run is None:
+                            current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                            apply_latin_font_to_run(current_run, namespaces)
+                        text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                        text_node.text = part
+                    
+                    current_run = None  # Force new run for next content
+                
+                elif part in footnote_ref_placeholders:
+                    # This is a footnote reference placeholder, but we don't have the info to restore it
+                    # Leave as placeholder for now - it should be handled by the field_info processing
+                    if current_run is None:
+                        current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                        apply_latin_font_to_run(current_run, namespaces)
+                    
+                    text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                    text_node.text = part
+                
+                elif part.strip() or part == '':
+                    # This is regular text (including empty strings to preserve structure)
+                    if current_run is None:
+                        current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                        apply_latin_font_to_run(current_run, namespaces)
+                    
+                    text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                    text_node.text = part
+        else:
+            # No placeholders in this line, just add as regular text
+            if line or line_idx == 0:  # Always add first line, add others only if not empty
+                text_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                apply_latin_font_to_run(text_run, namespaces)
+                text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
+                text_node.text = line
 
 def update_textbox_content_with_bilingual_format(textbox, bilingual_text, namespaces, field_info=None):
-    """Update textbox content with bilingual format"""
+    """Update textbox content with bilingual format and formula support"""
     textbox_content = textbox.xpath('.//w:txbxContent', namespaces=namespaces)
     if not textbox_content:
         app_logger.error("No textbox content found")
@@ -3472,24 +4480,28 @@ def update_textbox_content_with_bilingual_format(textbox, bilingual_text, namesp
             # Create new paragraph
             new_p = etree.SubElement(textbox_content[0], f"{{{namespaces['w']}}}p")
             
-            # Process line with field variables
+            # Process line with field variables and formulas
             if field_info:
-                update_paragraph_content_with_fields_bilingual(
-                    new_p, line, namespaces, field_info, original_formatting, None
+                # Extract formulas from field_info
+                formulas = [etree.fromstring(item['xml_content']) for item in field_info if item.get('type') == 'formula' and item.get('xml_content')]
+                update_paragraph_content_with_fields_and_formulas_bilingual(
+                    new_p, line, namespaces, field_info, formulas, None
                 )
             else:
-                add_text_with_bilingual_formatting(new_p, line, namespaces, original_formatting)
+                add_text_with_formulas_and_bilingual_formatting(new_p, line, namespaces, [], None)
     else:
         # Single line text - create one paragraph
         new_p = etree.SubElement(textbox_content[0], f"{{{namespaces['w']}}}p")
         
-        # Process text with field variables
+        # Process text with field variables and formulas
         if field_info:
-            update_paragraph_content_with_fields_bilingual(
-                new_p, bilingual_text, namespaces, field_info, original_formatting, None
+            # Extract formulas from field_info
+            formulas = [etree.fromstring(item['xml_content']) for item in field_info if item.get('type') == 'formula' and item.get('xml_content')]
+            update_paragraph_content_with_fields_and_formulas_bilingual(
+                new_p, bilingual_text, namespaces, field_info, formulas, None
             )
         else:
-            add_text_with_bilingual_formatting(new_p, bilingual_text, namespaces, original_formatting)
+            add_text_with_formulas_and_bilingual_formatting(new_p, bilingual_text, namespaces, [], None)
 
 def update_toc_paragraph_with_bilingual_format(paragraph, bilingual_text, namespaces, toc_structure):
     """Update TOC paragraph with bilingual format (original + translation)"""
@@ -3545,6 +4557,9 @@ def update_toc_paragraph_with_bilingual_format(paragraph, bilingual_text, namesp
         first_title_run_idx = title_run_indices[0]
         if first_title_run_idx < len(current_runs):
             first_title_run = current_runs[first_title_run_idx]
+            
+            # Apply font settings to the run
+            apply_latin_font_to_run(first_title_run, namespaces)
             
             # Create text node with original title
             original_text_node = etree.SubElement(first_title_run, f"{{{namespaces['w']}}}t")
@@ -3605,6 +4620,9 @@ def update_toc_paragraph_bilingual_fallback(paragraph, original_title, translate
             if title_runs:
                 first_title_run = title_runs[0]
                 
+                # Apply font settings
+                apply_latin_font_to_run(first_title_run, namespaces)
+                
                 # Add original title
                 original_text_node = etree.SubElement(first_title_run, f"{{{namespaces['w']}}}t")
                 original_text_node.text = original_title
@@ -3618,6 +4636,9 @@ def update_toc_paragraph_bilingual_fallback(paragraph, original_title, translate
             else:
                 # Create a new run for the bilingual title if no title runs found
                 new_run = etree.Element(f"{{{namespaces['w']}}}r")
+                
+                # Apply font settings
+                apply_latin_font_to_run(new_run, namespaces)
                 
                 # Add original title
                 original_text_node = etree.SubElement(new_run, f"{{{namespaces['w']}}}t")
@@ -3672,6 +4693,9 @@ def update_toc_paragraph_bilingual_fallback(paragraph, original_title, translate
             if title_runs:
                 first_title_run = title_runs[0]
                 
+                # Apply font settings
+                apply_latin_font_to_run(first_title_run, namespaces)
+                
                 # Add original title
                 original_text_node = etree.SubElement(first_title_run, f"{{{namespaces['w']}}}t")
                 original_text_node.text = original_title
@@ -3688,6 +4712,9 @@ def update_toc_paragraph_bilingual_fallback(paragraph, original_title, translate
                 if formatting is not None:
                     cloned_rPr = etree.fromstring(etree.tostring(formatting))
                     new_run.insert(0, cloned_rPr)
+                
+                # Apply font settings
+                apply_latin_font_to_run(new_run, namespaces)
                 
                 # Add original title
                 original_text_node = etree.SubElement(new_run, f"{{{namespaces['w']}}}t")

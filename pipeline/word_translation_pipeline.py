@@ -1,4 +1,4 @@
-# pipeline/word_translation_pipeline.py
+# pipeline/word_translation_pipeline.py   By AI-Transtools
 import json
 import os
 import re
@@ -40,6 +40,13 @@ def extract_word_content_to_json(file_path):
             with open(styles_xml_path, 'rb') as f:
                 styles_xml = f.read()
         
+        # Read footnotes.xml if exists
+        footnotes_xml = None
+        footnotes_xml_path = os.path.join(temp_dir, 'word', 'footnotes.xml')
+        if os.path.exists(footnotes_xml_path):
+            with open(footnotes_xml_path, 'rb') as f:
+                footnotes_xml = f.read()
+        
         # Get all header and footer files
         word_dir = os.path.join(temp_dir, 'word')
         header_footer_files = {}
@@ -50,7 +57,7 @@ def extract_word_content_to_json(file_path):
                     with open(filepath, 'rb') as f:
                         header_footer_files[f'word/{filename}'] = f.read()
 
-        # Complete namespaces including all possible schemas and SmartArt
+        # Complete namespaces including all possible schemas, SmartArt, and Math
         namespaces = {
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
@@ -67,7 +74,8 @@ def extract_word_content_to_json(file_path):
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
             'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
             'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
-            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram',
+            'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'  # Math namespace
         }
         
         document_tree = etree.fromstring(document_xml)
@@ -93,6 +101,15 @@ def extract_word_content_to_json(file_path):
                 numbering_item["id"] = item_id
                 numbering_item["count_src"] = item_id
                 content_data.append(numbering_item)
+        
+        # Extract footnotes content
+        if footnotes_xml:
+            footnote_items = extract_footnotes_translatable_content(footnotes_xml, namespaces)
+            for footnote_item in footnote_items:
+                item_id += 1
+                footnote_item["id"] = item_id
+                footnote_item["count_src"] = item_id
+                content_data.append(footnote_item)
         
         # Extract SmartArt content using ZipFile object
         with ZipFile(file_path, 'r') as docx:
@@ -141,6 +158,76 @@ def extract_word_content_to_json(file_path):
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
         raise e
+
+def extract_footnotes_translatable_content(footnotes_xml, namespaces):
+    """Extract translatable content from footnotes.xml"""
+    footnote_items = []
+    
+    if not footnotes_xml:
+        return footnote_items
+    
+    try:
+        footnotes_tree = etree.fromstring(footnotes_xml)
+        
+        # Get all footnotes, excluding separator and continuation separator footnotes
+        footnotes = footnotes_tree.xpath('//w:footnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]', namespaces=namespaces)
+        
+        for footnote in footnotes:
+            footnote_id = footnote.get(f'{{{namespaces["w"]}}}id')
+            if not footnote_id:
+                continue
+            
+            # Process paragraphs within the footnote
+            footnote_paragraphs = footnote.xpath('.//w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
+            
+            for para_idx, paragraph in enumerate(footnote_paragraphs):
+                # Enhanced TOC detection for footnote paragraphs
+                is_toc, toc_info = detect_toc_paragraph_enhanced(paragraph, namespaces, False)
+                
+                if is_toc:
+                    toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces)
+                    paragraph_text = toc_title_text
+                    field_info = None
+                    math_info = None
+                else:
+                    # Extract text from paragraph including variables and math formulas
+                    paragraph_text, field_info, math_info = extract_paragraph_text_with_variables_and_formulas(
+                        paragraph, namespaces, None, True
+                    )
+                    toc_structure = None
+                
+                if paragraph_text and paragraph_text.strip() and should_translate_enhanced(paragraph_text):
+                    footnote_item = {
+                        "type": "footnote",
+                        "footnote_id": footnote_id,
+                        "paragraph_index": para_idx,
+                        "is_toc": is_toc,
+                        "value": paragraph_text.replace("\n", "␊").replace("\r", "␍"),
+                        "original_pPr": extract_paragraph_properties(paragraph, namespaces),
+                        "original_structure": extract_paragraph_structure(paragraph, namespaces)
+                    }
+                    
+                    if field_info:
+                        footnote_item["field_info"] = field_info
+                    
+                    if math_info:
+                        footnote_item["math_info"] = math_info
+                    
+                    if is_toc:
+                        footnote_item.update({
+                            "toc_info": toc_info,
+                            "toc_structure": toc_structure
+                        })
+                    
+                    footnote_items.append(footnote_item)
+                    app_logger.debug(f"Extracted footnote {footnote_id}.{para_idx}: '{paragraph_text[:50]}...'")
+        
+        app_logger.info(f"Extracted {len(footnote_items)} translatable footnote items")
+        
+    except Exception as e:
+        app_logger.error(f"Error extracting footnotes content: {e}")
+    
+    return footnote_items
 
 def extract_smartart_content(docx, namespaces):
     """Extract translatable content from SmartArt diagrams in Word document"""
@@ -416,15 +503,18 @@ def process_sdt_content(document_tree, content_data, item_id, numbering_info, st
                     toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces)
                     full_text = toc_title_text
                     field_info = None
+                    math_info = None
                 else:
-                    # Extract normal paragraph text
+                    # Extract normal paragraph text with math formulas
                     numbering_props = paragraph.xpath('.//w:numPr', namespaces=namespaces)
                     paragraph_numbering_info = None
                     if numbering_props:
                         paragraph_numbering_info = extract_paragraph_numbering_info(
                             numbering_props[0], numbering_info, namespaces)
                     
-                    full_text, field_info = extract_paragraph_text_with_variables(paragraph, namespaces, paragraph_numbering_info, True)
+                    full_text, field_info, math_info = extract_paragraph_text_with_variables_and_formulas(
+                        paragraph, namespaces, paragraph_numbering_info, True
+                    )
                     toc_structure = None
                 
                 if full_text and full_text.strip() and should_translate_enhanced(full_text):
@@ -445,6 +535,9 @@ def process_sdt_content(document_tree, content_data, item_id, numbering_info, st
                     
                     if field_info:
                         item_data["field_info"] = field_info
+                    
+                    if math_info:
+                        item_data["math_info"] = math_info
                     
                     if is_toc:
                         item_data.update({
@@ -489,8 +582,11 @@ def process_sdt_table_recursive(table, content_data, item_id, sdt_index, table_i
                     toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(cell_paragraph, namespaces)
                     cell_text = toc_title_text
                     cell_field_info = None
+                    cell_math_info = None
                 else:
-                    cell_text, cell_field_info = extract_paragraph_text_with_variables(cell_paragraph, namespaces)
+                    cell_text, cell_field_info, cell_math_info = extract_paragraph_text_with_variables_and_formulas(
+                        cell_paragraph, namespaces
+                    )
                     toc_structure = None
                 
                 if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
@@ -517,6 +613,9 @@ def process_sdt_table_recursive(table, content_data, item_id, sdt_index, table_i
                     
                     if cell_field_info:
                         cell_data["field_info"] = cell_field_info
+                    
+                    if cell_math_info:
+                        cell_data["math_info"] = cell_math_info
                     
                     if is_toc:
                         cell_data.update({
@@ -798,13 +897,16 @@ def process_paragraph_element(paragraph, content_data, item_id, element_index, n
     # Enhanced TOC detection
     is_toc, toc_info = detect_toc_paragraph_enhanced(paragraph, namespaces, False)
     
-    # Extract text excluding textbox content but including page variables
+    # Extract text including math formulas, excluding textbox content but including page variables
     if is_toc:
         toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces)
         full_text = toc_title_text
         field_info = None
+        math_info = None
     else:
-        full_text, field_info = extract_paragraph_text_with_variables(paragraph, namespaces, paragraph_numbering_info, True)
+        full_text, field_info, math_info = extract_paragraph_text_with_variables_and_formulas(
+            paragraph, namespaces, paragraph_numbering_info, True
+        )
         toc_structure = None
     
     if full_text and full_text.strip() and should_translate_enhanced(full_text):
@@ -826,6 +928,9 @@ def process_paragraph_element(paragraph, content_data, item_id, element_index, n
         
         if field_info:
             item_data["field_info"] = field_info
+        
+        if math_info:
+            item_data["math_info"] = math_info
         
         if is_toc:
             item_data.update({
@@ -879,8 +984,17 @@ def process_table_rows_recursive(table, content_data, item_id, table_index, numb
                     toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(cell_paragraph, namespaces)
                     cell_text = toc_title_text
                     cell_field_info = None
+                    cell_math_info = None
                 else:
-                    cell_text, cell_field_info = extract_paragraph_text_with_variables(cell_paragraph, namespaces, extract_paragraph_numbering_info(cell_paragraph.xpath('.//w:numPr', namespaces=namespaces)[0] if cell_paragraph.xpath('.//w:numPr', namespaces=namespaces) else None, numbering_info, namespaces) if cell_paragraph.xpath('.//w:numPr', namespaces=namespaces) else None, True)
+                    numbering_info_param = extract_paragraph_numbering_info(
+                        cell_paragraph.xpath('.//w:numPr', namespaces=namespaces)[0] if cell_paragraph.xpath('.//w:numPr', namespaces=namespaces) else None, 
+                        numbering_info, 
+                        namespaces
+                    ) if cell_paragraph.xpath('.//w:numPr', namespaces=namespaces) else None
+                    
+                    cell_text, cell_field_info, cell_math_info = extract_paragraph_text_with_variables_and_formulas(
+                        cell_paragraph, namespaces, numbering_info_param, True
+                    )
                     toc_structure = None
                 
                 if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
@@ -905,6 +1019,9 @@ def process_table_rows_recursive(table, content_data, item_id, table_index, numb
                     
                     if cell_field_info:
                         cell_data["field_info"] = cell_field_info
+                    
+                    if cell_math_info:
+                        cell_data["math_info"] = cell_math_info
                     
                     if is_toc:
                         cell_data.update({
@@ -977,7 +1094,8 @@ def extract_paragraph_structure(paragraph, namespaces):
         'total_runs': 0,
         'runs_info': [],
         'has_fields': False,
-        'has_drawings': False
+        'has_drawings': False,
+        'has_math': False
     }
     
     # Get all runs excluding textbox content
@@ -991,6 +1109,7 @@ def extract_paragraph_structure(paragraph, namespaces):
             'has_fields': bool(run.xpath('.//w:fldChar | .//w:instrText | .//w:fldSimple', namespaces=namespaces)),
             'has_drawings': bool(run.xpath('.//w:drawing | .//w:pict | .//mc:AlternateContent', namespaces=namespaces)),
             'has_breaks': bool(run.xpath('.//w:br | .//w:cr | .//w:tab', namespaces=namespaces)),
+            'has_math': bool(run.xpath('.//m:oMath', namespaces=namespaces)),
             'rPr_xml': None
         }
         
@@ -1005,6 +1124,12 @@ def extract_paragraph_structure(paragraph, namespaces):
             structure['has_fields'] = True
         if run_info['has_drawings']:
             structure['has_drawings'] = True
+        if run_info['has_math']:
+            structure['has_math'] = True
+    
+    # Also check for math formulas that might be direct children of paragraph
+    if paragraph.xpath('.//m:oMath', namespaces=namespaces):
+        structure['has_math'] = True
     
     return structure
 
@@ -1067,9 +1192,11 @@ def process_header_footer_content(hf_tree, content_data, item_id, numbering_info
             toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces)
             paragraph_text = toc_title_text
             field_info = None
+            math_info = None
         else:
-            paragraph_text, field_info = extract_paragraph_text_with_variables(
-                paragraph, namespaces, paragraph_numbering_info, True)
+            paragraph_text, field_info, math_info = extract_paragraph_text_with_variables_and_formulas(
+                paragraph, namespaces, paragraph_numbering_info, True
+            )
             toc_structure = None
         
         if paragraph_text and paragraph_text.strip() and should_translate_enhanced(paragraph_text):
@@ -1092,6 +1219,9 @@ def process_header_footer_content(hf_tree, content_data, item_id, numbering_info
             
             if field_info:
                 item_data["field_info"] = field_info
+            
+            if math_info:
+                item_data["math_info"] = math_info
             
             if is_toc:
                 item_data.update({
@@ -1146,8 +1276,11 @@ def process_header_footer_table_recursive(table, content_data, item_id, table_in
                     toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(cell_paragraph, namespaces)
                     cell_text = toc_title_text
                     cell_field_info = None
+                    cell_math_info = None
                 else:
-                    cell_text, cell_field_info = extract_paragraph_text_with_variables(cell_paragraph, namespaces)
+                    cell_text, cell_field_info, cell_math_info = extract_paragraph_text_with_variables_and_formulas(
+                        cell_paragraph, namespaces
+                    )
                     toc_structure = None
                 
                 if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
@@ -1175,6 +1308,9 @@ def process_header_footer_table_recursive(table, content_data, item_id, table_in
                     
                     if cell_field_info:
                         cell_data["field_info"] = cell_field_info
+                    
+                    if cell_math_info:
+                        cell_data["math_info"] = cell_math_info
                     
                     if is_toc:
                         cell_data.update({
@@ -1498,10 +1634,14 @@ def is_dot_leader(text):
     
     return False
 
-def extract_paragraph_text_with_variables(paragraph, namespaces, numbering_info=None, exclude_textbox_runs=True):
-    """Extract paragraph text including page variables but excluding textbox content"""
+def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, numbering_info=None, exclude_textbox_runs=True):
+    """Extract paragraph text including page variables and math formulas, but excluding textbox content"""
     full_text = ""
     field_info = []
+    math_info = []
+    
+    # Counter for math formulas
+    formula_counter = 0
     
     # Get all runs in the paragraph
     if exclude_textbox_runs:
@@ -1528,46 +1668,182 @@ def extract_paragraph_text_with_variables(paragraph, namespaces, numbering_info=
     else:
         runs = paragraph.xpath('.//w:r', namespaces=namespaces)
     
-    for run_idx, run in enumerate(runs):
-        # Check if this run contains only numbering text
-        if is_numbering_run(run, namespaces, numbering_info):
-            continue
+    # Also check for math formulas that are direct children of paragraph
+    direct_math_formulas = paragraph.xpath('./m:oMath', namespaces=namespaces)
+    
+    # Process paragraph children in order to maintain correct position
+    for child in paragraph:
+        tag_name = child.tag.split('}')[-1]
         
-        # Handle field characters and field instructions
-        if run.xpath('.//w:fldChar | .//w:instrText', namespaces=namespaces):
-            field_result = process_field_run(run, namespaces, run_idx)
-            if field_result:
-                full_text += field_result['display_text']
-                field_info.append(field_result)
-            continue
-        
-        # Handle simple fields
-        if run.xpath('.//w:fldSimple', namespaces=namespaces):
-            field_result = process_simple_field_run(run, namespaces, run_idx)
-            if field_result:
-                full_text += field_result['display_text']
-                field_info.append(field_result)
-            continue
-        
-        # Process all child elements in order, but only text-related ones
-        for child in run:
-            tag_name = child.tag.split('}')[-1]  # Get local name without namespace
+        if tag_name == 'r':  # Run element
+            # Handle footnote ref (in footnote content) - preserve but don't include in text
+            footnote_ref_elements = child.xpath('.//w:footnoteRef', namespaces=namespaces)
+            if footnote_ref_elements:
+                # This run contains footnote ref (the number display in footnote)
+                # Skip this run for text extraction but it will be preserved during update
+                continue
             
-            if tag_name == 't':
-                if child.text:
-                    full_text += child.text
-            elif tag_name == 'br':
-                full_text += "\n"
-            elif tag_name == 'tab':
-                full_text += "\t"
-            elif tag_name == 'cr':
-                full_text += "\r"
-            # Ignore other elements like rPr (run properties), drawing, etc.
+            # Handle footnote/endnote reference runs by creating placeholders
+            footnote_refs = child.xpath('.//w:footnoteReference', namespaces=namespaces)
+            endnote_refs = child.xpath('.//w:endnoteReference', namespaces=namespaces)
+            
+            if (footnote_refs or endnote_refs) and not child.xpath('.//w:t', namespaces=namespaces):
+                # This run contains only footnote/endnote references, no text
+                for footnote_ref in footnote_refs:
+                    ref_id = footnote_ref.get(f'{{{namespaces["w"]}}}id', '')
+                    placeholder = f'{{{{FOOTNOTE_REF_{ref_id}}}}}'
+                    full_text += placeholder
+                    
+                    # Store footnote reference info in field_info
+                    field_info.append({
+                        'type': 'footnote_ref',
+                        'display_text': placeholder,
+                        'ref_id': ref_id,
+                        'run_xml': etree.tostring(child, encoding='unicode'),
+                        'position': len(full_text) - len(placeholder)
+                    })
+                
+                for endnote_ref in endnote_refs:
+                    ref_id = endnote_ref.get(f'{{{namespaces["w"]}}}id', '')
+                    placeholder = f'{{{{ENDNOTE_REF_{ref_id}}}}}'
+                    full_text += placeholder
+                    
+                    # Store endnote reference info in field_info
+                    field_info.append({
+                        'type': 'endnote_ref',
+                        'display_text': placeholder,
+                        'ref_id': ref_id,
+                        'run_xml': etree.tostring(child, encoding='unicode'),
+                        'position': len(full_text) - len(placeholder)
+                    })
+                
+                continue
+            
+            # Check if this run contains both footnote references and text
+            elif footnote_refs or endnote_refs:
+                # Process run content in order to preserve exact positioning
+                for run_child in child:
+                    run_tag_name = run_child.tag.split('}')[-1]
+                    
+                    if run_tag_name == 't':
+                        if run_child.text:
+                            full_text += run_child.text
+                    elif run_tag_name == 'footnoteReference':
+                        ref_id = run_child.get(f'{{{namespaces["w"]}}}id', '')
+                        placeholder = f'{{{{FOOTNOTE_REF_{ref_id}}}}}'
+                        full_text += placeholder
+                        
+                        field_info.append({
+                            'type': 'footnote_ref',
+                            'display_text': placeholder,
+                            'ref_id': ref_id,
+                            'run_xml': etree.tostring(child, encoding='unicode'),
+                            'position': len(full_text) - len(placeholder)
+                        })
+                    elif run_tag_name == 'endnoteReference':
+                        ref_id = run_child.get(f'{{{namespaces["w"]}}}id', '')
+                        placeholder = f'{{{{ENDNOTE_REF_{ref_id}}}}}'
+                        full_text += placeholder
+                        
+                        field_info.append({
+                            'type': 'endnote_ref',
+                            'display_text': placeholder,
+                            'ref_id': ref_id,
+                            'run_xml': etree.tostring(child, encoding='unicode'),
+                            'position': len(full_text) - len(placeholder)
+                        })
+                    elif run_tag_name == 'br':
+                        full_text += "\n"
+                    elif run_tag_name == 'tab':
+                        full_text += "\t"
+                    elif run_tag_name == 'cr':
+                        full_text += "\r"
+                continue
+            
+            # Check if this run contains only numbering patterns (now passing numbering_info)
+            if is_numbering_run(child, namespaces, numbering_info):
+                continue
+            
+            # Handle field characters and field instructions
+            if child.xpath('.//w:fldChar | .//w:instrText', namespaces=namespaces):
+                field_result = process_field_run(child, namespaces, len(runs))
+                if field_result:
+                    full_text += field_result['display_text']
+                    field_info.append(field_result)
+                continue
+            
+            # Handle simple fields
+            if child.xpath('.//w:fldSimple', namespaces=namespaces):
+                field_result = process_simple_field_run(child, namespaces, len(runs))
+                if field_result:
+                    full_text += field_result['display_text']
+                    field_info.append(field_result)
+                continue
+            
+            # Check if run contains math formula
+            if child.xpath('.//m:oMath', namespaces=namespaces):
+                math_formulas = child.xpath('.//m:oMath', namespaces=namespaces)
+                for math_formula in math_formulas:
+                    formula_counter += 1
+                    placeholder = f"[formula_{formula_counter}]"
+                    full_text += placeholder
+                    
+                    # Store math formula info
+                    math_info.append({
+                        'placeholder': placeholder,
+                        'formula_xml': etree.tostring(math_formula, encoding='unicode'),
+                        'run_index': runs.index(child) if child in runs else -1,
+                        'position': len(full_text) - len(placeholder)
+                    })
+                    
+                    app_logger.debug(f"Found math formula, created placeholder: {placeholder}")
+                continue
+            
+            # Process all child elements in order, but only text-related ones
+            for run_child in child:
+                run_tag_name = run_child.tag.split('}')[-1]
+                
+                if run_tag_name == 't':
+                    if run_child.text:
+                        full_text += run_child.text
+                elif run_tag_name == 'br':
+                    full_text += "\n"
+                elif run_tag_name == 'tab':
+                    full_text += "\t"
+                elif run_tag_name == 'cr':
+                    full_text += "\r"
+                # Ignore other elements like rPr (run properties), drawing, footnoteRef, etc.
+        
+        elif tag_name == 'oMath':  # Math formula as direct child
+            formula_counter += 1
+            placeholder = f"[formula_{formula_counter}]"
+            full_text += placeholder
+            
+            # Store math formula info
+            math_info.append({
+                'placeholder': placeholder,
+                'formula_xml': etree.tostring(child, encoding='unicode'),
+                'run_index': -1,  # Direct child of paragraph
+                'position': len(full_text) - len(placeholder)
+            })
+            
+            app_logger.debug(f"Found direct math formula, created placeholder: {placeholder}")
     
-    # Clean up text by removing leading numbering patterns
-    cleaned_text = remove_leading_numbering_patterns(full_text)
+    # Clean up text by removing leading numbering patterns (now passing numbering_info)
+    cleaned_text = remove_leading_numbering_patterns(full_text, numbering_info)
     
-    return cleaned_text.lstrip(), field_info if field_info else None
+    return (
+        cleaned_text.lstrip(),
+        field_info if field_info else None,
+        math_info if math_info else None
+    )
+
+def extract_paragraph_text_with_variables(paragraph, namespaces, numbering_info=None, exclude_textbox_runs=True):
+    """Extract paragraph text including page variables but excluding textbox content"""
+    full_text, field_info, _ = extract_paragraph_text_with_variables_and_formulas(
+        paragraph, namespaces, numbering_info, exclude_textbox_runs
+    )
+    return full_text, field_info
 
 def process_field_run(run, namespaces, run_idx):
     """Process a run containing field characters or field instructions"""
@@ -1763,6 +2039,7 @@ def process_single_textbox(textbox, textbox_idx, textbox_format, tree, namespace
     textbox_paragraphs = textbox_content[0].xpath('.//w:p', namespaces=namespaces)
     textbox_text = ""
     textbox_field_info = []
+    textbox_math_info = []
     
     for para_idx, paragraph in enumerate(textbox_paragraphs):
         # Enhanced TOC detection for textbox content
@@ -1772,9 +2049,13 @@ def process_single_textbox(textbox, textbox_idx, textbox_format, tree, namespace
             toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(paragraph, namespaces)
             para_text = toc_title_text
             para_field_info = None
+            para_math_info = None
         else:
-            # Extract text from paragraph including variables (don't exclude textbox runs since we're already processing textbox)
-            para_text, para_field_info = extract_paragraph_text_with_variables(paragraph, namespaces, None, False)
+            # Extract text from paragraph including variables and math formulas
+            # Don't exclude textbox runs since we're already processing textbox
+            para_text, para_field_info, para_math_info = extract_paragraph_text_with_variables_and_formulas(
+                paragraph, namespaces, None, False
+            )
             toc_structure = None
         
         if para_text:
@@ -1784,6 +2065,9 @@ def process_single_textbox(textbox, textbox_idx, textbox_format, tree, namespace
             
             if para_field_info:
                 textbox_field_info.extend(para_field_info)
+            
+            if para_math_info:
+                textbox_math_info.extend(para_math_info)
     
     if textbox_text.strip() and should_translate_enhanced(textbox_text):
         textbox_item = {
@@ -1798,6 +2082,9 @@ def process_single_textbox(textbox, textbox_idx, textbox_format, tree, namespace
         
         if textbox_field_info:
             textbox_item["field_info"] = textbox_field_info
+        
+        if textbox_math_info:
+            textbox_item["math_info"] = textbox_math_info
         
         app_logger.debug(f"Extracted textbox {textbox_idx}: '{textbox_text[:50]}...'")
         return textbox_item
@@ -2025,7 +2312,8 @@ def extract_paragraph_numbering_info(numPr_element, numbering_info, namespaces):
     return result
 
 def is_numbering_run(run, namespaces, numbering_info=None):
-    """Check if a run contains only numbering text that should be excluded"""
+    """Check if a run contains only automatic numbering text that should be excluded"""
+    # If there's no automatic numbering, don't exclude any runs
     if not numbering_info or not numbering_info.get('has_numbering'):
         return False
     
@@ -2036,17 +2324,14 @@ def is_numbering_run(run, namespaces, numbering_info=None):
     if not run_text:
         return False
     
-    # Check for common numbering patterns
+    # Only exclude runs that contain bullet points or other obvious automatic symbols
+    # Don't exclude numeric numbering as it might be user-entered
     numbering_patterns = [
-        r'^\d+\.$',  # 1.
-        r'^\d+\)$',  # 1)
-        r'^[a-zA-Z]\.$',  # a.
-        r'^[a-zA-Z]\)$',  # a)
-        r'^[ivxlcdm]+\.$',  # i., ii., iii., etc.
-        r'^[IVXLCDM]+\.$',  # I., II., III., etc.
         r'^•$',  # bullet
-        r'^-$',  # dash
-        r'^\*$',  # asterisk
+        r'^-$',  # dash (only standalone)
+        r'^\*$',  # asterisk (only standalone)
+        r'^◦$',  # white bullet
+        r'^‣$',  # triangular bullet
     ]
     
     for pattern in numbering_patterns:
@@ -2055,44 +2340,113 @@ def is_numbering_run(run, namespaces, numbering_info=None):
     
     return False
 
-def remove_leading_numbering_patterns(text):
-    """Remove leading numbering patterns from text"""
+def remove_leading_numbering_patterns(text, numbering_info=None):
+    """Remove leading numbering patterns from text, but preserve user-entered numbering"""
     if not text:
         return text
     
-    # Patterns to remove from the beginning of text
+    # Don't remove anything if paragraph doesn't use automatic numbering
+    if not numbering_info or not numbering_info.get('has_numbering'):
+        return text
+    
+    # Check if the text looks like a date first - if so, don't remove anything
+    if is_likely_date_format(text.strip()):
+        return text
+    
+    # Check if this looks like a section number (e.g., 1.1, 2.0, 3.2.1, etc.)
+    if is_likely_section_number(text.strip()):
+        return text
+    
+    # Only remove bullet symbols and obvious automatic formatting
+    # Preserve all numeric numbering (1., 2., etc.) as it might be user-entered
     patterns = [
-        r'^\d+\.\s*',  # 1. 
-        r'^\d+\)\s*',  # 1) 
-        r'^[a-zA-Z]\.\s*',  # a. 
-        r'^[a-zA-Z]\)\s*',  # a) 
-        r'^[ivxlcdm]+\.\s*',  # i., ii., iii., etc.
-        r'^[IVXLCDM]+\.\s*',  # I., II., III., etc.
         r'^•\s*',  # bullet
-        r'^-\s*',  # dash
-        r'^\*\s*',  # asterisk
+        r'^◦\s*',  # white bullet
+        r'^‣\s*',  # triangular bullet
     ]
     
+    # For dash and asterisk, be more careful - only remove if followed by space
+    # and the text doesn't look like it could be meaningful content
+    dash_asterisk_patterns = [
+        r'^-\s+(?=\w)',  # dash followed by space and word character
+        r'^\*\s+(?=\w)',  # asterisk followed by space and word character
+    ]
+    
+    # First try bullet patterns
     for pattern in patterns:
-        text = re.sub(pattern, '', text, count=1)
+        potential_result = re.sub(pattern, '', text, count=1)
+        if potential_result.strip() and len(potential_result.strip()) > 0:
+            text = potential_result
+            break
+    
+    # Then try dash/asterisk patterns, but only if the remaining text is substantial
+    if text.strip() and not any(re.match(p, text) for p in patterns):
+        for pattern in dash_asterisk_patterns:
+            potential_result = re.sub(pattern, '', text, count=1)
+            if potential_result.strip() and len(potential_result.strip()) > 2:  # More conservative
+                text = potential_result
+                break
     
     return text
+
+def is_likely_section_number(text):
+    """Check if text starts with a section number format like 1.1, 2.0, 3.2.1, etc."""
+    if not text:
+        return False
+    
+    # Section number patterns that should be preserved
+    section_patterns = [
+        r'^\d+\.\d+(?:\.\d+)*(?:\s|$)',  # 1.1 text, 2.0 text, 1.2.3 text, etc.
+        r'^\d+\.\d+(?:\.\d+)*\w',        # 1.1text, 2.0something (no space but followed by word)
+    ]
+    
+    for pattern in section_patterns:
+        if re.match(pattern, text):
+            app_logger.debug(f"Detected section number pattern in text: '{text[:50]}...'")
+            return True
+    
+    return False
+
+def is_likely_date_format(text):
+    """Check if text looks like a date format and should not be treated as numbering"""
+    if not text:
+        return False
+    
+    # Common date patterns
+    date_patterns = [
+        r'^\d{4}\.\d{1,2}\.\d{1,2}$',  # 2022.12.31
+        r'^\d{4}-\d{1,2}-\d{1,2}$',   # 2022-12-31
+        r'^\d{4}/\d{1,2}/\d{1,2}$',   # 2022/12/31
+        r'^\d{1,2}\.\d{1,2}\.\d{4}$', # 31.12.2022
+        r'^\d{1,2}-\d{1,2}-\d{4}$',   # 31-12-2022
+        r'^\d{1,2}/\d{1,2}/\d{4}$',   # 31/12/2022
+        r'^\d{1,2}\.\d{1,2}\.\d{2}$', # 31.12.22
+        r'^\d{4}\.\d{1,2}$',          # 2022.12
+        r'^\d{1,2}\.\d{4}$',          # 12.2022
+    ]
+    
+    for pattern in date_patterns:
+        if re.match(pattern, text):
+            return True
+    
+    return False
 
 def should_translate_enhanced(text):
     """Enhanced translation check - more inclusive than original"""
     if not text or not text.strip():
         return False
     
-    # Remove field placeholders for analysis
+    # Remove field placeholders and math placeholders for analysis
     clean_text = text.strip()
-    clean_text = re.sub(r'\{\{[^}]+\}\}', '', clean_text)
+    clean_text = re.sub(r'\{\{[^}]+\}\}', '', clean_text)  # Remove field placeholders
+    clean_text = re.sub(r'\[formula_\d+\]', '', clean_text)  # Remove math placeholders
     clean_text = clean_text.strip()
     
     # Skip very short text (likely symbols or numbers only)
     if len(clean_text) < 1:
         return False
     
-    # Skip pure numbers
+    # Skip pure numbers (but not dates)
     if clean_text.isdigit():
         return False
     
@@ -2100,10 +2454,29 @@ def should_translate_enhanced(text):
     if all(c in '.,;:!?()[]{}"\'-_=+*&^%$#@~`|\\/<>' for c in clean_text):
         return False
     
+    # Check if it's a date - dates might need translation depending on context
+    if is_likely_date_format(clean_text):
+        # For dates, we generally want to include them for translation
+        # unless they are just standalone dates without context
+        return True
+    
     # Check if text contains meaningful content (letters, CJK characters, etc.)
-    has_meaningful_content = any(c.isalpha() or '\u4e00' <= c <= '\u9fff' or '\u3131' <= c <= '\u318e' or '\uac00' <= c <= '\ud7a3' for c in clean_text)
+    has_meaningful_content = any(
+        c.isalpha() or 
+        '\u4e00' <= c <= '\u9fff' or  # Chinese
+        '\u3131' <= c <= '\u318e' or  # Korean Jamo
+        '\uac00' <= c <= '\ud7a3' or  # Korean Hangul
+        '\u3040' <= c <= '\u309f' or  # Japanese Hiragana
+        '\u30a0' <= c <= '\u30ff'     # Japanese Katakana
+        for c in clean_text
+    )
     
     if has_meaningful_content:
+        return True
+    
+    # For numeric content with punctuation (like dates, versions, etc.)
+    # Include if it has a reasonable structure
+    if len(clean_text) >= 3 and any(c.isdigit() for c in clean_text):
         return True
     
     # Fallback to original should_translate if available
@@ -2145,7 +2518,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             docx.extractall(temp_dir)
     
     try:
-        # Complete namespaces including SmartArt
+        # Complete namespaces including SmartArt and Math
         namespaces = {
             'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main',
             'wp': 'http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing',
@@ -2162,7 +2535,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             'wpi': 'http://schemas.microsoft.com/office/word/2010/wordprocessingInk',
             'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
             'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
-            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram'
+            'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram',
+            'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'  # Math namespace
         }
         
         # Load and update main document
@@ -2180,6 +2554,15 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             numbering_tree = etree.fromstring(numbering_xml)
             numbering_info = parse_numbering_xml(numbering_xml, namespaces)
             update_numbering_xml_with_translations(numbering_tree, original_data, translations, namespaces)
+        
+        # Load and update footnotes.xml if exists
+        footnotes_tree = None
+        footnotes_xml_path = os.path.join(temp_dir, 'word', 'footnotes.xml')
+        if os.path.exists(footnotes_xml_path):
+            with open(footnotes_xml_path, 'rb') as f:
+                footnotes_xml = f.read()
+            footnotes_tree = etree.fromstring(footnotes_xml)
+            update_footnotes_with_translations(footnotes_tree, original_data, translations, namespaces)
         
         # Load header/footer files
         header_footer_trees = {}
@@ -2214,7 +2597,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 continue
                 
             # Skip numbering and SmartArt items as they're handled separately
-            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart"]:
+            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart", "footnote"]:
                 continue
                 
             translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
@@ -2267,6 +2650,10 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             with open(numbering_xml_path, "wb") as f:
                 f.write(etree.tostring(numbering_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
         
+        if footnotes_tree is not None:
+            with open(footnotes_xml_path, "wb") as f:
+                f.write(etree.tostring(footnotes_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+        
         for hf_file, hf_tree in header_footer_trees.items():
             hf_path = os.path.join(temp_dir, hf_file.replace('/', os.sep))
             with open(hf_path, "wb") as f:
@@ -2292,6 +2679,69 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         # Clean up temp directory
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+def update_footnotes_with_translations(footnotes_tree, original_data, translations, namespaces):
+    """Update footnotes.xml with translated content"""
+    
+    # Get all footnotes except separator and continuation separator
+    footnotes = footnotes_tree.xpath('//w:footnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]', namespaces=namespaces)
+    
+    # Create a mapping of footnote_id to footnote element for faster lookup
+    footnotes_by_id = {}
+    for footnote in footnotes:
+        footnote_id = footnote.get(f'{{{namespaces["w"]}}}id')
+        if footnote_id:
+            footnotes_by_id[footnote_id] = footnote
+    
+    # Process footnote translations
+    for item in original_data:
+        if item["type"] != "footnote":
+            continue
+            
+        item_id = str(item.get("id", item.get("count_src")))
+        translated_text = translations.get(item_id)
+        
+        if not translated_text:
+            continue
+            
+        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+        
+        footnote_id = item.get("footnote_id")
+        paragraph_index = item.get("paragraph_index")
+        
+        if footnote_id not in footnotes_by_id:
+            app_logger.error(f"Footnote ID {footnote_id} not found")
+            continue
+            
+        footnote = footnotes_by_id[footnote_id]
+        
+        # Get paragraphs in the footnote
+        footnote_paragraphs = footnote.xpath('.//w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
+        
+        if paragraph_index >= len(footnote_paragraphs):
+            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in footnote {footnote_id}")
+            continue
+            
+        target_paragraph = footnote_paragraphs[paragraph_index]
+        
+        # Restore original paragraph properties if available
+        original_pPr = item.get("original_pPr")
+        if original_pPr:
+            restore_paragraph_properties(target_paragraph, original_pPr, namespaces)
+        
+        if item.get("is_toc", False):
+            toc_structure = item.get("toc_structure")
+            update_toc_paragraph_with_complete_structure(target_paragraph, translated_text, namespaces, toc_structure)
+        else:
+            field_info = item.get("field_info")
+            math_info = item.get("math_info")
+            original_structure = item.get("original_structure")
+            
+            update_paragraph_text_with_enhanced_preservation(
+                target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
+            )
+        
+        app_logger.info(f"Updated footnote {footnote_id}.{paragraph_index}: '{translated_text[:50]}...'")
 
 def update_smartart_with_translations(temp_dir, original_data, translations, namespaces):
     """Update SmartArt diagrams with translated content"""
@@ -2547,10 +2997,11 @@ def update_sdt_paragraph_with_enhanced_preservation(item, translated_text, all_s
             update_toc_paragraph_with_complete_structure(paragraph, translated_text, namespaces, toc_structure)
         else:
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                paragraph, translated_text, namespaces, None, field_info, original_structure
+                paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
         app_logger.info(f"Updated SDT paragraph {sdt_index}.{paragraph_index}")
@@ -2624,10 +3075,11 @@ def update_sdt_table_cell_with_enhanced_preservation(item, translated_text, all_
             update_toc_paragraph_with_complete_structure(target_paragraph, translated_text, namespaces, toc_structure)
         else:
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                target_paragraph, translated_text, namespaces, None, field_info, original_structure
+                target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
         app_logger.info(f"Updated SDT table cell {sdt_index}.{table_index}.{row_idx}.{col_idx}.{paragraph_index}")
@@ -2723,10 +3175,11 @@ def update_sdt_nested_table_cell_with_enhanced_preservation(item, translated_tex
             update_toc_paragraph_with_complete_structure(target_paragraph, translated_text, namespaces, toc_structure)
         else:
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                target_paragraph, translated_text, namespaces, None, field_info, original_structure
+                target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
     except (IndexError, TypeError, ValueError) as e:
@@ -2757,10 +3210,11 @@ def update_paragraph_with_enhanced_preservation(item, translated_text, all_main_
         else:
             numbering_info_item = item.get("numbering_info")
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                paragraph, translated_text, namespaces, numbering_info_item, field_info, original_structure
+                paragraph, translated_text, namespaces, numbering_info_item, field_info, math_info, original_structure
             )
             
     except (IndexError, TypeError) as e:
@@ -2823,10 +3277,11 @@ def update_table_cell_with_enhanced_preservation(item, translated_text, all_main
             update_toc_paragraph_with_complete_structure(target_paragraph, translated_text, namespaces, toc_structure)
         else:
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                target_paragraph, translated_text, namespaces, None, field_info, original_structure
+                target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
             
     except (IndexError, TypeError) as e:
@@ -2919,10 +3374,11 @@ def update_nested_table_cell_with_enhanced_preservation(item, translated_text, a
             update_toc_paragraph_with_complete_structure(target_paragraph, translated_text, namespaces, toc_structure)
         else:
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                target_paragraph, translated_text, namespaces, None, field_info, original_structure
+                target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
     except (IndexError, TypeError, ValueError) as e:
@@ -2946,7 +3402,8 @@ def update_textbox_with_enhanced_preservation(item, translated_text, all_wps_tex
             textbox = all_vml_textboxes[textbox_index]
         
         field_info = item.get("field_info")
-        update_textbox_content_with_enhanced_preservation(textbox, translated_text, namespaces, field_info)
+        math_info = item.get("math_info")
+        update_textbox_content_with_enhanced_preservation(textbox, translated_text, namespaces, field_info, math_info)
         app_logger.info(f"Updated textbox {textbox_index} with translated text: '{translated_text[:50]}...'")
         
     except (IndexError, TypeError) as e:
@@ -2981,10 +3438,11 @@ def update_header_footer_paragraph_with_enhanced_preservation(item, translated_t
         else:
             numbering_info_item = item.get("numbering_info")
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                paragraph, translated_text, namespaces, numbering_info_item, field_info, original_structure
+                paragraph, translated_text, namespaces, numbering_info_item, field_info, math_info, original_structure
             )
         
     except (IndexError, TypeError) as e:
@@ -3013,7 +3471,8 @@ def update_header_footer_textbox_with_enhanced_preservation(item, translated_tex
         
         textbox = hf_textboxes[textbox_index]
         field_info = item.get("field_info")
-        update_textbox_content_with_enhanced_preservation(textbox, translated_text, namespaces, field_info)
+        math_info = item.get("math_info")
+        update_textbox_content_with_enhanced_preservation(textbox, translated_text, namespaces, field_info, math_info)
         app_logger.info(f"Updated header/footer textbox {textbox_index} with translated text: '{translated_text[:50]}...'")
         
     except (IndexError, TypeError) as e:
@@ -3081,10 +3540,11 @@ def update_header_footer_table_cell_with_enhanced_preservation(item, translated_
             update_toc_paragraph_with_complete_structure(target_paragraph, translated_text, namespaces, toc_structure)
         else:
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                target_paragraph, translated_text, namespaces, None, field_info, original_structure
+                target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
     except (IndexError, TypeError, ValueError) as e:
@@ -3178,10 +3638,11 @@ def update_header_footer_nested_table_cell_with_enhanced_preservation(item, tran
             update_toc_paragraph_with_complete_structure(target_paragraph, translated_text, namespaces, toc_structure)
         else:
             field_info = item.get("field_info")
+            math_info = item.get("math_info")
             original_structure = item.get("original_structure")
             
             update_paragraph_text_with_enhanced_preservation(
-                target_paragraph, translated_text, namespaces, None, field_info, original_structure
+                target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
     except (IndexError, TypeError, ValueError) as e:
@@ -3205,8 +3666,8 @@ def restore_paragraph_properties(paragraph, original_pPr_xml, namespaces):
     except Exception as e:
         app_logger.error(f"Error restoring paragraph properties: {e}")
 
-def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namespaces, numbering_info=None, field_info=None, original_structure=None):
-    """Update paragraph text with enhanced format preservation using original structure"""
+def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namespaces, numbering_info=None, field_info=None, math_info=None, original_structure=None):
+    """Update paragraph text with enhanced format preservation including math formulas"""
     
     # Find all runs that are direct children of the paragraph
     all_runs = paragraph.xpath('./w:r', namespaces=namespaces)
@@ -3214,12 +3675,41 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     text_runs = []
     drawing_runs = []
     preserved_runs = []
+    math_runs = []
     
     for run in all_runs:
+        # Identify runs containing footnote ref (in footnote content) - keep these
+        if run.xpath('.//w:footnoteRef', namespaces=namespaces):
+            preserved_runs.append(run)
+            continue
+        
         # Identify runs containing drawings (textboxes) - keep these
         if run.xpath('.//w:drawing | .//w:pict | .//mc:AlternateContent', namespaces=namespaces):
             drawing_runs.append(run)
             preserved_runs.append(run)
+            continue
+        
+        # Identify runs containing footnote references - handle through field_info now
+        if run.xpath('.//w:footnoteReference', namespaces=namespaces):
+            # If we have field_info, footnote refs will be handled via placeholders
+            if field_info:
+                text_runs.append(run)  # Remove this run, it will be recreated via placeholders
+            else:
+                preserved_runs.append(run)  # Keep as before if no field_info
+            continue
+        
+        # Identify runs containing endnote references - handle through field_info now  
+        if run.xpath('.//w:endnoteReference', namespaces=namespaces):
+            # If we have field_info, endnote refs will be handled via placeholders
+            if field_info:
+                text_runs.append(run)  # Remove this run, it will be recreated via placeholders
+            else:
+                preserved_runs.append(run)  # Keep as before if no field_info
+            continue
+        
+        # Identify math runs - handle separately
+        if run.xpath('.//m:oMath', namespaces=namespaces):
+            math_runs.append(run)
             continue
         
         # If we have field_info, we will regenerate all fields, so treat field runs as text runs to be removed
@@ -3240,6 +3730,9 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
         # This is a text run that needs to be replaced
         text_runs.append(run)
     
+    # Also handle math formulas that are direct children of paragraph
+    direct_math_formulas = paragraph.xpath('./m:oMath', namespaces=namespaces)
+    
     # Get formatting from the first text run if available, or use original structure
     formatting = None
     if original_structure and original_structure.get('runs_info'):
@@ -3258,32 +3751,101 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
         rPr_elements = first_run.xpath('./w:rPr', namespaces=namespaces)
         formatting = rPr_elements[0] if rPr_elements else None
     
-    # Remove only the text runs, keep everything else
+    # Remove text runs and math runs (they will be replaced), keep everything else
     for run in text_runs:
         paragraph.remove(run)
+    for run in math_runs:
+        paragraph.remove(run)
     
-    # Add new text content with proper structure
-    if field_info:
-        update_paragraph_content_with_fields_enhanced(
-            paragraph, new_text, namespaces, field_info, formatting, original_structure
+    # Remove direct math formulas
+    for math_formula in direct_math_formulas:
+        paragraph.remove(math_formula)
+    
+    # Add new text content with math formulas and fields
+    if math_info or field_info:
+        update_paragraph_content_with_math_and_fields_enhanced(
+            paragraph, new_text, namespaces, field_info, math_info, formatting, original_structure
         )
     else:
         add_text_with_enhanced_formatting(paragraph, new_text, namespaces, formatting)
 
-def update_paragraph_content_with_fields_enhanced(paragraph, new_text, namespaces, field_info, formatting=None, original_structure=None):
-    """Update paragraph content while preserving field variables and line breaks with enhanced formatting"""
+def update_paragraph_content_with_math_and_fields_enhanced(paragraph, new_text, namespaces, field_info=None, math_info=None, formatting=None, original_structure=None):
+    """Update paragraph content while preserving math formulas and field variables with enhanced formatting"""
     
-    # Parse the new text to find field placeholders
-    field_placeholders = re.findall(r'\{\{[^}]+\}\}', new_text)
+    # Parse the new text to find placeholders
+    field_placeholders = re.findall(r'\{\{[^}]+\}\}', new_text) if field_info else []
+    math_placeholders = re.findall(r'\[formula_\d+\]', new_text) if math_info else []
     
-    if not field_placeholders:
-        # No field placeholders, just add text with line breaks
-        add_text_with_enhanced_formatting(paragraph, new_text, namespaces, formatting)
-        return
+    # Create mappings for placeholders
+    field_mapping = create_field_mapping(field_info, field_placeholders) if field_info else {}
+    math_mapping = create_math_mapping(math_info) if math_info else {}
     
-    # Create a mapping of field placeholders to field info with position tracking
+    # Split text by both field and math placeholders and line breaks
+    lines = new_text.split('\n')
+    
+    for line_idx, line in enumerate(lines):
+        if line_idx > 0:
+            # Add line break before each line except the first
+            br_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+            if formatting is not None:
+                cloned_rPr = etree.fromstring(etree.tostring(formatting))
+                br_run.insert(0, cloned_rPr)
+            etree.SubElement(br_run, f"{{{namespaces['w']}}}br")
+        
+        # Process placeholders within this line
+        if any(placeholder in line for placeholder in field_placeholders + math_placeholders):
+            # Split line by all placeholders
+            all_placeholders = field_placeholders + math_placeholders
+            pattern = '(' + '|'.join(re.escape(placeholder) for placeholder in all_placeholders) + ')'
+            parts = re.split(pattern, line)
+            
+            current_run = None
+            field_usage = {}
+            
+            for part in parts:
+                if part in field_placeholders:
+                    # Handle field placeholder
+                    current_run = process_field_placeholder(
+                        paragraph, part, field_mapping, field_usage, namespaces, formatting, current_run
+                    )
+                
+                elif part in math_placeholders:
+                    # Handle math placeholder
+                    current_run = process_math_placeholder(
+                        paragraph, part, math_mapping, namespaces, formatting, current_run
+                    )
+                
+                elif part or part == '':  # Regular text (including empty strings to preserve structure)
+                    if current_run is None:
+                        current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                    
+                    text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                    text_node.text = part
+                    
+                    # Apply formatting if available
+                    if formatting is not None:
+                        existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
+                        for rPr in existing_rPr:
+                            current_run.remove(rPr)
+                        cloned_rPr = etree.fromstring(etree.tostring(formatting))
+                        current_run.insert(0, cloned_rPr)
+        else:
+            # No placeholders in this line, just add as regular text
+            if line or line_idx == 0:  # Always add first line, add others only if not empty
+                text_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                if formatting is not None:
+                    cloned_rPr = etree.fromstring(etree.tostring(formatting))
+                    text_run.insert(0, cloned_rPr)
+                text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
+                text_node.text = line
+
+def create_field_mapping(field_info, field_placeholders):
+    """Create mapping for field placeholders"""
     field_mapping = {}
     field_counters = {}
+    
+    if not field_info:
+        return field_mapping
     
     for field in field_info:
         display_text = field.get('display_text', '')
@@ -3314,120 +3876,210 @@ def update_paragraph_content_with_fields_enhanced(paragraph, new_text, namespace
                     key = f"{placeholder}_{i}"
                     field_mapping[key] = base_field_info
     
-    # Split text by both field placeholders and line breaks
-    lines = new_text.split('\n')
+    return field_mapping
+
+def create_math_mapping(math_info):
+    """Create mapping for math placeholders"""
+    math_mapping = {}
     
-    for line_idx, line in enumerate(lines):
-        if line_idx > 0:
-            # Add line break before each line except the first
-            br_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-            if formatting is not None:
-                cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                br_run.insert(0, cloned_rPr)
-            etree.SubElement(br_run, f"{{{namespaces['w']}}}br")
+    if not math_info:
+        return math_mapping
+    
+    for math_item in math_info:
+        placeholder = math_item.get('placeholder', '')
+        if placeholder:
+            math_mapping[placeholder] = math_item
+    
+    return math_mapping
+
+def process_field_placeholder(paragraph, placeholder, field_mapping, field_usage, namespaces, formatting, current_run):
+    """Process a field placeholder and add appropriate field element"""
+    
+    # Track field usage to handle multiple occurrences
+    if placeholder not in field_usage:
+        field_usage[placeholder] = 0
+    
+    key = f"{placeholder}_{field_usage[placeholder]}"
+    field_usage[placeholder] += 1
+    
+    if key in field_mapping:
+        field = field_mapping[key]
+        field_type = field.get('type')
         
-        # Process field placeholders within this line
-        if any(placeholder in line for placeholder in field_placeholders):
-            # Split line by field placeholders and rebuild with proper field elements
-            parts = re.split(r'(\{\{[^}]+\}\})', line)
+        if field_type == 'simple_field':
+            # Create simple field using original XML
+            if current_run is None:
+                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
             
-            current_run = None
-            field_usage = {}
+            original_field_xml = field.get('original_field_xml')
+            if original_field_xml:
+                try:
+                    field_element = etree.fromstring(original_field_xml)
+                    current_run.append(field_element)
+                except:
+                    # Fallback to manual creation
+                    fld_simple = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldSimple")
+                    fld_simple.set(f'{{{namespaces["w"]}}}instr', field.get('instruction', ''))
+            else:
+                # Manual creation
+                fld_simple = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldSimple")
+                fld_simple.set(f'{{{namespaces["w"]}}}instr', field.get('instruction', ''))
+        
+        elif field_type == 'field_begin':
+            if current_run is None:
+                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
             
-            for part in parts:
-                if part in field_placeholders:
-                    # Track field usage to handle multiple occurrences
-                    if part not in field_usage:
-                        field_usage[part] = 0
+            fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
+            fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'begin')
+            
+        elif field_type == 'field_instruction':
+            if current_run is None:
+                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+            
+            instr_text = etree.SubElement(current_run, f"{{{namespaces['w']}}}instrText")
+            instr_text.text = field.get('instruction', '')
+            
+        elif field_type == 'field_end':
+            if current_run is None:
+                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+            
+            fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
+            fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'end')
+            
+        elif field_type == 'field_separate':
+            if current_run is None:
+                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+            
+            fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
+            fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'separate')
+        
+        elif field_type == 'footnote_ref':
+            # Restore footnote reference from original XML
+            run_xml = field.get('run_xml')
+            if run_xml:
+                try:
+                    original_run = etree.fromstring(run_xml)
+                    # Create new run and copy all content from original
+                    footnote_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                    for child in original_run:
+                        # Deep copy the child element to preserve all attributes and content
+                        new_child = etree.fromstring(etree.tostring(child))
+                        footnote_run.append(new_child)
                     
-                    key = f"{part}_{field_usage[part]}"
-                    field_usage[part] += 1
-                    
-                    if key in field_mapping:
-                        field = field_mapping[key]
-                        field_type = field.get('type')
-                        
-                        if field_type == 'simple_field':
-                            # Create simple field using original XML
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
-                            original_field_xml = field.get('original_field_xml')
-                            if original_field_xml:
-                                try:
-                                    field_element = etree.fromstring(original_field_xml)
-                                    current_run.append(field_element)
-                                except:
-                                    # Fallback to manual creation
-                                    fld_simple = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldSimple")
-                                    fld_simple.set(f'{{{namespaces["w"]}}}instr', field.get('instruction', ''))
-                            else:
-                                # Manual creation
-                                fld_simple = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldSimple")
-                                fld_simple.set(f'{{{namespaces["w"]}}}instr', field.get('instruction', ''))
-                        
-                        elif field_type == 'field_begin':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
-                            fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
-                            fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'begin')
-                            
-                        elif field_type == 'field_instruction':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
-                            instr_text = etree.SubElement(current_run, f"{{{namespaces['w']}}}instrText")
-                            instr_text.text = field.get('instruction', '')
-                            
-                        elif field_type == 'field_end':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
-                            fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
-                            fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'end')
-                            
-                        elif field_type == 'field_separate':
-                            if current_run is None:
-                                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                            
-                            fld_char = etree.SubElement(current_run, f"{{{namespaces['w']}}}fldChar")
-                            fld_char.set(f'{{{namespaces["w"]}}}fldCharType', 'separate')
-                        
-                        # Apply formatting if available
-                        if formatting is not None and current_run is not None:
-                            existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
-                            for rPr in existing_rPr:
-                                current_run.remove(rPr)
-                            cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                            current_run.insert(0, cloned_rPr)
-                        
-                        current_run = None  # Force new run for next content
-                    
-                elif part.strip() or part == '':
-                    # This is regular text (including empty strings to preserve structure)
-                    if current_run is None:
-                        current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                    
-                    text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
-                    text_node.text = part
-                    
-                    # Apply formatting if available
+                    app_logger.debug(f"Restored footnote reference with id: {field.get('ref_id', '')}")
+                except Exception as e:
+                    app_logger.error(f"Failed to restore footnote reference from XML: {e}")
+                    # Fallback: create footnote reference manually
+                    footnote_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
                     if formatting is not None:
-                        existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
-                        for rPr in existing_rPr:
-                            current_run.remove(rPr)
                         cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                        current_run.insert(0, cloned_rPr)
-        else:
-            # No field placeholders in this line, just add as regular text
-            if line or line_idx == 0:  # Always add first line, add others only if not empty
-                text_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                        footnote_run.insert(0, cloned_rPr)
+                    footnote_ref = etree.SubElement(footnote_run, f"{{{namespaces['w']}}}footnoteReference")
+                    footnote_ref.set(f'{{{namespaces["w"]}}}id', field.get('ref_id', ''))
+            else:
+                # Manual creation
+                footnote_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
                 if formatting is not None:
                     cloned_rPr = etree.fromstring(etree.tostring(formatting))
-                    text_run.insert(0, cloned_rPr)
-                text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
-                text_node.text = line
+                    footnote_run.insert(0, cloned_rPr)
+                footnote_ref = etree.SubElement(footnote_run, f"{{{namespaces['w']}}}footnoteReference")
+                footnote_ref.set(f'{{{namespaces["w"]}}}id', field.get('ref_id', ''))
+            
+            return None  # Force new run for next content
+        
+        elif field_type == 'endnote_ref':
+            # Restore endnote reference from original XML
+            run_xml = field.get('run_xml')
+            if run_xml:
+                try:
+                    original_run = etree.fromstring(run_xml)
+                    # Create new run and copy all content from original
+                    endnote_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                    for child in original_run:
+                        # Deep copy the child element to preserve all attributes and content
+                        new_child = etree.fromstring(etree.tostring(child))
+                        endnote_run.append(new_child)
+                    
+                    app_logger.debug(f"Restored endnote reference with id: {field.get('ref_id', '')}")
+                except Exception as e:
+                    app_logger.error(f"Failed to restore endnote reference from XML: {e}")
+                    # Fallback: create endnote reference manually
+                    endnote_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                    if formatting is not None:
+                        cloned_rPr = etree.fromstring(etree.tostring(formatting))
+                        endnote_run.insert(0, cloned_rPr)
+                    endnote_ref = etree.SubElement(endnote_run, f"{{{namespaces['w']}}}endnoteReference")
+                    endnote_ref.set(f'{{{namespaces["w"]}}}id', field.get('ref_id', ''))
+            else:
+                # Manual creation
+                endnote_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                if formatting is not None:
+                    cloned_rPr = etree.fromstring(etree.tostring(formatting))
+                    endnote_run.insert(0, cloned_rPr)
+                endnote_ref = etree.SubElement(endnote_run, f"{{{namespaces['w']}}}endnoteReference")
+                endnote_ref.set(f'{{{namespaces["w"]}}}id', field.get('ref_id', ''))
+            
+            return None  # Force new run for next content
+        
+        # Apply formatting if available for other field types
+        if formatting is not None and current_run is not None:
+            existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
+            for rPr in existing_rPr:
+                current_run.remove(rPr)
+            cloned_rPr = etree.fromstring(etree.tostring(formatting))
+            current_run.insert(0, cloned_rPr)
+        
+        return None  # Force new run for next content
+    
+    return current_run
+
+def process_math_placeholder(paragraph, placeholder, math_mapping, namespaces, formatting, current_run):
+    """Process a math placeholder and add appropriate math element"""
+    
+    if placeholder in math_mapping:
+        math_item = math_mapping[placeholder]
+        run_index = math_item.get('run_index', -1)
+        
+        if run_index == -1:
+            # Math formula was a direct child of paragraph, add it directly
+            try:
+                math_element = etree.fromstring(math_item.get('formula_xml', ''))
+                paragraph.append(math_element)
+                app_logger.debug(f"Added math formula as direct paragraph child: {placeholder}")
+            except Exception as e:
+                app_logger.error(f"Failed to restore math formula {placeholder}: {e}")
+                # Fallback: add as text
+                if current_run is None:
+                    current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+                text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                text_node.text = placeholder
+        else:
+            # Math formula was inside a run
+            if current_run is None:
+                current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+            
+            try:
+                math_element = etree.fromstring(math_item.get('formula_xml', ''))
+                current_run.append(math_element)
+                app_logger.debug(f"Added math formula to run: {placeholder}")
+                
+                # Apply formatting if available
+                if formatting is not None:
+                    existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
+                    for rPr in existing_rPr:
+                        current_run.remove(rPr)
+                    cloned_rPr = etree.fromstring(etree.tostring(formatting))
+                    current_run.insert(0, cloned_rPr)
+                
+            except Exception as e:
+                app_logger.error(f"Failed to restore math formula {placeholder}: {e}")
+                # Fallback: add as text
+                text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
+                text_node.text = placeholder
+        
+        return None  # Force new run for next content
+    
+    return current_run
 
 def add_text_with_enhanced_formatting(paragraph, text, namespaces, formatting=None):
     """Add text to paragraph while preserving line breaks and enhanced formatting"""
@@ -3452,8 +4104,8 @@ def add_text_with_enhanced_formatting(paragraph, text, namespaces, formatting=No
             text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
             text_node.text = part
 
-def update_textbox_content_with_enhanced_preservation(textbox, new_text, namespaces, field_info=None):
-    """Update textbox content with enhanced format preservation"""
+def update_textbox_content_with_enhanced_preservation(textbox, new_text, namespaces, field_info=None, math_info=None):
+    """Update textbox content with enhanced format preservation including math formulas"""
     textbox_content = textbox.xpath('.//w:txbxContent', namespaces=namespaces)
     if not textbox_content:
         app_logger.error("No textbox content found")
@@ -3481,10 +4133,10 @@ def update_textbox_content_with_enhanced_preservation(textbox, new_text, namespa
             # Create new paragraph
             new_p = etree.SubElement(textbox_content[0], f"{{{namespaces['w']}}}p")
             
-            # Process line with field variables
-            if field_info:
-                update_paragraph_content_with_fields_enhanced(
-                    new_p, line, namespaces, field_info, original_formatting, None
+            # Process line with field variables and math formulas
+            if field_info or math_info:
+                update_paragraph_content_with_math_and_fields_enhanced(
+                    new_p, line, namespaces, field_info, math_info, original_formatting, None
                 )
             else:
                 add_text_with_enhanced_formatting(new_p, line, namespaces, original_formatting)
@@ -3492,10 +4144,10 @@ def update_textbox_content_with_enhanced_preservation(textbox, new_text, namespa
         # Single line text - create one paragraph
         new_p = etree.SubElement(textbox_content[0], f"{{{namespaces['w']}}}p")
         
-        # Process text with field variables
-        if field_info:
-            update_paragraph_content_with_fields_enhanced(
-                new_p, new_text, namespaces, field_info, original_formatting, None
+        # Process text with field variables and math formulas
+        if field_info or math_info:
+            update_paragraph_content_with_math_and_fields_enhanced(
+                new_p, new_text, namespaces, field_info, math_info, original_formatting, None
             )
         else:
             add_text_with_enhanced_formatting(new_p, new_text, namespaces, original_formatting)
@@ -3660,7 +4312,7 @@ def update_toc_paragraph_fallback(paragraph, translated_text, namespaces):
     except Exception as e:
         app_logger.error(f"Error in TOC fallback update: {e}")
         # Last resort: simple text replacement
-        update_paragraph_text_with_enhanced_preservation(paragraph, translated_text, namespaces, None, None, None)
+        update_paragraph_text_with_enhanced_preservation(paragraph, translated_text, namespaces, None, None, None, None)
 
 def update_numbering_xml_with_translations(numbering_tree, original_data, translations, namespaces):
     """Update numbering.xml with translated content, preserving variable placeholders"""
@@ -3769,14 +4421,14 @@ def update_json_structure_after_translation(original_json_path, translated_json_
                 "translated": translations_by_id[item_id]
             }
             
-            # Preserve important metadata including TOC structure, SmartArt, and all format info
+            # Preserve important metadata including TOC structure, SmartArt, math info, footnotes, and all format info
             preserve_keys = [
                 "is_heading", "has_numbering", "numbering_info", "is_toc", "toc_info", "toc_structure", 
                 "textbox_type", "textbox_format", "textbox_index", "positioning_info", "paragraph_context",
-                "field_info", "original_pPr", "original_structure", "table_props", "row_props", "cell_props",
+                "field_info", "math_info", "original_pPr", "original_structure", "table_props", "row_props", "cell_props",
                 "paragraph_index", "nesting_level", "sdt_index", "is_toc_sdt", "sdt_props",
                 "diagram_index", "shape_index", "tx_body_index", "model_id", "run_texts", "run_styles", 
-                "run_lengths", "drawing_path", "original_text", "xpath"
+                "run_lengths", "drawing_path", "original_text", "xpath", "footnote_id"
             ]
             
             for key in preserve_keys:
