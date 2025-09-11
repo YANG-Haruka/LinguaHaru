@@ -22,6 +22,7 @@ translator_modules = [
     "translator.md_translator",
     "translator.word_translator_bilingual",
     "translator.excel_translator_test",
+    "translator.excel_translator_test_bilingual",
     "translator"
 ]
 
