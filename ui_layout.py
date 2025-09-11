@@ -430,6 +430,7 @@ def create_settings_section(config):
     initial_thread_count_offline = config.get("default_thread_count_offline", 4)
     initial_thread_count = initial_thread_count_online if initial_default_online else initial_thread_count_offline
     initial_excel_mode_2 = config.get("excel_mode_2", False)
+    initial_excel_bilingual_mode = config.get("excel_bilingual_mode", False)
     initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
     
     initial_show_mode_switch = config.get("show_mode_switch", True)
@@ -480,6 +481,12 @@ def create_settings_section(config):
             visible=False
         )
         
+        excel_bilingual_checkbox = gr.Checkbox(
+            label="Use Excel Bilingual Mode", 
+            value=initial_excel_bilingual_mode, 
+            visible=False
+        )
+    
     word_bilingual_checkbox = gr.Checkbox(
         label="Use Word Bilingual Mode", 
         value=initial_word_bilingual_mode, 
@@ -487,7 +494,7 @@ def create_settings_section(config):
     )
     
     return (use_online_model, lan_mode_checkbox, max_retries_slider, 
-            thread_count_slider, excel_mode_checkbox, word_bilingual_checkbox)
+            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox)
 
 
 def create_model_glossary_section(config, local_models, online_models, get_glossary_files_func, get_default_glossary_func):
@@ -568,6 +575,7 @@ def create_state_variables(config):
         'max_token_state': gr.State(config.get("max_token", 768)),
         'max_retries_state': gr.State(config.get("max_retries", 4)),
         'excel_mode_2_state': gr.State(config.get("excel_mode_2", False)),
+        'excel_bilingual_mode_state': gr.State(config.get("excel_bilingual_mode", False)),
         'word_bilingual_mode_state': gr.State(config.get("word_bilingual_mode", False)),
         'thread_count_state': gr.State(config.get("default_thread_count_online", 2) if config.get("default_online", False) else config.get("default_thread_count_offline", 4))
     }
