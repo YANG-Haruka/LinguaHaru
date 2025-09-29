@@ -26,7 +26,7 @@ RESULT_JSON_PATH = "dst_translated.json"
 MAX_PREVIOUS_TOKENS = 128
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir):
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
@@ -42,10 +42,12 @@ class DocumentTranslator:
         self.lock = Lock()
         self.check_stop_requested = None
         self.last_ui_update_time = 0
+        self.temp_dir = temp_dir
+        self.result_dir = result_dir
 
         # Setup file paths
         filename = os.path.splitext(os.path.basename(input_file_path))[0]
-        self.file_dir = os.path.join("temp", filename)
+        self.file_dir = os.path.join(self.temp_dir, filename)
         
         # File paths
         self.src_json_path = os.path.join(self.file_dir, SRC_JSON_PATH)
@@ -557,7 +559,7 @@ class DocumentTranslator:
     
     def _clear_temp_folder(self):
         """Clear temp folder"""
-        temp_folder = "temp"
+        temp_folder = self.temp_dir
         try:
             if os.path.exists(temp_folder):
                 app_logger.info("Clearing temp folder...")
@@ -714,7 +716,7 @@ class DocumentTranslator:
         self.update_ui_safely(progress_callback, 1.0, "Translation completed")
 
         # Return output path
-        result_folder = "result" 
+        result_folder = self.result_dir
         base_name = os.path.basename(file_name)
         final_output_path = os.path.join(result_folder, f"{base_name}_translated{file_extension}")
         return final_output_path, missing_counts

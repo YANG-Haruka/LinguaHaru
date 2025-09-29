@@ -10,7 +10,7 @@ from textProcessing.text_separator import safe_convert_to_int
 import shutil
 import tempfile
 
-def extract_word_content_to_json(file_path):
+def extract_word_content_to_json(file_path, save_temp_dir):
     """Extract translatable content from Word document to JSON"""
     temp_dir = None
     try:
@@ -138,7 +138,7 @@ def extract_word_content_to_json(file_path):
 
         # Save extraction data and temp directory path
         filename = os.path.splitext(os.path.basename(file_path))[0]
-        temp_folder = os.path.join("temp", filename)
+        temp_folder = os.path.join(save_temp_dir, filename)
         os.makedirs(temp_folder, exist_ok=True)
         
         # Save temp directory path for later use
@@ -2485,7 +2485,7 @@ def should_translate_enhanced(text):
     except:
         return True  # Default to translate if function fails
 
-def write_translated_content_to_word(file_path, original_json_path, translated_json_path):
+def write_translated_content_to_word(file_path, original_json_path, translated_json_path, save_temp_dir, result_dir):
     """Write translated content back to Word document with complete file structure preservation"""
     
     # Load translation data
@@ -2503,7 +2503,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     
     # Get temp directory path
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(save_temp_dir, filename)
     temp_dir_info_path = os.path.join(temp_folder, "temp_dir_path.txt")
     
     temp_dir = None
@@ -2660,7 +2660,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 f.write(etree.tostring(hf_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
 
         # Create result file
-        result_folder = "result"
+        result_folder = result_dir
         os.makedirs(result_folder, exist_ok=True)
         result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.docx")
 
@@ -3710,6 +3710,11 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
         # Identify math runs - handle separately
         if run.xpath('.//m:oMath', namespaces=namespaces):
             math_runs.append(run)
+            continue
+
+        # Identify runs containing breaks (line, page, column)
+        if run.xpath('.//w:br', namespaces=namespaces):
+            preserved_runs.append(run)
             continue
         
         # If we have field_info, we will regenerate all fields, so treat field runs as text runs to be removed

@@ -49,7 +49,7 @@ class BaseTranslator:
                 "model": model,
             },
         )
-        temp_folder = os.path.join("temp", shared_constants.PDF_FILE_NAME)
+        temp_folder = os.path.join(shared_constants.TEMP_DIR, shared_constants.PDF_FILE_NAME)
         translation_json_path = os.path.join(temp_folder, "dst_translated.json")
         if os.path.exists(translation_json_path):
             self.cache.update_translations_from_json(translation_json_path)
@@ -98,7 +98,7 @@ class BaseTranslator:
         raise NotImplementedError
     
     def process_translation_cache(self):
-        temp_folder = os.path.join("temp", shared_constants.PDF_FILE_NAME)
+        temp_folder = os.path.join(shared_constants.TEMP_DIR, shared_constants.PDF_FILE_NAME)
         text_json_path = os.path.join(temp_folder, "src.json")
         self.cache.export_translation_to_json(text_json_path)
 

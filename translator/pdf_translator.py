@@ -15,7 +15,9 @@ class PdfTranslator(DocumentTranslator):
         _,self.cache_folder= init_db(remove_exists=True)
 
         shared_constants.PDF_FILE_NAME = os.path.splitext(os.path.basename(self.input_file_path))[0]
-        temp_folder = os.path.join("temp", shared_constants.PDF_FILE_NAME)
+        shared_constants.TEMP_DIR = self.temp_dir
+        shared_constants.RESULT_DIR = self.result_dir
+        temp_folder = os.path.join(self.temp_dir, shared_constants.PDF_FILE_NAME)
         os.makedirs(self.file_dir, exist_ok=True)
 
         # translate(files=input_file,model=model,thread=1,lang_in=self.src_lang,lang_out=self.dst_lang,service="google")

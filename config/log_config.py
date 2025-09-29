@@ -46,7 +46,7 @@ class FileLogger:
             console_handler.setFormatter(console_formatter)
             self.logger.addHandler(console_handler)
     
-    def create_file_log(self, filename):
+    def create_file_log(self, filename, log_dir):
         """
         Create a new log file for the specified filename.
         
@@ -62,7 +62,7 @@ class FileLogger:
             self.file_handler.close()
         
         # Create log directory if it doesn't exist
-        log_dir = "log"
+        log_dir = log_dir
         if not os.path.exists(log_dir):
             os.makedirs(log_dir)
         
