@@ -44,7 +44,7 @@ def should_translate_enhanced(text):
     # Then use original check logic
     return should_translate(text)
 
-def extract_md_content_to_json(file_path):
+def extract_md_content_to_json(file_path, temp_dir):
     """
     Extract Markdown content to JSON, handling complex HTML structures including nested tables
     Preserves line formats and document structure
@@ -61,7 +61,7 @@ def extract_md_content_to_json(file_path):
         
     # Save original content
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     os.makedirs(temp_folder, exist_ok=True)
     with open(os.path.join(temp_folder, "original_content.md"), "w", encoding="utf-8") as original_file:
         original_file.write(content)
@@ -330,14 +330,14 @@ def extract_md_content_to_json(file_path):
     app_logger.info(f"Markdown content extracted to: {json_path}, total {count} lines to translate")
     return json_path
 
-def write_translated_content_to_md(file_path, original_json_path, translated_json_path):
+def write_translated_content_to_md(file_path, original_json_path, translated_json_path, temp_dir, result_dir):
     """
     Write translated content to new Markdown file while preserving HTML structure
     Enhanced to handle complex HTML tables and base64 images
     """
     # Get file paths
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     
     # Load document structure
     structure_path = os.path.join(temp_folder, "structure.json")
@@ -423,7 +423,7 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
     final_content = '\n'.join(final_lines)
     
     # Create output file
-    result_folder = "result"
+    result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)
     result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.md")
     

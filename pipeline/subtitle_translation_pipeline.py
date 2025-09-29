@@ -3,7 +3,7 @@ import os
 import re
 from config.log_config import app_logger
 
-def extract_srt_content_to_json(file_path):
+def extract_srt_content_to_json(file_path, temp_dir):
     """
     Extract subtitles from an SRT file and save them in a JSON format.
     """
@@ -32,7 +32,7 @@ def extract_srt_content_to_json(file_path):
         })
     
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     os.makedirs(temp_folder, exist_ok=True)
     json_path = os.path.join(temp_folder, "src.json")
     
@@ -41,7 +41,7 @@ def extract_srt_content_to_json(file_path):
     
     return json_path
 
-def write_translated_content_to_srt(file_path, original_json_path, translated_json_path):
+def write_translated_content_to_srt(file_path, original_json_path, translated_json_path, result_dir):
     """
     Write translated content back to the SRT file while keeping timestamps intact.
     """
@@ -64,7 +64,7 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
         
         output_srt_lines.append(f"{count}\n{start_time} --> {end_time}\n{translated_text}\n\n")
     
-    result_folder = "result"
+    result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)
     result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.srt")
     

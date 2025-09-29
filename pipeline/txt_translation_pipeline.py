@@ -66,7 +66,7 @@ def read_file_with_encoding(file_path):
     # If all encodings fail, raise an exception
     raise Exception(f"Unable to decode file {file_path} with any supported encoding")
 
-def extract_txt_content_to_json(file_path):
+def extract_txt_content_to_json(file_path, temp_dir):
     """
     Extract all text content from TXT file and save in JSON format, each original paragraph counted separately
     Respect short lines as independent paragraphs, regardless of whether they end with punctuation
@@ -87,7 +87,7 @@ def extract_txt_content_to_json(file_path):
         
     # Save original content
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     os.makedirs(temp_folder, exist_ok=True)
     
     # Save original content (always in UTF-8)
@@ -145,14 +145,14 @@ def extract_txt_content_to_json(file_path):
     app_logger.info(f"Original encoding: {used_encoding}, converted to UTF-8")
     return json_path
 
-def write_translated_content_to_txt(file_path, original_json_path, translated_json_path):
+def write_translated_content_to_txt(file_path, original_json_path, translated_json_path, temp_dir, result_dir):
     """
     Write translated content back to a new TXT file, maintaining original paragraph format
     Output file is always saved in UTF-8 encoding
     """
     # Load all content data
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     all_content_path = os.path.join(temp_folder, "all_content.json")
     
     try:
@@ -172,7 +172,7 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
     translation_map = {item["count_src"]: item["translated"] for item in translated_data}
     
     # Create output file
-    result_folder = "result"
+    result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)
     result_path = os.path.join(result_folder, f"{filename}_translated.txt")
     

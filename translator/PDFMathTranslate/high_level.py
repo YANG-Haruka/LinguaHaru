@@ -445,7 +445,7 @@ def extract_and_translate(
 
 def write_translated_result(
     input_file: str,
-    output_dir: str = "result",
+    output_dir: str = None,
     pages: Optional[List[int]] = None,
     lang_in: str = "",
     lang_out: str = "",
@@ -464,6 +464,9 @@ def write_translated_result(
     """
 
     # 1) 确保输出目录存在
+    from . import shared_constants
+    if output_dir is None:
+        output_dir = shared_constants.RESULT_DIR
     os.makedirs(output_dir, exist_ok=True)
 
     # 2) 读取原始 PDF

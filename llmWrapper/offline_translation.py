@@ -187,7 +187,7 @@ def translate_offline(messages, model):
         app_logger.debug(f"Sending request to {url} with payload: {payload}")
         
         # Make the request
-        response = requests.post(url, json=payload, timeout=120)
+        response = requests.post(url, json=payload, timeout=600)
         response.raise_for_status()  # Raise exception for HTTP errors
         response_text = response.text
         

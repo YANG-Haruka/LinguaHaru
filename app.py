@@ -13,6 +13,7 @@ import sys
 import base64
 import threading
 import queue
+import time
 from functools import partial
 
 # Import separated UI layout module
@@ -88,6 +89,30 @@ def enqueue_task(
             task_queue.put(task_info)
             queue_position = task_queue.qsize()
             return f"Task added to queue. Position: {queue_position}"
+        
+def clean_gradio_cache():
+    """Clean up old Gradio temporary files"""
+    try:
+        gradio_temp_dir = tempfile.gettempdir()
+        cleaned_count = 0
+        
+        for item in os.listdir(gradio_temp_dir):
+            if item.startswith('gradio') or item.startswith('tmp'):
+                item_path = os.path.join(gradio_temp_dir, item)
+                try:
+                    if time.time() - os.path.getmtime(item_path) > 300:
+                        if os.path.isdir(item_path):
+                            shutil.rmtree(item_path, ignore_errors=True)
+                        else:
+                            os.remove(item_path)
+                        cleaned_count += 1
+                except Exception as e:
+                    app_logger.debug(f"Could not remove {item_path}: {e}")
+        
+        if cleaned_count > 0:
+            app_logger.info(f"Cleaned {cleaned_count} Gradio cache items")
+    except Exception as e:
+        app_logger.warning(f"Gradio cache cleanup error: {e}")
 
 def process_task_with_queue(
     translate_func, files, model, src_lang, dst_lang, 
@@ -238,12 +263,12 @@ def modified_translate_button_click(
     )
 
 def check_temp_translation_exists(files):
-    """Check if temporary translation folders exist in 'temp' directory"""
+    """Check if temporary translation folders exist in custom temp directory"""
     if not files:
         return False, "No files selected."
     
-    # Ensure temp directory exists
-    temp_base_dir = "temp"
+    # Use custom temp directory from config
+    temp_base_dir, _, _ = get_custom_paths()
     os.makedirs(temp_base_dir, exist_ok=True)
     
     found_folders = []
@@ -277,7 +302,7 @@ def read_system_config():
         return {
             "lan_mode": False,
             "default_online": False,
-            "max_token": MAX_TOKEN,
+            "max_token": 768,
             "show_model_selection": True,
             "show_mode_switch": True,
             "show_lan_mode": True,
@@ -290,7 +315,10 @@ def read_system_config():
             "default_thread_count_online": 2,
             "default_thread_count_offline": 4,
             "default_src_lang": "English",
-            "default_dst_lang": "English"
+            "default_dst_lang": "English",
+            "temp_dir": "temp",
+            "result_dir": "result",
+            "log_dir": "log"
         }
 
 def write_system_config(config):
@@ -299,6 +327,20 @@ def write_system_config(config):
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
     with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=4, ensure_ascii=False)
+
+def get_custom_paths():
+    """Get custom directory paths from config and ensure they exist"""
+    config = read_system_config()
+    temp_dir = config.get("temp_dir", "temp")
+    result_dir = config.get("result_dir", "result")
+    log_dir = config.get("log_dir", "log")
+    
+    # Ensure directories exist
+    os.makedirs(temp_dir, exist_ok=True)
+    os.makedirs(result_dir, exist_ok=True)
+    os.makedirs(log_dir, exist_ok=True)
+    
+    return temp_dir, result_dir, log_dir
 
 def update_lan_mode(lan_mode):
     """Update system config with new LAN mode setting"""
@@ -880,6 +922,7 @@ def translate_files(
 ):
     """Translate one or multiple files using chosen model"""
     reset_stop_flag()  # Reset stop flag at beginning
+    clean_gradio_cache()
     
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
@@ -931,9 +974,12 @@ def process_single_file(
     """Process single file for translation"""
     file_name = os.path.basename(file.name)
     
+    # Get custom paths from config
+    temp_dir, result_dir, log_dir = get_custom_paths()
+    
     # Create new log file for this file
     from config.log_config import file_logger
-    file_logger.create_file_log(file_name)
+    file_logger.create_file_log(file_name, log_dir=log_dir)
     
     app_logger.info(f"Processing file: {file_name}")
     app_logger.info(f"Source language: {src_lang_code}, Target language: {dst_lang_code}, Model: {model}")
@@ -949,12 +995,14 @@ def process_single_file(
         )
 
     try:
-        # Pass check_stop_requested function to translator with glossary_path
+        # Pass check_stop_requested function to translator with custom paths
         translator = translator_class(
             file.name, model, use_online, api_key,
             src_lang_code, dst_lang_code, continue_mode, 
             max_token=max_token, max_retries=max_retries,
-            thread_count=thread_count, glossary_path=glossary_path
+            thread_count=thread_count, glossary_path=glossary_path,
+            temp_dir=temp_dir,      # Pass custom temp directory
+            result_dir=result_dir   # Pass custom result directory
         )
         
         # Add check_stop_requested as attribute
@@ -987,9 +1035,12 @@ def process_multiple_files(
     use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback
 ):
     """Process multiple files and return zip archive"""
-    # Create temporary directory for translated files
-    temp_dir = tempfile.mkdtemp(prefix="translated_")
-    zip_path = os.path.join(temp_dir, "translated_files.zip")
+    # Get custom paths from config
+    temp_dir, result_dir, log_dir = get_custom_paths()
+    
+    # Create temporary directory for translated files in custom result directory
+    temp_zip_dir = tempfile.mkdtemp(prefix="translated_", dir=result_dir)
+    zip_path = os.path.join(temp_zip_dir, "translated_files.zip")
     
     try:
         valid_files = []
@@ -1002,7 +1053,7 @@ def process_multiple_files(
                 valid_files.append((file_obj, file_name))
         
         if not valid_files:
-            shutil.rmtree(temp_dir)
+            shutil.rmtree(temp_zip_dir)
             return gr.update(value=None, visible=False), "No supported files found."
         
         # Create zip file
@@ -1012,7 +1063,7 @@ def process_multiple_files(
             for i, (file_obj, rel_path) in enumerate(valid_files):
                 # Create new log file for current file being processed
                 from config.log_config import file_logger
-                file_logger.create_file_log(rel_path)
+                file_logger.create_file_log(rel_path, log_dir=log_dir)
                 
                 app_logger.info(f"Processing file {i+1}/{total_files}: {rel_path}")
                 
@@ -1028,15 +1079,17 @@ def process_multiple_files(
                     continue  # Skip unsupported files (should not happen due to earlier validation)
                 
                 try:
-                    # Process file with glossary_path
+                    # Process file with custom paths
                     translator = translator_class(
                         file_obj.name, model, use_online, api_key,
                         src_lang_code, dst_lang_code, continue_mode, max_token=max_token, max_retries=max_retries,
-                        thread_count=thread_count, glossary_path=glossary_path
+                        thread_count=thread_count, glossary_path=glossary_path,
+                        temp_dir=temp_dir,      # Pass custom temp directory
+                        result_dir=result_dir   # Pass custom result directory
                     )
                     
                     # Create output directory
-                    output_dir = os.path.join(temp_dir, "files")
+                    output_dir = os.path.join(temp_zip_dir, "files")
                     os.makedirs(output_dir, exist_ok=True)
                     
                     # Create progress callback that shows individual file progress and overall position
@@ -1065,7 +1118,7 @@ def process_multiple_files(
     
     except Exception as e:
         app_logger.exception("Error processing files")
-        shutil.rmtree(temp_dir)
+        shutil.rmtree(temp_zip_dir)
         return gr.update(value=None, visible=False), f"Error processing files: {str(e)}"
 
 #-------------------------------------------------------------------------
@@ -1113,6 +1166,9 @@ default_local_model = config.get("default_local_model", "")
 default_online_model = config.get("default_online_model", "")
 
 encoded_image, mime_type = load_application_icon(config)
+
+# Initialize custom directories
+get_custom_paths()
 
 #-------------------------------------------------------------------------
 # Gradio UI Construction
@@ -1221,7 +1277,7 @@ with gr.Blocks(
                         show_mode_checkbox(files)[2],
                         update_continue_button(files)],
         inputs=file_input,
-        outputs=[excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, continue_button]  # 添加 excel_bilingual_checkbox
+        outputs=[excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, continue_button]
     )
 
     # Glossary event handlers (only if glossary visible)

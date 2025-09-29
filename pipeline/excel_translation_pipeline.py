@@ -8,7 +8,7 @@ from .skip_pipeline import should_translate
 from config.log_config import app_logger
 
 
-def extract_excel_content_to_json(file_path):
+def extract_excel_content_to_json(file_path,temp_dir):
     workbook = load_workbook(file_path)
     cell_data = []
     count = 0
@@ -79,7 +79,7 @@ def extract_excel_content_to_json(file_path):
                 cell_data.append(cell_info)
     
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     os.makedirs(temp_folder, exist_ok=True)
     json_path = os.path.join(temp_folder, "src.json")
     
@@ -109,7 +109,7 @@ def sanitize_sheet_name(sheet_name):
     
     return sanitized_name
 
-def write_translated_content_to_excel(file_path, original_json_path, translated_json_path):
+def write_translated_content_to_excel(file_path, original_json_path, translated_json_path, result_dir):
     workbook = load_workbook(file_path)
 
     # Load original JSON data
@@ -191,7 +191,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                 app_logger.info(f"Keeping original sheet name '{original_name}'")
 
     # Save the modified Excel file
-    result_folder = os.path.join('result')
+    result_folder = os.path.join(result_dir)
     os.makedirs(result_folder, exist_ok=True)
     
     result_path = os.path.join(

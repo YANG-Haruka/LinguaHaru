@@ -8,7 +8,7 @@ from config.log_config import app_logger
 from typing import Dict, List, Any, Optional
 import re
 
-def extract_ppt_content_to_json(file_path: str) -> str:
+def extract_ppt_content_to_json(file_path, temp_dir):
     """
     Extract text content from PowerPoint, processing each paragraph/cell as a single unit.
     """
@@ -72,7 +72,7 @@ def extract_ppt_content_to_json(file_path: str) -> str:
     # Save content to JSON with better error handling
     try:
         filename = os.path.splitext(os.path.basename(file_path))[0]
-        temp_folder = os.path.join("temp", filename)
+        temp_folder = os.path.join(temp_dir, filename)
         os.makedirs(temp_folder, exist_ok=True)
         json_path = os.path.join(temp_folder, "src.json")
         
@@ -458,7 +458,7 @@ def _extract_run_style(text_run, namespaces: Dict) -> Dict:
     
     return style_info
 
-def write_translated_content_to_ppt(file_path: str, original_json_path: str, translated_json_path: str) -> str:
+def write_translated_content_to_ppt(file_path: str, original_json_path: str, translated_json_path: str, temp_dir, result_dir) -> str:
     """
     Write translated content back to the PowerPoint file while preserving format and structure.
     """
@@ -478,7 +478,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
 
     # Prepare output path
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    result_folder = "result"
+    result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)
     result_path = os.path.join(result_folder, f"{filename}_translated.pptx")
     
@@ -487,7 +487,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
         os.remove(result_path)
 
     # Create temporary directory for modified files
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     os.makedirs(temp_folder, exist_ok=True)
 
     # Define namespaces including SmartArt
@@ -524,7 +524,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     slide_items = [item for item in original_data if item.get('slide_index') == slide_index]
                     
                     # Apply translations to slide
-                    _apply_translations_to_slide(slide_tree, slide_items, translations, namespaces)
+                    _apply_translations_to_slide(slide_tree, slide_items, translations, namespaces, temp_dir)
                     
                     # Save modified slide
                     modified_slide_path = os.path.join(temp_folder, slide_path)
@@ -691,7 +691,7 @@ def _apply_smartart_translations(pptx, smartart_items: List[Dict], translations:
             app_logger.error(f"Failed to apply SmartArt translation to {data_path}: {e}")
             continue
 
-def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translations: Dict, namespaces: Dict):
+def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translations: Dict, namespaces: Dict, temp_dir):
     """Apply translations to a slide tree."""
     for item in slide_items:
         if item['type'] == 'notes':
@@ -718,7 +718,7 @@ def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translatio
             elif item['type'] == 'shape':
                 _apply_shape_translation(slide_tree, item, translated_text, namespaces)
             elif item['type'] == 'chart':
-                _apply_chart_translation(slide_tree, item, translated_text, namespaces)
+                _apply_chart_translation(slide_tree, item, translated_text, namespaces, temp_dir)
                 
         except Exception as e:
             app_logger.error(f"Failed to apply translation for count {count}: {e}")
@@ -783,7 +783,7 @@ def _apply_shape_translation(slide_tree, item: Dict, translated_text: str, names
         shape = non_textbox_shapes[item['shape_index'] - 1]
         _distribute_text_to_runs(shape, translated_text, item, namespaces)
 
-def _apply_chart_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
+def _apply_chart_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict, temp_dir):
     """Apply translation to a chart, distributing across runs."""
     charts = slide_tree.xpath('.//c:chart', namespaces=namespaces)
     
@@ -796,7 +796,7 @@ def _apply_chart_translation(slide_tree, item: Dict, translated_text: str, names
             element_type, text_runs = chart_text_elements[item['element_index'] - 1]
             
             # Create a temporary container for the runs
-            temp_container = etree.Element("temp")
+            temp_container = etree.Element(temp_dir)
             for run in text_runs:
                 temp_container.append(run)
             

@@ -13,17 +13,16 @@ groovy_collect = collect_all("groovy")
 tiktoken_collect = collect_all("tiktoken")
 
 translator_modules = [
-    "translator.word_translator", 
-    "translator.ppt_translator",
     "translator.excel_translator",
+    "translator.excel_translator_test",
+    "translator.excel_translator_bilingual",
+    "translator.word_translator", 
+    "translator.word_translator_bilingual",
+    "translator.ppt_translator",
     "translator.pdf_translator",
     "translator.subtile_translator",
     "translator.txt_translator",
     "translator.md_translator",
-    "translator.word_translator_bilingual",
-    "translator.excel_translator_test",
-    "translator.excel_translator_test_bilingual",
-    "translator"
 ]
 
 translator_collects = []

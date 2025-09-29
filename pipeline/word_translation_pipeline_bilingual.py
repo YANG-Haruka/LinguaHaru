@@ -186,7 +186,7 @@ def convert_date_to_target_format(date_str, target_language='en'):
     
     return date_str  # 如果解析失败，返回原字符串
 
-def extract_word_content_to_json(file_path):
+def extract_word_content_to_json(file_path, save_temp_dir):
     """Extract translatable content from Word document to JSON - enhanced error handling"""
     temp_dir = None
     try:
@@ -386,7 +386,7 @@ def extract_word_content_to_json(file_path):
 
         # Save extraction data and temp directory path
         filename = os.path.splitext(os.path.basename(file_path))[0]
-        temp_folder = os.path.join("temp", filename)
+        temp_folder = os.path.join(save_temp_dir, filename)
         os.makedirs(temp_folder, exist_ok=True)
         
         # Save temp directory path for later use
@@ -2766,7 +2766,7 @@ def should_translate_enhanced(text):
         return True  # Default to translate if function fails
 
 
-def write_translated_content_to_word(file_path, original_json_path, translated_json_path):
+def write_translated_content_to_word(file_path, original_json_path, translated_json_path, save_temp_dir, result_dir):
     """Write translated content back to Word document in bilingual format (original followed by translation)"""
     
     # Load translation data
@@ -2786,7 +2786,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     
     # Get temp directory path
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(save_temp_dir, filename)
     temp_dir_info_path = os.path.join(temp_folder, "temp_dir_path.txt")
     
     temp_dir = None
@@ -2967,7 +2967,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 f.write(etree.tostring(hf_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
 
         # Create result file
-        result_folder = "result"
+        result_folder = result_dir
         os.makedirs(result_folder, exist_ok=True)
         result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.docx")
 
@@ -4100,15 +4100,16 @@ def update_paragraph_text_with_bilingual_format(paragraph, bilingual_text, names
         tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
         
         if tag_name == 'r':  # Text run
-            # Check if this run contains textbox, drawing, or other non-text content
+            # Check if this run contains textbox, drawing, breaks, or other non-text content
             if (child.xpath('.//wps:txbx', namespaces=namespaces) or 
                 child.xpath('.//v:textbox', namespaces=namespaces) or
                 child.xpath('.//w:drawing', namespaces=namespaces) or
                 child.xpath('.//w:pict', namespaces=namespaces) or
-                child.xpath('.//mc:AlternateContent', namespaces=namespaces)):
-                # This run contains textbox content, preserve it
+                child.xpath('.//mc:AlternateContent', namespaces=namespaces) or
+                child.xpath('.//w:br', namespaces=namespaces)):
+                # This run contains textbox/drawing/break content, preserve it
                 textbox_runs.append(child)
-                app_logger.debug("Preserving run with textbox/drawing content")
+                app_logger.debug("Preserving run with textbox/drawing/break content")
             else:
                 # This run contains only text content, treat normally
                 non_textbox_children.append(child)

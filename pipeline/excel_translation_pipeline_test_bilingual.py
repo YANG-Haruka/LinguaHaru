@@ -13,7 +13,7 @@ from .skip_pipeline import should_translate
 from config.log_config import app_logger
 
 
-def extract_excel_content_to_json(file_path):
+def extract_excel_content_to_json(file_path,temp_dir):
     cell_data = []
     count = 0
     
@@ -441,7 +441,7 @@ def extract_excel_content_to_json(file_path):
     
     # Save to JSON
     filename = os.path.splitext(os.path.basename(file_path))[0]
-    temp_folder = os.path.join("temp", filename)
+    temp_folder = os.path.join(temp_dir, filename)
     os.makedirs(temp_folder, exist_ok=True)
     json_path = os.path.join(temp_folder, "src.json")
     
@@ -1027,7 +1027,7 @@ def _format_bilingual_text(original_text: str, translated_text: str, content_typ
         return f"{original_clean}\n{translated_clean}"
 
 
-def write_translated_content_to_excel(file_path, original_json_path, translated_json_path):
+def write_translated_content_to_excel(file_path, original_json_path, translated_json_path, result_dir):
     # Load JSON data
     with open(original_json_path, "r", encoding="utf-8") as original_file:
         original_data = json.load(original_file)
@@ -1462,7 +1462,7 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
                 continue
         
         # Save the workbook first
-        result_folder = os.path.join('result')
+        result_folder = os.path.join(result_dir)
         os.makedirs(result_folder, exist_ok=True)
         
         result_path = os.path.join(
