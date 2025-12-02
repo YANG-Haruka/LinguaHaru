@@ -189,13 +189,23 @@ def convert_date_to_target_format(date_str, target_language='en'):
 def extract_word_content_to_json(file_path, save_temp_dir):
     """Extract translatable content from Word document to JSON - enhanced error handling"""
     temp_dir = None
+    content_data = []  # 初始化在外层，确保即使出错也能访问
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    temp_folder = os.path.join("temp", filename)
+    json_path = os.path.join(temp_folder, "src.json")
+    
+    # 添加处理状态追踪
+    processing_stage = "initialization"
+    
     try:
         app_logger.info(f"Starting content extraction from: {os.path.basename(file_path)}")
         
         # Create temporary directory for processing
+        processing_stage = "creating_temp_directory"
         temp_dir = tempfile.mkdtemp()
         
         # Extract entire docx archive
+        processing_stage = "extracting_archive"
         try:
             with ZipFile(file_path, 'r') as docx:
                 docx.extractall(temp_dir)
@@ -206,6 +216,7 @@ def extract_word_content_to_json(file_path, save_temp_dir):
         app_logger.info("Archive extraction completed, reading XML files...")
         
         # Read main document
+        processing_stage = "reading_document_xml"
         document_xml_path = os.path.join(temp_dir, 'word', 'document.xml')
         if not os.path.exists(document_xml_path):
             raise FileNotFoundError("document.xml not found in DOCX file")
@@ -218,6 +229,7 @@ def extract_word_content_to_json(file_path, save_temp_dir):
             raise
         
         # Read numbering.xml if exists
+        processing_stage = "reading_numbering_xml"
         numbering_xml = None
         numbering_xml_path = os.path.join(temp_dir, 'word', 'numbering.xml')
         if os.path.exists(numbering_xml_path):
@@ -228,6 +240,7 @@ def extract_word_content_to_json(file_path, save_temp_dir):
                 app_logger.warning(f"Failed to read numbering.xml: {e}")
         
         # Read styles.xml if exists
+        processing_stage = "reading_styles_xml"
         styles_xml = None
         styles_xml_path = os.path.join(temp_dir, 'word', 'styles.xml')
         if os.path.exists(styles_xml_path):
@@ -238,6 +251,7 @@ def extract_word_content_to_json(file_path, save_temp_dir):
                 app_logger.warning(f"Failed to read styles.xml: {e}")
         
         # Read footnotes.xml if exists
+        processing_stage = "reading_footnotes_xml"
         footnotes_xml = None
         footnotes_xml_path = os.path.join(temp_dir, 'word', 'footnotes.xml')
         if os.path.exists(footnotes_xml_path):
@@ -249,18 +263,19 @@ def extract_word_content_to_json(file_path, save_temp_dir):
                 app_logger.warning(f"Failed to read footnotes.xml: {e}")
         
         # Get all header and footer files
+        processing_stage = "reading_header_footer_files"
         word_dir = os.path.join(temp_dir, 'word')
         header_footer_files = {}
         if os.path.exists(word_dir):
             try:
-                for filename in os.listdir(word_dir):
-                    if filename.startswith('header') or filename.startswith('footer'):
-                        filepath = os.path.join(word_dir, filename)
+                for filename_item in os.listdir(word_dir):
+                    if filename_item.startswith('header') or filename_item.startswith('footer'):
+                        filepath = os.path.join(word_dir, filename_item)
                         try:
                             with open(filepath, 'rb') as f:
-                                header_footer_files[f'word/{filename}'] = f.read()
+                                header_footer_files[f'word/{filename_item}'] = f.read()
                         except Exception as e:
-                            app_logger.warning(f"Failed to read {filename}: {e}")
+                            app_logger.warning(f"Failed to read {filename_item}: {e}")
             except Exception as e:
                 app_logger.warning(f"Error reading header/footer files: {e}")
         
@@ -284,7 +299,7 @@ def extract_word_content_to_json(file_path, save_temp_dir):
             'wne': 'http://schemas.microsoft.com/office/word/2006/wordml',
             'dgm': 'http://schemas.openxmlformats.org/drawingml/2006/diagram',
             'dsp': 'http://schemas.microsoft.com/office/drawing/2008/diagram',
-            'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'  # 添加数学公式命名空间
+            'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'
         }
         
         app_logger.info("Parsing main document XML...")
@@ -312,7 +327,6 @@ def extract_word_content_to_json(file_path, save_temp_dir):
             except Exception as e:
                 app_logger.warning(f"Error parsing styles information: {e}")
 
-        content_data = []
         item_id = 0
         
         # Extract translatable content from numbering.xml first
@@ -827,60 +841,99 @@ def parse_styles_xml(styles_xml, namespaces):
     return styles_info
 
 def process_document_content(document_tree, content_data, item_id, numbering_info, styles_info, namespaces):
-    """Process main document content with better structure handling and progress tracking - fixed"""
+    """Process main document content with better structure handling and progress tracking - enhanced error recovery"""
     
     app_logger.info("Starting document content processing...")
     
     # First, process SDT (Structured Document Tags) content like TOC
-    item_id = process_sdt_content(document_tree, content_data, item_id, numbering_info, styles_info, namespaces)
+    try:
+        item_id = process_sdt_content(document_tree, content_data, item_id, numbering_info, styles_info, namespaces)
+    except Exception as e:
+        app_logger.error(f"Error processing SDT content: {e}")
+        app_logger.error(f"Stack trace:", exc_info=True)
+        # 继续处理其他内容
     
     # Get all body elements (including nested ones)
-    body_elements = get_all_body_elements(document_tree, namespaces)
+    try:
+        body_elements = get_all_body_elements(document_tree, namespaces)
+    except Exception as e:
+        app_logger.error(f"Error getting body elements: {e}")
+        app_logger.error(f"Stack trace:", exc_info=True)
+        return item_id
     
     total_elements = len(body_elements)
     app_logger.info(f"Processing {total_elements} main document elements...")
     
     processed_count = 0
     last_progress_report = 0
+    failed_elements = []
     
     for element_index, element in enumerate(body_elements):
-        # 进度追踪
-        processed_count += 1
-        progress_percent = (processed_count * 100) // total_elements if total_elements > 0 else 100
-        if progress_percent >= last_progress_report + 20:  # 每20%报告一次
-            app_logger.info(f"Document processing progress: {progress_percent}% ({processed_count}/{total_elements})")
-            last_progress_report = progress_percent
-        
-        element_type = element.tag.split('}')[-1] if '}' in element.tag else element.tag
-        
-        if element_type == 'p':
-            item_id = process_paragraph_element(
-                element, content_data, item_id, element_index, 
-                numbering_info, styles_info, namespaces
-            )
-        
-        elif element_type == 'tbl':
-            # 添加表格处理的特殊日志
-            try:
-                table_rows = element.xpath('./w:tr', namespaces=namespaces)
-                app_logger.debug(f"Processing table {element_index} with {len(table_rows)} rows")
-                
-                item_id = process_table_element(
-                    element, content_data, item_id, element_index, 
-                    numbering_info, styles_info, namespaces
-                )
-                
-                app_logger.debug(f"Completed processing table {element_index}")
-                
-            except Exception as e:
-                app_logger.error(f"Error processing table {element_index}: {e}")
+        try:
+            # 进度追踪
+            processed_count += 1
+            progress_percent = (processed_count * 100) // total_elements if total_elements > 0 else 100
+            if progress_percent >= last_progress_report + 20:
+                app_logger.info(f"Document processing progress: {progress_percent}% ({processed_count}/{total_elements})")
+                last_progress_report = progress_percent
+            
+            element_type = element.tag.split('}')[-1] if '}' in element.tag else element.tag
+            
+            if element_type == 'p':
+                try:
+                    item_id = process_paragraph_element(
+                        element, content_data, item_id, element_index, 
+                        numbering_info, styles_info, namespaces
+                    )
+                except Exception as e:
+                    app_logger.warning(f"Error processing paragraph at index {element_index}: {e}")
+                    failed_elements.append(('paragraph', element_index))
+                    continue
+            
+            elif element_type == 'tbl':
+                try:
+                    table_rows = element.xpath('./w:tr', namespaces=namespaces)
+                    app_logger.debug(f"Processing table {element_index} with {len(table_rows)} rows")
+                    
+                    # 添加更详细的错误处理
+                    try:
+                        table_props = extract_table_properties(element, namespaces)
+                    except Exception as e:
+                        app_logger.warning(f"Error extracting table properties for table {element_index}: {e}")
+                        table_props = {}
+                    
+                    try:
+                        item_id = process_table_element(
+                            element, content_data, item_id, element_index, 
+                            numbering_info, styles_info, namespaces
+                        )
+                    except Exception as e:
+                        app_logger.error(f"Error in process_table_element for table {element_index}: {e}")
+                        app_logger.error(f"Stack trace:", exc_info=True)
+                        raise
+                    
+                    app_logger.debug(f"Completed processing table {element_index}")
+                    
+                except Exception as e:
+                    app_logger.error(f"Error processing table {element_index}: {e}")
+                    failed_elements.append(('table', element_index))
+                    # 继续处理下一个元素
+                    continue
+            
+            elif element_type == 'sdt':
+                # Skip SDT elements as they're processed separately
                 continue
-        
-        elif element_type == 'sdt':
-            # Skip SDT elements as they're processed separately
+                
+        except Exception as e:
+            app_logger.error(f"Unexpected error processing element {element_index}: {e}")
+            app_logger.error(f"Stack trace:", exc_info=True)
+            failed_elements.append(('unknown', element_index))
             continue
     
-    app_logger.info(f"Document content processing completed. Processed {processed_count} elements.")
+    if failed_elements:
+        app_logger.warning(f"Failed to process {len(failed_elements)} elements: {failed_elements}")
+    
+    app_logger.info(f"Document content processing completed. Processed {processed_count} elements successfully, failed {len(failed_elements)} elements.")
     
     # Process textboxes separately to avoid duplication
     app_logger.info("Processing textboxes...")
@@ -895,6 +948,7 @@ def process_document_content(document_tree, content_data, item_id, numbering_inf
         app_logger.info(f"Textbox processing completed. Found {len(textbox_items)} textboxes.")
     except Exception as e:
         app_logger.error(f"Error processing textboxes: {e}")
+        app_logger.error(f"Stack trace:", exc_info=True)
     
     return item_id
 
@@ -1122,16 +1176,15 @@ def has_toc_pattern_enhanced(text):
         return False
     
     # Enhanced TOC patterns including Spanish and other languages
+    # 注意：这些模式都要求文本**以数字结尾**或包含典型的TOC格式（点引导线等）
     patterns = [
-        r'.+\.{3,}\s*\d+$',          # Text...123
-        r'.+\t+\d+$',                # Text    123 (with tabs)
-        r'.+\s{5,}\d+$',             # Text     123 (with many spaces)
+        r'.+\.{3,}\s*\d+$',          # Text...123 (有点引导线+数字)
+        r'.+\t+\d+$',                # Text    123 (tab+数字结尾)
+        r'.+\s{5,}\d+$',             # Text     123 (多个空格+数字)
         r'.+\.\s*\.+\s*\d+$',        # Text. ... 123
-        r'.+\s+\d+$',                # Text 123 (simple space + number)
-        r'^\d+\.?\d*\s+.+\s+\d+$',   # 1.1 Text 123 (numbered sections)
-        r'^[A-Z][A-ZÁÉÍÓÚÜÑ\s]+\s+\d+$',  # UPPERCASE TEXT 123 (Spanish uppercase)
-        r'^\w+.*\w+\s+\d+$',         # General word + number pattern
-        r'.+\s*\.\d+$',              # Text .57 (dot + number at end)
+        r'^\d+\.?\d*\s+.+\s+\d+$',   # 1.1 Text 123 (开头数字+中间文本+结尾数字)
+        r'^[A-Z][A-ZÁÉÍÓÚÜÑ\s]+\s+\d+$',  # UPPERCASE TEXT 123
+        r'.+\s*\.\d+$',              # Text .57 (点+数字结尾)
     ]
     
     # Test against original text
@@ -1139,17 +1192,8 @@ def has_toc_pattern_enhanced(text):
         if re.search(pattern, text.strip(), re.IGNORECASE):
             return True
     
-    # If we have meaningful text content after cleaning, it's likely a TOC entry
-    # especially if it contains section numbers or has proper structure
-    if len(text_clean) > 5:  # Reasonable minimum length for TOC entry
-        # Check for section numbering patterns
-        if re.match(r'^\d+\.?\d*\s+', text_clean):  # Starts with number
-            return True
-        
-        # Check if it has typical TOC content (letters and spaces, not just symbols)
-        letter_count = sum(1 for c in text_clean if c.isalpha())
-        if letter_count > 3:  # Has substantial text content
-            return True
+    # 【关键修复】不要仅仅因为以数字开头或有字母就认为是TOC
+    # 移除了原来过于宽松的判断逻辑
     
     return False
 
@@ -1384,7 +1428,13 @@ def process_table_element(table, content_data, item_id, element_index, numbering
     return item_id
 
 def process_table_rows_recursive(table, content_data, item_id, table_index, numbering_info, styles_info, namespaces, table_props, nesting_level=0):
-    """Recursively process table rows and handle nested tables - enhanced error handling"""
+    """Recursively process table rows and handle nested tables - enhanced error handling and nesting control"""
+    
+    # 严格限制嵌套深度，防止过深嵌套导致问题
+    MAX_NESTING_LEVEL = 10  # 增加到10层以支持更深的嵌套
+    if nesting_level >= MAX_NESTING_LEVEL:
+        app_logger.warning(f"Reached maximum nesting level ({MAX_NESTING_LEVEL}) for table {table_index}, skipping deeper nested tables")
+        return item_id
     
     try:
         # 获取表格信息用于日志
@@ -1392,24 +1442,32 @@ def process_table_rows_recursive(table, content_data, item_id, table_index, numb
         total_rows = len(rows)
         
         if nesting_level == 0:  # 只在顶级表格记录日志
-            app_logger.debug(f"Processing table {table_index} with {total_rows} rows at nesting level {nesting_level}")
+            app_logger.info(f"Processing table {table_index} with {total_rows} rows at nesting level {nesting_level}")
+        else:
+            app_logger.debug(f"Processing nested table {table_index} with {total_rows} rows at nesting level {nesting_level}")
         
         # 防止处理过大的表格导致性能问题
         if total_rows > 1000:
             app_logger.warning(f"Large table detected ({total_rows} rows). Processing may take some time...")
         
+        # 添加行处理计数器
         processed_rows = 0
+        failed_rows = []
         
         for row_idx, row in enumerate(rows):
             try:
                 # 进度追踪（仅对大表格）
-                if total_rows > 50 and nesting_level == 0:  # 大表格才显示进度
+                if total_rows > 50 and nesting_level == 0:
                     processed_rows += 1
-                    if processed_rows % 50 == 0:  # 每50行报告一次
+                    if processed_rows % 50 == 0:
                         app_logger.debug(f"Table {table_index} processing progress: {processed_rows}/{total_rows} rows")
                 
                 # Get row properties
-                row_props = extract_row_properties(row, namespaces)
+                try:
+                    row_props = extract_row_properties(row, namespaces)
+                except Exception as e:
+                    app_logger.warning(f"Error extracting row properties for table {table_index} row {row_idx}: {e}")
+                    row_props = {}
                 
                 # 使用更高效的XPath查询
                 cells = row.xpath('./w:tc', namespaces=namespaces)
@@ -1417,7 +1475,11 @@ def process_table_rows_recursive(table, content_data, item_id, table_index, numb
                 for cell_idx, cell in enumerate(cells):
                     try:
                         # Get cell properties
-                        cell_props = extract_cell_properties(cell, namespaces)
+                        try:
+                            cell_props = extract_cell_properties(cell, namespaces)
+                        except Exception as e:
+                            app_logger.warning(f"Error extracting cell properties for table {table_index}[{row_idx}][{cell_idx}]: {e}")
+                            cell_props = {}
                         
                         # Process cell content (paragraphs) - 优化查询
                         cell_paragraphs = cell.xpath('./w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
@@ -1468,7 +1530,7 @@ def process_table_rows_recursive(table, content_data, item_id, table_index, numb
                                     content_data.append(cell_data)
                                     
                                     # 减少详细日志以提高性能
-                                    if item_id % 500 == 0:  # 每500个项目记录一次
+                                    if item_id % 500 == 0:
                                         app_logger.debug(f"Processed {item_id} items, current: table cell '{cell_text[:30]}...'")
                                         
                             except Exception as e:
@@ -1478,34 +1540,67 @@ def process_table_rows_recursive(table, content_data, item_id, table_index, numb
                         # Check for nested tables in this cell - 优化查询
                         try:
                             nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
+                            if nested_tables:
+                                app_logger.debug(f"Found {len(nested_tables)} nested tables in cell {table_index}[{row_idx}][{cell_idx}] at nesting level {nesting_level}")
+                                
                             for nested_table_idx, nested_table in enumerate(nested_tables):
-                                if nesting_level < 3:  # 防止过深的嵌套
-                                    nested_table_props = extract_table_properties(nested_table, namespaces)
-                                    item_id = process_table_rows_recursive(
-                                        nested_table, content_data, item_id, 
-                                        f"{table_index}_nested_{row_idx}_{cell_idx}_{nested_table_idx}",
-                                        numbering_info, styles_info, namespaces, 
-                                        nested_table_props, nesting_level + 1
-                                    )
-                                else:
-                                    app_logger.warning(f"Skipping nested table at depth {nesting_level + 1} to prevent excessive nesting")
+                                try:
+                                    if nesting_level < MAX_NESTING_LEVEL - 1:
+                                        # 构建嵌套表格的标识符
+                                        nested_table_id = f"{table_index}_nested_{row_idx}_{cell_idx}_{nested_table_idx}"
+                                        app_logger.debug(f"Processing nested table: {nested_table_id} at nesting level {nesting_level + 1}")
+                                        
+                                        try:
+                                            nested_table_props = extract_table_properties(nested_table, namespaces)
+                                        except Exception as e:
+                                            app_logger.warning(f"Error extracting properties for nested table {nested_table_id}: {e}")
+                                            nested_table_props = {}
+                                        
+                                        # 递归处理嵌套表格
+                                        try:
+                                            item_id = process_table_rows_recursive(
+                                                nested_table, content_data, item_id, 
+                                                nested_table_id,
+                                                numbering_info, styles_info, namespaces, 
+                                                nested_table_props, nesting_level + 1
+                                            )
+                                        except Exception as e:
+                                            app_logger.error(f"Error in recursive processing of nested table {nested_table_id}: {e}")
+                                            # 记录错误但继续处理
+                                            continue
+                                    else:
+                                        app_logger.warning(f"Skipping nested table at depth {nesting_level + 1} in cell {table_index}[{row_idx}][{cell_idx}] to prevent excessive nesting")
+                                except Exception as e:
+                                    app_logger.error(f"Error processing nested table {nested_table_idx} in cell {table_index}[{row_idx}][{cell_idx}]: {e}")
+                                    # 继续处理其他嵌套表格
+                                    continue
                                     
                         except Exception as e:
-                            app_logger.warning(f"Error processing nested tables in cell {table_index}[{row_idx}][{cell_idx}]: {e}")
+                            app_logger.warning(f"Error checking for nested tables in cell {table_index}[{row_idx}][{cell_idx}]: {e}")
                             
                     except Exception as e:
                         app_logger.warning(f"Error processing cell {table_index}[{row_idx}][{cell_idx}]: {e}")
+                        # 继续处理下一个单元格
                         continue
                         
             except Exception as e:
                 app_logger.warning(f"Error processing row {row_idx} in table {table_index}: {e}")
+                failed_rows.append(row_idx)
+                # 继续处理下一行
                 continue
         
+        if failed_rows:
+            app_logger.warning(f"Failed to process {len(failed_rows)} rows in table {table_index}: {failed_rows}")
+        
         if nesting_level == 0:
-            app_logger.debug(f"Completed processing table {table_index} with {total_rows} rows")
+            app_logger.info(f"Completed processing table {table_index} with {total_rows} rows (failed: {len(failed_rows)})")
+        else:
+            app_logger.debug(f"Completed processing nested table {table_index}")
             
     except Exception as e:
-        app_logger.error(f"Critical error processing table {table_index}: {e}")
+        app_logger.error(f"Critical error processing table {table_index} at nesting level {nesting_level}: {e}")
+        app_logger.error(f"Stack trace:", exc_info=True)
+        # 不抛出异常，返回当前的item_id以便继续处理
         
     return item_id
 
@@ -1838,7 +1933,7 @@ def detect_toc_paragraph(paragraph, namespaces):
         anchor = hyperlink.get(f'{{{namespaces["w"]}}}anchor', '')
         
         # TOC hyperlinks often have anchor patterns like _Toc123456 or similar
-        if anchor and (anchor.startswith('_Toc') or anchor.startswith('_Ref') or anchor.startswith('bookmark')):
+        if anchor and (anchor.startswith('_Toc') or anchor.startswith('_Ref')):
             # Check if the paragraph contains typical TOC elements (dots, page numbers)
             paragraph_text = extract_paragraph_text_only(paragraph, namespaces)
             if has_toc_pattern_enhanced(paragraph_text):
@@ -1851,9 +1946,10 @@ def detect_toc_paragraph(paragraph, namespaces):
                 return True, toc_info
     
     # Check for tab and dot leader patterns typical of TOC
+    # 【关键修复】只有当文本真正符合TOC格式时才判断为TOC
     paragraph_text = extract_paragraph_text_only(paragraph, namespaces)
     if has_toc_pattern_enhanced(paragraph_text):
-        # Additional check: look for tab characters and indentation
+        # 确认有tab字符（TOC常见特征）
         tabs = paragraph.xpath('.//w:tab', namespaces=namespaces)
         if tabs:
             toc_info = {
@@ -2041,8 +2137,9 @@ def is_isolated_punctuation_or_numbering(text):
     if re.match(r'^\.{2,}$', text):
         return True
     
-    # Numbers with dots that look like section numbering at the end
-    if re.match(r'^\d+\.?$', text) and len(text) <= 4:
+    # 【关键修复】缩小判断范围，避免误伤正文中的数字
+    # 只有非常短的编号（1-2位数字+可选点号）才认为是编号
+    if re.match(r'^\d{1,2}\.?$', text) and len(text) <= 3:
         return True
     
     # Page number patterns that might be misclassified
@@ -2057,9 +2154,14 @@ def is_likely_page_number(text):
     if not text:
         return False
     
-    # Simple number
-    if text.isdigit() and 1 <= safe_convert_to_int(text) <= 9999:
-        return True
+    # 【关键修复】提高判断标准，避免误判正文中的小数字
+    # 纯数字且长度较短（1-3位）才可能是页码
+    if text.isdigit():
+        num_val = safe_convert_to_int(text)
+        # 通常页码在1-999之间，且字符长度不超过3
+        if 1 <= num_val <= 999 and len(text) <= 3:
+            return True
+        return False
     
     # Roman numerals
     if re.match(r'^[ivxlcdm]+$', text.lower()) or re.match(r'^[IVXLCDM]+$', text):
@@ -2082,7 +2184,7 @@ def is_likely_page_number(text):
         return True
     
     # Page number with surrounding dashes or spaces
-    if re.match(r'^[-\s\.]*\d+[-\s\.]*$', text):
+    if re.match(r'^[-\s\.]*\d{1,3}[-\s\.]*$', text):
         return True
     
     return False
@@ -3517,71 +3619,81 @@ def update_sdt_table_cell_with_bilingual_format(item, bilingual_text, all_sdt_el
         app_logger.error(f"Error updating SDT table cell: {e}")
 
 def update_sdt_nested_table_cell_with_bilingual_format(item, bilingual_text, sdt_content, namespaces):
-    """Update nested table cell within SDT with bilingual format"""
+    """Update nested table cell within SDT with bilingual format - FIXED for multi-level nesting"""
     try:
         # Parse nested table identifier
         table_index_str = str(item.get("table_index"))
+        
+        # Split by "_nested_" to get each nesting level
         parts = table_index_str.split("_nested_")
         if len(parts) < 2:
             app_logger.error(f"Invalid nested table index format: {table_index_str}")
             return
         
         parent_table_index = safe_convert_to_int(parts[0])
-        nested_path = "_nested_".join(parts[1:]).split("_")
         
         tables = sdt_content.xpath('.//w:tbl[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
         if parent_table_index >= len(tables):
-            app_logger.error(f"Invalid parent table index: {parent_table_index}")
+            app_logger.error(f"Invalid parent table index: {parent_table_index} (total tables: {len(tables)})")
             return
         
-        parent_table = tables[parent_table_index]
+        current_table = tables[parent_table_index]
         
-        # Navigate to nested table
-        current_table = parent_table
-        for i in range(0, len(nested_path), 3):  # row, col, nested_index
-            if i + 2 >= len(nested_path):
-                break
-                
-            parent_row_idx = safe_convert_to_int(nested_path[i])
-            parent_col_idx = safe_convert_to_int(nested_path[i + 1])
-            nested_table_idx = safe_convert_to_int(nested_path[i + 2])
+        # Process each nesting level
+        # parts[1:] contains nested path info, each in format "row_col_tableindex"
+        for level_idx, nested_info in enumerate(parts[1:]):
+            nested_parts = nested_info.split('_')
+            
+            # Each nested level should have exactly 3 parts: row, col, table_index
+            if len(nested_parts) != 3:
+                app_logger.error(f"Invalid nested path format at level {level_idx}: {nested_info}, expected 'row_col_tableindex'")
+                return
+            
+            try:
+                parent_row_idx = safe_convert_to_int(nested_parts[0])
+                parent_col_idx = safe_convert_to_int(nested_parts[1])
+                nested_table_idx = safe_convert_to_int(nested_parts[2])
+            except (ValueError, IndexError) as e:
+                app_logger.error(f"Error parsing nested path at level {level_idx}: {nested_info}, error: {e}")
+                return
             
             rows = current_table.xpath('./w:tr', namespaces=namespaces)
             if parent_row_idx >= len(rows):
-                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds")
+                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds at level {level_idx} (total rows: {len(rows)})")
                 return
             
             row = rows[parent_row_idx]
             cells = row.xpath('./w:tc', namespaces=namespaces)
             
             if parent_col_idx >= len(cells):
-                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds")
+                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds at level {level_idx} (total cols: {len(cells)})")
                 return
                 
             cell = cells[parent_col_idx]
             nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
             
             if nested_table_idx >= len(nested_tables):
-                app_logger.error(f"Nested table index {nested_table_idx} out of bounds")
+                app_logger.error(f"Nested table index {nested_table_idx} out of bounds at level {level_idx} (total nested tables: {len(nested_tables)})")
                 return
             
             current_table = nested_tables[nested_table_idx]
+            app_logger.debug(f"SDT: Navigated to nesting level {level_idx + 1}: row={parent_row_idx}, col={parent_col_idx}, table={nested_table_idx}")
         
-        # Now update the cell in the nested table
+        # Now update the cell in the final nested table
         row_idx = item.get("row")
         col_idx = item.get("col")
         paragraph_index = item.get("paragraph_index", 0)
         
         rows = current_table.xpath('./w:tr', namespaces=namespaces)
         if row_idx >= len(rows):
-            app_logger.error(f"Nested table final row index {row_idx} out of bounds")
+            app_logger.error(f"Final row index {row_idx} out of bounds (total rows: {len(rows)})")
             return
             
         row = rows[row_idx]
         cells = row.xpath('./w:tc', namespaces=namespaces)
         
         if col_idx >= len(cells):
-            app_logger.error(f"Nested table final col index {col_idx} out of bounds")
+            app_logger.error(f"Final col index {col_idx} out of bounds (total cols: {len(cells)})")
             return
             
         cell = cells[col_idx]
@@ -3589,7 +3701,7 @@ def update_sdt_nested_table_cell_with_bilingual_format(item, bilingual_text, sdt
         # Get the specific paragraph in the cell
         cell_paragraphs = cell.xpath('./w:p', namespaces=namespaces)
         if paragraph_index >= len(cell_paragraphs):
-            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in nested cell")
+            app_logger.error(f"Paragraph index {paragraph_index} out of bounds (total paragraphs: {len(cell_paragraphs)})")
             return
         
         target_paragraph = cell_paragraphs[paragraph_index]
@@ -3610,8 +3722,10 @@ def update_sdt_nested_table_cell_with_bilingual_format(item, bilingual_text, sdt
                 target_paragraph, bilingual_text, namespaces, None, field_info, original_structure
             )
         
+        app_logger.info(f"Successfully updated SDT nested table cell at path: {table_index_str}")
+        
     except (IndexError, TypeError, ValueError) as e:
-        app_logger.error(f"Error updating SDT nested table cell: {e}")
+        app_logger.error(f"Error updating SDT nested table cell: {e}, table_index: {item.get('table_index')}")
 
 def update_paragraph_with_bilingual_format(item, bilingual_text, all_main_elements, namespaces):
     """Update paragraph with bilingual format"""
@@ -3714,70 +3828,80 @@ def update_table_cell_with_bilingual_format(item, bilingual_text, all_main_eleme
         app_logger.error(f"Error updating table cell: {e}")
 
 def update_nested_table_cell_with_bilingual_format(item, bilingual_text, all_main_elements, namespaces):
-    """Update nested table cell with bilingual format"""
+    """Update nested table cell with bilingual format - FIXED for multi-level nesting"""
     try:
         # Parse nested table identifier
         table_index_str = str(item.get("table_index"))
+        
+        # Split by "_nested_" to get each nesting level
         parts = table_index_str.split("_nested_")
         if len(parts) < 2:
             app_logger.error(f"Invalid nested table index format: {table_index_str}")
             return
         
         parent_table_index = safe_convert_to_int(parts[0])
-        nested_path = "_nested_".join(parts[1:]).split("_")
         
         if parent_table_index >= len(all_main_elements):
             app_logger.error(f"Invalid parent table index: {parent_table_index}")
             return
         
-        parent_table = all_main_elements[parent_table_index]
+        current_table = all_main_elements[parent_table_index]
         
-        # Navigate to nested table
-        current_table = parent_table
-        for i in range(0, len(nested_path), 3):  # row, col, nested_index
-            if i + 2 >= len(nested_path):
-                break
-                
-            parent_row_idx = safe_convert_to_int(nested_path[i])
-            parent_col_idx = safe_convert_to_int(nested_path[i + 1])
-            nested_table_idx = safe_convert_to_int(nested_path[i + 2])
+        # Process each nesting level
+        # parts[1:] contains nested path info, each in format "row_col_tableindex"
+        for level_idx, nested_info in enumerate(parts[1:]):
+            nested_parts = nested_info.split('_')
+            
+            # Each nested level should have exactly 3 parts: row, col, table_index
+            if len(nested_parts) != 3:
+                app_logger.error(f"Invalid nested path format at level {level_idx}: {nested_info}, expected 'row_col_tableindex'")
+                return
+            
+            try:
+                parent_row_idx = safe_convert_to_int(nested_parts[0])
+                parent_col_idx = safe_convert_to_int(nested_parts[1])
+                nested_table_idx = safe_convert_to_int(nested_parts[2])
+            except (ValueError, IndexError) as e:
+                app_logger.error(f"Error parsing nested path at level {level_idx}: {nested_info}, error: {e}")
+                return
             
             rows = current_table.xpath('./w:tr', namespaces=namespaces)
             if parent_row_idx >= len(rows):
-                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds")
+                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds at level {level_idx} (total rows: {len(rows)})")
                 return
             
             row = rows[parent_row_idx]
             cells = row.xpath('./w:tc', namespaces=namespaces)
             
             if parent_col_idx >= len(cells):
-                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds")
+                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds at level {level_idx} (total cols: {len(cells)})")
                 return
                 
             cell = cells[parent_col_idx]
             nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
             
             if nested_table_idx >= len(nested_tables):
-                app_logger.error(f"Nested table index {nested_table_idx} out of bounds")
+                app_logger.error(f"Nested table index {nested_table_idx} out of bounds at level {level_idx} (total nested tables: {len(nested_tables)})")
                 return
             
             current_table = nested_tables[nested_table_idx]
+            app_logger.debug(f"Navigated to nesting level {level_idx + 1}: row={parent_row_idx}, col={parent_col_idx}, table={nested_table_idx}")
         
-        # Now update the cell in the nested table
+        # Now update the cell in the final nested table
         row_idx = item.get("row")
         col_idx = item.get("col")
         paragraph_index = item.get("paragraph_index", 0)
         
         rows = current_table.xpath('./w:tr', namespaces=namespaces)
         if row_idx >= len(rows):
-            app_logger.error(f"Nested table final row index {row_idx} out of bounds")
+            app_logger.error(f"Final row index {row_idx} out of bounds (total rows: {len(rows)})")
             return
             
         row = rows[row_idx]
         cells = row.xpath('./w:tc', namespaces=namespaces)
         
         if col_idx >= len(cells):
-            app_logger.error(f"Nested table final col index {col_idx} out of bounds")
+            app_logger.error(f"Final col index {col_idx} out of bounds (total cols: {len(cells)})")
             return
             
         cell = cells[col_idx]
@@ -3785,7 +3909,7 @@ def update_nested_table_cell_with_bilingual_format(item, bilingual_text, all_mai
         # Get the specific paragraph in the cell
         cell_paragraphs = cell.xpath('./w:p', namespaces=namespaces)
         if paragraph_index >= len(cell_paragraphs):
-            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in nested cell")
+            app_logger.error(f"Paragraph index {paragraph_index} out of bounds (total paragraphs: {len(cell_paragraphs)})")
             return
         
         target_paragraph = cell_paragraphs[paragraph_index]
@@ -3806,8 +3930,10 @@ def update_nested_table_cell_with_bilingual_format(item, bilingual_text, all_mai
                 target_paragraph, bilingual_text, namespaces, None, field_info, original_structure
             )
         
+        app_logger.info(f"Successfully updated nested table cell at path: {table_index_str}")
+        
     except (IndexError, TypeError, ValueError) as e:
-        app_logger.error(f"Error updating nested table cell: {e}")
+        app_logger.error(f"Error updating nested table cell: {e}, table_index: {item.get('table_index')}")
 
 def update_textbox_with_bilingual_format(item, bilingual_text, all_wps_textboxes, all_vml_textboxes, namespaces):
     """Update textbox with bilingual format"""
@@ -3972,71 +4098,81 @@ def update_header_footer_table_cell_with_bilingual_format(item, bilingual_text, 
         app_logger.error(f"Error updating header/footer table cell: {e}")
 
 def update_header_footer_nested_table_cell_with_bilingual_format(item, bilingual_text, hf_tree, namespaces):
-    """Update header/footer nested table cell with bilingual format"""
+    """Update header/footer nested table cell with bilingual format - FIXED for multi-level nesting"""
     try:
         # Parse nested table identifier
         table_index_str = str(item.get("table_index"))
+        
+        # Split by "_nested_" to get each nesting level
         parts = table_index_str.split("_nested_")
         if len(parts) < 2:
             app_logger.error(f"Invalid nested table index format: {table_index_str}")
             return
         
         parent_table_index = safe_convert_to_int(parts[0])
-        nested_path = "_nested_".join(parts[1:]).split("_")
         
         tables = hf_tree.xpath('.//w:tbl[not(ancestor::wps:txbx) and not(ancestor::v:textbox) and not(ancestor::w:sdtContent)]', namespaces=namespaces)
         if parent_table_index >= len(tables):
-            app_logger.error(f"Invalid parent table index: {parent_table_index}")
+            app_logger.error(f"Invalid parent table index: {parent_table_index} (total tables: {len(tables)})")
             return
         
-        parent_table = tables[parent_table_index]
+        current_table = tables[parent_table_index]
         
-        # Navigate to nested table
-        current_table = parent_table
-        for i in range(0, len(nested_path), 3):  # row, col, nested_index
-            if i + 2 >= len(nested_path):
-                break
-                
-            parent_row_idx = safe_convert_to_int(nested_path[i])
-            parent_col_idx = safe_convert_to_int(nested_path[i + 1])
-            nested_table_idx = safe_convert_to_int(nested_path[i + 2])
+        # Process each nesting level
+        # parts[1:] contains nested path info, each in format "row_col_tableindex"
+        for level_idx, nested_info in enumerate(parts[1:]):
+            nested_parts = nested_info.split('_')
+            
+            # Each nested level should have exactly 3 parts: row, col, table_index
+            if len(nested_parts) != 3:
+                app_logger.error(f"Invalid nested path format at level {level_idx}: {nested_info}, expected 'row_col_tableindex'")
+                return
+            
+            try:
+                parent_row_idx = safe_convert_to_int(nested_parts[0])
+                parent_col_idx = safe_convert_to_int(nested_parts[1])
+                nested_table_idx = safe_convert_to_int(nested_parts[2])
+            except (ValueError, IndexError) as e:
+                app_logger.error(f"Error parsing nested path at level {level_idx}: {nested_info}, error: {e}")
+                return
             
             rows = current_table.xpath('./w:tr', namespaces=namespaces)
             if parent_row_idx >= len(rows):
-                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds")
+                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds at level {level_idx} (total rows: {len(rows)})")
                 return
             
             row = rows[parent_row_idx]
             cells = row.xpath('./w:tc', namespaces=namespaces)
             
             if parent_col_idx >= len(cells):
-                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds")
+                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds at level {level_idx} (total cols: {len(cells)})")
                 return
                 
             cell = cells[parent_col_idx]
             nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
             
             if nested_table_idx >= len(nested_tables):
-                app_logger.error(f"Nested table index {nested_table_idx} out of bounds")
+                app_logger.error(f"Nested table index {nested_table_idx} out of bounds at level {level_idx} (total nested tables: {len(nested_tables)})")
                 return
             
             current_table = nested_tables[nested_table_idx]
+            app_logger.debug(f"Header/Footer: Navigated to nesting level {level_idx + 1}: row={parent_row_idx}, col={parent_col_idx}, table={nested_table_idx}")
         
-        # Now update the cell in the nested table
+        # Now update the cell in the final nested table
         row_idx = item.get("row")
         col_idx = item.get("col")
         paragraph_index = item.get("paragraph_index", 0)
         
         rows = current_table.xpath('./w:tr', namespaces=namespaces)
         if row_idx >= len(rows):
-            app_logger.error(f"Nested table final row index {row_idx} out of bounds")
+            app_logger.error(f"Final row index {row_idx} out of bounds (total rows: {len(rows)})")
             return
             
         row = rows[row_idx]
         cells = row.xpath('./w:tc', namespaces=namespaces)
         
         if col_idx >= len(cells):
-            app_logger.error(f"Nested table final col index {col_idx} out of bounds")
+            app_logger.error(f"Final col index {col_idx} out of bounds (total cols: {len(cells)})")
             return
             
         cell = cells[col_idx]
@@ -4044,7 +4180,7 @@ def update_header_footer_nested_table_cell_with_bilingual_format(item, bilingual
         # Get the specific paragraph in the cell
         cell_paragraphs = cell.xpath('./w:p', namespaces=namespaces)
         if paragraph_index >= len(cell_paragraphs):
-            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in nested cell")
+            app_logger.error(f"Paragraph index {paragraph_index} out of bounds (total paragraphs: {len(cell_paragraphs)})")
             return
         
         target_paragraph = cell_paragraphs[paragraph_index]
@@ -4065,8 +4201,10 @@ def update_header_footer_nested_table_cell_with_bilingual_format(item, bilingual
                 target_paragraph, bilingual_text, namespaces, None, field_info, original_structure
             )
         
+        app_logger.info(f"Successfully updated header/footer nested table cell at path: {table_index_str}")
+        
     except (IndexError, TypeError, ValueError) as e:
-        app_logger.error(f"Error updating header/footer nested table cell: {e}")
+        app_logger.error(f"Error updating header/footer nested table cell: {e}, table_index: {item.get('table_index')}")
 
 def restore_paragraph_properties(paragraph, original_pPr_xml, namespaces):
     """Restore original paragraph properties from XML"""
@@ -4100,16 +4238,15 @@ def update_paragraph_text_with_bilingual_format(paragraph, bilingual_text, names
         tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
         
         if tag_name == 'r':  # Text run
-            # Check if this run contains textbox, drawing, breaks, or other non-text content
+            # Check if this run contains textbox, drawing, or other non-text content
             if (child.xpath('.//wps:txbx', namespaces=namespaces) or 
                 child.xpath('.//v:textbox', namespaces=namespaces) or
                 child.xpath('.//w:drawing', namespaces=namespaces) or
                 child.xpath('.//w:pict', namespaces=namespaces) or
-                child.xpath('.//mc:AlternateContent', namespaces=namespaces) or
-                child.xpath('.//w:br', namespaces=namespaces)):
-                # This run contains textbox/drawing/break content, preserve it
+                child.xpath('.//mc:AlternateContent', namespaces=namespaces)):
+                # This run contains textbox content, preserve it
                 textbox_runs.append(child)
-                app_logger.debug("Preserving run with textbox/drawing/break content")
+                app_logger.debug("Preserving run with textbox/drawing content")
             else:
                 # This run contains only text content, treat normally
                 non_textbox_children.append(child)
