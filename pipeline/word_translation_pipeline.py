@@ -678,17 +678,16 @@ def detect_toc_paragraph_enhanced(paragraph, namespaces, is_in_toc_sdt=False):
                     }
                     return True, toc_info
         
-        # Even without hyperlinks, if in TOC SDT and has tab structure, likely TOC
-        if has_tab_structure(paragraph, namespaces):
-            paragraph_text = extract_paragraph_text_only(paragraph, namespaces)
-            if paragraph_text.strip():  # Has actual content
-                toc_info = {
-                    'style': 'sdt_tab_based',
-                    'level': detect_toc_level_from_sdt_formatting(paragraph, namespaces),
-                    'detection_method': 'sdt_tab_structure',
-                    'in_sdt': True
-                }
-                return True, toc_info
+        # Even without hyperlinks, if in TOC SDT and has clear TOC pattern
+        paragraph_text = extract_paragraph_text_only(paragraph, namespaces)
+        if has_toc_pattern_enhanced(paragraph_text):
+            toc_info = {
+                'style': 'sdt_pattern_based',
+                'level': detect_toc_level_from_sdt_formatting(paragraph, namespaces),
+                'detection_method': 'sdt_pattern',
+                'in_sdt': True
+            }
+            return True, toc_info
     
     # Fallback to original TOC detection
     return detect_toc_paragraph(paragraph, namespaces)
@@ -698,10 +697,11 @@ def has_toc_pattern_enhanced(text):
     if not text or len(text.strip()) < 2:
         return False
     
-    # Clean the text first - remove page numbers from the end for pattern matching
-    text_clean = text.strip()
+    # Original text for pattern matching
+    original_text = text.strip()
     
-    # Remove page numbers from the end
+    # Clean the text - remove page numbers from the end for analysis
+    text_clean = original_text
     text_clean = re.sub(r'\s*\.\d+\s*$', '', text_clean)  # Remove .57, .123 etc
     text_clean = re.sub(r'\s*\d+\s*$', '', text_clean)    # Remove trailing numbers
     text_clean = re.sub(r'\.{3,}\s*$', '', text_clean)    # Remove trailing dots
@@ -710,35 +710,39 @@ def has_toc_pattern_enhanced(text):
     if len(text_clean) < 2:
         return False
     
-    # Enhanced TOC patterns including Spanish and other languages
+    # Enhanced TOC patterns - must have clear TOC indicators (page numbers, dot leaders, etc.)
+    # NOT just starting with a number, which could be a numbered list item
     patterns = [
-        r'.+\.{3,}\s*\d+$',          # Text...123
-        r'.+\t+\d+$',                # Text    123 (with tabs)
-        r'.+\s{5,}\d+$',             # Text     123 (with many spaces)
-        r'.+\.\s*\.+\s*\d+$',        # Text. ... 123
-        r'.+\s+\d+$',                # Text 123 (simple space + number)
-        r'^\d+\.?\d*\s+.+\s+\d+$',   # 1.1 Text 123 (numbered sections)
-        r'^[A-Z][A-ZÁÉÍÓÚÜÑ\s]+\s+\d+$',  # UPPERCASE TEXT 123 (Spanish uppercase)
-        r'^\w+.*\w+\s+\d+$',         # General word + number pattern
+        r'.+\.{3,}\s*\d+$',          # Text...123 (has dot leaders and page number)
+        r'.+\t{2,}\d+$',             # Text\t\t123 (multiple tabs + page number)
+        r'.+\t+\s+\d+$',             # Text\t 123 (tab + space + page number)
+        r'.+\s{5,}\d+$',             # Text     123 (many spaces and page number)
+        r'.+\.\s*\.+\s*\d+$',        # Text. ... 123 (dot leaders and page number)
+        r'^\d+\.?\d*\s+.+\.{2,}\s*\d+$',   # 1.1 Text...123 (section + text + dots + page)
+        r'^[A-Z][A-ZÁÉÍÓÚÜÑ\s]+\t+\d+$',  # UPPERCASE TEXT\t123 (caps + tab + page)
         r'.+\s*\.\d+$',              # Text .57 (dot + number at end)
+        r'.+\t+\.{2,}\s*\d+$',       # Text\t...123 (tab + dots + page number)
     ]
     
     # Test against original text
     for pattern in patterns:
-        if re.search(pattern, text.strip(), re.IGNORECASE):
+        if re.search(pattern, original_text, re.IGNORECASE):
             return True
     
-    # If we have meaningful text content after cleaning, it's likely a TOC entry
-    # especially if it contains section numbers or has proper structure
-    if len(text_clean) > 5:  # Reasonable minimum length for TOC entry
-        # Check for section numbering patterns
-        if re.match(r'^\d+\.?\d*\s+', text_clean):  # Starts with number
-            return True
-        
-        # Check if it has typical TOC content (letters and spaces, not just symbols)
-        letter_count = sum(1 for c in text_clean if c.isalpha())
-        if letter_count > 3:  # Has substantial text content
-            return True
+    # Additional check: if text starts with number and ends with page number,
+    # and has substantial content in between with proper separators (dots or tabs)
+    # Example: "1.1 Introduction........................25"
+    if re.match(r'^\d+\.?\d*\s+', original_text):
+        # Check if it ends with a page number (isolated number at the end)
+        if re.search(r'\s+\d{1,4}$', original_text):
+            # Check if there are dot leaders or multiple tabs between title and page number
+            middle_content = re.sub(r'^\d+\.?\d*\s+', '', original_text)
+            middle_content = re.sub(r'\s+\d{1,4}$', '', middle_content)
+            if re.search(r'\.{2,}', middle_content) or re.search(r'\t{2,}', middle_content):
+                return True
+    
+    # Do NOT match simple numbered list items like "3. Some text content"
+    # even if they contain a tab character - these are not TOC entries
     
     return False
 
@@ -1389,17 +1393,21 @@ def detect_toc_paragraph(paragraph, namespaces):
                 return True, toc_info
     
     # Check for tab and dot leader patterns typical of TOC
+    # This is the most strict check - only return True if pattern strongly indicates TOC
     paragraph_text = extract_paragraph_text_only(paragraph, namespaces)
     if has_toc_pattern_enhanced(paragraph_text):
-        # Additional check: look for tab characters and indentation
+        # Must have clear TOC indicators, not just a tab character
         tabs = paragraph.xpath('.//w:tab', namespaces=namespaces)
-        if tabs:
-            toc_info = {
-                'style': 'pattern_based',
-                'level': detect_toc_level_from_formatting(paragraph, namespaces),
-                'detection_method': 'pattern_analysis'
-            }
-            return True, toc_info
+        if tabs and len(tabs) >= 1:  # At least one tab
+            # Additional validation: check if text ends with a page number
+            # to avoid false positives from numbered lists
+            if re.search(r'\s+\d{1,4}$', paragraph_text.strip()):
+                toc_info = {
+                    'style': 'pattern_based',
+                    'level': detect_toc_level_from_formatting(paragraph, namespaces),
+                    'detection_method': 'pattern_analysis'
+                }
+                return True, toc_info
     
     return False, None
 
@@ -3090,53 +3098,55 @@ def update_sdt_table_cell_with_enhanced_preservation(item, translated_text, all_
 def update_sdt_nested_table_cell_with_enhanced_preservation(item, translated_text, sdt_content, namespaces):
     """Update nested table cell within SDT with enhanced format preservation"""
     try:
-        # Parse nested table identifier
+        # Parse nested table identifier using the new helper function
         table_index_str = str(item.get("table_index"))
-        parts = table_index_str.split("_nested_")
-        if len(parts) < 2:
-            app_logger.error(f"Invalid nested table index format: {table_index_str}")
-            return
+        parent_table_index, nested_path = parse_nested_table_index(table_index_str)
         
-        parent_table_index = safe_convert_to_int(parts[0])
-        nested_path = "_nested_".join(parts[1:]).split("_")
+        if parent_table_index is None or nested_path is None:
+            app_logger.error(f"Failed to parse SDT nested table index: {table_index_str}")
+            return
         
         tables = sdt_content.xpath('.//w:tbl[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
         if parent_table_index >= len(tables):
-            app_logger.error(f"Invalid parent table index: {parent_table_index}")
+            app_logger.error(f"Invalid SDT parent table index: {parent_table_index}, total tables: {len(tables)}")
             return
         
         parent_table = tables[parent_table_index]
         
         # Navigate to nested table
         current_table = parent_table
+        nesting_depth = 0
+        
         for i in range(0, len(nested_path), 3):  # row, col, nested_index
             if i + 2 >= len(nested_path):
                 break
-                
+            
+            nesting_depth += 1
             parent_row_idx = safe_convert_to_int(nested_path[i])
             parent_col_idx = safe_convert_to_int(nested_path[i + 1])
             nested_table_idx = safe_convert_to_int(nested_path[i + 2])
             
             rows = current_table.xpath('./w:tr', namespaces=namespaces)
             if parent_row_idx >= len(rows):
-                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds")
+                app_logger.error(f"SDT nested table (depth {nesting_depth}) row index {parent_row_idx} out of bounds, total rows: {len(rows)}")
                 return
             
             row = rows[parent_row_idx]
             cells = row.xpath('./w:tc', namespaces=namespaces)
             
             if parent_col_idx >= len(cells):
-                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds")
+                app_logger.error(f"SDT nested table (depth {nesting_depth}) col index {parent_col_idx} out of bounds, total cells: {len(cells)}")
                 return
                 
             cell = cells[parent_col_idx]
             nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
             
             if nested_table_idx >= len(nested_tables):
-                app_logger.error(f"Nested table index {nested_table_idx} out of bounds")
+                app_logger.error(f"SDT nested table (depth {nesting_depth}) index {nested_table_idx} out of bounds, total nested tables: {len(nested_tables)}")
                 return
             
             current_table = nested_tables[nested_table_idx]
+            app_logger.debug(f"Navigated to SDT nested table depth {nesting_depth}: row={parent_row_idx}, col={parent_col_idx}, nested_idx={nested_table_idx}")
         
         # Now update the cell in the nested table
         row_idx = item.get("row")
@@ -3145,14 +3155,14 @@ def update_sdt_nested_table_cell_with_enhanced_preservation(item, translated_tex
         
         rows = current_table.xpath('./w:tr', namespaces=namespaces)
         if row_idx >= len(rows):
-            app_logger.error(f"Nested table final row index {row_idx} out of bounds")
+            app_logger.error(f"SDT final nested table row index {row_idx} out of bounds, total rows: {len(rows)}")
             return
             
         row = rows[row_idx]
         cells = row.xpath('./w:tc', namespaces=namespaces)
         
         if col_idx >= len(cells):
-            app_logger.error(f"Nested table final col index {col_idx} out of bounds")
+            app_logger.error(f"SDT final nested table col index {col_idx} out of bounds, total cells: {len(cells)}")
             return
             
         cell = cells[col_idx]
@@ -3160,7 +3170,7 @@ def update_sdt_nested_table_cell_with_enhanced_preservation(item, translated_tex
         # Get the specific paragraph in the cell
         cell_paragraphs = cell.xpath('./w:p', namespaces=namespaces)
         if paragraph_index >= len(cell_paragraphs):
-            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in nested cell")
+            app_logger.error(f"SDT paragraph index {paragraph_index} out of bounds, total paragraphs: {len(cell_paragraphs)}")
             return
         
         target_paragraph = cell_paragraphs[paragraph_index]
@@ -3182,8 +3192,12 @@ def update_sdt_nested_table_cell_with_enhanced_preservation(item, translated_tex
                 target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
+        app_logger.info(f"Successfully updated SDT nested table cell at depth {nesting_depth}")
+        
     except (IndexError, TypeError, ValueError) as e:
-        app_logger.error(f"Error updating SDT nested table cell: {e}")
+        app_logger.error(f"Error updating SDT nested table cell: {e}, table_index: {item.get('table_index')}")
+        import traceback
+        app_logger.error(f"Traceback: {traceback.format_exc()}")
 
 def update_paragraph_with_enhanced_preservation(item, translated_text, all_main_elements, namespaces):
     """Update paragraph with enhanced format preservation"""
@@ -3287,71 +3301,107 @@ def update_table_cell_with_enhanced_preservation(item, translated_text, all_main
     except (IndexError, TypeError) as e:
         app_logger.error(f"Error updating table cell: {e}")
 
+def parse_nested_table_index(table_index_str):
+    """Parse nested table index string to get parent index and nested path
+    
+    Format: "parent_nested_row_col_idx_nested_row_col_idx_..."
+    Returns: (parent_table_index, [row, col, idx, row, col, idx, ...])
+    """
+    parts = table_index_str.split("_nested_")
+    if len(parts) < 2:
+        return None, None
+    
+    try:
+        parent_table_index = safe_convert_to_int(parts[0])
+    except:
+        app_logger.error(f"Invalid parent table index: {parts[0]}")
+        return None, None
+    
+    # Each part after the first should be "row_col_idx" (3 components)
+    nested_path = []
+    for i in range(1, len(parts)):
+        path_components = parts[i].split("_")
+        if len(path_components) != 3:
+            app_logger.error(f"Invalid nested path component: '{parts[i]}', expected 'row_col_idx' but got {len(path_components)} parts")
+            return None, None
+        nested_path.extend(path_components)
+    
+    return parent_table_index, nested_path
+
 def update_nested_table_cell_with_enhanced_preservation(item, translated_text, all_main_elements, namespaces):
     """Update nested table cell with enhanced format preservation"""
     try:
-        # Parse nested table identifier
+        # Parse nested table identifier using the new helper function
         table_index_str = str(item.get("table_index"))
-        parts = table_index_str.split("_nested_")
-        if len(parts) < 2:
-            app_logger.error(f"Invalid nested table index format: {table_index_str}")
+        parent_table_index, nested_path = parse_nested_table_index(table_index_str)
+        
+        if parent_table_index is None or nested_path is None:
+            app_logger.error(f"Failed to parse nested table index: {table_index_str}")
             return
         
-        parent_table_index = safe_convert_to_int(parts[0])
-        nested_path = "_nested_".join(parts[1:]).split("_")
-        
         if parent_table_index >= len(all_main_elements):
-            app_logger.error(f"Invalid parent table index: {parent_table_index}")
+            app_logger.error(f"Invalid parent table index: {parent_table_index}, total elements: {len(all_main_elements)}")
             return
         
         parent_table = all_main_elements[parent_table_index]
         
+        # Validate it's a table
+        if parent_table.tag.split('}')[-1] != 'tbl':
+            app_logger.error(f"Element at index {parent_table_index} is not a table, got: {parent_table.tag}")
+            return
+        
         # Navigate to nested table
         current_table = parent_table
+        nesting_depth = 0
+        
         for i in range(0, len(nested_path), 3):  # row, col, nested_index
             if i + 2 >= len(nested_path):
                 break
-                
+            
+            nesting_depth += 1
             parent_row_idx = safe_convert_to_int(nested_path[i])
             parent_col_idx = safe_convert_to_int(nested_path[i + 1])
             nested_table_idx = safe_convert_to_int(nested_path[i + 2])
             
             rows = current_table.xpath('./w:tr', namespaces=namespaces)
             if parent_row_idx >= len(rows):
-                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds")
+                app_logger.error(f"Nested table (depth {nesting_depth}) row index {parent_row_idx} out of bounds, total rows: {len(rows)}")
                 return
             
             row = rows[parent_row_idx]
             cells = row.xpath('./w:tc', namespaces=namespaces)
             
             if parent_col_idx >= len(cells):
-                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds")
+                app_logger.error(f"Nested table (depth {nesting_depth}) col index {parent_col_idx} out of bounds, total cells: {len(cells)}")
                 return
                 
             cell = cells[parent_col_idx]
+            
+            # Use consistent XPath for nested tables (should match extraction logic)
             nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
             
             if nested_table_idx >= len(nested_tables):
-                app_logger.error(f"Nested table index {nested_table_idx} out of bounds")
+                app_logger.error(f"Nested table (depth {nesting_depth}) index {nested_table_idx} out of bounds, total nested tables: {len(nested_tables)} in cell [{parent_row_idx}][{parent_col_idx}]")
                 return
             
             current_table = nested_tables[nested_table_idx]
+            app_logger.debug(f"Navigated to nested table depth {nesting_depth}: row={parent_row_idx}, col={parent_col_idx}, nested_idx={nested_table_idx}")
         
-        # Now update the cell in the nested table
+        # Now update the cell in the final nested table
         row_idx = item.get("row")
         col_idx = item.get("col")
         paragraph_index = item.get("paragraph_index", 0)
         
         rows = current_table.xpath('./w:tr', namespaces=namespaces)
         if row_idx >= len(rows):
-            app_logger.error(f"Nested table final row index {row_idx} out of bounds")
+            app_logger.error(f"Final nested table row index {row_idx} out of bounds, total rows: {len(rows)}")
             return
             
         row = rows[row_idx]
         cells = row.xpath('./w:tc', namespaces=namespaces)
         
         if col_idx >= len(cells):
-            app_logger.error(f"Nested table final col index {col_idx} out of bounds")
+            app_logger.error(f"Final nested table col index {col_idx} out of bounds, total cells: {len(cells)}")
             return
             
         cell = cells[col_idx]
@@ -3359,7 +3409,7 @@ def update_nested_table_cell_with_enhanced_preservation(item, translated_text, a
         # Get the specific paragraph in the cell
         cell_paragraphs = cell.xpath('./w:p', namespaces=namespaces)
         if paragraph_index >= len(cell_paragraphs):
-            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in nested cell")
+            app_logger.error(f"Paragraph index {paragraph_index} out of bounds, total paragraphs: {len(cell_paragraphs)}")
             return
         
         target_paragraph = cell_paragraphs[paragraph_index]
@@ -3381,8 +3431,12 @@ def update_nested_table_cell_with_enhanced_preservation(item, translated_text, a
                 target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
+        app_logger.info(f"Successfully updated nested table cell at depth {nesting_depth}, final position [{row_idx}][{col_idx}], paragraph {paragraph_index}")
+        
     except (IndexError, TypeError, ValueError) as e:
-        app_logger.error(f"Error updating nested table cell: {e}")
+        app_logger.error(f"Error updating nested table cell: {e}, table_index: {item.get('table_index')}")
+        import traceback
+        app_logger.error(f"Traceback: {traceback.format_exc()}")
 
 def update_textbox_with_enhanced_preservation(item, translated_text, all_wps_textboxes, all_vml_textboxes, namespaces):
     """Update textbox with enhanced format preservation"""
@@ -3553,53 +3607,55 @@ def update_header_footer_table_cell_with_enhanced_preservation(item, translated_
 def update_header_footer_nested_table_cell_with_enhanced_preservation(item, translated_text, hf_tree, namespaces):
     """Update header/footer nested table cell with enhanced format preservation"""
     try:
-        # Parse nested table identifier
+        # Parse nested table identifier using the new helper function
         table_index_str = str(item.get("table_index"))
-        parts = table_index_str.split("_nested_")
-        if len(parts) < 2:
-            app_logger.error(f"Invalid nested table index format: {table_index_str}")
-            return
+        parent_table_index, nested_path = parse_nested_table_index(table_index_str)
         
-        parent_table_index = safe_convert_to_int(parts[0])
-        nested_path = "_nested_".join(parts[1:]).split("_")
+        if parent_table_index is None or nested_path is None:
+            app_logger.error(f"Failed to parse header/footer nested table index: {table_index_str}")
+            return
         
         tables = hf_tree.xpath('.//w:tbl[not(ancestor::wps:txbx) and not(ancestor::v:textbox) and not(ancestor::w:sdtContent)]', namespaces=namespaces)
         if parent_table_index >= len(tables):
-            app_logger.error(f"Invalid parent table index: {parent_table_index}")
+            app_logger.error(f"Invalid header/footer parent table index: {parent_table_index}, total tables: {len(tables)}")
             return
         
         parent_table = tables[parent_table_index]
         
         # Navigate to nested table
         current_table = parent_table
+        nesting_depth = 0
+        
         for i in range(0, len(nested_path), 3):  # row, col, nested_index
             if i + 2 >= len(nested_path):
                 break
-                
+            
+            nesting_depth += 1
             parent_row_idx = safe_convert_to_int(nested_path[i])
             parent_col_idx = safe_convert_to_int(nested_path[i + 1])
             nested_table_idx = safe_convert_to_int(nested_path[i + 2])
             
             rows = current_table.xpath('./w:tr', namespaces=namespaces)
             if parent_row_idx >= len(rows):
-                app_logger.error(f"Nested table row index {parent_row_idx} out of bounds")
+                app_logger.error(f"Header/footer nested table (depth {nesting_depth}) row index {parent_row_idx} out of bounds, total rows: {len(rows)}")
                 return
             
             row = rows[parent_row_idx]
             cells = row.xpath('./w:tc', namespaces=namespaces)
             
             if parent_col_idx >= len(cells):
-                app_logger.error(f"Nested table col index {parent_col_idx} out of bounds")
+                app_logger.error(f"Header/footer nested table (depth {nesting_depth}) col index {parent_col_idx} out of bounds, total cells: {len(cells)}")
                 return
                 
             cell = cells[parent_col_idx]
             nested_tables = cell.xpath('./w:tbl', namespaces=namespaces)
             
             if nested_table_idx >= len(nested_tables):
-                app_logger.error(f"Nested table index {nested_table_idx} out of bounds")
+                app_logger.error(f"Header/footer nested table (depth {nesting_depth}) index {nested_table_idx} out of bounds, total nested tables: {len(nested_tables)}")
                 return
             
             current_table = nested_tables[nested_table_idx]
+            app_logger.debug(f"Navigated to header/footer nested table depth {nesting_depth}: row={parent_row_idx}, col={parent_col_idx}, nested_idx={nested_table_idx}")
         
         # Now update the cell in the nested table
         row_idx = item.get("row")
@@ -3608,14 +3664,14 @@ def update_header_footer_nested_table_cell_with_enhanced_preservation(item, tran
         
         rows = current_table.xpath('./w:tr', namespaces=namespaces)
         if row_idx >= len(rows):
-            app_logger.error(f"Nested table final row index {row_idx} out of bounds")
+            app_logger.error(f"Header/footer final nested table row index {row_idx} out of bounds, total rows: {len(rows)}")
             return
             
         row = rows[row_idx]
         cells = row.xpath('./w:tc', namespaces=namespaces)
         
         if col_idx >= len(cells):
-            app_logger.error(f"Nested table final col index {col_idx} out of bounds")
+            app_logger.error(f"Header/footer final nested table col index {col_idx} out of bounds, total cells: {len(cells)}")
             return
             
         cell = cells[col_idx]
@@ -3623,7 +3679,7 @@ def update_header_footer_nested_table_cell_with_enhanced_preservation(item, tran
         # Get the specific paragraph in the cell
         cell_paragraphs = cell.xpath('./w:p', namespaces=namespaces)
         if paragraph_index >= len(cell_paragraphs):
-            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in nested cell")
+            app_logger.error(f"Header/footer paragraph index {paragraph_index} out of bounds, total paragraphs: {len(cell_paragraphs)}")
             return
         
         target_paragraph = cell_paragraphs[paragraph_index]
@@ -3645,8 +3701,12 @@ def update_header_footer_nested_table_cell_with_enhanced_preservation(item, tran
                 target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
+        app_logger.info(f"Successfully updated header/footer nested table cell at depth {nesting_depth}")
+        
     except (IndexError, TypeError, ValueError) as e:
-        app_logger.error(f"Error updating header/footer nested table cell: {e}")
+        app_logger.error(f"Error updating header/footer nested table cell: {e}, table_index: {item.get('table_index')}")
+        import traceback
+        app_logger.error(f"Traceback: {traceback.format_exc()}")
 
 def restore_paragraph_properties(paragraph, original_pPr_xml, namespaces):
     """Restore original paragraph properties from XML"""
@@ -3710,11 +3770,6 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
         # Identify math runs - handle separately
         if run.xpath('.//m:oMath', namespaces=namespaces):
             math_runs.append(run)
-            continue
-
-        # Identify runs containing breaks (line, page, column)
-        if run.xpath('.//w:br', namespaces=namespaces):
-            preserved_runs.append(run)
             continue
         
         # If we have field_info, we will regenerate all fields, so treat field runs as text runs to be removed
