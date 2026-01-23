@@ -8,9 +8,10 @@ import time
 def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None, check_stop_callback=None):
     """
     Translate text segments with optional glossary support
-    
+
     Returns:
-        tuple: (translation_result, success_status)
+        tuple: (translation_result, success_status, token_usage)
+            - token_usage: dict with 'prompt_tokens', 'completion_tokens', 'total_tokens' or None
     """
     # Set 1-hour time limit (3600 seconds)
     max_retry_time = 3600
@@ -74,8 +75,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             # Check remaining time
             if remaining_time <= 0:
                 app_logger.error(f"Failed to construct prompt after 1 hour of retries.")
-                return None, False
-                
+                return None, False, None
+
             app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
             # Interruptible sleep
             interruptible_sleep(wait_time, check_stop_callback)
@@ -87,57 +88,57 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         ]
         
         try:
-            # Perform translation - now returns (result, status)
+            # Perform translation - now returns (result, status, token_usage)
             if not use_online:
-                translation_result, api_success = translate_offline(messages, model)
+                translation_result, api_success, token_usage = translate_offline(messages, model)
             else:
-                translation_result, api_success = translate_online(api_key, messages, model)
-            
+                translation_result, api_success, token_usage = translate_online(api_key, messages, model)
+
             # If API call was successful, return the result
             if api_success:
                 if current_attempt > 1:
                     app_logger.info(f"Translation succeeded on attempt {current_attempt} after {int(elapsed_time)}s")
-                return translation_result, True
-            
+                return translation_result, True, token_usage
+
             # API call failed (network error, service down, etc.)
             app_logger.warning(f"API call failed (attempt {current_attempt}): {translation_result}")
-            
+
             # Update time remaining
             elapsed_time = time.time() - start_time
             remaining_time = max_retry_time - elapsed_time
-            
+
             # Check if we've run out of time
             if remaining_time <= 0:
                 app_logger.error(f"Failed to translate after 1 hour ({current_attempt} attempts).")
-                return translation_result, False
-            
+                return translation_result, False, None
+
             # Wait before retry with exponential backoff
-            wait_time = min(wait_time * 2, 10, remaining_time)  
+            wait_time = min(wait_time * 2, 10, remaining_time)
             app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
             # Interruptible sleep
             interruptible_sleep(wait_time, check_stop_callback)
-                
+
         except Exception as e:
             # Update time remaining
             elapsed_time = time.time() - start_time
             remaining_time = max_retry_time - elapsed_time
-            
+
             # Check if we've run out of time
             if remaining_time <= 0:
                 app_logger.error(f"Translation failed after 1 hour ({current_attempt} attempts): {e}")
-                return f"Translation failed after 1 hour: {str(e)}", False
-                
+                return f"Translation failed after 1 hour: {str(e)}", False, None
+
             app_logger.error(f"Translation exception (attempt {current_attempt}): {e}")
-            
+
             # Wait before retry (don't wait longer than remaining time)
             wait_time = min(wait_time * 2, 10, remaining_time)
             app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
             # Interruptible sleep
             interruptible_sleep(wait_time, check_stop_callback)
-    
+
     # If we reach here, time limit exceeded
     app_logger.error(f"Failed to translate after 1 hour ({current_attempt} attempts).")
-    return None, False
+    return None, False, None
 
 def interruptible_sleep(duration, check_stop_callback=None):
     """Sleep that can be interrupted by checking stop callback"""

@@ -1,7 +1,9 @@
 # pipeline/word_translation_pipeline.py   By AI-Transtools
+# Unified Word translation pipeline supporting standard and bilingual modes
 import json
 import os
 import re
+import datetime
 from lxml import etree
 from zipfile import ZipFile, ZIP_DEFLATED
 from .skip_pipeline import should_translate
@@ -9,6 +11,35 @@ from config.log_config import app_logger
 from textProcessing.text_separator import safe_convert_to_int
 import shutil
 import tempfile
+
+# Import bilingual helpers from separate module
+from .word.bilingual import (
+    set_current_target_language,
+    DateConversionConfig,
+    clean_translation_brackets,
+    detect_and_convert_untranslated_dates,
+    find_dates_in_text,
+    convert_date_to_target_format,
+    create_bilingual_text,
+    apply_latin_font_to_run
+)
+
+
+# NOTE: The bilingual helper functions have been moved to pipeline/word/bilingual.py
+# The functions are re-exported here for backwards compatibility:
+# - set_current_target_language
+# - DateConversionConfig
+# - clean_translation_brackets
+# - detect_and_convert_untranslated_dates
+# - find_dates_in_text
+# - convert_date_to_target_format
+# - create_bilingual_text
+# - apply_latin_font_to_run
+
+
+# ============================================================================
+# EXTRACTION FUNCTIONS
+# ============================================================================
 
 def extract_word_content_to_json(file_path, save_temp_dir):
     """Extract translatable content from Word document to JSON"""
@@ -2493,9 +2524,21 @@ def should_translate_enhanced(text):
     except:
         return True  # Default to translate if function fails
 
-def write_translated_content_to_word(file_path, original_json_path, translated_json_path, save_temp_dir, result_dir):
-    """Write translated content back to Word document with complete file structure preservation"""
-    
+def write_translated_content_to_word(file_path, original_json_path, translated_json_path, save_temp_dir, result_dir, bilingual_mode=False, src_lang=None, dst_lang=None):
+    """
+    Write translated content back to Word document.
+
+    Args:
+        file_path: Path to the original Word file
+        original_json_path: Path to the original JSON data
+        translated_json_path: Path to the translated JSON data
+        save_temp_dir: Temporary directory path
+        result_dir: Directory to save the result
+        bilingual_mode: If True, format content as bilingual (original + translated)
+        src_lang: Source language code (e.g., 'zh')
+        dst_lang: Target language code (e.g., 'ja')
+    """
+
     # Load translation data
     with open(original_json_path, "r", encoding="utf-8") as original_file:
         original_data = json.load(original_file)
@@ -2570,8 +2613,11 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             with open(footnotes_xml_path, 'rb') as f:
                 footnotes_xml = f.read()
             footnotes_tree = etree.fromstring(footnotes_xml)
-            update_footnotes_with_translations(footnotes_tree, original_data, translations, namespaces)
-        
+            if bilingual_mode:
+                update_footnotes_with_bilingual_format(footnotes_tree, original_data, translations, namespaces)
+            else:
+                update_footnotes_with_translations(footnotes_tree, original_data, translations, namespaces)
+
         # Load header/footer files
         header_footer_trees = {}
         word_dir = os.path.join(temp_dir, 'word')
@@ -2582,16 +2628,19 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                     with open(filepath, 'rb') as f:
                         hf_content = f.read()
                     header_footer_trees[f'word/{filename}'] = etree.fromstring(hf_content)
-        
+
         # Apply SmartArt translations
-        update_smartart_with_translations(temp_dir, original_data, translations, namespaces)
-        
+        if bilingual_mode:
+            apply_smartart_translations_bilingual(temp_dir, original_data, translations, namespaces)
+        else:
+            update_smartart_with_translations(temp_dir, original_data, translations, namespaces)
+
         # Get all SDT elements
         all_sdt_elements = document_tree.xpath('.//w:sdt', namespaces=namespaces)
-        
+
         # Get all document elements
         all_main_elements = get_all_body_elements(document_tree, namespaces)
-        
+
         # Get all textboxes for processing
         all_wps_textboxes = document_tree.xpath('.//wps:txbx', namespaces=namespaces)
         all_vml_textboxes = document_tree.xpath('.//v:textbox', namespaces=namespaces)
@@ -2600,54 +2649,61 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         for item in original_data:
             item_id = str(item.get("id", item.get("count_src")))
             translated_text = translations.get(item_id)
-            
+
             if not translated_text:
                 continue
-                
+
             # Skip numbering and SmartArt items as they're handled separately
             if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart", "footnote"]:
                 continue
-                
+
             translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+
+            # Create bilingual text if in bilingual mode
+            if bilingual_mode:
+                original_text = item.get("value", "").replace("␊", "\n").replace("␍", "\r")
+                text_to_apply = create_bilingual_text(original_text, translated_text)
+            else:
+                text_to_apply = translated_text
             
             if item["type"] == "sdt_paragraph":
                 update_sdt_paragraph_with_enhanced_preservation(
-                    item, translated_text, all_sdt_elements, namespaces
+                    item, text_to_apply, all_sdt_elements, namespaces
                 )
-            
+
             elif item["type"] == "sdt_table_cell":
                 update_sdt_table_cell_with_enhanced_preservation(
-                    item, translated_text, all_sdt_elements, namespaces
+                    item, text_to_apply, all_sdt_elements, namespaces
                 )
-            
+
             elif item["type"] == "paragraph":
                 update_paragraph_with_enhanced_preservation(
-                    item, translated_text, all_main_elements, namespaces
+                    item, text_to_apply, all_main_elements, namespaces
                 )
-                
+
             elif item["type"] == "table_cell":
                 update_table_cell_with_enhanced_preservation(
-                    item, translated_text, all_main_elements, namespaces
+                    item, text_to_apply, all_main_elements, namespaces
                 )
-            
+
             elif item["type"] == "textbox":
                 update_textbox_with_enhanced_preservation(
-                    item, translated_text, all_wps_textboxes, all_vml_textboxes, namespaces
+                    item, text_to_apply, all_wps_textboxes, all_vml_textboxes, namespaces
                 )
-            
+
             elif item["type"] == "header_footer":
                 update_header_footer_paragraph_with_enhanced_preservation(
-                    item, translated_text, header_footer_trees, namespaces
+                    item, text_to_apply, header_footer_trees, namespaces
                 )
-            
+
             elif item["type"] == "header_footer_textbox":
                 update_header_footer_textbox_with_enhanced_preservation(
-                    item, translated_text, header_footer_trees, namespaces
+                    item, text_to_apply, header_footer_trees, namespaces
                 )
-            
+
             elif item["type"] == "header_footer_table_cell":
                 update_header_footer_table_cell_with_enhanced_preservation(
-                    item, translated_text, header_footer_trees, namespaces
+                    item, text_to_apply, header_footer_trees, namespaces
                 )
 
         # Save all modified files back to temp directory
@@ -2670,7 +2726,12 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         # Create result file
         result_folder = result_dir
         os.makedirs(result_folder, exist_ok=True)
-        result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.docx")
+        # Use source_lang2target_lang format if available, otherwise fallback to _translated
+        if src_lang and dst_lang:
+            lang_suffix = f"{src_lang}2{dst_lang}"
+        else:
+            lang_suffix = "translated"
+        result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_{lang_suffix}.docx")
 
         # Create new DOCX file with all original files preserved
         with ZipFile(result_path, 'w', ZIP_DEFLATED) as new_doc:
@@ -4502,3 +4563,175 @@ def update_json_structure_after_translation(original_json_path, translated_json_
     
     app_logger.info(f"Updated translation JSON structure: {translated_json_path}")
     return translated_json_path
+
+
+# ============================================================================
+# BILINGUAL MODE - SPECIFIC UPDATE FUNCTIONS
+# ============================================================================
+
+def update_footnotes_with_bilingual_format(footnotes_tree, original_data, translations, namespaces):
+    """Update footnotes.xml with bilingual translated content."""
+    footnotes = footnotes_tree.xpath('//w:footnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]', namespaces=namespaces)
+
+    footnotes_by_id = {}
+    for footnote in footnotes:
+        footnote_id = footnote.get(f'{{{namespaces["w"]}}}id')
+        if footnote_id:
+            footnotes_by_id[str(footnote_id)] = footnote
+            footnotes_by_id[footnote_id] = footnote
+
+    app_logger.info(f"Found {len(footnotes)} footnotes to process with bilingual format")
+
+    updated_count = 0
+    for item in original_data:
+        if item["type"] != "footnote":
+            continue
+
+        item_id = str(item.get("id", item.get("count_src")))
+        translated_text = translations.get(item_id)
+
+        if not translated_text:
+            continue
+
+        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+        original_text = item.get("value", "").replace("␊", "\n").replace("␍", "\r")
+
+        bilingual_text = create_bilingual_text(original_text, translated_text)
+
+        footnote_id = item.get("footnote_id")
+        paragraph_index = item.get("paragraph_index")
+
+        footnote = footnotes_by_id.get(str(footnote_id))
+        if footnote is None:
+            footnote = footnotes_by_id.get(footnote_id)
+
+        if footnote is None:
+            app_logger.error(f"Footnote ID {footnote_id} not found in footnotes")
+            continue
+
+        footnote_paragraphs = footnote.xpath('.//w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
+
+        if paragraph_index >= len(footnote_paragraphs):
+            app_logger.error(f"Paragraph index {paragraph_index} out of bounds in footnote {footnote_id}")
+            continue
+
+        target_paragraph = footnote_paragraphs[paragraph_index]
+
+        original_pPr = item.get("original_pPr")
+        if original_pPr:
+            restore_paragraph_properties(target_paragraph, original_pPr, namespaces)
+
+        if item.get("is_toc", False):
+            toc_structure = item.get("toc_structure")
+            update_toc_paragraph_with_complete_structure(target_paragraph, bilingual_text, namespaces, toc_structure)
+        else:
+            field_info = item.get("field_info")
+            math_info = item.get("math_info")
+            original_structure = item.get("original_structure")
+
+            update_paragraph_text_with_enhanced_preservation(
+                target_paragraph, bilingual_text, namespaces, None, field_info, math_info, original_structure
+            )
+
+        updated_count += 1
+        app_logger.info(f"Updated footnote {footnote_id}.{paragraph_index} with bilingual format")
+
+    app_logger.info(f"Successfully updated {updated_count} footnotes with bilingual format")
+
+
+def apply_smartart_translations_bilingual(temp_dir, original_data, translations, namespaces):
+    """Apply translations to SmartArt diagrams in Word document with bilingual format."""
+    smartart_items = [item for item in original_data if item['type'] == 'smartart']
+
+    if not smartart_items:
+        return
+
+    app_logger.info(f"Processing {len(smartart_items)} SmartArt translations with bilingual format")
+
+    items_by_diagram = {}
+    for item in smartart_items:
+        diagram_index = item['diagram_index']
+        if diagram_index not in items_by_diagram:
+            items_by_diagram[diagram_index] = []
+        items_by_diagram[diagram_index].append(item)
+
+    for diagram_index, items in items_by_diagram.items():
+        drawing_path = f"word/diagrams/drawing{diagram_index}.xml"
+        data_path = f"word/diagrams/data{diagram_index}.xml"
+
+        try:
+            drawing_file_path = os.path.join(temp_dir, drawing_path.replace('/', os.sep))
+            if os.path.exists(drawing_file_path):
+                with open(drawing_file_path, 'rb') as f:
+                    drawing_xml = f.read()
+                drawing_tree = etree.fromstring(drawing_xml)
+
+                for item in items:
+                    item_id = str(item.get("id", item.get("count_src")))
+                    translated_text = translations.get(item_id)
+
+                    if not translated_text:
+                        continue
+
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    original_text = item.get("value", "").replace("␊", "\n").replace("␍", "\r")
+
+                    bilingual_text = create_bilingual_text(original_text, translated_text)
+
+                    shapes_with_txbody = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
+
+                    if item['shape_index'] < len(shapes_with_txbody):
+                        shape = shapes_with_txbody[item['shape_index']]
+
+                        tx_bodies = shape.xpath('.//dsp:txBody', namespaces=namespaces)
+                        if item['tx_body_index'] < len(tx_bodies):
+                            tx_body = tx_bodies[item['tx_body_index']]
+
+                            paragraphs = tx_body.xpath('.//a:p', namespaces=namespaces)
+                            if item['paragraph_index'] < len(paragraphs):
+                                paragraph = paragraphs[item['paragraph_index']]
+                                distribute_smartart_text_to_runs(paragraph, bilingual_text, item, namespaces)
+                                app_logger.info(f"Updated SmartArt drawing with bilingual format for diagram {diagram_index}")
+
+                with open(drawing_file_path, "wb") as f:
+                    f.write(etree.tostring(drawing_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+
+        except Exception as e:
+            app_logger.error(f"Failed to apply bilingual SmartArt translation to {drawing_path}: {e}")
+
+        try:
+            data_file_path = os.path.join(temp_dir, data_path.replace('/', os.sep))
+            if os.path.exists(data_file_path):
+                with open(data_file_path, 'rb') as f:
+                    data_xml = f.read()
+                data_tree = etree.fromstring(data_xml)
+
+                for item in items:
+                    item_id = str(item.get("id", item.get("count_src")))
+                    translated_text = translations.get(item_id)
+
+                    if not translated_text:
+                        continue
+
+                    translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+                    original_text = item.get('original_text', '')
+
+                    bilingual_text = create_bilingual_text(original_text, translated_text)
+
+                    points = data_tree.xpath('.//dgm:pt[.//a:t]', namespaces=namespaces)
+
+                    for point in points:
+                        point_paragraphs = point.xpath('.//a:p', namespaces=namespaces)
+                        for p_idx, point_paragraph in enumerate(point_paragraphs):
+                            point_text_runs = point_paragraph.xpath('.//a:r', namespaces=namespaces)
+                            if point_text_runs:
+                                point_run_info = process_smartart_text_runs(point_text_runs, namespaces)
+                                if point_run_info['merged_text'].strip() == original_text.strip():
+                                    distribute_smartart_text_to_runs(point_paragraph, bilingual_text, item, namespaces)
+                                    break
+
+                with open(data_file_path, "wb") as f:
+                    f.write(etree.tostring(data_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+
+        except Exception as e:
+            app_logger.error(f"Failed to apply bilingual SmartArt translation to {data_path}: {e}")

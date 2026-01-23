@@ -118,7 +118,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Thread Count",
         "Stop Translation": "Stop Translation",
         "Stopping": "Stopping...",
-        "Glossary": "Glossary"
+        "Glossary": "Glossary",
+        "Add Glossary": "+ Add Glossary...",
+        "Drop CSV file here": "Drop CSV file here or click to browse",
+        "Add Custom Language": "+ Add Custom...",
+        "New Language Name": "New language name",
+        "Language Name Placeholder": "e.g. Klingon",
+        "Create Language": "Create",
+        # Status messages
+        "Extracting text": "Extracting text",
+        "Removing duplicates": "Removing duplicates",
+        "Splitting text": "Splitting text",
+        "Translating content": "Translating content",
+        "Translating": "Translating",
+        "Checking results": "Checking results",
+        "Restoring structure": "Restoring structure",
+        "Generating output": "Generating output",
+        "Translation completed": "Translation completed",
+        "Total tokens used": "Total tokens used",
+        "Preparing content": "Preparing content",
+        "Continuing from": "Continuing from",
+        "Retry": "Retry"
     },
     # Simplified Chinese
     "zh": {
@@ -141,7 +161,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "线程数量",
         "Stop Translation": "停止翻译",
         "Stopping": "正在停止...",
-        "Glossary": "词汇表"
+        "Glossary": "词汇表",
+        "Add Glossary": "+ 添加词汇表...",
+        "Drop CSV file here": "拖放CSV文件或点击浏览",
+        "Add Custom Language": "+ 添加自定义语言...",
+        "New Language Name": "新语言名称",
+        "Language Name Placeholder": "例如：克林贡语",
+        "Create Language": "创建",
+        # Status messages
+        "Extracting text": "正在提取文本",
+        "Removing duplicates": "正在去除重复",
+        "Splitting text": "正在拆分文本",
+        "Translating content": "正在翻译内容",
+        "Translating": "翻译中",
+        "Checking results": "正在检查结果",
+        "Restoring structure": "正在恢复结构",
+        "Generating output": "正在生成输出",
+        "Translation completed": "翻译完成",
+        "Total tokens used": "本次共消耗tokens",
+        "Preparing content": "正在准备内容",
+        "Continuing from": "继续自",
+        "Retry": "重试"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -164,7 +204,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "執行緒數量",
         "Stop Translation": "停止翻譯",
         "Stopping": "正在停止...",
-        "Glossary": "詞彙表"
+        "Glossary": "詞彙表",
+        "Add Glossary": "+ 新增詞彙表...",
+        "Drop CSV file here": "拖放CSV檔案或點擊瀏覽",
+        "Add Custom Language": "+ 新增自訂語言...",
+        "New Language Name": "新語言名稱",
+        "Language Name Placeholder": "例如：克林貢語",
+        "Create Language": "建立",
+        # Status messages
+        "Extracting text": "正在擷取文字",
+        "Removing duplicates": "正在移除重複",
+        "Splitting text": "正在拆分文字",
+        "Translating content": "正在翻譯內容",
+        "Translating": "翻譯中",
+        "Checking results": "正在檢查結果",
+        "Restoring structure": "正在還原結構",
+        "Generating output": "正在產生輸出",
+        "Translation completed": "翻譯完成",
+        "Total tokens used": "本次共消耗tokens",
+        "Preparing content": "正在準備內容",
+        "Continuing from": "繼續自",
+        "Retry": "重試"
     },
     # Japanese
     "ja": {
@@ -187,7 +247,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "スレッド数",
         "Stop Translation": "翻訳を停止",
         "Stopping": "停止中...",
-        "Glossary": "用語集"
+        "Glossary": "用語集",
+        "Add Glossary": "+ 用語集を追加...",
+        "Drop CSV file here": "CSVファイルをドロップまたはクリック",
+        "Add Custom Language": "+ カスタム言語を追加...",
+        "New Language Name": "新しい言語名",
+        "Language Name Placeholder": "例：クリンゴン語",
+        "Create Language": "作成",
+        # Status messages
+        "Extracting text": "テキストを抽出中",
+        "Removing duplicates": "重複を削除中",
+        "Splitting text": "テキストを分割中",
+        "Translating content": "コンテンツを翻訳中",
+        "Translating": "翻訳中",
+        "Checking results": "結果を確認中",
+        "Restoring structure": "構造を復元中",
+        "Generating output": "出力を生成中",
+        "Translation completed": "翻訳完了",
+        "Total tokens used": "合計トークン数",
+        "Preparing content": "コンテンツを準備中",
+        "Continuing from": "から継続",
+        "Retry": "再試行"
     },
     # Spanish
     "es": {
@@ -210,7 +290,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Número de hilos",
         "Stop Translation": "Detener traducción",
         "Stopping": "Deteniendo...",
-        "Glossary": "Glosario"
+        "Glossary": "Glosario",
+        "Add Glossary": "+ Agregar glosario...",
+        "Drop CSV file here": "Suelte el archivo CSV aquí o haga clic",
+        "Add Custom Language": "+ Agregar idioma...",
+        "New Language Name": "Nombre del nuevo idioma",
+        "Language Name Placeholder": "ej. Klingon",
+        "Create Language": "Crear",
+        # Status messages
+        "Extracting text": "Extrayendo texto",
+        "Removing duplicates": "Eliminando duplicados",
+        "Splitting text": "Dividiendo texto",
+        "Translating content": "Traduciendo contenido",
+        "Translating": "Traduciendo",
+        "Checking results": "Verificando resultados",
+        "Restoring structure": "Restaurando estructura",
+        "Generating output": "Generando salida",
+        "Translation completed": "Traducción completada",
+        "Total tokens used": "Tokens totales utilizados",
+        "Preparing content": "Preparando contenido",
+        "Continuing from": "Continuando desde",
+        "Retry": "Reintento"
     },
     # French
     "fr": {
@@ -233,7 +333,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Nombre de threads",
         "Stop Translation": "Arrêter la traduction",
         "Stopping": "Arrêt en cours...",
-        "Glossary": "Glossaire"
+        "Glossary": "Glossaire",
+        "Add Glossary": "+ Ajouter un glossaire...",
+        "Drop CSV file here": "Déposez le fichier CSV ici ou cliquez",
+        "Add Custom Language": "+ Ajouter une langue...",
+        "New Language Name": "Nom de la nouvelle langue",
+        "Language Name Placeholder": "ex. Klingon",
+        "Create Language": "Créer",
+        # Status messages
+        "Extracting text": "Extraction du texte",
+        "Removing duplicates": "Suppression des doublons",
+        "Splitting text": "Division du texte",
+        "Translating content": "Traduction du contenu",
+        "Translating": "Traduction",
+        "Checking results": "Vérification des résultats",
+        "Restoring structure": "Restauration de la structure",
+        "Generating output": "Génération de la sortie",
+        "Translation completed": "Traduction terminée",
+        "Total tokens used": "Tokens totaux utilisés",
+        "Preparing content": "Préparation du contenu",
+        "Continuing from": "Continuer depuis",
+        "Retry": "Réessayer"
     },
     # German
     "de": {
@@ -256,7 +376,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Thread-Anzahl",
         "Stop Translation": "Übersetzung stoppen",
         "Stopping": "Stoppe...",
-        "Glossary": "Glossar"
+        "Glossary": "Glossar",
+        "Add Glossary": "+ Glossar hinzufügen...",
+        "Drop CSV file here": "CSV-Datei hier ablegen oder klicken",
+        "Add Custom Language": "+ Sprache hinzufügen...",
+        "New Language Name": "Name der neuen Sprache",
+        "Language Name Placeholder": "z.B. Klingonisch",
+        "Create Language": "Erstellen",
+        # Status messages
+        "Extracting text": "Text extrahieren",
+        "Removing duplicates": "Duplikate entfernen",
+        "Splitting text": "Text aufteilen",
+        "Translating content": "Inhalt übersetzen",
+        "Translating": "Übersetze",
+        "Checking results": "Ergebnisse prüfen",
+        "Restoring structure": "Struktur wiederherstellen",
+        "Generating output": "Ausgabe generieren",
+        "Translation completed": "Übersetzung abgeschlossen",
+        "Total tokens used": "Verwendete Tokens gesamt",
+        "Preparing content": "Inhalt vorbereiten",
+        "Continuing from": "Fortsetzen von",
+        "Retry": "Wiederholen"
     },
     # Italian
     "it": {
@@ -279,7 +419,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Numero di thread",
         "Stop Translation": "Interrompi traduzione",
         "Stopping": "Interruzione in corso...",
-        "Glossary": "Glossario"
+        "Glossary": "Glossario",
+        "Add Glossary": "+ Aggiungi glossario...",
+        "Drop CSV file here": "Trascina il file CSV qui o clicca",
+        "Add Custom Language": "+ Aggiungi lingua...",
+        "New Language Name": "Nome della nuova lingua",
+        "Language Name Placeholder": "es. Klingon",
+        "Create Language": "Crea",
+        # Status messages
+        "Extracting text": "Estrazione del testo",
+        "Removing duplicates": "Rimozione dei duplicati",
+        "Splitting text": "Divisione del testo",
+        "Translating content": "Traduzione del contenuto",
+        "Translating": "Traduzione",
+        "Checking results": "Verifica dei risultati",
+        "Restoring structure": "Ripristino della struttura",
+        "Generating output": "Generazione dell'output",
+        "Translation completed": "Traduzione completata",
+        "Total tokens used": "Token totali utilizzati",
+        "Preparing content": "Preparazione del contenuto",
+        "Continuing from": "Continua da",
+        "Retry": "Riprova"
     },
     # Portuguese
     "pt": {
@@ -302,7 +462,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Número de threads",
         "Stop Translation": "Parar tradução",
         "Stopping": "Parando...",
-        "Glossary": "Glossário"
+        "Glossary": "Glossário",
+        "Add Glossary": "+ Adicionar glossário...",
+        "Drop CSV file here": "Solte o arquivo CSV aqui ou clique",
+        "Add Custom Language": "+ Adicionar idioma...",
+        "New Language Name": "Nome do novo idioma",
+        "Language Name Placeholder": "ex. Klingon",
+        "Create Language": "Criar",
+        # Status messages
+        "Extracting text": "Extraindo texto",
+        "Removing duplicates": "Removendo duplicatas",
+        "Splitting text": "Dividindo texto",
+        "Translating content": "Traduzindo conteúdo",
+        "Translating": "Traduzindo",
+        "Checking results": "Verificando resultados",
+        "Restoring structure": "Restaurando estrutura",
+        "Generating output": "Gerando saída",
+        "Translation completed": "Tradução concluída",
+        "Total tokens used": "Tokens totais utilizados",
+        "Preparing content": "Preparando conteúdo",
+        "Continuing from": "Continuando de",
+        "Retry": "Tentar novamente"
     },
     # Russian
     "ru": {
@@ -325,7 +505,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Количество потоков",
         "Stop Translation": "Остановить перевод",
         "Stopping": "Остановка...",
-        "Glossary": "Глоссарий"
+        "Glossary": "Глоссарий",
+        "Add Glossary": "+ Добавить глоссарий...",
+        "Drop CSV file here": "Перетащите CSV файл сюда или нажмите",
+        "Add Custom Language": "+ Добавить язык...",
+        "New Language Name": "Название нового языка",
+        "Language Name Placeholder": "напр. Клингонский",
+        "Create Language": "Создать",
+        # Status messages
+        "Extracting text": "Извлечение текста",
+        "Removing duplicates": "Удаление дубликатов",
+        "Splitting text": "Разделение текста",
+        "Translating content": "Перевод содержимого",
+        "Translating": "Перевод",
+        "Checking results": "Проверка результатов",
+        "Restoring structure": "Восстановление структуры",
+        "Generating output": "Генерация вывода",
+        "Translation completed": "Перевод завершён",
+        "Total tokens used": "Всего использовано токенов",
+        "Preparing content": "Подготовка содержимого",
+        "Continuing from": "Продолжить с",
+        "Retry": "Повторить"
     },
     # Korean
     "ko": {
@@ -348,7 +548,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "스레드 수",
         "Stop Translation": "번역 중지",
         "Stopping": "중지 중...",
-        "Glossary": "용어집"
+        "Glossary": "용어집",
+        "Add Glossary": "+ 용어집 추가...",
+        "Drop CSV file here": "CSV 파일을 여기에 놓거나 클릭",
+        "Add Custom Language": "+ 언어 추가...",
+        "New Language Name": "새 언어 이름",
+        "Language Name Placeholder": "예: 클링온어",
+        "Create Language": "생성",
+        # Status messages
+        "Extracting text": "텍스트 추출 중",
+        "Removing duplicates": "중복 제거 중",
+        "Splitting text": "텍스트 분할 중",
+        "Translating content": "콘텐츠 번역 중",
+        "Translating": "번역 중",
+        "Checking results": "결과 확인 중",
+        "Restoring structure": "구조 복원 중",
+        "Generating output": "출력 생성 중",
+        "Translation completed": "번역 완료",
+        "Total tokens used": "총 사용 토큰",
+        "Preparing content": "콘텐츠 준비 중",
+        "Continuing from": "에서 계속",
+        "Retry": "재시도"
     },
     # Thai
     "th": {
@@ -371,7 +591,27 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "จำนวนเธรด",
         "Stop Translation": "หยุดการแปล",
         "Stopping": "กำลังหยุด...",
-        "Glossary": "อภิธานศัพท์"
+        "Glossary": "อภิธานศัพท์",
+        "Add Glossary": "+ เพิ่มอภิธานศัพท์...",
+        "Drop CSV file here": "วางไฟล์ CSV ที่นี่หรือคลิก",
+        "Add Custom Language": "+ เพิ่มภาษา...",
+        "New Language Name": "ชื่อภาษาใหม่",
+        "Language Name Placeholder": "เช่น คลิงออน",
+        "Create Language": "สร้าง",
+        # Status messages
+        "Extracting text": "กำลังดึงข้อความ",
+        "Removing duplicates": "กำลังลบข้อความซ้ำ",
+        "Splitting text": "กำลังแบ่งข้อความ",
+        "Translating content": "กำลังแปลเนื้อหา",
+        "Translating": "กำลังแปล",
+        "Checking results": "กำลังตรวจสอบผลลัพธ์",
+        "Restoring structure": "กำลังกู้คืนโครงสร้าง",
+        "Generating output": "กำลังสร้างผลลัพธ์",
+        "Translation completed": "การแปลเสร็จสมบูรณ์",
+        "Total tokens used": "โทเค็นทั้งหมดที่ใช้",
+        "Preparing content": "กำลังเตรียมเนื้อหา",
+        "Continuing from": "ดำเนินการต่อจาก",
+        "Retry": "ลองใหม่"
     },
     # Vietnamese
     "vi": {
@@ -394,6 +634,26 @@ LABEL_TRANSLATIONS = {
         "Thread Count": "Số lượng luồng",
         "Stop Translation": "Dừng dịch",
         "Stopping": "Đang dừng...",
-        "Glossary": "Bảng thuật ngữ"
+        "Glossary": "Bảng thuật ngữ",
+        "Add Glossary": "+ Thêm bảng thuật ngữ...",
+        "Drop CSV file here": "Thả tệp CSV vào đây hoặc nhấp",
+        "Add Custom Language": "+ Thêm ngôn ngữ...",
+        "New Language Name": "Tên ngôn ngữ mới",
+        "Language Name Placeholder": "vd. Klingon",
+        "Create Language": "Tạo",
+        # Status messages
+        "Extracting text": "Đang trích xuất văn bản",
+        "Removing duplicates": "Đang xóa bản sao",
+        "Splitting text": "Đang chia văn bản",
+        "Translating content": "Đang dịch nội dung",
+        "Translating": "Đang dịch",
+        "Checking results": "Đang kiểm tra kết quả",
+        "Restoring structure": "Đang khôi phục cấu trúc",
+        "Generating output": "Đang tạo đầu ra",
+        "Translation completed": "Dịch hoàn tất",
+        "Total tokens used": "Tổng số token đã sử dụng",
+        "Preparing content": "Đang chuẩn bị nội dung",
+        "Continuing from": "Tiếp tục từ",
+        "Retry": "Thử lại"
     }
 }

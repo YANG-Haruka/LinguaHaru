@@ -36,15 +36,14 @@ TRANSLATOR_MODULES = {
     ".pptx": "translator.ppt_translator.PptTranslator",
     ".xlsx": "translator.excel_translator.ExcelTranslator",
     ".pdf": "translator.pdf_translator.PdfTranslator",
-    ".srt": "translator.subtile_translator.SubtitlesTranslator",
+    ".srt": "translator.subtitle_translator.SubtitlesTranslator",
     ".txt": "translator.txt_translator.TxtTranslator",
     ".md": "translator.md_translator.MdTranslator",
 }
 
-# Alternative translator modules
-EXCEL_TRANSLATOR_MODE_2 = "translator.excel_translator_test.ExcelTranslator"
-EXCEL_TRANSLATOR_BILINGUAL = "translator.excel_translator_bilingual.ExcelTranslator"
-WORD_TRANSLATOR_BILINGUAL = "translator.word_translator_bilingual.WordTranslator"
+# Note: Alternative translator modules have been merged into the main classes
+# Excel: use_xlwings and bilingual_mode parameters
+# Word: bilingual_mode parameter
 
 # Global task queue and counter
 task_queue = queue.Queue()
@@ -418,29 +417,33 @@ def get_default_languages():
     default_dst = config.get("default_dst_lang", "English")
     return default_src, default_dst
 
+def is_add_custom_option(value):
+    """Check if the selected value is an 'Add Custom Language' option in any language"""
+    # Get all translations of "Add Custom Language"
+    add_custom_translations = set()
+    for lang_code, labels in LABEL_TRANSLATIONS.items():
+        if "Add Custom Language" in labels:
+            add_custom_translations.add(labels["Add Custom Language"])
+    # Also add the English default
+    add_custom_translations.add("+ Add Custom...")
+    add_custom_translations.add("+ Add Custom…")
+    return value in add_custom_translations
+
 def on_src_language_change(src_lang):
     """Handler for source language dropdown change"""
-    CUSTOM_LABEL = "+ Add Custom…"
-    if src_lang != CUSTOM_LABEL:
+    if not is_add_custom_option(src_lang):
         update_language_preferences(src_lang=src_lang)
-    
-    # Return UI updates for custom language controls
-    if src_lang == CUSTOM_LABEL:
-        return gr.update(visible=True), gr.update(visible=True)
-    else:
-        return gr.update(visible=False), gr.update(visible=False)
+
+    # Return UI update for custom language row
+    return gr.update(visible=is_add_custom_option(src_lang))
 
 def on_dst_language_change(dst_lang):
     """Handler for target language dropdown change"""
-    CUSTOM_LABEL = "+ Add Custom…"
-    if dst_lang != CUSTOM_LABEL:
+    if not is_add_custom_option(dst_lang):
         update_language_preferences(dst_lang=dst_lang)
-    
-    # Return UI updates for custom language controls
-    if dst_lang == CUSTOM_LABEL:
-        return gr.update(visible=True), gr.update(visible=True)
-    else:
-        return gr.update(visible=False), gr.update(visible=False)
+
+    # Return UI update for custom language row
+    return gr.update(visible=is_add_custom_option(dst_lang))
 
 def find_available_port(start_port=9980, max_attempts=20):
     """Find available port starting from start_port"""
@@ -568,26 +571,26 @@ def get_default_glossary():
     return config.get("default_glossary", "Default")
 
 def upload_glossary_file(file_obj, session_lang):
-    """Handle glossary file upload"""
+    """Handle glossary file upload - auto-uploads when file is selected"""
     if not file_obj:
         labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-        return gr.update(), labels.get("No file selected", "No file selected."), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
-    
+        return gr.update(), labels.get("No file selected", "No file selected."), gr.update(visible=True)
+
     glossary_dir = "glossary"
     os.makedirs(glossary_dir, exist_ok=True)
-    
+
     try:
         # Get original filename
         original_name = os.path.basename(file_obj.name)
-        
+
         # Check if it's CSV file
         if not original_name.lower().endswith('.csv'):
             labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-            return gr.update(), labels.get("Only CSV files are allowed", "Only CSV files are allowed."), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
-        
+            return gr.update(), labels.get("Only CSV files are allowed", "Only CSV files are allowed."), gr.update(visible=True)
+
         # Copy file to glossary directory
         dest_path = os.path.join(glossary_dir, original_name)
-        
+
         # If file already exists, add number suffix
         counter = 1
         base_name, ext = os.path.splitext(original_name)
@@ -595,39 +598,52 @@ def upload_glossary_file(file_obj, session_lang):
             new_name = f"{base_name}_{counter}{ext}"
             dest_path = os.path.join(glossary_dir, new_name)
             counter += 1
-        
+
         # Copy file
         import shutil
         shutil.copy2(file_obj.name, dest_path)
-        
+
         # Update glossary choices
-        updated_choices = get_glossary_files() + ["+"]
+        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+        add_glossary_label = labels.get("Add Glossary", "+ Add Glossary...")
+        updated_choices = get_glossary_files() + [add_glossary_label]
         new_glossary_name = os.path.splitext(os.path.basename(dest_path))[0]
-        
+
         # Update config with new glossary
         update_glossary_selection(new_glossary_name)
-        
-        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+
         success_msg = labels.get("Glossary uploaded successfully", "Glossary uploaded successfully") + f": {new_glossary_name}"
-        
-        return gr.update(choices=updated_choices, value=new_glossary_name), success_msg, gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
-        
+
+        # Auto-select the new glossary and hide upload area
+        return gr.update(choices=updated_choices, value=new_glossary_name), success_msg, gr.update(visible=False)
+
     except Exception as e:
         app_logger.exception(f"Error uploading glossary file: {e}")
         labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
         error_msg = labels.get("Error uploading file", "Error uploading file") + f": {str(e)}"
-        return gr.update(), error_msg, gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        return gr.update(), error_msg, gr.update(visible=True)
+
+def is_add_glossary_option(value):
+    """Check if the selected value is an 'Add Glossary' option in any language"""
+    add_glossary_translations = set()
+    for lang_code, labels in LABEL_TRANSLATIONS.items():
+        if "Add Glossary" in labels:
+            add_glossary_translations.add(labels["Add Glossary"])
+    # Also add English defaults
+    add_glossary_translations.add("+ Add Glossary...")
+    add_glossary_translations.add("+")
+    return value in add_glossary_translations
 
 def on_glossary_change(glossary_value, session_lang):
     """Handle glossary selection change"""
-    if glossary_value == "+":
-        # Show file upload dialog
-        return gr.update(visible=True), gr.update(visible=True), gr.update(visible=True)
+    if is_add_glossary_option(glossary_value):
+        # Show file upload area
+        return gr.update(visible=True)
     else:
         # Update config and hide upload controls
         if glossary_value:
             update_glossary_selection(glossary_value)
-        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        return gr.update(visible=False)
     
 #-------------------------------------------------------------------------
 # Language and Localization Functions
@@ -706,16 +722,20 @@ def get_user_lang(request: gr.Request) -> str:
 def set_labels(session_lang: str):
     """Update UI labels according to chosen language"""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-    
+
     file_upload_label = "Upload Files"
     if "Upload Files" in labels:
         file_upload_label = labels["Upload Files"]
     elif "Upload File" in labels:
         file_upload_label = labels["Upload File"] + "s"
-    
+
+    # Update dropdown choices with translated "Add Custom Language" option
+    custom_label = labels.get("Add Custom Language", "+ Add Custom...")
+    new_choices = get_available_languages() + [custom_label]
+
     return {
-        src_lang: gr.update(label=labels["Source Language"]),
-        dst_lang: gr.update(label=labels["Target Language"]),
+        src_lang: gr.update(label=labels["Source Language"], choices=new_choices),
+        dst_lang: gr.update(label=labels["Target Language"], choices=new_choices),
         use_online_model: gr.update(label=labels["Use Online Model"]),
         lan_mode_checkbox: gr.update(label=labels["Local Network Mode (Restart to Apply)"]),
         model_choice: gr.update(label=labels["Models"]),
@@ -732,7 +752,11 @@ def set_labels(session_lang: str):
         excel_bilingual_checkbox: gr.update(label=labels.get("Excel Bilingual", "Excel Bilingual")),
         word_bilingual_checkbox: gr.update(label=labels.get("Word Bilingual", "Word Bilingual")),
         stop_button: gr.update(value=labels.get("Stop Translation", "Stop Translation")),
-        glossary_upload_button: gr.update(value=labels.get("Upload Glossary", "Upload Glossary"))
+        custom_lang_input: gr.update(
+            label=labels.get("New Language Name", "New language name"),
+            placeholder=labels.get("Language Name Placeholder", "e.g. Klingon")
+        ),
+        add_lang_button: gr.update(value=labels.get("Create Language", "Create"))
     }
 
 #-------------------------------------------------------------------------
@@ -769,6 +793,29 @@ def update_model_list_and_api_input(use_online):
             gr.update(value=thread_count)
         )
 
+def refresh_models(use_online):
+    """Refresh model list by re-scanning available models"""
+    global local_models, online_models
+
+    # Re-populate local models
+    local_models = populate_sum_model() or []
+
+    # Online models are typically static, but we can refresh them too
+    online_models = [
+        "gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4",
+        "gpt-3.5-turbo", "gpt-3.5-turbo-16k",
+        "deepseek-chat", "deepseek-reasoner",
+        "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219",
+        "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"
+    ]
+
+    app_logger.info(f"Models refreshed. Local: {len(local_models)}, Online: {len(online_models)}")
+
+    if use_online:
+        return gr.update(choices=online_models, value=online_models[0] if online_models else None)
+    else:
+        return gr.update(choices=local_models, value=local_models[0] if local_models else None)
+
 def init_ui(request: gr.Request):
     """Set user language and update labels on page load"""
     user_lang = get_user_lang(request)
@@ -791,9 +838,11 @@ def init_ui(request: gr.Request):
     show_thread_count = config.get("show_thread_count", True)
     show_glossary = config.get("show_glossary", True)
     
-    # Get default glossary
+    # Get default glossary with Add Glossary option
     default_glossary = get_default_glossary()
-    glossary_choices = get_glossary_files() + ["+"]
+    labels = LABEL_TRANSLATIONS.get(user_lang, LABEL_TRANSLATIONS["en"])
+    add_glossary_label = labels.get("Add Glossary", "+ Add Glossary...")
+    glossary_choices = get_glossary_files() + [add_glossary_label]
     
     # Update use_online_model checkbox based on default_online setting
     use_online_value = default_online_state
@@ -835,8 +884,7 @@ def init_ui(request: gr.Request):
         use_online_value,
         gr.update(choices=model_choices, value=model_value),  # model_choice update
         gr.update(choices=glossary_choices, value=default_glossary, visible=show_glossary),  # glossary_choice update with visibility
-        gr.update(visible=False),  # glossary_upload_file (initially hidden)
-        gr.update(visible=False)   # glossary_upload_button (initially hidden)
+        gr.update(visible=False)  # glossary_upload_row (initially hidden)
     ] + label_values
 
 def get_default_dropdown_value(saved_lang, dropdown_choices):
@@ -887,30 +935,31 @@ def update_continue_button(files):
 
 def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode=False, excel_bilingual_mode=False):
     """Dynamically import and return appropriate translator class for file extension"""
-    if file_extension.lower() == ".xlsx":
-        if excel_bilingual_mode:
-            module_path = EXCEL_TRANSLATOR_BILINGUAL
-        elif excel_mode_2:
-            module_path = EXCEL_TRANSLATOR_MODE_2
-        else:
-            module_path = TRANSLATOR_MODULES.get(file_extension.lower())
-    elif file_extension.lower() == ".docx" and word_bilingual_mode:
-        module_path = WORD_TRANSLATOR_BILINGUAL
-    else:
-        module_path = TRANSLATOR_MODULES.get(file_extension.lower())
-    
+    module_path = TRANSLATOR_MODULES.get(file_extension.lower())
+
     if not module_path:
         return None
-    
+
     try:
         # Split into module path and class name
         module_name, class_name = module_path.rsplit('.', 1)
-        
+
         # Import module
         module = import_module(module_name)
-        
+
         # Get class
         translator_class = getattr(module, class_name)
+
+        # For Excel and Word, return a partial class with mode parameters
+        if file_extension.lower() == ".xlsx":
+            # Excel: use_xlwings for mode_2 or bilingual, bilingual_mode for bilingual
+            return partial(translator_class,
+                          use_xlwings=excel_mode_2 or excel_bilingual_mode,
+                          bilingual_mode=excel_bilingual_mode)
+        elif file_extension.lower() == ".docx":
+            # Word: bilingual_mode for bilingual
+            return partial(translator_class, bilingual_mode=word_bilingual_mode)
+
         return translator_class
     except (ImportError, AttributeError) as e:
         app_logger.exception(f"Error importing translator for {file_extension}: {e}")
@@ -949,15 +998,15 @@ def translate_files(
         # Check if multiple files or single file
         if isinstance(files, list) and len(files) > 1:
             result = process_multiple_files(
-                files, model, src_lang_code, dst_lang_code, 
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback
+                files, model, src_lang_code, dst_lang_code,
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
             )
         else:
             # Handle single file case
             single_file = files[0] if isinstance(files, list) else files
             result = process_single_file(
-                single_file, model, src_lang_code, dst_lang_code, 
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback
+                single_file, model, src_lang_code, dst_lang_code,
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
             )
         
         return result[0], result[1], gr.update(value=stop_text, interactive=False)
@@ -968,8 +1017,8 @@ def translate_files(
         return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False)
 
 def process_single_file(
-    file, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback
+    file, model, src_lang_code, dst_lang_code,
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
 ):
     """Process single file for translation"""
     file_name = os.path.basename(file.name)
@@ -998,28 +1047,49 @@ def process_single_file(
         # Pass check_stop_requested function to translator with custom paths
         translator = translator_class(
             file.name, model, use_online, api_key,
-            src_lang_code, dst_lang_code, continue_mode, 
+            src_lang_code, dst_lang_code, continue_mode,
             max_token=max_token, max_retries=max_retries,
             thread_count=thread_count, glossary_path=glossary_path,
             temp_dir=temp_dir,      # Pass custom temp directory
-            result_dir=result_dir   # Pass custom result directory
+            result_dir=result_dir,  # Pass custom result directory
+            session_lang=session_lang  # Pass session language for i18n
         )
         
         # Add check_stop_requested as attribute
         translator.check_stop_requested = check_stop_requested
-        
-        progress_callback(0, desc="Initializing translation...")
+
+        # Get translated labels
+        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+
+        progress_callback(0, desc=f"{labels.get('Extracting text', 'Extracting text')}...")
 
         translated_file_path, missing_counts = translator.process(
             file_name, file_extension, progress_callback=progress_callback
         )
-        progress_callback(1, desc="Done!")
+
+        # Format completion message with tokens
+        completion_msg = labels.get("Translation completed", "Translation completed")
+        tokens_msg = labels.get("Total tokens used", "Total tokens used")
+
+        # Get total tokens from translator
+        total_tokens = getattr(translator, 'total_tokens', 0)
+        if total_tokens > 0:
+            # Format tokens with K suffix for thousands
+            if total_tokens >= 1000:
+                tokens_str = f"{total_tokens / 1000:.1f}K"
+            else:
+                tokens_str = str(total_tokens)
+            final_msg = f"{completion_msg} | {tokens_msg}: {tokens_str}"
+        else:
+            final_msg = completion_msg
+
+        progress_callback(1, desc=final_msg)
 
         if missing_counts:
             msg = f"Warning: Missing segments for keys: {sorted(missing_counts)}"
             return gr.update(value=translated_file_path, visible=True), msg
 
-        return gr.update(value=translated_file_path, visible=True), "Translation complete."
+        return gr.update(value=translated_file_path, visible=True), final_msg
     
     except StopTranslationException:
         app_logger.info("Translation stopped by user")
@@ -1031,8 +1101,8 @@ def process_single_file(
         return gr.update(value=None, visible=False), f"Error: {str(e)}"
     
 def process_multiple_files(
-    files, model, src_lang_code, dst_lang_code, 
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback
+    files, model, src_lang_code, dst_lang_code,
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
 ):
     """Process multiple files and return zip archive"""
     # Get custom paths from config
@@ -1059,6 +1129,7 @@ def process_multiple_files(
         # Create zip file
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             total_files = len(valid_files)
+            total_tokens = 0  # Track total tokens across all files
             
             for i, (file_obj, rel_path) in enumerate(valid_files):
                 # Create new log file for current file being processed
@@ -1085,7 +1156,8 @@ def process_multiple_files(
                         src_lang_code, dst_lang_code, continue_mode, max_token=max_token, max_retries=max_retries,
                         thread_count=thread_count, glossary_path=glossary_path,
                         temp_dir=temp_dir,      # Pass custom temp directory
-                        result_dir=result_dir   # Pass custom result directory
+                        result_dir=result_dir,  # Pass custom result directory
+                        session_lang=session_lang  # Pass session language for i18n
                     )
                     
                     # Create output directory
@@ -1109,12 +1181,30 @@ def process_multiple_files(
                         translated_file_path, 
                         os.path.basename(translated_file_path)
                     )
+                    # Accumulate total tokens
+                    total_tokens += getattr(translator, 'total_tokens', 0)
+
                 except Exception as e:
                     app_logger.exception(f"Error processing file {rel_path}: {e}")
                     # Continue with next file
-        
-        progress_callback(1, desc="Done!")
-        return gr.update(value=zip_path, visible=True), f"Translation completed. {total_files} files processed."
+
+        # Get translated labels
+        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+        completion_msg = labels.get("Translation completed", "Translation completed")
+        tokens_label = labels.get("Total tokens used", "Total tokens used")
+
+        # Format tokens
+        if total_tokens > 0:
+            if total_tokens >= 1000:
+                tokens_str = f"{total_tokens / 1000:.1f}K"
+            else:
+                tokens_str = str(total_tokens)
+            final_msg = f"{completion_msg} ({total_files} files) | {tokens_label}: {tokens_str}"
+        else:
+            final_msg = f"{completion_msg} ({total_files} files)"
+
+        progress_callback(1, desc=final_msg)
+        return gr.update(value=zip_path, visible=True), final_msg
     
     except Exception as e:
         app_logger.exception("Error processing files")
@@ -1202,9 +1292,14 @@ with gr.Blocks(
 
     default_src_lang, default_dst_lang = get_default_languages()
 
+    # Create get_label function for i18n (uses English for initial render, updated on page load)
+    initial_labels = LABEL_TRANSLATIONS["en"]
+    def get_label(key):
+        return initial_labels.get(key, key)
+
     # Create language selection section
-    src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button = create_language_section(
-        default_src_lang, default_dst_lang
+    src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button, custom_lang_row = create_language_section(
+        default_src_lang, default_dst_lang, get_label
     )
 
     # Create settings section
@@ -1212,9 +1307,9 @@ with gr.Blocks(
     thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox) = create_settings_section(config)
 
     # Create model and glossary section
-    (model_choice, glossary_choice, glossary_upload_row, 
-     glossary_upload_file, glossary_upload_button) = create_model_glossary_section(
-        config, local_models, online_models, get_glossary_files, get_default_glossary
+    (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
+     glossary_upload_file) = create_model_glossary_section(
+        config, local_models, online_models, get_glossary_files, get_default_glossary, get_label
     )
 
     # Create main interface
@@ -1227,7 +1322,14 @@ with gr.Blocks(
         inputs=use_online_model,
         outputs=[model_choice, api_key_input, thread_count_slider]
     )
-    
+
+    # Model refresh button
+    model_refresh_btn.click(
+        refresh_models,
+        inputs=use_online_model,
+        outputs=model_choice
+    )
+
     # Add LAN mode
     lan_mode_checkbox.change(
         update_lan_mode,
@@ -1285,13 +1387,14 @@ with gr.Blocks(
         glossary_choice.change(
             on_glossary_change,
             inputs=[glossary_choice, session_lang],
-            outputs=[glossary_upload_row, glossary_upload_file, glossary_upload_button]
+            outputs=[glossary_upload_row]
         )
 
-        glossary_upload_button.click(
+        # Auto-upload when file is selected (no button click needed)
+        glossary_upload_file.change(
             upload_glossary_file,
             inputs=[glossary_upload_file, session_lang],
-            outputs=[glossary_choice, status_message, glossary_upload_row, glossary_upload_file, glossary_upload_button]
+            outputs=[glossary_choice, status_message, glossary_upload_row]
         )
 
     # Update event handlers for translate button
@@ -1356,34 +1459,31 @@ with gr.Blocks(
         # Return swapped values
         return dst_lang, src_lang
     
-    def on_dropdown_change(val):
-        if val == CUSTOM_LABEL:
-            return gr.update(visible=True), gr.update(visible=True)
-        else:
-            return gr.update(visible=False), gr.update(visible=False)
-
-    # Replace these event handlers:
-    src_lang.change(on_src_language_change, inputs=src_lang, outputs=[custom_lang_input, add_lang_button])
-    dst_lang.change(on_dst_language_change, inputs=dst_lang, outputs=[custom_lang_input, add_lang_button])
+    # Language change event handlers - show/hide custom language row
+    src_lang.change(on_src_language_change, inputs=src_lang, outputs=[custom_lang_row])
+    dst_lang.change(on_dst_language_change, inputs=dst_lang, outputs=[custom_lang_row])
     swap_button.click(swap_languages, inputs=[src_lang, dst_lang], outputs=[src_lang, dst_lang])
 
     # Create new language
-    def on_add_new(lang_name):
+    def on_add_new(lang_name, session_lang):
         success, msg = add_custom_language(lang_name)
-        new_choices = get_available_languages() + [CUSTOM_LABEL]
+        # Get translated "Add Custom Language" label for current session
+        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+        custom_label = labels.get("Add Custom Language", "+ Add Custom...")
+        new_choices = get_available_languages() + [custom_label]
         # Pick newly created language as selected value
-        new_val = lang_name if success else CUSTOM_LABEL
+        new_val = lang_name if success else new_choices[0]
         return (
             gr.update(choices=new_choices, value=new_val),
             gr.update(choices=new_choices, value=new_val),
-            gr.update(visible=False),
-            gr.update(visible=False)
+            gr.update(value=""),  # Clear input
+            gr.update(visible=False)  # Hide custom lang row
         )
 
     add_lang_button.click(
         on_add_new,
-        inputs=[custom_lang_input],
-        outputs=[src_lang, dst_lang, custom_lang_input, add_lang_button]
+        inputs=[custom_lang_input, session_lang],
+        outputs=[src_lang, dst_lang, custom_lang_input, custom_lang_row]
     )
     theme_toggle_btn.click(
         fn=None,
@@ -1435,11 +1535,12 @@ with gr.Blocks(
         outputs=[
             session_lang, lan_mode_state, default_online_state, max_token_state, max_retries_state,
             excel_mode_2_state, excel_bilingual_mode_state, word_bilingual_mode_state, thread_count_state,
-            use_online_model, model_choice, glossary_choice, glossary_upload_file, glossary_upload_button,
+            use_online_model, model_choice, glossary_choice, glossary_upload_row,
             src_lang, dst_lang, use_online_model, lan_mode_checkbox,
             model_choice, glossary_choice, max_retries_slider, thread_count_slider,
             api_key_input, file_input, output_file, status_message, translate_button,
-            continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, stop_button, glossary_upload_button
+            continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, stop_button,
+            custom_lang_input, add_lang_button
         ]
     )
 

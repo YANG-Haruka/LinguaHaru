@@ -16,5 +16,6 @@ pymupdf<1.25.3
 opencv-python-headless
 onnx
 onnxruntime
+openai
 tqdm
 tenacity

@@ -10,10 +10,11 @@ from .calculation_tokens import num_tokens_from_string
 from llmWrapper.llm_wrapper import translate_text, interruptible_sleep
 from textProcessing.text_separator import (
     stream_segment_json, split_text_by_token_limit,
-    deduplicate_translation_content, create_deduped_json_for_translation, 
+    deduplicate_translation_content, create_deduped_json_for_translation,
     restore_translations_from_deduped
 )
 from config.load_prompt import load_prompt
+from config.languages_config import LABEL_TRANSLATIONS
 from .translation_checker import process_translation_results, clean_json, check_and_sort_translations
 
 # File path constants
@@ -26,7 +27,7 @@ RESULT_JSON_PATH = "dst_translated.json"
 MAX_PREVIOUS_TOKENS = 128
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir, session_lang="en"):
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
@@ -44,6 +45,12 @@ class DocumentTranslator:
         self.last_ui_update_time = 0
         self.temp_dir = temp_dir
         self.result_dir = result_dir
+        self.session_lang = session_lang
+
+        # Token usage tracking
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_tokens = 0
 
         # Setup file paths
         filename = os.path.splitext(os.path.basename(input_file_path))[0]
@@ -71,6 +78,17 @@ class DocumentTranslator:
         if self.check_stop_requested and callable(self.check_stop_requested):
             self.check_stop_requested()
 
+    def _get_status_message(self, key, **kwargs):
+        """Get translated status message"""
+        labels = LABEL_TRANSLATIONS.get(self.session_lang, LABEL_TRANSLATIONS.get("en", {}))
+        message = labels.get(key, key)
+        if kwargs:
+            try:
+                return message.format(**kwargs)
+            except (KeyError, ValueError):
+                return message
+        return message
+
     def extract_content_to_json(self):
         """Extract document content to JSON - to be implemented by subclass"""
         raise NotImplementedError
@@ -79,15 +97,37 @@ class DocumentTranslator:
         """Write translated JSON to file - to be implemented by subclass"""
         raise NotImplementedError
 
+    def _add_token_usage(self, token_usage):
+        """Add token usage to running totals (thread-safe)"""
+        if token_usage:
+            with self.lock:
+                self.total_prompt_tokens += token_usage.get('prompt_tokens', 0)
+                self.total_completion_tokens += token_usage.get('completion_tokens', 0)
+                self.total_tokens += token_usage.get('total_tokens', 0)
+
+    def _format_tokens(self, tokens):
+        """Format token count with K suffix for thousands"""
+        if tokens >= 1000:
+            return f"{tokens / 1000:.1f}K"
+        return str(tokens)
+
+    def _get_token_display(self):
+        """Get formatted token display string"""
+        if self.total_tokens > 0:
+            return f" | Tokens: {self._format_tokens(self.total_tokens)}"
+        return ""
+
     def update_ui_safely(self, progress_callback, progress, desc):
         """Update UI with rate limiting"""
         self.check_for_stop()
-        
+
         current_time = time.time()
         if current_time - self.last_ui_update_time >= 0.1:
             try:
                 if progress_callback:
-                    progress_callback(progress, desc=desc)
+                    # Append token count to description
+                    display_desc = f"{desc}{self._get_token_display()}"
+                    progress_callback(progress, desc=display_desc)
                     self.last_ui_update_time = current_time
             except Exception as e:
                 app_logger.warning(f"Error updating UI: {e}")
@@ -171,14 +211,17 @@ class DocumentTranslator:
                 try:
                     with self.lock:
                         current_previous = self.previous_content
-                    
+
                     # Translate with stop callback
-                    translated_text, success = translate_text(
+                    translated_text, success, token_usage = translate_text(
                         segment, current_previous, self.model, self.use_online, self.api_key,
-                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, 
+                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
                         current_glossary_terms, check_stop_callback=self.check_for_stop
                     )
-                    
+
+                    # Track token usage
+                    self._add_token_usage(token_usage)
+
                     # Handle failure
                     if not success:
                         elapsed_time = time.time() - start_time
@@ -250,18 +293,18 @@ class DocumentTranslator:
                 futures.append(future)
             
             if not self.continue_mode:
-                self.update_ui_safely(progress_callback, 0.0, f"Translating...")
-            
+                self.update_ui_safely(progress_callback, 0.0, f"{self._get_status_message('Translating')}...")
+
             current_batch_completed = 0
-            
+
             for future in as_completed(futures):
                 try:
                     future.result()
                 except Exception as e:
                     app_logger.error(f"Segment translation error: {e}")
-                
+
                 current_batch_completed += 1
-                
+
                 # Update progress
                 if self.continue_mode:
                     current_batch_progress = current_batch_completed / total_current_batch
@@ -269,14 +312,14 @@ class DocumentTranslator:
                     overall_progress = (1.0 - remaining_ratio) + batch_contribution
                     app_logger.info(f"Progress: {overall_progress:.2%}")
                     self.update_ui_safely(
-                        progress_callback, 
-                        overall_progress, 
-                        f"Translating..."
+                        progress_callback,
+                        overall_progress,
+                        f"{self._get_status_message('Translating')}..."
                     )
                 else:
                     p = current_batch_completed / total_current_batch
                     app_logger.info(f"Progress: {p:.2%}")
-                    self.update_ui_safely(progress_callback, p, f"Translating...")
+                    self.update_ui_safely(progress_callback, p, f"{self._get_status_message('Translating')}...")
 
     def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
         self.check_for_stop()
@@ -369,8 +412,8 @@ class DocumentTranslator:
                 json.dump([], f, ensure_ascii=False, indent=4)
         
         total = len(all_failed_segments)
-        retry_desc = "Final translation attempt" if last_try else "Retrying translation"
-        app_logger.info(f"{retry_desc} {total} segments using {self.num_threads} threads...")
+        retry_desc = f"{self._get_status_message('Retry')}"
+        app_logger.info(f"Retrying {total} segments using {self.num_threads} threads...")
 
         def process_failed_segment(segment_data, last_try=False):
             """Process failed segment with retry logic"""
@@ -390,28 +433,31 @@ class DocumentTranslator:
                 try:
                     with self.lock:
                         current_previous = self.previous_content
-                    
+
                     # Translate
-                    translated_text, success = translate_text(
+                    translated_text, success, token_usage = translate_text(
                         segment, current_previous, self.model, self.use_online, self.api_key,
-                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt, 
+                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
                         current_glossary_terms, check_stop_callback=self.check_for_stop
                     )
+
+                    # Track token usage
+                    self._add_token_usage(token_usage)
 
                     # Handle failure
                     if not success:
                         elapsed_time = time.time() - start_time
                         remaining_time = max_retry_time - elapsed_time
-                        
+
                         if remaining_time <= 0:
                             app_logger.error(f"Failed segment translation failed after 1 hour")
                             self._mark_segment_as_failed(segment)
                             return None
-                        
+
                         app_logger.warning(f"Failed segment translation failed (attempt {retry_count})")
                         interruptible_sleep(min(1, remaining_time), self.check_for_stop)
                         continue
-                    
+
                     # Handle empty result
                     if not translated_text:
                         empty_result_count += 1
@@ -628,35 +674,35 @@ class DocumentTranslator:
             # Check deduped files
             if not os.path.exists(self.src_deduped_json_path):
                 app_logger.info("Deduped files not found, deduplicating...")
-                self.update_ui_safely(progress_callback, 0, "Preparing deduplicated content...")
-                
+                self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Preparing content')}...")
+
                 deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(self.src_json_path)
                 create_deduped_json_for_translation(deduped_data, self.src_deduped_json_path)
             else:
                 # Reconstruct mapping
                 deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(self.src_json_path)
-            
+
             # Check split files
             if not os.path.exists(self.src_split_json_path):
                 app_logger.info("Split files not found, splitting content...")
-                self.update_ui_safely(progress_callback, 0, "Splitting content...")
+                self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Splitting text')}...")
                 split_text_by_token_limit(self.src_deduped_json_path)
-            
+
             # Create result file if missing
             if not os.path.exists(self.result_split_json_path):
                 with open(self.result_split_json_path, 'w', encoding='utf-8') as f:
                     json.dump([], f, ensure_ascii=False, indent=4)
-            
+
             # Calculate progress
             try:
                 with open(self.src_split_json_path, 'r', encoding='utf-8') as f:
                     total_segments = len(json.load(f))
                 with open(self.result_split_json_path, 'r', encoding='utf-8') as f:
                     completed_segments = len(json.load(f))
-                
+
                 if total_segments > 0:
                     progress = completed_segments / total_segments
-                    self.update_ui_safely(progress_callback, progress, f"Continuing from {progress:.1%}...")
+                    self.update_ui_safely(progress_callback, progress, f"{self._get_status_message('Continuing from')} {progress:.1%}...")
                     app_logger.info(f"Continue mode: {completed_segments}/{total_segments} segments ({progress:.1%})")
             except Exception as e:
                 app_logger.warning(f"Could not calculate progress: {e}")
@@ -665,21 +711,21 @@ class DocumentTranslator:
             self._clear_temp_folder()
 
             app_logger.info("Extracting content...")
-            self.update_ui_safely(progress_callback, 0, "Extracting text...")
+            self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Extracting text')}...")
             self.extract_content_to_json(progress_callback)
 
             app_logger.info("Deduplicating content...")
-            self.update_ui_safely(progress_callback, 0, "Removing duplicates...")
+            self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Removing duplicates')}...")
             deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(self.src_json_path)
             create_deduped_json_for_translation(deduped_data, self.src_deduped_json_path)
-            
+
             app_logger.info("Splitting content...")
-            self.update_ui_safely(progress_callback, 0, "Splitting text...")
+            self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Splitting text')}...")
             split_text_by_token_limit(self.src_deduped_json_path)
-        
+
         # Main translation
         app_logger.info("Starting translation...")
-        self.update_ui_safely(progress_callback, 0, "Translating content...")
+        self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Translating content')}...")
         self.translate_content(progress_callback)
 
         # Retry failed translations
@@ -695,11 +741,11 @@ class DocumentTranslator:
             retry_count += 1
 
         # Post-processing
-        self.update_ui_safely(progress_callback, 0, "Checking results...")
+        self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Checking results')}...")
         missing_counts = check_and_sort_translations(self.src_split_json_path, self.result_split_json_path)
 
         # Restore to original structure
-        self.update_ui_safely(progress_callback, 0, "Restoring structure...")
+        self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Restoring structure')}...")
         app_logger.info("Restoring translations...")
         restore_translations_from_deduped(
             self.result_split_json_path,
@@ -709,14 +755,20 @@ class DocumentTranslator:
 
         # Write output
         app_logger.info("Writing output...")
-        self.update_ui_safely(progress_callback, 0, "Generating output...")
+        self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Generating output')}...")
         self.write_translated_json_to_file(self.src_json_path, self.result_json_path, progress_callback)
 
-        # Complete
-        self.update_ui_safely(progress_callback, 1.0, "Translation completed")
+        # Complete - show total tokens used
+        completion_msg = self._get_status_message('Translation completed')
+        tokens_msg = self._get_status_message('Total tokens used')
+        if self.total_tokens > 0:
+            completion_msg = f"{completion_msg} | {tokens_msg}: {self._format_tokens(self.total_tokens)}"
+        self.update_ui_safely(progress_callback, 1.0, completion_msg)
 
         # Return output path
         result_folder = self.result_dir
         base_name = os.path.basename(file_name)
-        final_output_path = os.path.join(result_folder, f"{base_name}_translated{file_extension}")
+        # Use source_lang2target_lang format (e.g., zh2ja)
+        lang_suffix = f"{self.src_lang}2{self.dst_lang}"
+        final_output_path = os.path.join(result_folder, f"{base_name}_{lang_suffix}{file_extension}")
         return final_output_path, missing_counts

@@ -9,6 +9,8 @@ log/
 build/
 dist/
 models/tiktoken/
+.claude/
+.vscode/
 
 *.xlsx
 *.7z
