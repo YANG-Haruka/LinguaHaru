@@ -526,8 +526,13 @@ def write_translated_result(
     doc_zh.subset_fonts(fallback=True)
     doc_en.subset_fonts(fallback=True)
 
+    # Use source_lang2target_lang format if available, otherwise fallback to _translated
+    if lang_in and lang_out:
+        lang_suffix = f"{lang_in}2{lang_out}"
+    else:
+        lang_suffix = "translated"
     output_file = os.path.join(
-            output_dir,f"{os.path.splitext(os.path.basename(input_file))[0]}_translated{os.path.splitext(input_file)[1]}",
+            output_dir,f"{os.path.splitext(os.path.basename(input_file))[0]}_{lang_suffix}{os.path.splitext(input_file)[1]}",
         )
 
     with open(output_file, "wb") as f:

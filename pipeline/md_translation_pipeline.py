@@ -330,10 +330,14 @@ def extract_md_content_to_json(file_path, temp_dir):
     app_logger.info(f"Markdown content extracted to: {json_path}, total {count} lines to translate")
     return json_path
 
-def write_translated_content_to_md(file_path, original_json_path, translated_json_path, temp_dir, result_dir):
+def write_translated_content_to_md(file_path, original_json_path, translated_json_path, temp_dir, result_dir, src_lang=None, dst_lang=None):
     """
     Write translated content to new Markdown file while preserving HTML structure
     Enhanced to handle complex HTML tables and base64 images
+
+    Args:
+        src_lang: Source language code (e.g., 'zh')
+        dst_lang: Target language code (e.g., 'ja')
     """
     # Get file paths
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -425,7 +429,12 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
     # Create output file
     result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)
-    result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_translated.md")
+    # Use source_lang2target_lang format if available, otherwise fallback to _translated
+    if src_lang and dst_lang:
+        lang_suffix = f"{src_lang}2{dst_lang}"
+    else:
+        lang_suffix = "translated"
+    result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_{lang_suffix}.md")
     
     # Write final content
     with open(result_path, "w", encoding="utf-8") as result_file:

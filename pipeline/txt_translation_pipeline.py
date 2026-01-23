@@ -145,20 +145,24 @@ def extract_txt_content_to_json(file_path, temp_dir):
     app_logger.info(f"Original encoding: {used_encoding}, converted to UTF-8")
     return json_path
 
-def write_translated_content_to_txt(file_path, original_json_path, translated_json_path, temp_dir, result_dir):
+def write_translated_content_to_txt(file_path, original_json_path, translated_json_path, temp_dir, result_dir, src_lang=None, dst_lang=None):
     """
     Write translated content back to a new TXT file, maintaining original paragraph format
     Output file is always saved in UTF-8 encoding
+
+    Args:
+        src_lang: Source language code (e.g., 'zh')
+        dst_lang: Target language code (e.g., 'ja')
     """
     # Load all content data
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
     all_content_path = os.path.join(temp_folder, "all_content.json")
-    
+
     try:
         with open(all_content_path, "r", encoding="utf-8") as all_file:
             all_content_data = json.load(all_file)
-            
+
         with open(translated_json_path, "r", encoding="utf-8") as translated_file:
             translated_data = json.load(translated_file)
     except FileNotFoundError as e:
@@ -167,14 +171,19 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
     except json.JSONDecodeError as e:
         app_logger.error(f"Error parsing JSON file: {e}")
         raise
-    
+
     # Create translation map
     translation_map = {item["count_src"]: item["translated"] for item in translated_data}
-    
+
     # Create output file
     result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)
-    result_path = os.path.join(result_folder, f"{filename}_translated.txt")
+    # Use source_lang2target_lang format if available, otherwise fallback to _translated
+    if src_lang and dst_lang:
+        lang_suffix = f"{src_lang}2{dst_lang}"
+    else:
+        lang_suffix = "translated"
+    result_path = os.path.join(result_folder, f"{filename}_{lang_suffix}.txt")
     
     # Write content to new file (always in UTF-8)
     try:

@@ -85,16 +85,17 @@ def fix_json_format(text):
 def translate_online(api_key, messages, model):
     """
     Perform translation using an online API with config from a JSON file.
-    
+
     Returns:
-        tuple: (translation_result, success_status)
+        tuple: (translation_result, success_status, token_usage)
             - translation_result: Translated text or error message
             - success_status: True if API call successful, False if network/auth error
+            - token_usage: dict with 'prompt_tokens', 'completion_tokens', 'total_tokens' or None
     """
     # Load model config
     model_config = load_model_config(model)
     if not model_config:
-        return "Model configuration not found", False
+        return "Model configuration not found", False, None
         
     # Get API settings from the config
     base_url = model_config.get("base_url")
@@ -107,7 +108,7 @@ def translate_online(api_key, messages, model):
 
     if not base_url or not api_model:
         app_logger.error(f"Invalid model config: {model}")
-        return "Invalid model configuration", False
+        return "Invalid model configuration", False, None
 
     try:
         # Initialize API client
@@ -151,50 +152,59 @@ def translate_online(api_key, messages, model):
     except Exception as e:
         error_msg = str(e).lower()
         app_logger.error(f"API call failed: {e}")
-        
+
         # Check for specific error types
         if "connection" in error_msg or "network" in error_msg:
-            return f"Network error: {str(e)}", False
+            return f"Network error: {str(e)}", False, None
         elif "unauthorized" in error_msg or "401" in error_msg:
-            return "Authentication failed - check API key", False
+            return "Authentication failed - check API key", False, None
         elif "insufficient" in error_msg or "quota" in error_msg:
-            return "Insufficient balance or quota exceeded", False
+            return "Insufficient balance or quota exceeded", False, None
         elif "rate limit" in error_msg or "429" in error_msg:
-            return "Rate limit exceeded", False
+            return "Rate limit exceeded", False, None
         else:
-            return f"API request failed: {str(e)}", False
+            return f"API request failed: {str(e)}", False, None
 
     try:
+        # Extract token usage from response
+        token_usage = None
+        if response and hasattr(response, 'usage') and response.usage:
+            token_usage = {
+                'prompt_tokens': getattr(response.usage, 'prompt_tokens', 0) or 0,
+                'completion_tokens': getattr(response.usage, 'completion_tokens', 0) or 0,
+                'total_tokens': getattr(response.usage, 'total_tokens', 0) or 0
+            }
+            app_logger.debug(f"Token usage: {token_usage}")
+
         if response and response.choices:
             app_logger.debug(f"API Response: {response}")
             translated_text = response.choices[0].message.content
-            
+
             if not translated_text:
                 app_logger.warning("Empty content in API response")
-                return "Empty response from API", True  # API call successful but empty response
-            
+                return "Empty response from API", True, token_usage
+
             # Remove unnecessary system content
             clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
-            
+
             # Fix JSON format for online API responses
             fixed_json = fix_json_format(clean_translated_text)
-            
+
             if fixed_json is None:
                 app_logger.error("Failed to parse API response format")
-                # Return the raw response with success=True since API call succeeded
-                return clean_translated_text, True
-                
-            return fixed_json, True
+                return clean_translated_text, True, token_usage
+
+            return fixed_json, True, token_usage
         else:
             app_logger.warning(f"Invalid response structure from {api_model}")
-            return "Invalid API response structure", True  # API call successful but bad structure
-            
+            return "Invalid API response structure", True, token_usage
+
     except Exception as e:
         app_logger.error(f"Response parsing failed: {e}")
         # Return raw response if available, otherwise error message
         if response:
             try:
-                return str(response.choices[0].message.content), True
+                return str(response.choices[0].message.content), True, None
             except:
                 pass
-        return f"Error parsing API response: {str(e)}", True  # API call succeeded but parsing failed
+        return f"Error parsing API response: {str(e)}", True, None

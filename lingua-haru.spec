@@ -14,13 +14,10 @@ tiktoken_collect = collect_all("tiktoken")
 
 translator_modules = [
     "translator.excel_translator",
-    "translator.excel_translator_test",
-    "translator.excel_translator_bilingual",
-    "translator.word_translator", 
-    "translator.word_translator_bilingual",
+    "translator.word_translator",
     "translator.ppt_translator",
     "translator.pdf_translator",
-    "translator.subtile_translator",
+    "translator.subtitle_translator",
     "translator.txt_translator",
     "translator.md_translator",
 ]

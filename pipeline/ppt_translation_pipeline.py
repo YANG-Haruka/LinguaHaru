@@ -458,9 +458,13 @@ def _extract_run_style(text_run, namespaces: Dict) -> Dict:
     
     return style_info
 
-def write_translated_content_to_ppt(file_path: str, original_json_path: str, translated_json_path: str, temp_dir, result_dir) -> str:
+def write_translated_content_to_ppt(file_path: str, original_json_path: str, translated_json_path: str, temp_dir, result_dir, src_lang=None, dst_lang=None) -> str:
     """
     Write translated content back to the PowerPoint file while preserving format and structure.
+
+    Args:
+        src_lang: Source language code (e.g., 'zh')
+        dst_lang: Target language code (e.g., 'ja')
     """
     try:
         # Load original and translated JSON
@@ -480,7 +484,12 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
     filename = os.path.splitext(os.path.basename(file_path))[0]
     result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)
-    result_path = os.path.join(result_folder, f"{filename}_translated.pptx")
+    # Use source_lang2target_lang format if available, otherwise fallback to _translated
+    if src_lang and dst_lang:
+        lang_suffix = f"{src_lang}2{dst_lang}"
+    else:
+        lang_suffix = "translated"
+    result_path = os.path.join(result_folder, f"{filename}_{lang_suffix}.pptx")
     
     # Remove existing file if it exists
     if os.path.exists(result_path):

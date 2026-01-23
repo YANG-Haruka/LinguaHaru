@@ -107,16 +107,17 @@ _detect_lm_studio_port()
 def translate_offline(messages, model):
     """
     Send messages to a local LLM service for translation.
-    
+
     Returns:
-        tuple: (translation_result, success_status)
+        tuple: (translation_result, success_status, token_usage)
             - translation_result: Translated text or error message
             - success_status: True if API call successful, False if service unavailable
+            - token_usage: dict with 'prompt_tokens', 'completion_tokens', 'total_tokens' or None
     """
     try:
         # Check if model is None or empty
         if not model:
-            return "Error: No model specified", False
+            return "Error: No model specified", False, None
             
         # Strip the prefix from the model name if present
         if model.startswith("(Ollama)") or model.startswith("(LM Studio)"):
@@ -163,7 +164,7 @@ def translate_offline(messages, model):
             # Check if Ollama is running
             if not is_ollama_running():
                 app_logger.error("Ollama service is not running")
-                return "Ollama service is not available", False
+                return "Ollama service is not available", False, None
                 
         elif service.lower() == "lm_studio":
             url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/v1/chat/completions"
@@ -179,10 +180,10 @@ def translate_offline(messages, model):
             # Check if LM Studio is running
             if not is_lm_studio_running():
                 app_logger.error("LM Studio service is not running")
-                return "LM Studio service is not available", False
+                return "LM Studio service is not available", False, None
         else:
             app_logger.error(f"Unknown service: {service}")
-            return f"Unknown service: {service}", False
+            return f"Unknown service: {service}", False, None
             
         app_logger.debug(f"Sending request to {url} with payload: {payload}")
         
@@ -194,61 +195,82 @@ def translate_offline(messages, model):
         # Extract the translated content based on service
         if not response_text:
             app_logger.warning(f"Empty response from {service}")
-            return f"Empty response from {service}", True  # API call successful but empty
-        
+            return f"Empty response from {service}", True, None
+
         try:
             app_logger.debug(f"API Response: {response_text}")
             response_json = json.loads(response_text)
-            
+
+            # Extract token usage based on service
+            token_usage = None
             if service.lower() == "ollama":
+                # Ollama uses prompt_eval_count and eval_count
+                prompt_tokens = response_json.get("prompt_eval_count", 0) or 0
+                completion_tokens = response_json.get("eval_count", 0) or 0
+                token_usage = {
+                    'prompt_tokens': prompt_tokens,
+                    'completion_tokens': completion_tokens,
+                    'total_tokens': prompt_tokens + completion_tokens
+                }
                 if "message" not in response_json or "content" not in response_json["message"]:
-                    return "Invalid Ollama response format", True
+                    return "Invalid Ollama response format", True, token_usage
                 translated_text = response_json["message"]["content"]
             elif service.lower() == "lm_studio":
+                # LM Studio uses OpenAI-compatible format
+                usage = response_json.get("usage", {})
+                if usage:
+                    token_usage = {
+                        'prompt_tokens': usage.get('prompt_tokens', 0) or 0,
+                        'completion_tokens': usage.get('completion_tokens', 0) or 0,
+                        'total_tokens': usage.get('total_tokens', 0) or 0
+                    }
                 if "choices" not in response_json or not response_json["choices"]:
-                    return "Invalid LM Studio response format", True
+                    return "Invalid LM Studio response format", True, token_usage
                 translated_text = response_json["choices"][0]["message"]["content"]
-                
+
+            if token_usage:
+                app_logger.debug(f"Token usage: {token_usage}")
+
             if not translated_text:
-                return f"Empty content from {service}", True
-                
+                return f"Empty content from {service}", True, token_usage
+
             clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
-            
+
             # Process the text to ensure it's valid JSON
             fixed_json = fix_json_format(clean_translated_text)
-            
+
             if fixed_json is None:
                 # Return raw text if JSON fixing failed
-                return clean_translated_text, True
-                
-            return fixed_json, True
-            
+                return clean_translated_text, True, token_usage
+
+            return fixed_json, True, token_usage
+
         except json.JSONDecodeError as e:
             app_logger.error(f"Failed to parse JSON response: {e}")
-            return f"Invalid JSON response from {service}", True
+            return f"Invalid JSON response from {service}", True, None
         except KeyError as e:
             app_logger.error(f"Missing key in response: {e}")
-            return f"Invalid response structure from {service}", True
+            return f"Invalid response structure from {service}", True, None
         except Exception as e:
             app_logger.error(f"Response parsing failed: {e}")
-            return f"Error parsing response: {str(e)}", True
+            return f"Error parsing response: {str(e)}", True, None
 
     except requests.exceptions.ConnectionError as e:
         app_logger.error(f"Connection error: {e}")
-        return f"{service} service is not reachable", False
+        return f"{service} service is not reachable", False, None
     except requests.exceptions.Timeout as e:
         app_logger.error(f"Request timeout: {e}")
-        return f"Request to {service} timed out", False
+        return f"Request to {service} timed out", False, None
     except requests.exceptions.HTTPError as e:
         app_logger.error(f"HTTP error: {e}")
         status_code = e.response.status_code if e.response else "Unknown"
-        return f"HTTP {status_code} error from {service}", False
+        return f"HTTP {status_code} error from {service}", False, None
     except requests.exceptions.RequestException as e:
         app_logger.error(f"Request error: {e}")
-        return f"Request to {service} failed: {str(e)}", False
+        return f"Request to {service} failed: {str(e)}", False, None
     except Exception as e:
         app_logger.error(f"Unexpected error: {e}")
-        return f"Unexpected error: {str(e)}", False
+        return f"Unexpected error: {str(e)}", False, None
 
 def fix_json_format(text):
     """
