@@ -218,18 +218,19 @@ def get_custom_css():
         border: 1px solid var(--haru-border) !important;
         box-shadow: 0 4px 30px var(--haru-shadow) !important;
         position: relative !important;
-        z-index: 1000 !important;
+        z-index: 3000 !important;
         overflow: visible !important;
     }
-
-    #lang-row > div:first-child {
-        grid-column: 1 !important;
+    #lang-row:has(.gr-dropdown:focus-within) {
+    z-index: 2200 !important;
     }
 
-    #lang-row > div:last-child {
-        grid-column: 3 !important;
+    #lang-row .lang-dropdown,
+    #lang-row .gr-dropdown {
+        position: relative !important;
+        z-index: 3001 !important;
+        overflow: visible !important;
     }
-
     /* Swap button */
     #swap-btn {
         grid-column: 2 !important;
@@ -268,8 +269,9 @@ def get_custom_css():
     #lang-row .lang-dropdown,
     #lang-row .gr-dropdown {
         position: relative !important;
-        z-index: 1001 !important;
+        z-index: 1 !important;
         overflow: visible !important;
+        transition: z-index 0s !important;
     }
 
     /* Dropdown input wrapper - ensure clickable */
@@ -301,7 +303,7 @@ def get_custom_css():
         gap: 0 !important;
     }
 
-    /* Dropdown list container */
+    /* Dropdown list container - 确保在最上层 */
     #lang-row .gr-dropdown ul,
     #lang-row .gr-dropdown [role="listbox"] {
         display: flex !important;
@@ -316,10 +318,8 @@ def get_custom_css():
         border: 2px solid var(--haru-primary) !important;
         border-radius: var(--radius-lg) !important;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
-        z-index: 99999 !important;
-        position: absolute !important;
-        top: 100% !important;
-        left: 0 !important;
+        z-index: 3002 !important;
+        position: fixed !important;
         width: max-content !important;
         max-width: 520px !important;
         min-width: 280px !important;
@@ -493,6 +493,14 @@ def get_custom_css():
         gap: 20px !important;
         margin-bottom: 16px !important;
         align-items: start !important;
+        position: relative !important;
+        z-index: 2000 !important;
+        overflow: visible !important;
+    }
+
+    /* 当内部下拉框展开时，提升整个行的层级 */
+    #model-glossary-row:has(.gr-dropdown:focus-within) {
+        z-index: 2200 !important;
     }
 
     #model-glossary-row > div {
@@ -773,6 +781,12 @@ def get_custom_css():
         border-radius: var(--radius-md) !important;
         position: relative !important;
         z-index: 50 !important;
+        transition: z-index 0s !important;
+    }
+
+    /* 当下拉框展开时(有焦点时)提升层级 */
+    .gr-dropdown:focus-within {
+        z-index: 2200 !important;
     }
 
     .gr-dropdown > div:first-child {
@@ -813,21 +827,23 @@ def get_custom_css():
         transform: translateY(2px) !important;
     }
 
-    /* Dropdown list (general) */
-    .gr-dropdown ul {
+    /* Dropdown list (general) - 确保在最上层 */
+    .gr-dropdown ul,
+    .gr-dropdown [role="listbox"] {
         background: var(--haru-surface-elevated) !important;
         backdrop-filter: blur(20px) !important;
         -webkit-backdrop-filter: blur(20px) !important;
         border: 2px solid var(--haru-primary) !important;
         border-radius: var(--radius-md) !important;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
-        z-index: 99999 !important;
+        z-index: 2147483647 !important;
         padding: 8px !important;
         margin-top: 0 !important;
-        position: absolute !important;
+        position: fixed !important;
     }
 
-    .gr-dropdown li {
+    .gr-dropdown li,
+    .gr-dropdown [role="option"] {
         padding: 10px 14px !important;
         border-radius: var(--radius-sm) !important;
         cursor: pointer !important;
@@ -836,12 +852,14 @@ def get_custom_css():
         color: var(--haru-text) !important;
     }
 
-    .gr-dropdown li:hover {
+    .gr-dropdown li:hover,
+    .gr-dropdown [role="option"]:hover {
         background: linear-gradient(135deg, rgba(232, 180, 184, 0.15) 0%, rgba(126, 184, 218, 0.15) 100%) !important;
     }
 
     .gr-dropdown li.selected,
-    .gr-dropdown li[aria-selected="true"] {
+    .gr-dropdown li[aria-selected="true"],
+    .gr-dropdown [role="option"][aria-selected="true"] {
         background: linear-gradient(135deg, var(--haru-primary) 0%, var(--haru-accent) 100%) !important;
         color: white !important;
         font-weight: 600 !important;
@@ -1037,6 +1055,336 @@ def get_custom_css():
         button.primary {
             padding: 12px 24px !important;
             font-size: 0.9rem !important;
+        }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       MODEL & GLOSSARY DROPDOWN - ENSURE TOP LAYER
+    ═══════════════════════════════════════════════════════════════ */
+
+    #model-dropdown,
+    #glossary-dropdown {
+        position: relative !important;
+        z-index: 2002 !important;
+        transition: z-index 0s !important;
+    }
+
+    /* 当下拉框展开时提升层级 */
+    #model-dropdown:focus-within,
+    #glossary-dropdown:focus-within {
+        z-index: 2200 !important;
+    }
+
+    #model-dropdown ul,
+    #model-dropdown [role="listbox"],
+    #glossary-dropdown ul,
+    #glossary-dropdown [role="listbox"] {
+        z-index: 2003 !important;
+    }
+
+    #model-column {
+        overflow: visible !important;
+        z-index: 2001 !important;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       API KEY SECTION - IMPROVED LAYOUT
+       Order: [API Key] [Input Field] [记住密钥 ?]
+    ═══════════════════════════════════════════════════════════════ */
+    #api-key-section {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        padding: 16px 20px !important;
+        margin-bottom: 20px !important;
+        background: var(--haru-surface) !important;
+        backdrop-filter: blur(16px) !important;
+        border: 1px solid var(--haru-border) !important;
+        border-radius: var(--radius-lg) !important;
+        box-shadow: 0 4px 20px var(--haru-shadow) !important;
+        position: relative !important;
+        z-index: 100 !important;
+        overflow: visible !important;
+    }
+
+    /* 让Input占据中间所有空间，其他元素挤到两边 */
+    #api-key-section > div:nth-child(2) {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+    }
+
+    /* [API Key] 标签 - 尽可能短，自动宽度 */
+    .api-key-label-group {
+        flex: 0 0 auto !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        order: 1 !important;
+        width: auto !important;
+        min-width: auto !important;
+        max-width: fit-content !important;
+    }
+
+    .api-key-label {
+        font-family: 'Outfit', sans-serif !important;
+        font-weight: 600 !important;
+        font-size: 0.95rem !important;
+        color: var(--haru-text) !important;
+        white-space: nowrap !important;
+        display: inline !important;
+        width: auto !important;
+    }
+
+    /* [Input Field] - 占用所有剩余空间 */
+    #api-key-input {
+        flex: 1 1 auto !important;
+        min-width: 0 !important;
+        order: 2 !important;
+    }
+
+    #api-key-input input {
+        padding-right: 16px !important;
+        border-radius: var(--radius-md) !important;
+        width: 100% !important;
+    }
+
+    /* [记住密钥] checkbox - 背景透明，不占额外空间 */
+    #remember-key-checkbox {
+        flex: 0 0 auto !important;
+        width: auto !important;
+        min-width: unset !important;
+        max-width: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        position: relative !important;
+        background: transparent !important;
+        background-color: transparent !important;
+    }
+
+    /* 让 remember-key-checkbox 的 .form 容器使用 flex 并右对齐 */
+    #api-key-section > div.form,
+    #api-key-section .form,
+    #remember-key-checkbox > div.form,
+    #remember-key-checkbox .form,
+    #remember-key-checkbox > div[class*="form"],
+    #remember-key-checkbox > div[class*="svelte"] {
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        display: flex !important;
+        justify-content: flex-end !important;  /* 内容右对齐 */
+        width: 100% !important;
+    }
+
+    /* label 本身也右对齐 */
+    #remember-key-checkbox > label,
+    #remember-key-checkbox label {
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        padding: 4px 8px !important;
+        margin: 0 !important;
+        margin-left: auto !important;  /* 推到右边 */
+        font-size: 0.88rem !important;
+        font-weight: 500 !important;
+        white-space: nowrap !important;
+        color: var(--haru-text-soft) !important;
+        cursor: pointer !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+    }
+
+    #remember-key-checkbox label:hover {
+        color: var(--haru-text) !important;
+    }
+
+    /* checkbox输入框保持正常样式 */
+    #remember-key-checkbox input[type="checkbox"] {
+        accent-color: var(--haru-primary) !important;
+        margin: 0 !important;
+        margin-right: 6px !important;
+        flex-shrink: 0 !important;
+        width: 16px !important;
+        height: 16px !important;
+        cursor: pointer !important;
+        -webkit-appearance: checkbox !important;
+        appearance: checkbox !important;
+    }
+
+    /* [?] 帮助图标容器 - 固定宽高相同 */
+    
+    /* 隐藏 Gradio 自动生成的 wrap 加载容器 */
+    #api-help-container > div.wrap,
+    #api-help-container > div[class*="wrap"] {
+        display: none !important;
+        position: absolute !important;
+        width: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+    }
+
+    #api-help-container {
+        flex: 0 0 auto !important;
+        width: 24px !important;
+        min-width: 24px !important;
+        max-width: 24px !important;
+        height: 24px !important;
+        min-height: 24px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        overflow: visible !important;
+        position: relative !important;
+    }
+
+    /* HTML 内容容器 - 不限制尺寸让内容自然显示 */
+    #api-help-container > div.html-container,
+    #api-help-container > div[class*="html-container"] {
+        width: auto !important;
+        min-width: unset !important;
+        max-width: unset !important;
+        height: auto !important;
+        min-height: unset !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        overflow: visible !important;
+        position: static !important;
+    }
+
+    .api-help-icon-wrapper {
+        flex: 0 0 auto !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        position: relative !important;
+        z-index: 9999 !important;
+        overflow: visible !important;
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+        max-width: 24px !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    /* ? 帮助图标 - 圆形，宽高相同 */
+    .api-help-icon-wrapper .api-help-icon {
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+        min-height: 20px !important;
+        border-radius: 50% !important;
+        background: linear-gradient(135deg, var(--haru-primary) 0%, var(--haru-accent) 100%) !important;
+        color: white !important;
+        font-size: 12px !important;
+        font-weight: bold !important;
+        cursor: help !important;
+        transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+        user-select: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        line-height: 1 !important;
+    }
+
+    .api-help-icon-wrapper:hover .api-help-icon {
+        transform: scale(1.15) !important;
+        box-shadow: 0 4px 15px rgba(232, 180, 184, 0.5) !important;
+    }
+
+    /* Tooltip - 使用fixed定位确保在最上层 */
+    .api-help-tooltip {
+        position: fixed !important;
+        width: 200px !important;
+        padding: 10px 14px !important;
+        background: rgba(30, 30, 40, 0.95) !important;
+        backdrop-filter: blur(20px) !important;
+        -webkit-backdrop-filter: blur(20px) !important;
+        color: #f0f0f0 !important;
+        border-radius: 10px !important;
+        font-size: 0.82rem !important;
+        font-weight: 400 !important;
+        line-height: 1.5 !important;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4) !important;
+        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        transition: opacity 0.2s ease, visibility 0.2s ease !important;
+        pointer-events: none !important;
+        z-index: 2147483647 !important;
+    }
+
+    /* Tooltip 小三角箭头 */
+    .api-help-tooltip::after {
+        content: '' !important;
+        position: absolute !important;
+        right: 12px !important;
+        bottom: -6px !important;
+        border: 6px solid transparent !important;
+        border-top-color: rgba(30, 30, 40, 0.95) !important;
+        border-bottom: none !important;
+    }
+
+    .api-help-icon-wrapper:hover .api-help-tooltip {
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+
+    /* 响应式布局 */
+    @media (max-width: 768px) {
+        #api-key-section {
+            flex-wrap: wrap !important;
+            gap: 10px !important;
+        }
+
+        .api-key-label-group {
+            flex: 0 0 auto !important;
+            order: 1 !important;
+        }
+
+        #api-key-input {
+            flex: 1 1 100% !important;
+            width: 100% !important;
+            order: 2 !important;
+        }
+
+        #remember-key-checkbox {
+            order: 3 !important;
+            width: auto !important;
+        }
+
+        .api-help-icon-wrapper {
+            order: 4 !important;
+        }
+
+        .api-help-tooltip {
+            right: auto !important;
+            left: -100px !important;
+            width: 200px !important;
+        }
+
+        .api-help-tooltip::after {
+            right: auto !important;
+            left: 110px !important;
         }
     }
 
@@ -1337,32 +1685,86 @@ def create_model_glossary_section(config, local_models, online_models, get_gloss
     return (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row, glossary_upload_file)
 
 
-def create_main_interface(config):
-    """Create main translation interface"""
-    initial_default_online = config.get("default_online", False)
+def create_main_interface(config, get_label=None):
+    """Create main translation interface with API key section"""
+    if get_label is None:
+        get_label = lambda key: key
 
-    api_key_input = gr.Textbox(
-        label="API Key",
-        placeholder="Enter your API key here",
-        value="",
-        visible=initial_default_online
-    )
+    initial_default_online = config.get("default_online", False)
+    initial_lan_mode = config.get("lan_mode", False)
+    remember_api_key = config.get("remember_api_key", False) if not initial_lan_mode else False
+
+    # API Key section: [API Key] [Input Field] [记住密钥 ?]
+    with gr.Row(visible=initial_default_online, elem_id="api-key-section") as api_key_row:
+        # [API Key] 标签 - 尽可能短
+        gr.HTML("""
+            <div class="api-key-label-group">
+                <span class="api-key-label" id="api-key-label-text">API Key</span>
+            </div>
+        """)
+
+        # [Input Field] - 占用所有剩余空间
+        api_key_input = gr.Textbox(
+            label="",
+            placeholder=get_label("Enter your API key here"),
+            value="",
+            type="password",
+            elem_id="api-key-input",
+            show_label=False,
+            container=False
+        )
+
+        # [记住密钥] - checkbox
+        remember_key_checkbox = gr.Checkbox(
+            label=get_label("Remember Key"),
+            value=remember_api_key,
+            interactive=not initial_lan_mode,
+            elem_id="remember-key-checkbox"
+        )
+
+        # [?] 帮助图标 + Tooltip（带JS定位）
+        gr.HTML("""
+            <div class="api-help-icon-wrapper" onmouseenter="positionTooltip(this)" onmouseleave="hideTooltip(this)">
+                <span class="api-help-icon">?</span>
+                <div class="api-help-tooltip">
+                    <span id="tooltip-content-text">This feature is only available in non-LAN mode. API keys are private data with security risks. Please enable with caution.</span>
+                </div>
+            </div>
+            <script>
+                function positionTooltip(wrapper) {
+                    const icon = wrapper.querySelector('.api-help-icon');
+                    const tooltip = wrapper.querySelector('.api-help-tooltip');
+                    if (!icon || !tooltip) return;
+
+                    const rect = icon.getBoundingClientRect();
+                    const tooltipWidth = 200;
+
+                    // Position above the icon
+                    tooltip.style.left = (rect.left + rect.width / 2 - tooltipWidth + 20) + 'px';
+                    tooltip.style.top = (rect.top - tooltip.offsetHeight - 10) + 'px';
+                }
+
+                function hideTooltip(wrapper) {
+                    // Tooltip will hide via CSS
+                }
+            </script>
+        """, elem_id="api-help-container")
 
     file_input = gr.File(
-        label="Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)",
+        label=get_label("Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)"),
         file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"],
         file_count="multiple"
     )
 
-    output_file = gr.File(label="Download Translated File", visible=False)
-    status_message = gr.Textbox(label="Status Message", interactive=False, visible=True)
+    output_file = gr.File(label=get_label("Download Translated File"), visible=False)
+    status_message = gr.Textbox(label=get_label("Status Message"), interactive=False, visible=True)
 
     with gr.Row():
-        translate_button = gr.Button("Translate", variant="primary")
-        continue_button = gr.Button("Continue Translation", interactive=False)
-        stop_button = gr.Button("Stop Translation", interactive=False)
+        translate_button = gr.Button(get_label("Translate"), variant="primary")
+        continue_button = gr.Button(get_label("Continue Translation"), interactive=False)
+        stop_button = gr.Button(get_label("Stop Translation"), interactive=False)
 
-    return (api_key_input, file_input, output_file, status_message,
+    return (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
             translate_button, continue_button, stop_button)
 
 

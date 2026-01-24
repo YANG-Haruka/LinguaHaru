@@ -7,7 +7,7 @@
     "max_token": 768,
     "max_retries": 4,
     "lan_mode": false,
-    "default_online": false,
+    "default_online": true,
     "show_model_selection": true,
     "show_mode_switch": true,
     "show_max_retries": true,
@@ -24,5 +24,6 @@
     "default_glossary": "Default",
     "temp_dir": "temp",
     "result_dir": "result",
-    "log_dir": "log"
+    "log_dir": "log",
+    "remember_api_key": true
 }
