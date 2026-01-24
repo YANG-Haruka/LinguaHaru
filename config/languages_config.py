@@ -104,6 +104,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Use Online Model",
         "Models": "Models",
         "API Key": "API Key",
+        "Remember Key": "Remember Key",
+        "Enter your API key here": "Enter your API key here",
         "Upload File": "Upload Office File (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Upload Files (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Download Translated File",
@@ -138,7 +140,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Total tokens used",
         "Preparing content": "Preparing content",
         "Continuing from": "Continuing from",
-        "Retry": "Retry"
+        "Retry": "Retry",
+        "Show API Key": "Show API Key",
+        "Hide API Key": "Hide API Key",
+        "Security Tips": "Security Tips",
+        "Security Tips Content": "This feature is only available in non-LAN mode. API keys are private data with security risks. Please enable with caution."
     },
     # Simplified Chinese
     "zh": {
@@ -147,6 +153,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "使用在线模型",
         "Models": "模型",
         "API Key": "API 密钥",
+        "Remember Key": "记住密钥",
+        "Enter your API key here": "在此输入您的 API 密钥",
         "Upload File": "上传文件 (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "上传文件 (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "下载翻译文件",
@@ -181,7 +189,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "本次共消耗tokens",
         "Preparing content": "正在准备内容",
         "Continuing from": "继续自",
-        "Retry": "重试"
+        "Retry": "重试",
+        "Show API Key": "显示密钥",
+        "Hide API Key": "隐藏密钥",
+        "Security Tips": "安全提示",
+        "Security Tips Content": "此功能仅在非局域网模式下可用。密钥为个人隐私数据，存在安全风险，请确认后谨慎开启。"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -190,6 +202,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "使用線上模型",
         "Models": "模型",
         "API Key": "API 金鑰",
+        "Remember Key": "記住金鑰",
+        "Enter your API key here": "在此輸入您的 API 金鑰",
         "Upload File": "上傳檔案 (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "上傳檔案 (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "下載翻譯後的檔案",
@@ -224,7 +238,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "本次共消耗tokens",
         "Preparing content": "正在準備內容",
         "Continuing from": "繼續自",
-        "Retry": "重試"
+        "Retry": "重試",
+        "Security Tips": "安全提示",
+        "Security Tips Content": "此功能僅在非區域網路模式下可用。金鑰為個人隱私資料，存在安全風險，請確認後謹慎開啟。",
+        "Show API Key": "顯示金鑰",
+        "Hide API Key": "隱藏金鑰"
     },
     # Japanese
     "ja": {
@@ -233,6 +251,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "オンラインモデルを使用",
         "Models": "モデル",
         "API Key": "APIキー",
+        "Remember Key": "キーを記憶",
+        "Enter your API key here": "APIキーを入力してください",
         "Upload File": "ファイルをアップロード (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "ファイルをアップロード (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "翻訳ファイルをダウンロード",
@@ -267,7 +287,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "合計トークン数",
         "Preparing content": "コンテンツを準備中",
         "Continuing from": "から継続",
-        "Retry": "再試行"
+        "Retry": "再試行",
+        "Security Tips": "セキュリティに関するヒント",
+        "Security Tips Content": "この機能は非LANモードでのみ使用できます。APIキーは個人のプライバシーデータであり、セキュリティリスクがあります。慎重に有効にしてください。",
+        "Show API Key": "キーを表示",
+        "Hide API Key": "キーを非表示"
     },
     # Spanish
     "es": {
@@ -276,6 +300,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Usar modelo en línea",
         "Models": "Modelos",
         "API Key": "Clave API",
+        "Remember Key": "Recordar clave",
+        "Enter your API key here": "Ingrese su clave API aquí",
         "Upload File": "Subir archivo (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Subir archivos (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Descargar archivo traducido",
@@ -310,7 +336,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Tokens totales utilizados",
         "Preparing content": "Preparando contenido",
         "Continuing from": "Continuando desde",
-        "Retry": "Reintento"
+        "Retry": "Reintento",
+        "Security Tips": "Consejos de seguridad",
+        "Security Tips Content": "Esta función solo está disponible en modo no LAN. Las claves API son datos privados con riesgos de seguridad. Por favor, habilite con precaución.",
+        "Show API Key": "Mostrar clave",
+        "Hide API Key": "Ocultar clave"
     },
     # French
     "fr": {
@@ -319,6 +349,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Utiliser un modèle en ligne",
         "Models": "Modèles",
         "API Key": "Clé API",
+        "Remember Key": "Se souvenir de la clé",
+        "Enter your API key here": "Entrez votre clé API ici",
         "Upload File": "Télécharger le fichier (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Télécharger les fichiers (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Télécharger le fichier traduit",
@@ -353,7 +385,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Tokens totaux utilisés",
         "Preparing content": "Préparation du contenu",
         "Continuing from": "Continuer depuis",
-        "Retry": "Réessayer"
+        "Retry": "Réessayer",
+        "Security Tips": "Conseils de sécurité",
+        "Security Tips Content": "Cette fonction n'est disponible qu'en mode non-LAN. Les clés API sont des données privées avec des risques de sécurité. Veuillez activer avec prudence.",
+        "Show API Key": "Afficher la clé",
+        "Hide API Key": "Masquer la clé"
     },
     # German
     "de": {
@@ -362,6 +398,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Online-Modell verwenden",
         "Models": "Modelle",
         "API Key": "API-Schlüssel",
+        "Remember Key": "Schlüssel merken",
+        "Enter your API key here": "Geben Sie hier Ihren API-Schlüssel ein",
         "Upload File": "Datei hochladen (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Dateien hochladen (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Übersetzte Datei herunterladen",
@@ -396,7 +434,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Verwendete Tokens gesamt",
         "Preparing content": "Inhalt vorbereiten",
         "Continuing from": "Fortsetzen von",
-        "Retry": "Wiederholen"
+        "Retry": "Wiederholen",
+        "Security Tips": "Sicherheitshinweise",
+        "Security Tips Content": "Diese Funktion ist nur im Nicht-LAN-Modus verfügbar. API-Schlüssel sind private Daten mit Sicherheitsrisiken. Bitte mit Vorsicht aktivieren.",
+        "Show API Key": "Schlüssel anzeigen",
+        "Hide API Key": "Schlüssel verbergen"
     },
     # Italian
     "it": {
@@ -405,6 +447,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Usa modello online",
         "Models": "Modelli",
         "API Key": "Chiave API",
+        "Remember Key": "Ricorda chiave",
+        "Enter your API key here": "Inserisci qui la tua chiave API",
         "Upload File": "Carica file (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Carica file (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Scarica file tradotto",
@@ -439,7 +483,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Token totali utilizzati",
         "Preparing content": "Preparazione del contenuto",
         "Continuing from": "Continua da",
-        "Retry": "Riprova"
+        "Retry": "Riprova",
+        "Security Tips": "Suggerimenti per la sicurezza",
+        "Security Tips Content": "Questa funzione è disponibile solo in modalità non-LAN. Le chiavi API sono dati privati con rischi per la sicurezza. Si prega di abilitare con cautela.",
+        "Show API Key": "Mostra chiave",
+        "Hide API Key": "Nascondi chiave"
     },
     # Portuguese
     "pt": {
@@ -448,6 +496,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Usar modelo online",
         "Models": "Modelos",
         "API Key": "Chave de API",
+        "Remember Key": "Lembrar chave",
+        "Enter your API key here": "Digite sua chave de API aqui",
         "Upload File": "Enviar arquivo (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Enviar arquivos (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Baixar arquivo traduzido",
@@ -482,7 +532,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Tokens totais utilizados",
         "Preparing content": "Preparando conteúdo",
         "Continuing from": "Continuando de",
-        "Retry": "Tentar novamente"
+        "Retry": "Tentar novamente",
+        "Security Tips": "Dicas de segurança",
+        "Security Tips Content": "Este recurso está disponível apenas no modo não-LAN. As chaves de API são dados privados com riscos de segurança. Por favor, habilite com cautela.",
+        "Show API Key": "Mostrar chave",
+        "Hide API Key": "Ocultar chave"
     },
     # Russian
     "ru": {
@@ -491,6 +545,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Использовать онлайн-модель",
         "Models": "Модели",
         "API Key": "API-ключ",
+        "Remember Key": "Запомнить ключ",
+        "Enter your API key here": "Введите ваш API-ключ здесь",
         "Upload File": "Загрузить файл (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Загрузить файлы (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Скачать переведенный файл",
@@ -525,7 +581,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Всего использовано токенов",
         "Preparing content": "Подготовка содержимого",
         "Continuing from": "Продолжить с",
-        "Retry": "Повторить"
+        "Retry": "Повторить",
+        "Security Tips": "Советы по безопасности",
+        "Security Tips Content": "Эта функция доступна только в режиме без LAN. API-ключи — это личные данные с рисками безопасности. Пожалуйста, включайте с осторожностью.",
+        "Show API Key": "Показать ключ",
+        "Hide API Key": "Скрыть ключ"
     },
     # Korean
     "ko": {
@@ -534,6 +594,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "온라인 모델 사용",
         "Models": "모델",
         "API Key": "API 키",
+        "Remember Key": "키 기억하기",
+        "Enter your API key here": "여기에 API 키를 입력하세요",
         "Upload File": "파일 업로드 (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "파일 업로드 (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "번역된 파일 다운로드",
@@ -568,7 +630,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "총 사용 토큰",
         "Preparing content": "콘텐츠 준비 중",
         "Continuing from": "에서 계속",
-        "Retry": "재시도"
+        "Retry": "재시도",
+        "Security Tips": "보안 팁",
+        "Security Tips Content": "이 기능은 비LAN 모드에서만 사용할 수 있습니다. API 키는 보안 위험이 있는 개인 데이터입니다. 신중하게 활성화하십시오.",
+        "Show API Key": "키 표시",
+        "Hide API Key": "키 숨기기"
     },
     # Thai
     "th": {
@@ -577,6 +643,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "ใช้โมเดลออนไลน์",
         "Models": "โมเดล",
         "API Key": "คีย์ API",
+        "Remember Key": "จำคีย์",
+        "Enter your API key here": "ป้อนคีย์ API ของคุณที่นี่",
         "Upload File": "อัปโหลดไฟล์ (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "อัปโหลดไฟล์ (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "ดาวน์โหลดไฟล์ที่แปลแล้ว",
@@ -611,7 +679,11 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "โทเค็นทั้งหมดที่ใช้",
         "Preparing content": "กำลังเตรียมเนื้อหา",
         "Continuing from": "ดำเนินการต่อจาก",
-        "Retry": "ลองใหม่"
+        "Retry": "ลองใหม่",
+        "Security Tips": "เคล็ดลับความปลอดภัย",
+        "Security Tips Content": "ฟังก์ชันนี้ใช้ได้เฉพาะในโหมดที่ไม่ใช่ LAN คีย์ API เป็นข้อมูลส่วนตัวที่มีความเสี่ยงด้านความปลอดภัย กรุณาเปิดใช้งานด้วยความระมัดระวัง",
+        "Show API Key": "แสดงคีย์",
+        "Hide API Key": "ซ่อนคีย์"
     },
     # Vietnamese
     "vi": {
@@ -620,6 +692,8 @@ LABEL_TRANSLATIONS = {
         "Use Online Model": "Sử dụng mô hình trực tuyến",
         "Models": "Mô hình",
         "API Key": "Khóa API",
+        "Remember Key": "Ghi nhớ khóa",
+        "Enter your API key here": "Nhập khóa API của bạn tại đây",
         "Upload File": "Tải lên tệp (.docx, .pptx, .xlsx, .pdf)",
         "Upload Files": "Tải lên tệp (.docx, .pptx, .xlsx, .pdf, .srt)",
         "Download Translated File": "Tải xuống tệp đã dịch",
@@ -654,6 +728,10 @@ LABEL_TRANSLATIONS = {
         "Total tokens used": "Tổng số token đã sử dụng",
         "Preparing content": "Đang chuẩn bị nội dung",
         "Continuing from": "Tiếp tục từ",
-        "Retry": "Thử lại"
+        "Retry": "Thử lại",
+        "Security Tips": "Mẹo bảo mật",
+        "Security Tips Content": "Tính năng này chỉ khả dụng ở chế độ không phải LAN. Khóa API là dữ liệu riêng tư có rủi ro bảo mật. Vui lòng bật một cách cẩn thận.",
+        "Show API Key": "Hiện khóa",
+        "Hide API Key": "Ẩn khóa"
     }
 }

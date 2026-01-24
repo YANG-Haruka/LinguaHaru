@@ -6,6 +6,7 @@ test/
 .gradio/
 .qodo/
 log/
+mykeys/
 build/
 dist/
 models/tiktoken/

@@ -55,6 +55,17 @@ translation_stop_requested = False
 current_translation_task = None
 stop_lock = threading.Lock()
 
+def generate_api_key_translations_js():
+    """Generate JavaScript translations object from LABEL_TRANSLATIONS for API key section"""
+    js_translations = {}
+    for lang_code, translations in LABEL_TRANSLATIONS.items():
+        js_translations[lang_code] = {
+            "label": translations.get("API Key", "API Key"),
+            "tooltipTitle": translations.get("Security Tips", "Security Tips"),
+            "tooltipContent": translations.get("Security Tips Content", "")
+        }
+    return json.dumps(js_translations, ensure_ascii=False)
+
 def enqueue_task(
     translate_func, files, model, src_lang, dst_lang, 
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, glossary_name, session_lang, progress
@@ -742,7 +753,8 @@ def set_labels(session_lang: str):
         glossary_choice: gr.update(label=labels.get("Glossary", "Glossary")),
         max_retries_slider: gr.update(label=labels["Max Retries"]),
         thread_count_slider: gr.update(label=labels["Thread Count"]),
-        api_key_input: gr.update(label=labels["API Key"]),
+        api_key_input: gr.update(label=labels["API Key"], placeholder=labels.get("Enter your API key here", "Enter your API key here")),
+        remember_key_checkbox: gr.update(label=labels.get("Remember Key", "Remember Key")),
         file_input: gr.update(label=file_upload_label),
         output_file: gr.update(label=labels["Download Translated File"]),
         status_message: gr.update(label=labels["Status Message"]),
@@ -768,18 +780,26 @@ def update_model_list_and_api_input(use_online):
     # Update system config with new online mode
     update_online_mode(use_online)
     config = read_system_config()
-    
+
     # Get appropriate thread count based on mode
     thread_count = config.get("default_thread_count_online", 2) if use_online else config.get("default_thread_count_offline", 4)
-    
+
+    # Get saved API key if remember is enabled
+    remember_api_key = config.get("remember_api_key", False)
+
     if use_online:
         if default_online_model and default_online_model in online_models:
             default_online_value = default_online_model
         else:
             default_online_value = online_models[0] if online_models else None
+
+        # Load API key for the selected model
+        saved_api_key = load_api_key_for_model(default_online_value) if remember_api_key else ""
+
         return (
             gr.update(choices=online_models, value=default_online_value),
-            gr.update(visible=True, value=""),
+            gr.update(visible=True),
+            gr.update(value=saved_api_key),
             gr.update(value=thread_count)
         )
     else:
@@ -789,9 +809,109 @@ def update_model_list_and_api_input(use_online):
             default_local_value = local_models[0] if local_models else None
         return (
             gr.update(choices=local_models, value=default_local_value),
-            gr.update(visible=False, value=""),
+            gr.update(visible=False),
+            gr.update(value=""),
             gr.update(value=thread_count)
         )
+
+
+def get_mykeys_dir():
+    """Get the mykeys directory path, create if not exists"""
+    mykeys_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mykeys")
+    os.makedirs(mykeys_dir, exist_ok=True)
+    return mykeys_dir
+
+
+def sanitize_model_name(model_name):
+    """Sanitize model name to create a valid filename"""
+    if not model_name:
+        return "default"
+    # Remove invalid filename characters and replace spaces
+    invalid_chars = '<>:"/\\|?*'
+    sanitized = model_name
+    for char in invalid_chars:
+        sanitized = sanitized.replace(char, '_')
+    # Replace parentheses and spaces
+    sanitized = sanitized.replace('(', '').replace(')', '').replace(' ', '_')
+    return sanitized.strip('_') or "default"
+
+
+def load_api_key_for_model(model_name):
+    """Load API key for a specific model from mykeys folder"""
+    mykeys_dir = get_mykeys_dir()
+    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(model_name)}.json")
+
+    try:
+        if os.path.exists(key_file):
+            with open(key_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                return data.get("api_key", "")
+    except (json.JSONDecodeError, IOError) as e:
+        app_logger.warning(f"Failed to load API key for {model_name}: {e}")
+
+    return ""
+
+
+def save_api_key_for_model(model_name, api_key):
+    """Save API key for a specific model to mykeys folder"""
+    mykeys_dir = get_mykeys_dir()
+    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(model_name)}.json")
+
+    try:
+        data = {
+            "model": model_name,
+            "api_key": api_key
+        }
+        with open(key_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        app_logger.info(f"API key saved for model: {model_name}")
+    except IOError as e:
+        app_logger.error(f"Failed to save API key for {model_name}: {e}")
+
+
+def delete_api_key_for_model(model_name):
+    """Delete API key file for a specific model"""
+    mykeys_dir = get_mykeys_dir()
+    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(model_name)}.json")
+
+    try:
+        if os.path.exists(key_file):
+            os.remove(key_file)
+            app_logger.info(f"API key deleted for model: {model_name}")
+    except IOError as e:
+        app_logger.error(f"Failed to delete API key for {model_name}: {e}")
+
+
+def update_remember_api_key(remember, api_key, model_name, lan_mode):
+    """Update remember API key setting and save/delete key based on toggle"""
+    # Only allow saving in non-LAN mode
+    if lan_mode:
+        return False
+
+    config = read_system_config()
+    config["remember_api_key"] = remember
+    write_system_config(config)
+
+    if remember and api_key and model_name:
+        save_api_key_for_model(model_name, api_key)
+    elif not remember and model_name:
+        delete_api_key_for_model(model_name)
+
+    return remember
+
+
+def save_api_key_on_change(api_key, remember, model_name):
+    """Save API key when it changes if remember is enabled"""
+    if remember and model_name:
+        save_api_key_for_model(model_name, api_key)
+
+
+def load_api_key_on_model_change(model_name, remember):
+    """Load API key when model changes"""
+    if remember and model_name:
+        saved_key = load_api_key_for_model(model_name)
+        return gr.update(value=saved_key)
+    return gr.update(value="")
 
 def refresh_models(use_online):
     """Refresh model list by re-scanning available models"""
@@ -862,10 +982,26 @@ def init_ui(request: gr.Request):
             model_value = local_models[0] if local_models else None
     
     label_updates = set_labels(user_lang)
-    
+
     # Add visibility updates for max_retries, thread_count, and glossary
     label_updates[max_retries_slider] = gr.update(label=LABEL_TRANSLATIONS.get(user_lang, LABEL_TRANSLATIONS["en"])["Max Retries"], visible=show_max_retries)
     label_updates[thread_count_slider] = gr.update(label=LABEL_TRANSLATIONS.get(user_lang, LABEL_TRANSLATIONS["en"])["Thread Count"], visible=show_thread_count)
+
+    # Update remember_key_checkbox - disable in LAN mode, set value from config
+    remember_api_key = config.get("remember_api_key", False) if not lan_mode_state else False
+    # Load API key for the current model from mykeys folder
+    saved_api_key = load_api_key_for_model(model_value) if (remember_api_key and use_online_value) else ""
+    label_updates[remember_key_checkbox] = gr.update(
+        label=labels.get("Remember Key", "Remember Key"),
+        value=remember_api_key,
+        interactive=not lan_mode_state
+    )
+    # Update api_key_input with saved value if remember is enabled
+    label_updates[api_key_input] = gr.update(
+        label=labels["API Key"],
+        placeholder=labels.get("Enter your API key here", "Enter your API key here"),
+        value=saved_api_key
+    )
     
     # Prepare return values
     label_values = list(label_updates.values())
@@ -1313,14 +1449,94 @@ with gr.Blocks(
     )
 
     # Create main interface
-    (api_key_input, file_input, output_file, status_message, 
-     translate_button, continue_button, stop_button) = create_main_interface(config)
+    (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
+     translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
 
     # Event handlers
     use_online_model.change(
         update_model_list_and_api_input,
         inputs=use_online_model,
-        outputs=[model_choice, api_key_input, thread_count_slider]
+        outputs=[model_choice, api_key_row, api_key_input, thread_count_slider]
+    ).then(
+        fn=None,
+        inputs=None,
+        outputs=None,
+        js="""
+        () => {
+            console.log('Online model toggled, initializing features...');
+            function initFeatures() {
+                if (window.initApiKeyEyeToggle) {
+                    window.initApiKeyEyeToggle();
+                }
+                if (window.updateApiKeyLanguage && window.currentApiKeyLang) {
+                    window.updateApiKeyLanguage(window.currentApiKeyLang);
+                }
+                // Setup tooltip
+                const helpWrapper = document.getElementById('api-help-wrapper');
+                const tooltip = document.getElementById('api-tooltip');
+                if (helpWrapper && tooltip && !helpWrapper._tooltipInitialized) {
+                    helpWrapper._tooltipInitialized = true;
+                    const showTooltip = () => {
+                        const rect = helpWrapper.getBoundingClientRect();
+                        const tooltipWidth = 280;
+                        tooltip.style.visibility = 'hidden';
+                        tooltip.style.opacity = '0';
+                        tooltip.style.display = 'block';
+                        const tooltipHeight = tooltip.offsetHeight;
+                        tooltip.style.display = '';
+                        const gap = 8;
+                        const iconCenterX = rect.left + (rect.width / 2);
+                        let left = iconCenterX - (tooltipWidth / 2);
+                        let top = rect.top - tooltipHeight - gap;
+                        let arrowLeft = 50;
+                        if (left < 10) {
+                            arrowLeft = ((iconCenterX - 10) / tooltipWidth) * 100;
+                            left = 10;
+                        }
+                        if (left + tooltipWidth > window.innerWidth - 10) {
+                            const newLeft = window.innerWidth - tooltipWidth - 10;
+                            arrowLeft = ((iconCenterX - newLeft) / tooltipWidth) * 100;
+                            left = newLeft;
+                        }
+                        arrowLeft = Math.max(15, Math.min(85, arrowLeft));
+                        if (top < 10) top = rect.bottom + gap;
+                        tooltip.style.left = left + 'px';
+                        tooltip.style.top = top + 'px';
+                        tooltip.style.setProperty('--arrow-left', arrowLeft + '%');
+                        tooltip.classList.add('visible');
+                    };
+                    const hideTooltip = () => {
+                        tooltip.classList.remove('visible');
+                    };
+                    helpWrapper.addEventListener('mouseenter', showTooltip);
+                    helpWrapper.addEventListener('mouseleave', hideTooltip);
+                }
+            }
+            setTimeout(initFeatures, 300);
+            setTimeout(initFeatures, 800);
+        }
+        """
+    )
+
+    # Remember API key checkbox handler
+    remember_key_checkbox.change(
+        update_remember_api_key,
+        inputs=[remember_key_checkbox, api_key_input, model_choice, lan_mode_state],
+        outputs=remember_key_checkbox
+    )
+
+    # Save API key when it changes (if remember is enabled)
+    api_key_input.change(
+        save_api_key_on_change,
+        inputs=[api_key_input, remember_key_checkbox, model_choice],
+        outputs=None
+    )
+
+    # Load API key when model changes (if remember is enabled)
+    model_choice.change(
+        load_api_key_on_model_change,
+        inputs=[model_choice, remember_key_checkbox],
+        outputs=api_key_input
     )
 
     # Model refresh button
@@ -1330,11 +1546,23 @@ with gr.Blocks(
         outputs=model_choice
     )
 
-    # Add LAN mode
+    # Add LAN mode - also disable remember key when in LAN mode
+    def update_lan_mode_with_remember_key(lan_mode):
+        lan_state = update_lan_mode(lan_mode)
+        # Disable remember key checkbox when in LAN mode (security)
+        # Note: We don't delete the saved keys in mykeys folder, just disable the feature
+        if lan_mode:
+            config = read_system_config()
+            config["remember_api_key"] = False
+            write_system_config(config)
+            return lan_state, gr.update(value=False, interactive=False)
+        else:
+            return lan_state, gr.update(interactive=True)
+
     lan_mode_checkbox.change(
-        update_lan_mode,
+        update_lan_mode_with_remember_key,
         inputs=lan_mode_checkbox,
-        outputs=lan_mode_state
+        outputs=[lan_mode_state, remember_key_checkbox]
     )
     
     # Add Max Retries
@@ -1528,6 +1756,9 @@ with gr.Blocks(
         """
     )
 
+    # Hidden textbox to store session language for JavaScript synchronization
+    session_lang_holder = gr.Textbox(value="en", visible=False, elem_id="session-lang-holder")
+
     # On page load, set user language and labels
     demo.load(
         fn=init_ui,
@@ -1538,10 +1769,228 @@ with gr.Blocks(
             use_online_model, model_choice, glossary_choice, glossary_upload_row,
             src_lang, dst_lang, use_online_model, lan_mode_checkbox,
             model_choice, glossary_choice, max_retries_slider, thread_count_slider,
-            api_key_input, file_input, output_file, status_message, translate_button,
+            api_key_input, remember_key_checkbox, file_input, output_file, status_message, translate_button,
             continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, stop_button,
             custom_lang_input, add_lang_button
-        ]
+        ],
+        js="""
+        () => {
+            console.log('Initializing API Key features...');
+
+            // Translations for tooltip and API key label (dynamically generated from languages_config.py)
+            window.apiKeyTranslations = """ + generate_api_key_translations_js() + """;
+
+            // Store current language
+            window.currentApiKeyLang = 'en';
+
+            // Update API key language function
+            window.updateApiKeyLanguage = function(lang) {
+                window.currentApiKeyLang = lang || 'en';
+                const trans = window.apiKeyTranslations[window.currentApiKeyLang] || window.apiKeyTranslations["en"];
+                const labelEl = document.getElementById('api-key-label-text');
+                const titleEl = document.getElementById('tooltip-title-text');
+                const contentEl = document.getElementById('tooltip-content-text');
+                if (labelEl) labelEl.textContent = trans.label;
+                if (titleEl) titleEl.textContent = trans.tooltipTitle;
+                if (contentEl) contentEl.textContent = trans.tooltipContent;
+                console.log('API Key language updated to:', window.currentApiKeyLang);
+            };
+
+            // Function to add eye toggle button
+            window.initApiKeyEyeToggle = function() {
+                const apiKeyInput = document.querySelector('#api-key-input input[type="password"], #api-key-input input[type="text"]');
+                if (!apiKeyInput) {
+                    console.log('API key input not found, checking if section is visible...');
+                    const section = document.getElementById('api-key-section');
+                    console.log('API key section:', section, 'visible:', section ? section.offsetParent : null);
+                    return false;
+                }
+                if (document.getElementById('api-key-toggle')) {
+                    console.log('Eye toggle already exists');
+                    return true;
+                }
+
+                console.log('Found API key input, adding eye toggle button...');
+
+                // Find the immediate parent of the input and set position relative
+                let wrapper = apiKeyInput.parentElement;
+                wrapper.style.position = 'relative';
+                wrapper.style.display = 'flex';
+                wrapper.style.alignItems = 'center';
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.type = 'button';
+                toggleBtn.id = 'api-key-toggle';
+                toggleBtn.innerHTML = '<svg class="eye-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg><svg class="eye-closed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18" style="display:none;"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path><line x1="1" y1="1" x2="23" y2="23"></line></svg>';
+                toggleBtn.style.cssText = 'position:absolute;right:8px;top:50%;transform:translateY(-50%);width:28px;height:28px;border:none;background:transparent;cursor:pointer;display:none;align-items:center;justify-content:center;color:#718096;border-radius:6px;transition:all 0.2s;padding:4px;z-index:100;';
+
+                // Insert the button after the input, inside the wrapper
+                wrapper.appendChild(toggleBtn);
+                apiKeyInput.style.paddingRight = '40px';
+
+                const updateToggleVisibility = () => {
+                    const hasValue = apiKeyInput.value && apiKeyInput.value.length > 0;
+                    toggleBtn.style.display = hasValue ? 'flex' : 'none';
+                    console.log('Eye toggle visibility:', hasValue);
+                };
+
+                apiKeyInput.addEventListener('input', updateToggleVisibility);
+                // Also listen for change events
+                apiKeyInput.addEventListener('change', updateToggleVisibility);
+                // Check initial value
+                updateToggleVisibility();
+
+                toggleBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const isPassword = apiKeyInput.type === 'password';
+                    apiKeyInput.type = isPassword ? 'text' : 'password';
+                    this.querySelector('.eye-open').style.display = isPassword ? 'none' : 'block';
+                    this.querySelector('.eye-closed').style.display = isPassword ? 'block' : 'none';
+                    console.log('Toggled password visibility to:', apiKeyInput.type);
+                });
+
+                toggleBtn.addEventListener('mouseenter', function() {
+                    this.style.background = 'rgba(232, 180, 184, 0.2)';
+                    this.style.color = '#e8b4b8';
+                });
+                toggleBtn.addEventListener('mouseleave', function() {
+                    this.style.background = 'transparent';
+                    this.style.color = '#718096';
+                });
+
+                console.log('Eye toggle button added successfully to wrapper:', wrapper);
+                return true;
+            };
+
+            // Setup tooltip positioning and visibility
+            function setupTooltip() {
+                const helpWrapper = document.getElementById('api-help-wrapper');
+                const tooltip = document.getElementById('api-tooltip');
+                if (!helpWrapper || !tooltip) {
+                    console.log('Tooltip elements not found');
+                    return;
+                }
+                if (helpWrapper._tooltipInitialized) return;
+                helpWrapper._tooltipInitialized = true;
+
+                const showTooltip = () => {
+                    const rect = helpWrapper.getBoundingClientRect();
+                    const tooltipWidth = 280;
+
+                    // Make tooltip visible but transparent to measure its height
+                    tooltip.style.visibility = 'hidden';
+                    tooltip.style.opacity = '0';
+                    tooltip.style.display = 'block';
+                    const tooltipHeight = tooltip.offsetHeight;
+                    tooltip.style.display = '';
+
+                    // Gap between tooltip and icon (tight positioning)
+                    const gap = 8;
+
+                    // Position above the help icon, centered horizontally on the icon
+                    const iconCenterX = rect.left + (rect.width / 2);
+                    let left = iconCenterX - (tooltipWidth / 2);
+                    let top = rect.top - tooltipHeight - gap;
+
+                    // Calculate arrow position (should point to icon center)
+                    let arrowLeft = 50; // percentage
+
+                    // Keep tooltip within viewport
+                    if (left < 10) {
+                        // Adjust arrow position when tooltip shifts right
+                        arrowLeft = ((iconCenterX - 10) / tooltipWidth) * 100;
+                        left = 10;
+                    }
+                    if (left + tooltipWidth > window.innerWidth - 10) {
+                        // Adjust arrow position when tooltip shifts left
+                        const newLeft = window.innerWidth - tooltipWidth - 10;
+                        arrowLeft = ((iconCenterX - newLeft) / tooltipWidth) * 100;
+                        left = newLeft;
+                    }
+
+                    // Clamp arrow position
+                    arrowLeft = Math.max(15, Math.min(85, arrowLeft));
+
+                    // If tooltip would go above viewport, show below instead
+                    if (top < 10) {
+                        top = rect.bottom + gap;
+                        // Flip arrow to top when showing below
+                        tooltip.style.setProperty('--arrow-position', 'top');
+                    } else {
+                        tooltip.style.setProperty('--arrow-position', 'bottom');
+                    }
+
+                    tooltip.style.left = left + 'px';
+                    tooltip.style.top = top + 'px';
+                    tooltip.style.setProperty('--arrow-left', arrowLeft + '%');
+                    tooltip.classList.add('visible');
+                };
+
+                const hideTooltip = () => {
+                    tooltip.classList.remove('visible');
+                };
+
+                helpWrapper.addEventListener('mouseenter', showTooltip);
+                helpWrapper.addEventListener('mouseleave', hideTooltip);
+                console.log('Tooltip setup complete');
+            }
+
+            // Initialize
+            function initAll() {
+                // Detect browser language
+                const browserLang = navigator.language.split('-')[0];
+                console.log('Browser language:', navigator.language);
+
+                if (navigator.language.startsWith('zh-TW') || navigator.language.startsWith('zh-Hant')) {
+                    window.updateApiKeyLanguage('zh-Hant');
+                } else if (navigator.language.startsWith('zh')) {
+                    window.updateApiKeyLanguage('zh');
+                } else if (window.apiKeyTranslations[browserLang]) {
+                    window.updateApiKeyLanguage(browserLang);
+                }
+
+                window.initApiKeyEyeToggle();
+                setupTooltip();
+            }
+
+            // Run after delay for Gradio to fully render
+            setTimeout(initAll, 800);
+            setTimeout(() => window.initApiKeyEyeToggle(), 1500);
+            setTimeout(() => window.initApiKeyEyeToggle(), 3000);
+        }
+        """
+    )
+
+    # Separate event to update API key language after init
+    def get_session_lang_for_js(lang):
+        """Return session language for JavaScript"""
+        return lang if lang else "en"
+
+    session_lang.change(
+        fn=get_session_lang_for_js,
+        inputs=[session_lang],
+        outputs=[session_lang_holder],
+        js="""
+        (lang) => {
+            console.log('Session language changed to:', lang);
+            function tryUpdateLanguage() {
+                if (window.updateApiKeyLanguage) {
+                    window.updateApiKeyLanguage(lang || 'en');
+                    if (window.initApiKeyEyeToggle) {
+                        window.initApiKeyEyeToggle();
+                    }
+                    return true;
+                }
+                return false;
+            }
+            if (!tryUpdateLanguage()) {
+                setTimeout(tryUpdateLanguage, 300);
+                setTimeout(tryUpdateLanguage, 800);
+            }
+            return lang;
+        }
+        """
     )
 
 #-------------------------------------------------------------------------
