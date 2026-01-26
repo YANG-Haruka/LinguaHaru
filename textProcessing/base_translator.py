@@ -2,10 +2,13 @@ import os
 import shutil
 import json
 import time
+import uuid
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from config.log_config import app_logger
 from .calculation_tokens import num_tokens_from_string
+from config.translation_history import TranslationHistoryManager, create_translation_record
 
 from llmWrapper.llm_wrapper import translate_text, interruptible_sleep
 from textProcessing.text_separator import (
@@ -27,7 +30,7 @@ RESULT_JSON_PATH = "dst_translated.json"
 MAX_PREVIOUS_TOKENS = 128
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir, session_lang="en"):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir, session_lang="en", log_dir="log"):
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
@@ -46,6 +49,12 @@ class DocumentTranslator:
         self.temp_dir = temp_dir
         self.result_dir = result_dir
         self.session_lang = session_lang
+        self.log_dir = log_dir
+
+        # Translation history tracking
+        self.translation_id = str(uuid.uuid4())
+        self.translation_start_time = None
+        self.translation_end_time = None
 
         # Token usage tracking
         self.total_prompt_tokens = 0
@@ -88,6 +97,76 @@ class DocumentTranslator:
             except (KeyError, ValueError):
                 return message
         return message
+
+    def _get_language_display_name(self, lang_code):
+        """Get display name for a language code"""
+        # Reverse lookup in LANGUAGE_MAP
+        from config.languages_config import LANGUAGE_MAP
+        for display_name, code in LANGUAGE_MAP.items():
+            if code == lang_code:
+                return display_name
+        # If not found, return the code itself
+        return lang_code
+
+    def _get_current_log_file_path(self):
+        """Get the current log file path"""
+        from config.log_config import file_logger
+        if hasattr(file_logger, 'current_log_file') and file_logger.current_log_file:
+            return file_logger.current_log_file
+        # Fallback: construct a reasonable path
+        input_filename = os.path.basename(self.input_file_path)
+        return os.path.join(self.log_dir, f"{input_filename}.log")
+
+    def _save_translation_summary(self, status, output_file_path=None):
+        """Save translation summary to history"""
+        try:
+            self.translation_end_time = datetime.now()
+
+            # Get log file path
+            log_file_path = self._get_current_log_file_path()
+
+            # Get display names for languages
+            src_lang_display = self._get_language_display_name(self.src_lang)
+            dst_lang_display = self._get_language_display_name(self.dst_lang)
+
+            # Get input filename
+            input_file = os.path.basename(self.input_file_path)
+
+            # Create record
+            record = create_translation_record(
+                translation_id=self.translation_id,
+                start_time=self.translation_start_time,
+                end_time=self.translation_end_time,
+                total_tokens=self.total_tokens,
+                src_lang=self.src_lang,
+                src_lang_display=src_lang_display,
+                dst_lang=self.dst_lang,
+                dst_lang_display=dst_lang_display,
+                model=self.model,
+                use_online=self.use_online,
+                input_file=input_file,
+                output_file_path=output_file_path or "",
+                log_file_path=log_file_path,
+                status=status
+            )
+
+            # Save to history
+            history_manager = TranslationHistoryManager(log_dir=self.log_dir)
+            history_manager.add_record(record)
+
+            app_logger.info(f"Translation summary saved: {status}, tokens: {self.total_tokens}")
+        except Exception as e:
+            app_logger.error(f"Error saving translation summary: {e}")
+
+    def save_failed_summary(self):
+        """Save translation summary with failed status - called from app.py on error"""
+        if self.translation_start_time:
+            self._save_translation_summary(status="failed")
+
+    def save_stopped_summary(self):
+        """Save translation summary with stopped status - called from app.py when user stops"""
+        if self.translation_start_time:
+            self._save_translation_summary(status="stopped")
 
     def extract_content_to_json(self):
         """Extract document content to JSON - to be implemented by subclass"""
@@ -661,7 +740,10 @@ class DocumentTranslator:
     
     def process(self, file_name, file_extension, progress_callback=None):
         """Main processing method"""
-        
+
+        # Record translation start time
+        self.translation_start_time = datetime.now()
+
         # Continue mode
         if self.continue_mode:
             app_logger.info("Continue mode: checking existing files...")
@@ -771,4 +853,8 @@ class DocumentTranslator:
         # Use source_lang2target_lang format (e.g., zh2ja)
         lang_suffix = f"{self.src_lang}2{self.dst_lang}"
         final_output_path = os.path.join(result_folder, f"{base_name}_{lang_suffix}{file_extension}")
+
+        # Save translation summary
+        self._save_translation_summary(status="success", output_file_path=final_output_path)
+
         return final_output_path, missing_counts
