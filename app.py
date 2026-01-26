@@ -20,8 +20,12 @@ from functools import partial
 from ui_layout import (
     get_custom_css, create_header, create_footer, create_language_section,
     create_settings_section, create_model_glossary_section, create_main_interface,
-    create_state_variables, create_theme_toggle
+    create_state_variables, create_theme_toggle, create_translation_history_button,
+    create_history_page_content
 )
+
+# Import translation history manager
+from config.translation_history import TranslationHistoryManager, format_duration, format_tokens
 
 # Import language configs
 from config.languages_config import LABEL_TRANSLATIONS, get_available_languages, get_language_code, add_custom_language
@@ -657,6 +661,144 @@ def on_glossary_change(glossary_value, session_lang):
         return gr.update(visible=False)
     
 #-------------------------------------------------------------------------
+# Translation History Functions
+#-------------------------------------------------------------------------
+
+def load_translation_history(session_lang):
+    """Load and render translation history as HTML"""
+    _, _, log_dir = get_custom_paths()
+    history_manager = TranslationHistoryManager(log_dir=log_dir)
+    records = history_manager.get_all_records(limit=50)
+
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+
+    if not records:
+        return f"<div class='history-no-records'>{labels.get('No translation records', 'No translation records')}</div>"
+
+    html_parts = []
+    for record in records:
+        # Status icon
+        status = record.get("status", "unknown")
+        if status == "success":
+            status_icon = "✅"
+            status_text = labels.get("Success", "Success")
+        elif status == "failed":
+            status_icon = "❌"
+            status_text = labels.get("Failed", "Failed")
+        elif status == "stopped":
+            status_icon = "⏹️"
+            status_text = labels.get("Stopped", "Stopped")
+        else:
+            status_icon = "❓"
+            status_text = status
+
+        # Format time
+        start_time = record.get("start_time", "")
+        if start_time:
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(start_time)
+                formatted_time = dt.strftime("%Y-%m-%d %H:%M")
+            except:
+                formatted_time = start_time[:16] if len(start_time) >= 16 else start_time
+        else:
+            formatted_time = "-"
+
+        # Format duration
+        duration_seconds = record.get("duration_seconds", 0)
+        formatted_duration = format_duration(duration_seconds)
+
+        # Format tokens
+        total_tokens = record.get("total_tokens", 0)
+        formatted_tokens = format_tokens(total_tokens)
+
+        # Language info
+        src_lang_display = record.get("src_lang_display", record.get("src_lang", ""))
+        dst_lang_display = record.get("dst_lang_display", record.get("dst_lang", ""))
+
+        # Model info
+        model = record.get("model", "")
+        use_online = record.get("use_online", False)
+        mode_text = labels.get("Online", "Online") if use_online else labels.get("Offline", "Offline")
+
+        # File info
+        input_file = record.get("input_file", "")
+        output_file_path = record.get("output_file_path", "")
+        log_file_path = record.get("log_file_path", "")
+
+        # Escape paths for JavaScript
+        output_folder = os.path.dirname(output_file_path).replace("\\", "\\\\").replace("'", "\\'") if output_file_path else ""
+        log_folder = os.path.dirname(log_file_path).replace("\\", "\\\\").replace("'", "\\'") if log_file_path else ""
+
+        html = f"""
+        <div class="history-record">
+            <div class="history-record-header">
+                <span class="history-record-filename">📄 {input_file}</span>
+                <span class="history-record-status" title="{status_text}">{status_icon}</span>
+            </div>
+            <div class="history-record-info">
+                <div class="history-record-info-item">
+                    <span>🕐</span>
+                    <span>{labels.get('Time', 'Time')}: {formatted_time}</span>
+                </div>
+                <div class="history-record-info-item">
+                    <span>⏱️</span>
+                    <span>{labels.get('Duration', 'Duration')}: {formatted_duration}</span>
+                </div>
+                <div class="history-record-info-item">
+                    <span>🔢</span>
+                    <span>{labels.get('Tokens', 'Tokens')}: {formatted_tokens}</span>
+                </div>
+                <div class="history-record-info-item">
+                    <span>🌐</span>
+                    <span>{src_lang_display} → {dst_lang_display}</span>
+                </div>
+                <div class="history-record-info-item">
+                    <span>🤖</span>
+                    <span>{model} ({mode_text})</span>
+                </div>
+            </div>
+            <div class="history-record-actions">
+                <button class="history-action-btn" onclick="openFolder('{output_folder}')" {'disabled' if not output_folder else ''}>
+                    📂 {labels.get('Open Output Folder', 'Open Output Folder')}
+                </button>
+                <button class="history-action-btn" onclick="openFolder('{log_folder}')" {'disabled' if not log_folder else ''}>
+                    📋 {labels.get('Open Log Folder', 'Open Log Folder')}
+                </button>
+            </div>
+        </div>
+        """
+        html_parts.append(html)
+
+    return "".join(html_parts)
+
+
+def toggle_history_panel(is_visible):
+    """Toggle history panel visibility"""
+    return gr.update(visible=not is_visible)
+
+
+def open_folder_path(path):
+    """Open folder in file explorer"""
+    import subprocess
+    import platform
+
+    if not path or not os.path.exists(path):
+        return
+
+    system = platform.system()
+    try:
+        if system == "Windows":
+            subprocess.run(["explorer", path], check=False)
+        elif system == "Darwin":  # macOS
+            subprocess.run(["open", path], check=False)
+        else:  # Linux
+            subprocess.run(["xdg-open", path], check=False)
+    except Exception as e:
+        app_logger.error(f"Error opening folder: {e}")
+
+
+#-------------------------------------------------------------------------
 # Language and Localization Functions
 #-------------------------------------------------------------------------
 
@@ -768,7 +910,11 @@ def set_labels(session_lang: str):
             label=labels.get("New Language Name", "New language name"),
             placeholder=labels.get("Language Name Placeholder", "e.g. Klingon")
         ),
-        add_lang_button: gr.update(value=labels.get("Create Language", "Create"))
+        add_lang_button: gr.update(value=labels.get("Create Language", "Create")),
+        history_nav_btn: gr.update(value=f"📋 {labels.get('Translation History', 'Translation History')}"),
+        history_back_btn: gr.update(value=f"← {labels.get('Back', 'Back')}"),
+        history_refresh_btn: gr.update(value=f"🔄 {labels.get('Refresh Records', 'Refresh')}"),
+        history_title: gr.update(value=f"<h2 style='text-align: center; margin: 20px 0;'>{labels.get('Translation History', 'Translation History')}</h2>")
     }
 
 #-------------------------------------------------------------------------
@@ -1188,7 +1334,8 @@ def process_single_file(
             thread_count=thread_count, glossary_path=glossary_path,
             temp_dir=temp_dir,      # Pass custom temp directory
             result_dir=result_dir,  # Pass custom result directory
-            session_lang=session_lang  # Pass session language for i18n
+            session_lang=session_lang,  # Pass session language for i18n
+            log_dir=log_dir         # Pass custom log directory
         )
         
         # Add check_stop_requested as attribute
@@ -1229,11 +1376,20 @@ def process_single_file(
     
     except StopTranslationException:
         app_logger.info("Translation stopped by user")
+        # Save stopped status to history
+        if 'translator' in locals() and translator:
+            translator.save_stopped_summary()
         return gr.update(value=None, visible=False), "Translation stopped by user."
     except ValueError as e:
+        # Save failed status to history
+        if 'translator' in locals() and translator:
+            translator.save_failed_summary()
         return gr.update(value=None, visible=False), f"Translation failed: {str(e)}"
     except Exception as e:
         app_logger.exception("Error processing file")
+        # Save failed status to history
+        if 'translator' in locals() and translator:
+            translator.save_failed_summary()
         return gr.update(value=None, visible=False), f"Error: {str(e)}"
     
 def process_multiple_files(
@@ -1293,7 +1449,8 @@ def process_multiple_files(
                         thread_count=thread_count, glossary_path=glossary_path,
                         temp_dir=temp_dir,      # Pass custom temp directory
                         result_dir=result_dir,  # Pass custom result directory
-                        session_lang=session_lang  # Pass session language for i18n
+                        session_lang=session_lang,  # Pass session language for i18n
+                        log_dir=log_dir         # Pass custom log directory
                     )
                     
                     # Create output directory
@@ -1320,8 +1477,17 @@ def process_multiple_files(
                     # Accumulate total tokens
                     total_tokens += getattr(translator, 'total_tokens', 0)
 
+                except StopTranslationException:
+                    app_logger.info(f"Translation stopped by user for file {rel_path}")
+                    if 'translator' in locals() and translator:
+                        translator.save_stopped_summary()
+                    # Re-raise to stop processing all files
+                    raise
                 except Exception as e:
                     app_logger.exception(f"Error processing file {rel_path}: {e}")
+                    # Save failed status to history
+                    if 'translator' in locals() and translator:
+                        translator.save_failed_summary()
                     # Continue with next file
 
         # Get translated labels
@@ -1433,24 +1599,37 @@ with gr.Blocks(
     def get_label(key):
         return initial_labels.get(key, key)
 
-    # Create language selection section
-    src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button, custom_lang_row = create_language_section(
-        default_src_lang, default_dst_lang, get_label
-    )
+    # Main page content wrapped in a Column for page navigation
+    with gr.Column(visible=True, elem_id="main-page") as main_page:
+        # Create language selection section
+        src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button, custom_lang_row = create_language_section(
+            default_src_lang, default_dst_lang, get_label
+        )
 
-    # Create settings section
-    (use_online_model, lan_mode_checkbox, max_retries_slider, 
-    thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox) = create_settings_section(config)
+        # Create settings section
+        (use_online_model, lan_mode_checkbox, max_retries_slider,
+        thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox) = create_settings_section(config)
 
-    # Create model and glossary section
-    (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
-     glossary_upload_file) = create_model_glossary_section(
-        config, local_models, online_models, get_glossary_files, get_default_glossary, get_label
-    )
+        # Create model and glossary section
+        (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
+         glossary_upload_file) = create_model_glossary_section(
+            config, local_models, online_models, get_glossary_files, get_default_glossary, get_label
+        )
 
-    # Create main interface
-    (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
-     translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
+        # Create main interface
+        (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
+         translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
+
+        # Create translation history navigation button
+        history_nav_btn = create_translation_history_button(get_label)
+
+    # Create history page (initially hidden)
+    with gr.Column(visible=False, elem_id="history-page") as history_page:
+        history_back_btn, history_refresh_btn, history_title, history_list = create_history_page_content(get_label)
+
+    # Hidden components for folder opening functionality
+    folder_path_input = gr.Textbox(visible=False, elem_id="folder-path-input")
+    folder_open_trigger = gr.Button(visible=False, elem_id="folder-open-trigger")
 
     # Event handlers
     use_online_model.change(
@@ -1713,6 +1892,61 @@ with gr.Blocks(
         inputs=[custom_lang_input, session_lang],
         outputs=[src_lang, dst_lang, custom_lang_input, custom_lang_row]
     )
+
+    # Translation history event handlers - Page navigation using JavaScript
+    def navigate_to_history(session_lang):
+        """Navigate to history page and load records"""
+        html_content = load_translation_history(session_lang)
+        return html_content
+
+    # Navigate to history page
+    history_nav_btn.click(
+        navigate_to_history,
+        inputs=[session_lang],
+        outputs=[history_list]
+    ).then(
+        fn=None,
+        inputs=None,
+        outputs=None,
+        js="""
+        () => {
+            const mainPage = document.getElementById('main-page');
+            const historyPage = document.getElementById('history-page');
+            if (mainPage) mainPage.style.display = 'none';
+            if (historyPage) historyPage.style.display = 'block';
+        }
+        """
+    )
+
+    # Navigate back to main page
+    history_back_btn.click(
+        fn=None,
+        inputs=None,
+        outputs=None,
+        js="""
+        () => {
+            const mainPage = document.getElementById('main-page');
+            const historyPage = document.getElementById('history-page');
+            if (mainPage) mainPage.style.display = 'block';
+            if (historyPage) historyPage.style.display = 'none';
+        }
+        """
+    )
+
+    # Refresh history
+    history_refresh_btn.click(
+        load_translation_history,
+        inputs=[session_lang],
+        outputs=[history_list]
+    )
+
+    # Folder opening handler
+    folder_open_trigger.click(
+        open_folder_path,
+        inputs=[folder_path_input],
+        outputs=[]
+    )
+
     theme_toggle_btn.click(
         fn=None,
         inputs=[],
@@ -1771,11 +2005,40 @@ with gr.Blocks(
             model_choice, glossary_choice, max_retries_slider, thread_count_slider,
             api_key_input, remember_key_checkbox, file_input, output_file, status_message, translate_button,
             continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, stop_button,
-            custom_lang_input, add_lang_button
+            custom_lang_input, add_lang_button, history_nav_btn, history_back_btn, history_refresh_btn, history_title
         ],
         js="""
         () => {
             console.log('Initializing API Key features...');
+
+            // Function to open folder - triggers backend via hidden components
+            window.openFolder = function(path) {
+                if (!path) {
+                    console.log('No path provided');
+                    return;
+                }
+                console.log('Opening folder:', path);
+
+                // Find the hidden input and button
+                const pathInput = document.querySelector('#folder-path-input input, #folder-path-input textarea');
+                const triggerBtn = document.querySelector('#folder-open-trigger');
+
+                if (pathInput && triggerBtn) {
+                    // Set the path value
+                    pathInput.value = path;
+                    // Dispatch input event to update Gradio state
+                    pathInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+                    // Small delay to ensure state update, then click trigger
+                    setTimeout(() => {
+                        triggerBtn.click();
+                    }, 100);
+                } else {
+                    console.log('Folder open components not found');
+                    // Fallback: show path in alert
+                    alert('Folder path: ' + path);
+                }
+            };
 
             // Translations for tooltip and API key label (dynamically generated from languages_config.py)
             window.apiKeyTranslations = """ + generate_api_key_translations_js() + """;

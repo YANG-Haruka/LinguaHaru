@@ -144,7 +144,23 @@ LABEL_TRANSLATIONS = {
         "Show API Key": "Show API Key",
         "Hide API Key": "Hide API Key",
         "Security Tips": "Security Tips",
-        "Security Tips Content": "This feature is only available in non-LAN mode. API keys are private data with security risks. Please enable with caution."
+        "Security Tips Content": "This feature is only available in non-LAN mode. API keys are private data with security risks. Please enable with caution.",
+        # Translation History
+        "Translation History": "Translation History",
+        "Refresh Records": "Refresh",
+        "Back": "Back",
+        "No translation records": "No translation records",
+        "Time": "Time",
+        "Duration": "Duration",
+        "Online": "Online",
+        "Offline": "Offline",
+        "Open Output Folder": "Open Output Folder",
+        "Open Log Folder": "Open Log Folder",
+        "Status": "Status",
+        "Success": "Success",
+        "Failed": "Failed",
+        "Stopped": "Stopped",
+        "Tokens": "Tokens"
     },
     # Simplified Chinese
     "zh": {
@@ -193,7 +209,23 @@ LABEL_TRANSLATIONS = {
         "Show API Key": "显示密钥",
         "Hide API Key": "隐藏密钥",
         "Security Tips": "安全提示",
-        "Security Tips Content": "此功能仅在非局域网模式下可用。密钥为个人隐私数据，存在安全风险，请确认后谨慎开启。"
+        "Security Tips Content": "此功能仅在非局域网模式下可用。密钥为个人隐私数据，存在安全风险，请确认后谨慎开启。",
+        # Translation History
+        "Translation History": "翻译记录",
+        "Refresh Records": "刷新",
+        "Back": "返回",
+        "No translation records": "暂无翻译记录",
+        "Time": "时间",
+        "Duration": "耗时",
+        "Online": "在线",
+        "Offline": "离线",
+        "Open Output Folder": "打开输出文件夹",
+        "Open Log Folder": "打开日志文件夹",
+        "Status": "状态",
+        "Success": "成功",
+        "Failed": "失败",
+        "Stopped": "已停止",
+        "Tokens": "Tokens"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -242,7 +274,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "安全提示",
         "Security Tips Content": "此功能僅在非區域網路模式下可用。金鑰為個人隱私資料，存在安全風險，請確認後謹慎開啟。",
         "Show API Key": "顯示金鑰",
-        "Hide API Key": "隱藏金鑰"
+        "Hide API Key": "隱藏金鑰",
+        # Translation History
+        "Translation History": "翻譯記錄",
+        "Refresh Records": "重新整理",
+        "Back": "返回",
+        "No translation records": "暫無翻譯記錄",
+        "Time": "時間",
+        "Duration": "耗時",
+        "Online": "線上",
+        "Offline": "離線",
+        "Open Output Folder": "開啟輸出資料夾",
+        "Open Log Folder": "開啟日誌資料夾",
+        "Status": "狀態",
+        "Success": "成功",
+        "Failed": "失敗",
+        "Stopped": "已停止",
+        "Tokens": "Tokens"
     },
     # Japanese
     "ja": {
@@ -291,7 +339,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "セキュリティに関するヒント",
         "Security Tips Content": "この機能は非LANモードでのみ使用できます。APIキーは個人のプライバシーデータであり、セキュリティリスクがあります。慎重に有効にしてください。",
         "Show API Key": "キーを表示",
-        "Hide API Key": "キーを非表示"
+        "Hide API Key": "キーを非表示",
+        # Translation History
+        "Translation History": "翻訳履歴",
+        "Refresh Records": "更新",
+        "Back": "戻る",
+        "No translation records": "翻訳履歴がありません",
+        "Time": "時間",
+        "Duration": "所要時間",
+        "Online": "オンライン",
+        "Offline": "オフライン",
+        "Open Output Folder": "出力フォルダを開く",
+        "Open Log Folder": "ログフォルダを開く",
+        "Status": "ステータス",
+        "Success": "成功",
+        "Failed": "失敗",
+        "Stopped": "停止済み",
+        "Tokens": "トークン"
     },
     # Spanish
     "es": {
@@ -340,7 +404,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "Consejos de seguridad",
         "Security Tips Content": "Esta función solo está disponible en modo no LAN. Las claves API son datos privados con riesgos de seguridad. Por favor, habilite con precaución.",
         "Show API Key": "Mostrar clave",
-        "Hide API Key": "Ocultar clave"
+        "Hide API Key": "Ocultar clave",
+        # Translation History
+        "Translation History": "Historial de traducción",
+        "Refresh Records": "Actualizar",
+        "Back": "Volver",
+        "No translation records": "No hay registros de traducción",
+        "Time": "Tiempo",
+        "Duration": "Duración",
+        "Online": "En línea",
+        "Offline": "Sin conexión",
+        "Open Output Folder": "Abrir carpeta de salida",
+        "Open Log Folder": "Abrir carpeta de registros",
+        "Status": "Estado",
+        "Success": "Éxito",
+        "Failed": "Fallido",
+        "Stopped": "Detenido",
+        "Tokens": "Tokens"
     },
     # French
     "fr": {
@@ -389,7 +469,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "Conseils de sécurité",
         "Security Tips Content": "Cette fonction n'est disponible qu'en mode non-LAN. Les clés API sont des données privées avec des risques de sécurité. Veuillez activer avec prudence.",
         "Show API Key": "Afficher la clé",
-        "Hide API Key": "Masquer la clé"
+        "Hide API Key": "Masquer la clé",
+        # Translation History
+        "Translation History": "Historique des traductions",
+        "Refresh Records": "Actualiser",
+        "Back": "Retour",
+        "No translation records": "Aucun historique de traduction",
+        "Time": "Heure",
+        "Duration": "Durée",
+        "Online": "En ligne",
+        "Offline": "Hors ligne",
+        "Open Output Folder": "Ouvrir le dossier de sortie",
+        "Open Log Folder": "Ouvrir le dossier des journaux",
+        "Status": "Statut",
+        "Success": "Succès",
+        "Failed": "Échec",
+        "Stopped": "Arrêté",
+        "Tokens": "Tokens"
     },
     # German
     "de": {
@@ -438,7 +534,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "Sicherheitshinweise",
         "Security Tips Content": "Diese Funktion ist nur im Nicht-LAN-Modus verfügbar. API-Schlüssel sind private Daten mit Sicherheitsrisiken. Bitte mit Vorsicht aktivieren.",
         "Show API Key": "Schlüssel anzeigen",
-        "Hide API Key": "Schlüssel verbergen"
+        "Hide API Key": "Schlüssel verbergen",
+        # Translation History
+        "Translation History": "Übersetzungsverlauf",
+        "Refresh Records": "Aktualisieren",
+        "Back": "Zurück",
+        "No translation records": "Keine Übersetzungseinträge",
+        "Time": "Zeit",
+        "Duration": "Dauer",
+        "Online": "Online",
+        "Offline": "Offline",
+        "Open Output Folder": "Ausgabeordner öffnen",
+        "Open Log Folder": "Protokollordner öffnen",
+        "Status": "Status",
+        "Success": "Erfolg",
+        "Failed": "Fehlgeschlagen",
+        "Stopped": "Gestoppt",
+        "Tokens": "Tokens"
     },
     # Italian
     "it": {
@@ -487,7 +599,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "Suggerimenti per la sicurezza",
         "Security Tips Content": "Questa funzione è disponibile solo in modalità non-LAN. Le chiavi API sono dati privati con rischi per la sicurezza. Si prega di abilitare con cautela.",
         "Show API Key": "Mostra chiave",
-        "Hide API Key": "Nascondi chiave"
+        "Hide API Key": "Nascondi chiave",
+        # Translation History
+        "Translation History": "Cronologia traduzioni",
+        "Refresh Records": "Aggiorna",
+        "Back": "Indietro",
+        "No translation records": "Nessun record di traduzione",
+        "Time": "Ora",
+        "Duration": "Durata",
+        "Online": "Online",
+        "Offline": "Offline",
+        "Open Output Folder": "Apri cartella di output",
+        "Open Log Folder": "Apri cartella dei log",
+        "Status": "Stato",
+        "Success": "Successo",
+        "Failed": "Fallito",
+        "Stopped": "Interrotto",
+        "Tokens": "Token"
     },
     # Portuguese
     "pt": {
@@ -536,7 +664,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "Dicas de segurança",
         "Security Tips Content": "Este recurso está disponível apenas no modo não-LAN. As chaves de API são dados privados com riscos de segurança. Por favor, habilite com cautela.",
         "Show API Key": "Mostrar chave",
-        "Hide API Key": "Ocultar chave"
+        "Hide API Key": "Ocultar chave",
+        # Translation History
+        "Translation History": "Histórico de traduções",
+        "Refresh Records": "Atualizar",
+        "Back": "Voltar",
+        "No translation records": "Nenhum registro de tradução",
+        "Time": "Hora",
+        "Duration": "Duração",
+        "Online": "Online",
+        "Offline": "Offline",
+        "Open Output Folder": "Abrir pasta de saída",
+        "Open Log Folder": "Abrir pasta de logs",
+        "Status": "Status",
+        "Success": "Sucesso",
+        "Failed": "Falhou",
+        "Stopped": "Parado",
+        "Tokens": "Tokens"
     },
     # Russian
     "ru": {
@@ -585,7 +729,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "Советы по безопасности",
         "Security Tips Content": "Эта функция доступна только в режиме без LAN. API-ключи — это личные данные с рисками безопасности. Пожалуйста, включайте с осторожностью.",
         "Show API Key": "Показать ключ",
-        "Hide API Key": "Скрыть ключ"
+        "Hide API Key": "Скрыть ключ",
+        # Translation History
+        "Translation History": "История переводов",
+        "Refresh Records": "Обновить",
+        "Back": "Назад",
+        "No translation records": "Нет записей о переводах",
+        "Time": "Время",
+        "Duration": "Длительность",
+        "Online": "Онлайн",
+        "Offline": "Офлайн",
+        "Open Output Folder": "Открыть папку вывода",
+        "Open Log Folder": "Открыть папку журналов",
+        "Status": "Статус",
+        "Success": "Успешно",
+        "Failed": "Ошибка",
+        "Stopped": "Остановлено",
+        "Tokens": "Токены"
     },
     # Korean
     "ko": {
@@ -634,7 +794,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "보안 팁",
         "Security Tips Content": "이 기능은 비LAN 모드에서만 사용할 수 있습니다. API 키는 보안 위험이 있는 개인 데이터입니다. 신중하게 활성화하십시오.",
         "Show API Key": "키 표시",
-        "Hide API Key": "키 숨기기"
+        "Hide API Key": "키 숨기기",
+        # Translation History
+        "Translation History": "번역 기록",
+        "Refresh Records": "새로고침",
+        "Back": "뒤로",
+        "No translation records": "번역 기록이 없습니다",
+        "Time": "시간",
+        "Duration": "소요 시간",
+        "Online": "온라인",
+        "Offline": "오프라인",
+        "Open Output Folder": "출력 폴더 열기",
+        "Open Log Folder": "로그 폴더 열기",
+        "Status": "상태",
+        "Success": "성공",
+        "Failed": "실패",
+        "Stopped": "중지됨",
+        "Tokens": "토큰"
     },
     # Thai
     "th": {
@@ -683,7 +859,23 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "เคล็ดลับความปลอดภัย",
         "Security Tips Content": "ฟังก์ชันนี้ใช้ได้เฉพาะในโหมดที่ไม่ใช่ LAN คีย์ API เป็นข้อมูลส่วนตัวที่มีความเสี่ยงด้านความปลอดภัย กรุณาเปิดใช้งานด้วยความระมัดระวัง",
         "Show API Key": "แสดงคีย์",
-        "Hide API Key": "ซ่อนคีย์"
+        "Hide API Key": "ซ่อนคีย์",
+        # Translation History
+        "Translation History": "ประวัติการแปล",
+        "Refresh Records": "รีเฟรช",
+        "Back": "ย้อนกลับ",
+        "No translation records": "ไม่มีประวัติการแปล",
+        "Time": "เวลา",
+        "Duration": "ระยะเวลา",
+        "Online": "ออนไลน์",
+        "Offline": "ออฟไลน์",
+        "Open Output Folder": "เปิดโฟลเดอร์เอาต์พุต",
+        "Open Log Folder": "เปิดโฟลเดอร์บันทึก",
+        "Status": "สถานะ",
+        "Success": "สำเร็จ",
+        "Failed": "ล้มเหลว",
+        "Stopped": "หยุดแล้ว",
+        "Tokens": "โทเค็น"
     },
     # Vietnamese
     "vi": {
@@ -732,6 +924,22 @@ LABEL_TRANSLATIONS = {
         "Security Tips": "Mẹo bảo mật",
         "Security Tips Content": "Tính năng này chỉ khả dụng ở chế độ không phải LAN. Khóa API là dữ liệu riêng tư có rủi ro bảo mật. Vui lòng bật một cách cẩn thận.",
         "Show API Key": "Hiện khóa",
-        "Hide API Key": "Ẩn khóa"
+        "Hide API Key": "Ẩn khóa",
+        # Translation History
+        "Translation History": "Lịch sử dịch",
+        "Refresh Records": "Làm mới",
+        "Back": "Quay lại",
+        "No translation records": "Không có lịch sử dịch",
+        "Time": "Thời gian",
+        "Duration": "Thời lượng",
+        "Online": "Trực tuyến",
+        "Offline": "Ngoại tuyến",
+        "Open Output Folder": "Mở thư mục đầu ra",
+        "Open Log Folder": "Mở thư mục nhật ký",
+        "Status": "Trạng thái",
+        "Success": "Thành công",
+        "Failed": "Thất bại",
+        "Stopped": "Đã dừng",
+        "Tokens": "Token"
     }
 }

@@ -633,6 +633,8 @@ def get_custom_css():
         transition: var(--transition-bounce) !important;
         position: relative !important;
         overflow: hidden !important;
+        padding: 14px 24px !important;  /* 统一所有按钮的 padding */
+        font-size: 0.95rem !important;
     }
 
     .gr-button-primary,
@@ -642,8 +644,6 @@ def get_custom_css():
         animation: gradientShift 3s ease infinite !important;
         border: none !important;
         color: white !important;
-        padding: 14px 32px !important;
-        font-size: 1rem !important;
         box-shadow:
             0 4px 20px rgba(232, 180, 184, 0.4),
             0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
@@ -947,6 +947,43 @@ def get_custom_css():
     }
 
     /* ═══════════════════════════════════════════════════════════════
+       VERTICAL SPACING - 元素之间的垂直间距
+    ═══════════════════════════════════════════════════════════════ */
+
+    /* 设置行之间的间距 */
+    .gradio-container .gr-row {
+        margin-bottom: 16px !important;
+    }
+
+    /* Checkbox 和 Slider 所在的列需要内边距 */
+    .gradio-container .gr-row > .gr-column {
+        padding: 8px 4px !important;
+    }
+
+    /* 单独的 checkbox 和 slider 元素间距 */
+    .gradio-container .gr-checkbox,
+    .gradio-container .gr-slider {
+        margin-bottom: 8px !important;
+    }
+
+    /* 主要区块之间的间距 */
+    .gradio-container .gr-group,
+    .gradio-container .gr-box,
+    .gradio-container .gr-panel {
+        margin-bottom: 20px !important;
+    }
+
+    /* 文件上传和按钮之间的间距 */
+    .gradio-container .gr-file {
+        margin-bottom: 16px !important;
+    }
+
+    /* 状态消息框的间距 */
+    .gradio-container .gr-textbox {
+        margin-bottom: 12px !important;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
        FILE UPLOAD AREA
     ═══════════════════════════════════════════════════════════════ */
 
@@ -1090,21 +1127,23 @@ def get_custom_css():
     /* ═══════════════════════════════════════════════════════════════
        API KEY SECTION - IMPROVED LAYOUT
        Order: [API Key] [Input Field] [记住密钥 ?]
+
+       注意：不设置 display 属性，完全由 Gradio 控制可见性
     ═══════════════════════════════════════════════════════════════ */
     #api-key-section {
-        display: flex !important;
-        align-items: center !important;
-        gap: 12px !important;
-        padding: 16px 20px !important;
-        margin-bottom: 20px !important;
-        background: var(--haru-surface) !important;
-        backdrop-filter: blur(16px) !important;
-        border: 1px solid var(--haru-border) !important;
-        border-radius: var(--radius-lg) !important;
-        box-shadow: 0 4px 20px var(--haru-shadow) !important;
-        position: relative !important;
-        z-index: 100 !important;
-        overflow: visible !important;
+        /* 不设置 display! 让 Gradio 完全控制 */
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        margin-bottom: 20px;
+        background: var(--haru-surface);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--haru-border);
+        border-radius: var(--radius-lg);
+        box-shadow: 0 4px 20px var(--haru-shadow);
+        position: relative;
+        z-index: 100;
+        overflow: visible;
     }
 
     /* 让Input占据中间所有空间，其他元素挤到两边 */
@@ -1414,6 +1453,119 @@ def get_custom_css():
 
     #lang-row { animation-delay: 0.15s; }
     #model-glossary-row { animation-delay: 0.25s; }
+
+    /* ═══════════════════════════════════════════════════════════════
+       TRANSLATION HISTORY SECTION
+    ═══════════════════════════════════════════════════════════════ */
+
+    /* Navigation button to history page */
+    #history-nav-btn {
+        width: 100% !important;
+        background: var(--haru-surface) !important;
+        backdrop-filter: blur(16px) !important;
+        border: 1px solid var(--haru-border) !important;
+        border-radius: var(--radius-lg) !important;
+        padding: 14px 20px !important;
+        margin-top: 16px !important;
+        cursor: pointer !important;
+        transition: var(--transition-smooth) !important;
+        font-family: var(--font-display) !important;
+        font-weight: 500 !important;
+        font-size: 0.95rem !important;
+        color: var(--haru-text) !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 8px !important;
+    }
+
+    #history-nav-btn:hover {
+        background: var(--haru-surface-elevated) !important;
+        border-color: var(--haru-primary) !important;
+        box-shadow: 0 4px 20px var(--haru-shadow) !important;
+    }
+
+    /* History page styles */
+    #history-page {
+        min-height: 60vh !important;
+    }
+
+    #history-back-row {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        margin-bottom: 8px !important;
+    }
+
+    #history-back-btn {
+        background: var(--haru-surface) !important;
+        border: 1px solid var(--haru-border) !important;
+        border-radius: var(--radius-md) !important;
+        padding: 10px 20px !important;
+        font-size: 0.9rem !important;
+        font-weight: 500 !important;
+        color: var(--haru-text) !important;
+        cursor: pointer !important;
+        transition: var(--transition-fast) !important;
+    }
+
+    #history-back-btn:hover {
+        background: var(--haru-surface-elevated) !important;
+        border-color: var(--haru-primary) !important;
+        color: var(--haru-primary) !important;
+    }
+
+    #history-refresh-btn {
+        min-width: 80px !important;
+        padding: 10px 16px !important;
+        font-size: 0.85rem !important;
+        border-radius: var(--radius-md) !important;
+        background: var(--haru-surface) !important;
+        border: 1px solid var(--haru-border) !important;
+    }
+
+    #history-refresh-btn:hover {
+        background: var(--haru-surface-elevated) !important;
+        border-color: var(--haru-primary) !important;
+    }
+
+    #history-title h2 {
+        font-family: var(--font-display) !important;
+        font-weight: 600 !important;
+        font-size: 1.5rem !important;
+        color: var(--haru-text) !important;
+        background: linear-gradient(135deg, var(--haru-primary) 0%, var(--haru-accent) 100%) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
+    }
+
+    #history-list {
+        max-height: calc(100vh - 300px) !important;
+        overflow-y: auto !important;
+        padding: 10px !important;
+    }
+
+    .history-record {
+        background: var(--haru-surface-elevated) !important;
+        border: 1px solid var(--haru-border) !important;
+        border-radius: var(--radius-md) !important;
+        padding: 16px !important;
+        margin-bottom: 12px !important;
+        transition: var(--transition-fast) !important;
+    }
+
+    .history-record:hover {
+        border-color: var(--haru-primary) !important;
+        box-shadow: 0 4px 15px var(--haru-shadow) !important;
+    }
+
+    .history-no-records {
+        text-align: center !important;
+        padding: 40px 20px !important;
+        color: var(--haru-text-soft) !important;
+        font-style: italic !important;
+    }
     """
 
 
@@ -1781,3 +1933,51 @@ def create_state_variables(config):
         'word_bilingual_mode_state': gr.State(config.get("word_bilingual_mode", False)),
         'thread_count_state': gr.State(config.get("default_thread_count_online", 2) if config.get("default_online", False) else config.get("default_thread_count_offline", 4))
     }
+
+
+def create_translation_history_button(get_label=None):
+    """Create a button to navigate to translation history page"""
+    if get_label is None:
+        get_label = lambda key: key
+
+    # Button to navigate to history page
+    history_nav_btn = gr.Button(
+        f"📋 {get_label('Translation History')}",
+        elem_id="history-nav-btn"
+    )
+
+    return history_nav_btn
+
+
+def create_history_page_content(get_label=None):
+    """Create the content for the translation history page"""
+    if get_label is None:
+        get_label = lambda key: key
+
+    # Back button at top
+    with gr.Row(elem_id="history-back-row"):
+        history_back_btn = gr.Button(
+            f"← {get_label('Back')}",
+            elem_id="history-back-btn",
+            size="sm"
+        )
+        gr.HTML("<div style='flex: 1;'></div>")  # Spacer
+        history_refresh_btn = gr.Button(
+            f"🔄 {get_label('Refresh Records')}",
+            elem_id="history-refresh-btn",
+            size="sm"
+        )
+
+    # Page title
+    history_title = gr.HTML(
+        f"<h2 style='text-align: center; margin: 20px 0;'>{get_label('Translation History')}</h2>",
+        elem_id="history-title"
+    )
+
+    # History list container - rendered as HTML
+    history_list = gr.HTML(
+        value=f"<div class='history-no-records'>{get_label('No translation records')}</div>",
+        elem_id="history-list"
+    )
+
+    return history_back_btn, history_refresh_btn, history_title, history_list
