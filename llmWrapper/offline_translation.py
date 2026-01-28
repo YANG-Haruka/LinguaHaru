@@ -29,14 +29,29 @@ OLLAMA_HOST, OLLAMA_PORT = _get_host()
 # LM Studio default settings
 LM_STUDIO_HOST = os.environ.get("LM_STUDIO_HOST", "localhost")
 LM_STUDIO_PORT = os.environ.get("LM_STUDIO_PORT", "1234")  # Initial port from env
+_LM_STUDIO_PORT_DETECTED = False  # Flag to track if port detection has been done
+
+# Ollama status tracking
+_OLLAMA_STATUS_LOGGED = False  # Flag to track if Ollama status has been logged
+
+# Model cache for subprocess reimport protection
+_CACHED_MODELS = None
+_MODELS_CACHE_POPULATED = False
 
 def _detect_lm_studio_port():
     """
     Detect the actual LM Studio port by running the 'lms server status' command
     and parsing its output. Falls back to socket detection if command fails.
     Returns the detected port or the default port if detection fails.
+    Only runs once per process (lazy initialization).
     """
-    global LM_STUDIO_PORT
+    global LM_STUDIO_PORT, _LM_STUDIO_PORT_DETECTED
+
+    # Skip if already detected
+    if _LM_STUDIO_PORT_DETECTED:
+        return
+
+    _LM_STUDIO_PORT_DETECTED = True
     
     # First try to get the port from lms server status command
     try:
@@ -100,9 +115,6 @@ def _detect_lm_studio_port():
     if not lm_studio_running:
         app_logger.info("LM Studio does not appear to be running")
 
-
-# Run the detection once at module initialization
-_detect_lm_studio_port()
 
 def translate_offline(messages, model):
     """
@@ -342,6 +354,9 @@ def is_ollama_running(timeout=1):
 
 def is_lm_studio_running(timeout=1):
     """Check if LM Studio service is running by attempting to connect to its API port."""
+    # Lazy detection of LM Studio port
+    _detect_lm_studio_port()
+
     try:
         port_int = int(LM_STUDIO_PORT)
         
@@ -356,11 +371,17 @@ def is_lm_studio_running(timeout=1):
 
 def get_ollama_models():
     """Get list of available Ollama models."""
+    global _OLLAMA_STATUS_LOGGED
+
     if not is_ollama_running():
-        app_logger.info("Ollama service does not appear to be running.")
+        if not _OLLAMA_STATUS_LOGGED:
+            app_logger.info("Ollama service does not appear to be running.")
+            _OLLAMA_STATUS_LOGGED = True
         return []
     else:
-        app_logger.info(f"Ollama running in: {OLLAMA_HOST}:{OLLAMA_PORT}")
+        if not _OLLAMA_STATUS_LOGGED:
+            app_logger.info(f"Ollama running in: {OLLAMA_HOST}:{OLLAMA_PORT}")
+            _OLLAMA_STATUS_LOGGED = True
     
     try:
         result = subprocess.run(
@@ -396,6 +417,9 @@ def get_ollama_models():
 
 def get_lm_studio_models():
     """Get list of available LM Studio models."""
+    # Lazy detection of LM Studio port (also done in is_lm_studio_running)
+    _detect_lm_studio_port()
+
     if not is_lm_studio_running():
         return []
     
@@ -422,22 +446,40 @@ def get_lm_studio_models():
         app_logger.error(f"Unexpected error fetching LM Studio models: {e}")
         return []
 
-def populate_sum_model():
+def populate_sum_model(force_refresh=False):
     """
     Check local Ollama and LM Studio models and return a combined list with prefixes.
+    Uses caching to prevent repeated scanning during subprocess reimports.
+
+    Args:
+        force_refresh: If True, bypass cache and rescan models
+
     Returns:
         List of model names with prefixes or None if both services are unavailable
     """
+    global _CACHED_MODELS, _MODELS_CACHE_POPULATED, _OLLAMA_STATUS_LOGGED, _LM_STUDIO_PORT_DETECTED
+
+    # Return cached result if available and not forcing refresh
+    if _MODELS_CACHE_POPULATED and not force_refresh:
+        return _CACHED_MODELS
+
+    # Reset logging flags when force refreshing so status is logged again
+    if force_refresh:
+        _OLLAMA_STATUS_LOGGED = False
+        _LM_STUDIO_PORT_DETECTED = False
+
     ollama_models = get_ollama_models()
     lm_studio_models = get_lm_studio_models()
-    
+
     # Combine both lists
     combined_models = ollama_models + lm_studio_models
-    
+
     if not combined_models:
         app_logger.warning("No local models detected. Please use online mode.")
-        return None
+        _CACHED_MODELS = None
     else:
         app_logger.info(f"Found {len(ollama_models)} Ollama models and {len(lm_studio_models)} LM Studio models")
-    
-    return combined_models if combined_models else None
+        _CACHED_MODELS = combined_models
+
+    _MODELS_CACHE_POPULATED = True
+    return _CACHED_MODELS

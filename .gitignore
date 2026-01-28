@@ -9,7 +9,6 @@ log/
 mykeys/
 build/
 dist/
-models/tiktoken/
 .claude/
 .vscode/
 
