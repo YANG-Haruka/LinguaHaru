@@ -77,7 +77,9 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
 - Add continue translation functionality.
 
 ## Changelog
-- 2025/05/09  
+- 2026/01/28
+V5.0 update: Updated PDF library. Optimized UI interface. Added more practical features. Thanks for a year of companionship!
+- 2025/05/09
 V3.0 update: Added multithreading and continuation translation features. Added translation support for Markdown files. Enhanced support for the Qwen3 series. Optimized log display.
 - 2025/04/02  
 Updated to v2.3, adding custom icons/Title and supporting multi-task queues. Optimized translation result detection logic. Added a feature to show the translation result with the original text.

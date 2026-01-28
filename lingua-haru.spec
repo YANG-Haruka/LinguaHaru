@@ -81,7 +81,7 @@ all_datas = filter_datas(
     + tiktoken_collect[0]
     + babeldoc_collect[0]
     + onnxruntime_collect[0]
-) + [('models/', 'models/')]
+) + [('models/', 'models/'), ('img/', 'img/')]
 
 a = Analysis(
     ["app.py"],
