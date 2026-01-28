@@ -40,10 +40,6 @@
         ```bash
         pip install -r requirements.txt
         ```
-    - 模型下载 
-        下载后请保存在"models"文件夹中**  
-        - [夸克网盘](https://pan.quark.cn/s/1cce837b7e15)
-        - [Google Drive](https://drive.google.com/file/d/1myjAeDmdsKku6ZKD0YV91I4voiNS1OGr/view?usp=sharing)
 
 
 4. 运行工具
