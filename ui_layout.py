@@ -6,7 +6,23 @@ Design: Ethereal Glass Morphism with Japanese Minimalism
 
 import gradio as gr
 import os
+import sys
+import base64
+from pathlib import Path
 from config.languages_config import get_available_languages
+
+
+def _get_sponsor_image_base64():
+    """Get sponsor image as base64 string for embedding in HTML."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        img_path = Path(sys._MEIPASS) / "img" / "Sponsor.jpg"
+    else:
+        img_path = Path(__file__).parent / "img" / "Sponsor.jpg"
+
+    if img_path.exists():
+        with open(img_path, "rb") as f:
+            return base64.b64encode(f.read()).decode("utf-8")
+    return ""
 
 
 def get_custom_css():
@@ -1605,7 +1621,10 @@ def create_header(app_title, encoded_image, mime_type, img_height):
 
 def create_footer():
     """Create app footer with refined styling"""
-    return gr.HTML("""
+    sponsor_base64 = _get_sponsor_image_base64()
+    sponsor_src = f"data:image/jpeg;base64,{sponsor_base64}" if sponsor_base64 else ""
+
+    return gr.HTML(f"""
     <div style="
         position: fixed;
         bottom: 0;
@@ -1625,7 +1644,7 @@ def create_footer():
         <span style="opacity: 0.8;"> by </span>
         <span style="font-weight: 600; background: linear-gradient(135deg, #e8b4b8, #7eb8da); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Haruka-YANG</span>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
-        <span style="opacity: 0.8;">Version 4.2</span>
+        <span style="opacity: 0.8;">Version 5.0</span>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
         <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank"
            style="
@@ -1638,12 +1657,59 @@ def create_footer():
            onmouseout="this.style.color='#7eb8da'">
             GitHub →
         </a>
+        <span style="opacity: 0.5; margin: 0 8px;">|</span>
+        <span onclick="document.getElementById('sponsorModal').style.display='flex'"
+           style="
+               color: #e8b4b8;
+               font-weight: 500;
+               cursor: pointer;
+               transition: color 0.2s ease;
+           "
+           onmouseover="this.style.color='#7eb8da'"
+           onmouseout="this.style.color='#e8b4b8'">
+            赞助
+        </span>
+    </div>
+    <!-- Sponsor Modal -->
+    <div id="sponsorModal" onclick="if(event.target===this)this.style.display='none'" style="
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        z-index: 9999;
+        justify-content: center;
+        align-items: center;
+    ">
+        <div style="position: relative; max-width: 90%; max-height: 90%;">
+            <button onclick="document.getElementById('sponsorModal').style.display='none'" style="
+                position: absolute;
+                top: -12px;
+                right: -12px;
+                width: 32px;
+                height: 32px;
+                border: none;
+                border-radius: 50%;
+                background: #e8b4b8;
+                color: white;
+                font-size: 20px;
+                cursor: pointer;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                transition: background 0.2s;
+            " onmouseover="this.style.background='#d4a0a4'" onmouseout="this.style.background='#e8b4b8'">&times;</button>
+            <img src="{sponsor_src}" style="max-width: 100%; max-height: 85vh; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+        </div>
     </div>
     <style>
-        .dark div[style*="position: fixed"][style*="bottom: 0"] {
+        .dark div[style*="position: fixed"][style*="bottom: 0"] {{
             background: linear-gradient(to top, rgba(26, 32, 44, 0.95) 0%, transparent 100%) !important;
             color: #cbd5e0 !important;
-        }
+        }}
     </style>
     """)
 
