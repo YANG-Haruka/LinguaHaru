@@ -40,10 +40,6 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
         ```bash
         pip install -r requirements.txt
         ```
-    - Model download 
-        **After downloading, please save in the "models" folder**  
-        - [Quark Cloud](https://pan.quark.cn/s/1cce837b7e15)
-        - [Google Drive](https://drive.google.com/file/d/1myjAeDmdsKku6ZKD0YV91I4voiNS1OGr/view?usp=sharing)
 
 
 4. Run the tool
