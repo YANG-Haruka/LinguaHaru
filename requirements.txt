@@ -1,21 +1,24 @@
-gradio==5.23.3
-gradio_client==1.8.0
-pandas==2.2.3
-openpyxl==3.0.10
-bs4==0.0.2
-lxml==5.3.0
-tiktoken==0.8.0
-openai==1.59.6
-colorama==0.4.6
-peewee==3.17.8
-fontTools==4.55.3
-xlwings==0.33.11
-numpy
-pdfminer-six==20250416
-pymupdf<1.25.3
-opencv-python-headless
-onnx
-onnxruntime
-openai
+# Core UI
+gradio>=5.23.3
+
+# Document processing
+openpyxl>=3.0.10
+xlwings>=0.33.11
+python-docx>=1.1.0
+python-pptx>=1.0.0
+
+# PDF translation (BabelDOC handles its own dependencies)
+babeldoc
+
+# LLM & API
+openai>=1.59.6
+tiktoken>=0.8.0
+
+# Text processing
+bs4
+lxml>=5.3.0
+
+# Utilities
+colorama>=0.4.6
 tqdm
 tenacity

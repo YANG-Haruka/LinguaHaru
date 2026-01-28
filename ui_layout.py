@@ -1779,8 +1779,14 @@ def create_settings_section(config):
             visible=False
         )
 
+        pdf_bilingual_checkbox = gr.Checkbox(
+            label="Use PDF Bilingual Mode",
+            value=False,
+            visible=False
+        )
+
     return (use_online_model, lan_mode_checkbox, max_retries_slider,
-            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox)
+            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox)
 
 
 def create_model_glossary_section(config, local_models, online_models, get_glossary_files_func, get_default_glossary_func, get_label=None):
@@ -1931,6 +1937,7 @@ def create_state_variables(config):
         'excel_mode_2_state': gr.State(config.get("excel_mode_2", False)),
         'excel_bilingual_mode_state': gr.State(config.get("excel_bilingual_mode", False)),
         'word_bilingual_mode_state': gr.State(config.get("word_bilingual_mode", False)),
+        'pdf_bilingual_mode_state': gr.State(config.get("pdf_bilingual_mode", False)),
         'thread_count_state': gr.State(config.get("default_thread_count_online", 2) if config.get("default_online", False) else config.get("default_thread_count_offline", 4))
     }
 

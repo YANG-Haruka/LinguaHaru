@@ -25,5 +25,6 @@
     "temp_dir": "temp",
     "result_dir": "result",
     "log_dir": "log",
-    "remember_api_key": true
+    "remember_api_key": true,
+    "pdf_bilingual_mode": true
 }

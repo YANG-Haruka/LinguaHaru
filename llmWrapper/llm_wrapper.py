@@ -144,11 +144,56 @@ def interruptible_sleep(duration, check_stop_callback=None):
     """Sleep that can be interrupted by checking stop callback"""
     interval = 0.1  # Check every 100ms
     elapsed = 0
-    
+
     while elapsed < duration:
         if check_stop_callback:
             check_stop_callback()  # This will raise exception if stop is requested
-        
+
         sleep_time = min(interval, duration - elapsed)
         time.sleep(sleep_time)
         elapsed += sleep_time
+
+
+def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key):
+    """
+    Simple text translation without complex prompt templates.
+    Used by BabelDOC integration for direct text translation.
+
+    Args:
+        text: Text to translate
+        src_lang: Source language code
+        dst_lang: Target language code
+        model: Model name to use
+        use_online: Whether to use online API
+        api_key: API key for online translation
+
+    Returns:
+        tuple: (translation_result, success_status, token_usage)
+    """
+    if not text or not text.strip():
+        return text, True, None
+
+    # Simple system prompt for translation
+    system_prompt = f"You are a professional translator. Translate the following text from {src_lang} to {dst_lang}. Output only the translation, nothing else."
+
+    # User message is just the text to translate
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": text},
+    ]
+
+    try:
+        if not use_online:
+            translation_result, api_success, token_usage = translate_offline(messages, model)
+        else:
+            translation_result, api_success, token_usage = translate_online(api_key, messages, model)
+
+        if api_success and translation_result:
+            return translation_result.strip(), True, token_usage
+        else:
+            app_logger.warning(f"Simple translation failed: {translation_result}")
+            return text, False, token_usage
+
+    except Exception as e:
+        app_logger.error(f"Simple translation error: {e}")
+        return text, False, None

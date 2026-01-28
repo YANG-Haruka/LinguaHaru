@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
+"""
+Token calculation module using tiktoken.
+Uses local encoding file for PyInstaller compatibility.
+"""
 import os
 import sys
 import base64
 from pathlib import Path
 import tiktoken
 from typing import Optional
-import traceback
 
 def get_application_path() -> Path:
     """Get the application root directory path for both script and PyInstaller executable."""
@@ -23,77 +26,52 @@ def get_application_path() -> Path:
 _cached_encoder: Optional[tiktoken.Encoding] = None
 
 def get_encoder(encoding_name: str = "cl100k_base") -> tiktoken.Encoding:
-   """Get encoder with caching and manual loading for PyInstaller compatibility."""
-   global _cached_encoder
-   
-   if _cached_encoder is not None:
-       return _cached_encoder
-   
-   # Load encoder file manually
-   encoder_file = get_application_path() / "models" / "tiktoken" / f"{encoding_name}.tiktoken"
-   
-   if not encoder_file.is_file():
-       raise FileNotFoundError(f"Tiktoken encoder file not found: {encoder_file}")
+    """Get encoder with caching and manual loading for PyInstaller compatibility."""
+    global _cached_encoder
 
-   try:
-       # Read and parse BPE ranks manually
-       with open(encoder_file, "r", encoding="utf-8") as f:
-           contents = f.read()
-       
-       mergeable_ranks = {
-           base64.b64decode(token): int(rank)
-           for token, rank in (line.split() for line in contents.splitlines() if line)
-       }
-   except Exception as e:
-       raise RuntimeError(f"Failed to read and parse BPE file {encoder_file}: {e}")
+    if _cached_encoder is not None:
+        return _cached_encoder
 
-   # Define encoder parameters for cl100k_base
-   special_tokens = {
-       "<|endoftext|>": 100257,
-       "<|fim_prefix|>": 100258,
-       "<|fim_middle|>": 100259,
-       "<|fim_suffix|>": 100260,
-       "<|endofprompt|>": 100276
-   }
-   
-   pat_str = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
+    # Load encoder file manually
+    encoder_file = get_application_path() / "models" / "tiktoken" / f"{encoding_name}.tiktoken"
 
-   # Create encoder instance
-   try:
-       _cached_encoder = tiktoken.Encoding(
-           name=encoding_name,
-           pat_str=pat_str,
-           mergeable_ranks=mergeable_ranks,
-           special_tokens=special_tokens
-       )
-       return _cached_encoder
-   except Exception as e:
-       raise RuntimeError(f"Failed to create tiktoken.Encoding object: {e}")
+    if not encoder_file.is_file():
+        raise FileNotFoundError(f"Tiktoken encoder file not found: {encoder_file}")
+
+    # Read and parse BPE ranks manually
+    with open(encoder_file, "r", encoding="utf-8") as f:
+        contents = f.read()
+
+    mergeable_ranks = {
+        base64.b64decode(token): int(rank)
+        for token, rank in (line.split() for line in contents.splitlines() if line)
+    }
+
+    # Define encoder parameters for cl100k_base
+    special_tokens = {
+        "<|endoftext|>": 100257,
+        "<|fim_prefix|>": 100258,
+        "<|fim_middle|>": 100259,
+        "<|fim_suffix|>": 100260,
+        "<|endofprompt|>": 100276
+    }
+
+    pat_str = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
+
+    # Create encoder instance
+    _cached_encoder = tiktoken.Encoding(
+        name=encoding_name,
+        pat_str=pat_str,
+        mergeable_ranks=mergeable_ranks,
+        special_tokens=special_tokens
+    )
+    return _cached_encoder
 
 def num_tokens_from_string(text: str, encoding_name: str = "cl100k_base") -> int:
-   """Calculate the number of tokens in text."""
-   if not isinstance(text, str):
-       text = str(text)
-   
-   encoder = get_encoder(encoding_name)
-   token_count = len(encoder.encode(text))
-   return token_count
+    """Calculate the number of tokens in text."""
+    if not isinstance(text, str):
+        text = str(text)
 
-if __name__ == "__main__":
-   try:
-       print("--- Tiktoken Loader Test ---")
-       print(f"Running in mode: {'PyInstaller' if getattr(sys, 'frozen', False) else 'Direct Script'}")
-       
-       test_text = "Hello, world! 这是一个测试。"
-       print(f"Testing token count for: '{test_text}'")
-       
-       count = num_tokens_from_string(test_text)
-       
-       print(f"Result: {count} tokens")
-       assert count > 0
-       print("\nTest passed!")
-       
-   except Exception as e:
-       print(f"\n--- AN ERROR OCCURRED ---")
-       print(f"Error: {e}")
-       traceback.print_exc()
+    encoder = get_encoder(encoding_name)
+    token_count = len(encoder.encode(text))
+    return token_count
