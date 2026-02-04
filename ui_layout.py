@@ -537,6 +537,7 @@ def get_custom_css():
     /* Model column with inline refresh button */
     #model-column {
         position: relative !important;
+        overflow: visible !important;
     }
 
     #model-column > div:first-child label span {
@@ -546,6 +547,18 @@ def get_custom_css():
 
     #model-dropdown {
         width: 100% !important;
+    }
+
+    /* Ensure button's wrapper doesn't interfere with positioning */
+    #model-column > div:last-child {
+        position: absolute !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        overflow: visible !important;
+        pointer-events: none !important;
+        z-index: 9999 !important;
     }
 
     #model-refresh-btn {
@@ -563,16 +576,17 @@ def get_custom_css():
         line-height: 1 !important;
         cursor: pointer !important;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        color: var(--haru-text-muted) !important;
-        opacity: 0.6 !important;
-        z-index: 10 !important;
+        color: var(--haru-text) !important;
+        opacity: 0.8 !important;
+        z-index: 9999 !important;
         display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
+        pointer-events: auto !important;
     }
 
     #model-refresh-btn:hover {
-        background: var(--haru-primary-light) !important;
+        background: rgba(232, 180, 184, 0.2) !important;
         color: var(--haru-primary) !important;
         opacity: 1 !important;
         transform: rotate(180deg) !important;

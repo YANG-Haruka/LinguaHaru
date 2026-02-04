@@ -1572,17 +1572,11 @@ def process_multiple_files(
 # Main Application Initialization
 #-------------------------------------------------------------------------
 
-# Load local and online models
-local_models = populate_sum_model() or []
-CUSTOM_LABEL = "+ Add Custom…"
-dropdown_choices = get_available_languages() + [CUSTOM_LABEL]
-config_dir = "config/api_config"
-online_models = [
-    os.path.splitext(f)[0] for f in os.listdir(config_dir) 
-    if f.endswith(".json") and f != "Custom.json"
-]
+# Prevent re-initialization in subprocess (Windows multiprocessing spawns new processes)
+import multiprocessing
+_is_main_process = multiprocessing.current_process().name == 'MainProcess'
 
-# Read initial configuration
+# Read initial configuration (needed for both main and subprocess)
 config = read_system_config()
 initial_lan_mode = config.get("lan_mode", False)
 initial_default_online = config.get("default_online", False)
@@ -1612,10 +1606,29 @@ initial_show_glossary = config.get("show_glossary", True)
 default_local_model = config.get("default_local_model", "")
 default_online_model = config.get("default_online_model", "")
 
-encoded_image, mime_type = load_application_icon(config)
+# Only run heavy initialization in main process
+if _is_main_process:
+    # Load local and online models
+    local_models = populate_sum_model() or []
+    CUSTOM_LABEL = "+ Add Custom…"
+    dropdown_choices = get_available_languages() + [CUSTOM_LABEL]
+    config_dir = "config/api_config"
+    online_models = [
+        os.path.splitext(f)[0] for f in os.listdir(config_dir)
+        if f.endswith(".json") and f != "Custom.json"
+    ]
 
-# Initialize custom directories
-get_custom_paths()
+    encoded_image, mime_type = load_application_icon(config)
+
+    # Initialize custom directories
+    get_custom_paths()
+else:
+    # Subprocess: use minimal initialization
+    local_models = []
+    online_models = []
+    CUSTOM_LABEL = "+ Add Custom…"
+    dropdown_choices = get_available_languages() + [CUSTOM_LABEL]
+    encoded_image, mime_type = None, None
 
 #-------------------------------------------------------------------------
 # Gradio UI Construction
