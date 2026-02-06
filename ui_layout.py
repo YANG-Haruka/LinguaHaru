@@ -579,7 +579,6 @@ def get_custom_css():
         color: var(--haru-text) !important;
         opacity: 0.8 !important;
         z-index: 9999 !important;
-        display: inline-flex !important;
         align-items: center !important;
         justify-content: center !important;
         pointer-events: auto !important;
