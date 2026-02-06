@@ -94,6 +94,9 @@ task_lock = threading.Lock()
 stop_flags = {}
 stop_lock = threading.Lock()
 
+# Map Gradio session hash to translation session_id for disconnect detection
+active_sessions = {}  # {gradio_session_hash: translation_session_id}
+
 def generate_api_key_translations_js():
     """Generate JavaScript translations object from LABEL_TRANSLATIONS for API key section"""
     js_translations = {}
@@ -290,17 +293,22 @@ def clean_stop_flag(session_id):
     with stop_lock:
         stop_flags.pop(session_id, None)
 
-def on_session_disconnect(session_id):
+def on_session_disconnect(request: gr.Request):
     """Stop translation when user disconnects (page refresh/close)"""
-    if session_id:
-        with stop_lock:
+    session_hash = getattr(request, 'session_hash', None)
+    if not session_hash:
+        return
+    with stop_lock:
+        session_id = active_sessions.pop(session_hash, None)
+        if session_id:
             stop_flags[session_id] = True
+    if session_id:
         app_logger.info(f"Session disconnected, stopping translation: {session_id}")
 
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang,
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name,
-    session_lang, continue_mode=False, progress=gr.Progress(track_tqdm=True)
+    session_lang, continue_mode=False, progress=gr.Progress(track_tqdm=True), request: gr.Request = None
 ):
     """Modified translate button click handler using task queue"""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
@@ -317,13 +325,15 @@ def modified_translate_button_click(
     if use_online and not api_key and not os.environ.get("LINGUAHARU_API_KEY"):
         return output_file_update, "API key is required for online models.", gr.update(value=stop_text, interactive=False), ""
 
+    session_hash = getattr(request, 'session_hash', None) if request else None
+
     def wrapped_translate_func(files, model, src_lang, dst_lang,
                               use_online, api_key, max_retries, max_token, thread_count,
                               excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress):
         return translate_files_func(files, model, src_lang, dst_lang,
                                    use_online, api_key, max_retries, max_token, thread_count,
                                    excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang,
-                                   continue_mode=continue_mode, progress=progress)
+                                   continue_mode=continue_mode, session_hash=session_hash, progress=progress)
     
     return process_task_with_queue(
         wrapped_translate_func, files, model, src_lang, dst_lang,
@@ -1323,11 +1333,16 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
 
 def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768, thread_count=4,
-    excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True)
+    excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, session_hash=None, progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using chosen model"""
     # Generate unique session ID for this translation request
     session_id = str(uuid.uuid4())[:8]
+
+    # Register session for disconnect detection
+    if session_hash:
+        with stop_lock:
+            active_sessions[session_hash] = session_id
 
     reset_stop_flag(session_id)
     clean_gradio_cache()
@@ -1378,6 +1393,10 @@ def translate_files(
     finally:
         clean_session_cache(session_id)
         clean_stop_flag(session_id)
+        # Unregister session mapping
+        if session_hash:
+            with stop_lock:
+                active_sessions.pop(session_hash, None)
 
 def process_single_file(
     file, model, src_lang_code, dst_lang_code,
@@ -2392,7 +2411,7 @@ with gr.Blocks(
     )
 
     # Stop translation when user disconnects (page refresh/close)
-    demo.unload(on_session_disconnect, inputs=[translation_session_id])
+    demo.unload(on_session_disconnect)
 
 #-------------------------------------------------------------------------
 # Application Launch
