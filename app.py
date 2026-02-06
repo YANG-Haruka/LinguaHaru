@@ -1264,7 +1264,8 @@ def show_mode_checkbox(files):
 
     # Check if at least one Excel file is present
     excel_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".xlsx"]
-    excel_visible = bool(excel_files)
+    # Excel mode 2 and bilingual require xlwings (local Excel), hide in server_mode
+    excel_visible = bool(excel_files) and not server_mode
 
     # Check if at least one Word file is present
     word_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".docx"]
@@ -1321,9 +1322,11 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
         # For Excel, Word, and PDF, return a partial class with mode parameters
         if file_extension.lower() == ".xlsx":
             # Excel: use_xlwings for mode_2 or bilingual, bilingual_mode for bilingual
+            # xlwings requires local Excel installation, unavailable in server_mode
+            use_xlwings = (excel_mode_2 or excel_bilingual_mode) and not server_mode
             return partial(translator_class,
-                          use_xlwings=excel_mode_2 or excel_bilingual_mode,
-                          bilingual_mode=excel_bilingual_mode)
+                          use_xlwings=use_xlwings,
+                          bilingual_mode=excel_bilingual_mode if not server_mode else False)
         elif file_extension.lower() == ".docx":
             # Word: bilingual_mode for bilingual
             return partial(translator_class, bilingual_mode=word_bilingual_mode)
