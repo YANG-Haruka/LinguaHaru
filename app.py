@@ -315,7 +315,7 @@ def modified_translate_button_click(
         return output_file_update, "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
 
     # In server_mode, API key comes from environment variable, skip client-side check
-    if use_online and not api_key and not server_mode:
+    if use_online and not api_key and not os.environ.get("LINGUAHARU_API_KEY"):
         return output_file_update, "API key is required for online models.", gr.update(value=stop_text, interactive=False)
 
     def wrapped_translate_func(files, model, src_lang, dst_lang,
@@ -1377,7 +1377,7 @@ def translate_files(
     if not files:
         return gr.update(value=None, visible=False), "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
 
-    if use_online and not api_key and not server_mode:
+    if use_online and not api_key and not os.environ.get("LINGUAHARU_API_KEY"):
         return gr.update(value=None, visible=False), "API key is required for online models.", gr.update(value=stop_text, interactive=False)
 
     # Character limit check in server_mode
