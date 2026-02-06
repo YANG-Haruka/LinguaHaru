@@ -1716,7 +1716,18 @@ with gr.Blocks(
     
     # Create theme toggle button first (positioned absolutely)
     theme_toggle_btn = create_theme_toggle()
-    
+
+    # Homepage link (positioned top-left)
+    gr.HTML("""
+    <a id="homepage-link" href="https://www.harukayang.xyz/" target="_blank">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+        </svg>
+        <span class="link-text">Haruka</span>
+    </a>
+    """)
+
     # Create header
     create_header(app_title, encoded_image, mime_type, img_height)
 

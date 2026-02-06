@@ -154,6 +154,62 @@ def get_custom_css():
        THEME TOGGLE BUTTON
     ═══════════════════════════════════════════════════════════════ */
 
+    #homepage-link {
+        position: fixed !important;
+        top: 24px !important;
+        left: 24px !important;
+        height: 42px !important;
+        padding: 0 16px !important;
+        border-radius: 21px !important;
+        border: 1px solid var(--haru-border) !important;
+        background: var(--haru-surface-elevated) !important;
+        backdrop-filter: blur(20px) !important;
+        -webkit-backdrop-filter: blur(20px) !important;
+        color: var(--haru-text) !important;
+        font-family: 'Outfit', sans-serif !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.02em !important;
+        cursor: pointer !important;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+        z-index: 9999 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        gap: 6px !important;
+        text-decoration: none !important;
+        box-shadow:
+            0 4px 24px var(--haru-shadow),
+            0 0 0 1px rgba(255, 255, 255, 0.1) inset !important;
+    }
+
+    #homepage-link:hover {
+        transform: translateY(-2px) !important;
+        box-shadow:
+            0 8px 32px var(--haru-shadow),
+            0 0 20px var(--haru-glow) !important;
+        background: linear-gradient(135deg, rgba(232,180,184,0.15), rgba(126,184,218,0.15)), var(--haru-surface-elevated) !important;
+    }
+
+    #homepage-link:active {
+        transform: translateY(0px) scale(0.97) !important;
+    }
+
+    #homepage-link svg {
+        opacity: 0.7;
+        transition: opacity 0.2s ease;
+    }
+
+    #homepage-link:hover svg {
+        opacity: 1;
+    }
+
+    #homepage-link .link-text {
+        background: linear-gradient(135deg, #e8b4b8, #7eb8da);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
     #theme-toggle-btn {
         position: fixed !important;
         top: 24px !important;
@@ -1109,6 +1165,14 @@ def get_custom_css():
     ═══════════════════════════════════════════════════════════════ */
 
     @media (max-width: 768px) {
+        #homepage-link {
+            top: 12px !important;
+            left: 12px !important;
+            height: 36px !important;
+            padding: 0 12px !important;
+            font-size: 12px !important;
+        }
+
         #theme-toggle-btn {
             top: 12px !important;
             right: 12px !important;
