@@ -1502,7 +1502,6 @@ def get_custom_css():
         font-weight: 500 !important;
         font-size: 0.95rem !important;
         color: var(--haru-text) !important;
-        display: flex !important;
         align-items: center !important;
         justify-content: center !important;
         gap: 8px !important;
@@ -1805,7 +1804,7 @@ def create_settings_section(config):
     initial_show_max_retries = config.get("show_max_retries", True)
     initial_show_thread_count = config.get("show_thread_count", True)
 
-    with gr.Row():
+    with gr.Row(visible=initial_show_mode_switch or initial_show_lan_mode):
         with gr.Column(scale=1):
             use_online_model = gr.Checkbox(
                 label="Use Online Model",
@@ -1820,7 +1819,7 @@ def create_settings_section(config):
                 visible=initial_show_lan_mode
             )
 
-    with gr.Row():
+    with gr.Row(visible=initial_show_max_retries or initial_show_thread_count):
         with gr.Column(scale=1):
             max_retries_slider = gr.Slider(
                 minimum=1,
@@ -1841,7 +1840,7 @@ def create_settings_section(config):
                 visible=initial_show_thread_count
             )
 
-    with gr.Row():
+    with gr.Row(visible=False):
         excel_mode_checkbox = gr.Checkbox(
             label="Use Excel Mode 2",
             value=initial_excel_mode_2,
@@ -1883,7 +1882,7 @@ def create_model_glossary_section(config, local_models, online_models, get_gloss
     add_glossary_label = get_label("Add Glossary")
     glossary_choices = get_glossary_files_func() + [add_glossary_label]
 
-    with gr.Row(elem_id="model-glossary-row"):
+    with gr.Row(elem_id="model-glossary-row", visible=initial_show_model_selection or initial_show_glossary):
         with gr.Column(scale=1, elem_id="model-column"):
             model_choice = gr.Dropdown(
                 choices=local_models if not initial_default_online else online_models,
@@ -1993,8 +1992,15 @@ def create_main_interface(config, get_label=None):
             </script>
         """, elem_id="api-help-container")
 
+    supported_types_hint = gr.HTML(
+        value=f'<div style="text-align:center;padding:8px 16px;margin:4px auto;max-width:600px;'
+              f'background:rgba(232,180,184,0.15);border-radius:8px;font-size:13px;color:var(--haru-text,#555);">'
+              f'{get_label("Supported File Types")}</div>',
+        elem_id="supported-types-hint"
+    )
+
     file_input = gr.File(
-        label=get_label("Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)"),
+        label=get_label("Upload Files"),
         file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"],
         file_count="multiple"
     )
@@ -2007,7 +2013,7 @@ def create_main_interface(config, get_label=None):
         continue_button = gr.Button(get_label("Continue Translation"), interactive=False)
         stop_button = gr.Button(get_label("Stop Translation"), interactive=False)
 
-    return (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
+    return (api_key_input, api_key_row, remember_key_checkbox, supported_types_hint, file_input, output_file, status_message,
             translate_button, continue_button, stop_button)
 
 
@@ -2015,6 +2021,7 @@ def create_state_variables(config):
     """Create state variables"""
     return {
         'session_lang': gr.State("en"),
+        'translation_session_id': gr.State(""),
         'lan_mode_state': gr.State(config.get("lan_mode", False)),
         'default_online_state': gr.State(config.get("default_online", False)),
         'max_token_state': gr.State(config.get("max_token", 768)),

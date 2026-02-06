@@ -98,6 +98,21 @@ class DocumentTranslator:
                 return message
         return message
 
+    def _check_char_limit(self, limit=100_000):
+        """Check if src.json total characters exceed the limit. Raises ValueError if exceeded."""
+        if not os.path.exists(self.src_json_path):
+            return
+        try:
+            with open(self.src_json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            total_chars = sum(len(item.get("value", "")) for item in data)
+            if total_chars > limit:
+                app_logger.warning(f"Character limit exceeded: {total_chars:,} > {limit:,}")
+                msg = self._get_status_message("Char Limit Exceeded")
+                raise ValueError(f"{msg}\nhttps://github.com/YANG-Haruka/LinguaHaru")
+        except json.JSONDecodeError:
+            pass
+
     def _get_language_display_name(self, lang_code):
         """Get display name for a language code"""
         # Reverse lookup in LANGUAGE_MAP
@@ -804,6 +819,16 @@ class DocumentTranslator:
             app_logger.info("Splitting content...")
             self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Splitting text')}...")
             split_text_by_token_limit(self.src_deduped_json_path)
+
+        # Character limit check in server_mode (after extraction, before translation)
+        try:
+            config_path = os.path.join("config", "system_config.json")
+            with open(config_path, 'r', encoding='utf-8') as f:
+                sys_config = json.load(f)
+            if sys_config.get("server_mode", False):
+                self._check_char_limit()
+        except (FileNotFoundError, json.JSONDecodeError):
+            pass
 
         # Main translation
         app_logger.info("Starting translation...")

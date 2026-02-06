@@ -49,6 +49,7 @@ import base64
 import threading
 import queue
 import time
+import uuid
 from functools import partial
 
 # Import separated UI layout module
@@ -85,13 +86,13 @@ TRANSLATOR_MODULES = {
 # Word: bilingual_mode parameter
 
 # Global task queue and counter
+MAX_CONCURRENT_TASKS = 3
 task_queue = queue.Queue()
 active_tasks = 0
 task_lock = threading.Lock()
 
-# Global variables for stop functionality
-translation_stop_requested = False
-current_translation_task = None
+# Per-session stop flags: {session_id: bool}
+stop_flags = {}
 stop_lock = threading.Lock()
 
 def generate_api_key_translations_js():
@@ -109,16 +110,15 @@ def enqueue_task(
     translate_func, files, model, src_lang, dst_lang,
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
 ):
-    """Enqueue translation task or execute immediately if no tasks running"""
+    """Enqueue translation task or execute immediately if under concurrency limit"""
     global active_tasks
-    
+
     with task_lock:
-        if active_tasks == 0:
-            # No active tasks, start immediately
+        if active_tasks < MAX_CONCURRENT_TASKS:
             active_tasks += 1
             return None
         else:
-            # Tasks running, add to queue
+            # At capacity, add to queue
             task_info = {
                 "files": files,
                 "model": model,
@@ -138,24 +138,25 @@ def enqueue_task(
             }
             task_queue.put(task_info)
             queue_position = task_queue.qsize()
-            return f"Task added to queue. Position: {queue_position}"
+            labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+            queue_msg = labels.get("Queue Position", "In queue, position: {position}").format(position=queue_position)
+            return queue_msg
         
-def clean_server_cache():
-    """In server_mode, clean temp/result/log dirs to prevent disk overflow.
-    Called at the start of each translation to remove previous results."""
+def clean_session_cache(session_id):
+    """In server_mode, clean a specific session's temp/result/log subdirectory.
+    Called after each translation completes to free disk space."""
     if not server_mode:
         return
     try:
         temp_dir, result_dir, log_dir = get_custom_paths()
         for dir_path in [temp_dir, result_dir, log_dir]:
-            if os.path.exists(dir_path):
-                shutil.rmtree(dir_path, ignore_errors=True)
-                os.makedirs(dir_path, exist_ok=True)
-        # Also clean Gradio upload cache
+            session_dir = os.path.join(dir_path, session_id)
+            if os.path.exists(session_dir):
+                shutil.rmtree(session_dir, ignore_errors=True)
         clean_gradio_cache()
-        app_logger.info("Server cache cleaned")
+        app_logger.info(f"Session cache cleaned: {session_id}")
     except Exception as e:
-        app_logger.warning(f"Server cache cleanup error: {e}")
+        app_logger.warning(f"Session cache cleanup error: {e}")
 
 def clean_gradio_cache():
     """Clean up old Gradio temporary files"""
@@ -197,26 +198,23 @@ def process_task_with_queue(
 
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
-    
+
     if queue_msg:
-        return gr.update(value=None, visible=False), queue_msg, gr.update(value=stop_text, interactive=False)
-    
+        return gr.update(value=None, visible=False), queue_msg, gr.update(value=stop_text, interactive=False), ""
+
     try:
-        # Check if stop was requested before starting translation
-        check_stop_requested()
-        
         result = translate_func(
             files, model, src_lang, dst_lang,
             use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
         )
         process_next_task_in_queue(translate_func, progress)
-        
-        return result[0], result[1], result[2]
+
+        return result[0], result[1], result[2], result[3]
     except Exception as e:
         with task_lock:
             active_tasks -= 1
         process_next_task_in_queue(translate_func, progress)
-        return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False), ""
 
 def process_next_task_in_queue(translate_func, progress):
     """Process next task in queue if available"""
@@ -237,9 +235,6 @@ def process_next_task_in_queue(translate_func, progress):
 def process_queued_task(translate_func, task_info, progress):
     """Process task from queue in separate thread"""
     try:
-        # Check if stop was requested before starting
-        check_stop_requested()
-        
         if progress is None:
             progress = gr.Progress(track_tqdm=True)
         result = translate_func(
@@ -269,31 +264,32 @@ class StopTranslationException(Exception):
     """Custom exception for when translation is stopped by user"""
     pass
 
-def request_stop_translation(session_lang):
-    """Request to stop current translation"""
-    global translation_stop_requested
-    
+def request_stop_translation(session_id, session_lang):
+    """Request to stop current translation for a specific session"""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stopping_text = labels.get("Stopping", "Stopping...")
-    
+
     with stop_lock:
-        translation_stop_requested = True
-    
+        stop_flags[session_id] = True
+
     return gr.update(value=stopping_text, interactive=False)
 
-def reset_stop_flag():
+def reset_stop_flag(session_id):
     """Reset stop flag for new translations"""
-    global translation_stop_requested
-    
     with stop_lock:
-        translation_stop_requested = False
+        stop_flags[session_id] = False
 
-def check_stop_requested():
-    """Check if stop has been requested"""
+def check_stop_requested(session_id):
+    """Check if stop has been requested for a specific session"""
     with stop_lock:
-        if translation_stop_requested:
+        if stop_flags.get(session_id, False):
             raise StopTranslationException("Translation stopped by user")
         return False
+
+def clean_stop_flag(session_id):
+    """Remove stop flag entry for a finished session"""
+    with stop_lock:
+        stop_flags.pop(session_id, None)
 
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang,
@@ -301,22 +297,19 @@ def modified_translate_button_click(
     session_lang, continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """Modified translate button click handler using task queue"""
-    global current_translation_task
-
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
 
-    # Reset UI and stop flag
+    # Reset UI
     output_file_update = gr.update(visible=False)
     status_message = None
-    reset_stop_flag()
 
     if not files:
-        return output_file_update, "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
+        return output_file_update, "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False), ""
 
     # In server_mode, API key comes from environment variable, skip client-side check
     if use_online and not api_key and not os.environ.get("LINGUAHARU_API_KEY"):
-        return output_file_update, "API key is required for online models.", gr.update(value=stop_text, interactive=False)
+        return output_file_update, "API key is required for online models.", gr.update(value=stop_text, interactive=False), ""
 
     def wrapped_translate_func(files, model, src_lang, dst_lang,
                               use_online, api_key, max_retries, max_token, thread_count,
@@ -939,11 +932,7 @@ def set_labels(session_lang: str):
     """Update UI labels according to chosen language"""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
 
-    file_upload_label = "Upload Files"
-    if "Upload Files" in labels:
-        file_upload_label = labels["Upload Files"]
-    elif "Upload File" in labels:
-        file_upload_label = labels["Upload File"] + "s"
+    file_upload_label = labels.get("Upload Files", "Upload Files")
 
     # Update dropdown choices with translated "Add Custom Language" option
     custom_label = labels.get("Add Custom Language", "+ Add Custom...")
@@ -960,6 +949,9 @@ def set_labels(session_lang: str):
         thread_count_slider: gr.update(label=labels["Thread Count"]),
         api_key_input: gr.update(label=labels["API Key"], placeholder=labels.get("Enter your API key here", "Enter your API key here")),
         remember_key_checkbox: gr.update(label=labels.get("Remember Key", "Remember Key")),
+        supported_types_hint: gr.update(value=f'<div style="text-align:center;padding:8px 16px;margin:4px auto;max-width:600px;'
+                                             f'background:rgba(232,180,184,0.15);border-radius:8px;font-size:13px;color:var(--haru-text,#555);">'
+                                             f'{labels.get("Supported File Types", "Supported file types: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md")}</div>'),
         file_input: gr.update(label=file_upload_label),
         output_file: gr.update(label=labels["Download Translated File"]),
         status_message: gr.update(label=labels["Status Message"]),
@@ -978,7 +970,10 @@ def set_labels(session_lang: str):
         history_nav_btn: gr.update(value=f"📋 {labels.get('Translation History', 'Translation History')}"),
         history_back_btn: gr.update(value=f"← {labels.get('Back', 'Back')}"),
         history_refresh_btn: gr.update(value=f"🔄 {labels.get('Refresh Records', 'Refresh')}"),
-        history_title: gr.update(value=f"<h2 style='text-align: center; margin: 20px 0;'>{labels.get('Translation History', 'Translation History')}</h2>")
+        history_title: gr.update(value=f"<h2 style='text-align: center; margin: 20px 0;'>{labels.get('Translation History', 'Translation History')}</h2>"),
+        server_notice: gr.update(value=f'<div style="text-align:center;padding:8px 16px;margin:4px auto;max-width:600px;'
+                      f'background:rgba(232,180,184,0.15);border-radius:8px;font-size:13px;color:var(--haru-text,#555);">'
+                      f'{labels.get("Server Notice", "")}</div>') if server_mode_ui else gr.update()
     }
 
 #-------------------------------------------------------------------------
@@ -1008,7 +1003,7 @@ def update_model_list_and_api_input(use_online):
 
         return (
             gr.update(choices=online_models, value=default_online_value),
-            gr.update(visible=not server_mode),
+            gr.update(visible=not server_mode_ui),
             gr.update(value=saved_api_key),
             gr.update(value=thread_count)
         )
@@ -1320,85 +1315,35 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
         app_logger.exception(f"Error importing translator for {file_extension}: {e}")
         return None
 
-CHAR_LIMIT = 100_000
-GITHUB_URL = "https://github.com/YANG-Haruka/LinguaHaru"
-
-def count_file_chars(file_path):
-    """Count characters in a file based on its type"""
-    ext = os.path.splitext(file_path)[1].lower()
-    try:
-        if ext in (".txt", ".md", ".srt"):
-            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                return len(f.read())
-        elif ext == ".docx":
-            from docx import Document
-            doc = Document(file_path)
-            return sum(len(p.text) for p in doc.paragraphs)
-        elif ext == ".pptx":
-            from pptx import Presentation
-            prs = Presentation(file_path)
-            total = 0
-            for slide in prs.slides:
-                for shape in slide.shapes:
-                    if shape.has_text_frame:
-                        total += sum(len(p.text) for p in shape.text_frame.paragraphs)
-            return total
-        elif ext == ".xlsx":
-            from openpyxl import load_workbook
-            wb = load_workbook(file_path, read_only=True, data_only=True)
-            total = 0
-            for ws in wb.worksheets:
-                for row in ws.iter_rows(values_only=True):
-                    for cell in row:
-                        if cell is not None:
-                            total += len(str(cell))
-            wb.close()
-            return total
-        elif ext == ".pdf":
-            # Estimate from file size: ~2 chars per byte for text-heavy PDFs
-            return os.path.getsize(file_path) // 2
-    except Exception as e:
-        app_logger.warning(f"Error counting chars for {file_path}: {e}")
-    # Fallback: estimate from file size
-    return os.path.getsize(file_path)
-
 def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768, thread_count=4,
     excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using chosen model"""
-    reset_stop_flag()  # Reset stop flag at beginning
-    clean_server_cache()  # In server_mode, clean all previous cache
+    # Generate unique session ID for this translation request
+    session_id = str(uuid.uuid4())[:8]
+
+    reset_stop_flag(session_id)
     clean_gradio_cache()
 
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
 
     if not files:
-        return gr.update(value=None, visible=False), "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False), session_id
 
     if use_online and not api_key and not os.environ.get("LINGUAHARU_API_KEY"):
-        return gr.update(value=None, visible=False), "API key is required for online models.", gr.update(value=stop_text, interactive=False)
-
-    # Character limit check in server_mode
-    if server_mode:
-        total_chars = sum(count_file_chars(f.name) for f in (files if isinstance(files, list) else [files]))
-        if total_chars > CHAR_LIMIT:
-            limit_msg = labels.get("Char Limit Exceeded",
-                f"File exceeds the {CHAR_LIMIT:,} character limit. Please use the GitHub project or Release version for larger files.")
-            gr.Warning(limit_msg)
-            return gr.update(value=None, visible=False), f"{limit_msg}\n{GITHUB_URL}", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), "API key is required for online models.", gr.update(value=stop_text, interactive=False), session_id
 
     src_lang_code = get_language_code(src_lang)
     dst_lang_code = get_language_code(dst_lang)
-    
+
     # Convert glossary name to full path
     glossary_path = os.path.join("glossary", f"{glossary_name}.csv") if glossary_name else None
 
-    # Common progress callback function
+    # Common progress callback function bound to this session
     def progress_callback(progress_value, desc=None):
-        if check_stop_requested():
-            raise StopTranslationException("Translation stopped by user")
+        check_stop_requested(session_id)
         progress(progress_value, desc=desc)
 
     try:
@@ -1406,42 +1351,52 @@ def translate_files(
         if isinstance(files, list) and len(files) > 1:
             result = process_multiple_files(
                 files, model, src_lang_code, dst_lang_code,
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang,
+                session_id=session_id
             )
         else:
             # Handle single file case
             single_file = files[0] if isinstance(files, list) else files
             result = process_single_file(
                 single_file, model, src_lang_code, dst_lang_code,
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang,
+                session_id=session_id
             )
-        
-        return result[0], result[1], gr.update(value=stop_text, interactive=False)
-        
+
+        return result[0], result[1], gr.update(value=stop_text, interactive=False), session_id
+
     except StopTranslationException:
-        return gr.update(value=None, visible=False), "Translation stopped by user.", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), "Translation stopped by user.", gr.update(value=stop_text, interactive=False), session_id
     except Exception as e:
-        return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False), session_id
+    finally:
+        clean_session_cache(session_id)
+        clean_stop_flag(session_id)
 
 def process_single_file(
     file, model, src_lang_code, dst_lang_code,
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en",
+    session_id=None
 ):
     """Process single file for translation"""
     file_name = os.path.basename(file.name)
-    
-    # Get custom paths from config
+
+    # Get custom paths from config, isolated by session_id
     temp_dir, result_dir, log_dir = get_custom_paths()
-    
+    if session_id:
+        temp_dir = os.path.join(temp_dir, session_id)
+        result_dir = os.path.join(result_dir, session_id)
+        log_dir = os.path.join(log_dir, session_id)
+
     # Create new log file for this file
     from config.log_config import file_logger
     file_logger.create_file_log(file_name, log_dir=log_dir)
-    
-    app_logger.info(f"Processing file: {file_name}")
+
+    app_logger.info(f"Processing file: {file_name} (session: {session_id})")
     app_logger.info(f"Source language: {src_lang_code}, Target language: {dst_lang_code}, Model: {model}")
-    
+
     file_name, file_extension = os.path.splitext(file.name)
-    
+
     translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode)
 
     if not translator_class:
@@ -1451,20 +1406,20 @@ def process_single_file(
         )
 
     try:
-        # Pass check_stop_requested function to translator with custom paths
+        # Pass check_stop_requested function to translator with session-isolated paths
         translator = translator_class(
             file.name, model, use_online, api_key,
             src_lang_code, dst_lang_code, continue_mode,
             max_token=max_token, max_retries=max_retries,
             thread_count=thread_count, glossary_path=glossary_path,
-            temp_dir=temp_dir,      # Pass custom temp directory
-            result_dir=result_dir,  # Pass custom result directory
-            session_lang=session_lang,  # Pass session language for i18n
-            log_dir=log_dir         # Pass custom log directory
+            temp_dir=temp_dir,
+            result_dir=result_dir,
+            session_lang=session_lang,
+            log_dir=log_dir
         )
-        
-        # Add check_stop_requested as attribute
-        translator.check_stop_requested = check_stop_requested
+
+        # Add check_stop_requested as attribute bound to this session
+        translator.check_stop_requested = lambda: check_stop_requested(session_id)
 
         # Get translated labels
         labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
@@ -1519,11 +1474,17 @@ def process_single_file(
     
 def process_multiple_files(
     files, model, src_lang_code, dst_lang_code,
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en",
+    session_id=None
 ):
     """Process multiple files and return zip archive"""
-    # Get custom paths from config
+    # Get custom paths from config, isolated by session_id
     temp_dir, result_dir, log_dir = get_custom_paths()
+    if session_id:
+        temp_dir = os.path.join(temp_dir, session_id)
+        result_dir = os.path.join(result_dir, session_id)
+        log_dir = os.path.join(log_dir, session_id)
+    os.makedirs(result_dir, exist_ok=True)
     
     # Create temporary directory for translated files in custom result directory
     temp_zip_dir = tempfile.mkdtemp(prefix="translated_", dir=result_dir)
@@ -1567,17 +1528,18 @@ def process_multiple_files(
                     continue  # Skip unsupported files (should not happen due to earlier validation)
                 
                 try:
-                    # Process file with custom paths
+                    # Process file with session-isolated paths
                     translator = translator_class(
                         file_obj.name, model, use_online, api_key,
                         src_lang_code, dst_lang_code, continue_mode, max_token=max_token, max_retries=max_retries,
                         thread_count=thread_count, glossary_path=glossary_path,
-                        temp_dir=temp_dir,      # Pass custom temp directory
-                        result_dir=result_dir,  # Pass custom result directory
-                        session_lang=session_lang,  # Pass session language for i18n
-                        log_dir=log_dir         # Pass custom log directory
+                        temp_dir=temp_dir,
+                        result_dir=result_dir,
+                        session_lang=session_lang,
+                        log_dir=log_dir
                     )
-                    
+                    translator.check_stop_requested = lambda: check_stop_requested(session_id)
+
                     # Create output directory
                     output_dir = os.path.join(temp_zip_dir, "files")
                     os.makedirs(output_dir, exist_ok=True)
@@ -1648,8 +1610,10 @@ _is_main_process = multiprocessing.current_process().name == 'MainProcess'
 
 # Read initial configuration (needed for both main and subprocess)
 config = read_system_config()
-# server_mode activates only when config enables it AND running on Render (RENDER env var is auto-set by Render)
-server_mode = config.get("server_mode", False) and bool(os.environ.get("RENDER"))
+# server_mode_ui: config-based, controls UI visibility (works both locally and on Render)
+# server_mode: full server mode, also controls port binding/cache (only on Render)
+server_mode_ui = config.get("server_mode", False)
+server_mode = server_mode_ui and bool(os.environ.get("RENDER"))
 initial_lan_mode = config.get("lan_mode", False)
 initial_default_online = config.get("default_online", False)
 initial_max_token = config.get("max_token", 768)
@@ -1716,7 +1680,18 @@ with gr.Blocks(
     
     # Create header
     create_header(app_title, encoded_image, mime_type, img_height)
-    
+
+    # Server mode notice (character limit warning, language updated on page load)
+    if server_mode_ui:
+        server_notice = gr.HTML(
+            value=f'<div style="text-align:center;padding:8px 16px;margin:4px auto;max-width:600px;'
+                  f'background:rgba(232,180,184,0.15);border-radius:8px;font-size:13px;color:var(--haru-text,#555);">'
+                  f'{LABEL_TRANSLATIONS["en"].get("Server Notice", "")}</div>',
+            elem_id="server-notice"
+        )
+    else:
+        server_notice = gr.HTML(visible=False)
+
     # Create footer
     create_footer()
     
@@ -1732,6 +1707,7 @@ with gr.Blocks(
     word_bilingual_mode_state = states['word_bilingual_mode_state']
     pdf_bilingual_mode_state = states['pdf_bilingual_mode_state']
     thread_count_state = states['thread_count_state']
+    translation_session_id = states['translation_session_id']
 
     default_src_lang, default_dst_lang = get_default_languages()
 
@@ -1758,12 +1734,12 @@ with gr.Blocks(
         )
 
         # Create main interface
-        (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
+        (api_key_input, api_key_row, remember_key_checkbox, supported_types_hint, file_input, output_file, status_message,
          translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
 
         # Create translation history navigation button (hidden in server_mode)
         history_nav_btn = create_translation_history_button(get_label)
-        if server_mode:
+        if server_mode_ui:
             history_nav_btn.visible = False
 
     # Create history page (initially hidden)
@@ -1966,15 +1942,16 @@ with gr.Blocks(
             use_online_model, api_key_input, max_retries_slider, max_token_state,
             thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, glossary_choice, session_lang
         ],
-        outputs=[output_file, status_message, stop_button]
+        outputs=[output_file, status_message, stop_button, translation_session_id]
     ).then(
         lambda session_lang: (
-            gr.update(interactive=True), 
-            gr.update(interactive=True), 
-            gr.update(value=LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"]).get("Stop Translation", "Stop Translation"), interactive=False)
+            gr.update(interactive=True),
+            gr.update(interactive=True),
+            gr.update(value=LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"]).get("Stop Translation", "Stop Translation"), interactive=False),
+            gr.update(value=None)
         ),
         inputs=[session_lang],
-        outputs=[translate_button, continue_button, stop_button]
+        outputs=[translate_button, continue_button, stop_button, file_input]
     )
 
     # In continue_button.click event:
@@ -1989,21 +1966,22 @@ with gr.Blocks(
             use_online_model, api_key_input, max_retries_slider, max_token_state,
             thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, glossary_choice, session_lang
         ],
-        outputs=[output_file, status_message, stop_button]
+        outputs=[output_file, status_message, stop_button, translation_session_id]
     ).then(
         lambda session_lang: (
-            gr.update(interactive=True), 
-            gr.update(interactive=True), 
-            gr.update(value=LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"]).get("Stop Translation", "Stop Translation"), interactive=False)
+            gr.update(interactive=True),
+            gr.update(interactive=True),
+            gr.update(value=LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"]).get("Stop Translation", "Stop Translation"), interactive=False),
+            gr.update(value=None)
         ),
         inputs=[session_lang],
-        outputs=[translate_button, continue_button, stop_button]
+        outputs=[translate_button, continue_button, stop_button, file_input]
     )
 
-    # Update stop button handler to pass session_lang:
+    # Stop button handler: stop the current session's translation
     stop_button.click(
         request_stop_translation,
-        inputs=[session_lang],
+        inputs=[translation_session_id, session_lang],
         outputs=[stop_button]
     )
 
@@ -2153,9 +2131,10 @@ with gr.Blocks(
             use_online_model, model_choice, glossary_choice, glossary_upload_row,
             src_lang, dst_lang, use_online_model, lan_mode_checkbox,
             model_choice, glossary_choice, max_retries_slider, thread_count_slider,
-            api_key_input, remember_key_checkbox, file_input, output_file, status_message, translate_button,
+            api_key_input, remember_key_checkbox, supported_types_hint, file_input, output_file, status_message, translate_button,
             continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, stop_button,
-            custom_lang_input, add_lang_button, history_nav_btn, history_back_btn, history_refresh_btn, history_title
+            custom_lang_input, add_lang_button, history_nav_btn, history_back_btn, history_refresh_btn, history_title,
+            server_notice
         ],
         js="""
         () => {
