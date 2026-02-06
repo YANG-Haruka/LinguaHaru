@@ -140,6 +140,23 @@ def enqueue_task(
             queue_position = task_queue.qsize()
             return f"Task added to queue. Position: {queue_position}"
         
+def clean_server_cache():
+    """In server_mode, clean temp/result/log dirs to prevent disk overflow.
+    Called at the start of each translation to remove previous results."""
+    if not server_mode:
+        return
+    try:
+        temp_dir, result_dir, log_dir = get_custom_paths()
+        for dir_path in [temp_dir, result_dir, log_dir]:
+            if os.path.exists(dir_path):
+                shutil.rmtree(dir_path, ignore_errors=True)
+                os.makedirs(dir_path, exist_ok=True)
+        # Also clean Gradio upload cache
+        clean_gradio_cache()
+        app_logger.info("Server cache cleaned")
+    except Exception as e:
+        app_logger.warning(f"Server cache cleanup error: {e}")
+
 def clean_gradio_cache():
     """Clean up old Gradio temporary files"""
     try:
@@ -298,7 +315,7 @@ def modified_translate_button_click(
         return output_file_update, "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
 
     # In server_mode, API key comes from environment variable, skip client-side check
-    if use_online and not api_key and not config.get("server_mode", False):
+    if use_online and not api_key and not server_mode:
         return output_file_update, "API key is required for online models.", gr.update(value=stop_text, interactive=False)
 
     def wrapped_translate_func(files, model, src_lang, dst_lang,
@@ -1309,6 +1326,7 @@ def translate_files(
 ):
     """Translate one or multiple files using chosen model"""
     reset_stop_flag()  # Reset stop flag at beginning
+    clean_server_cache()  # In server_mode, clean all previous cache
     clean_gradio_cache()
     
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
@@ -1317,7 +1335,7 @@ def translate_files(
     if not files:
         return gr.update(value=None, visible=False), "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
 
-    if use_online and not api_key:
+    if use_online and not api_key and not server_mode:
         return gr.update(value=None, visible=False), "API key is required for online models.", gr.update(value=stop_text, interactive=False)
 
     src_lang_code = get_language_code(src_lang)
@@ -1691,8 +1709,10 @@ with gr.Blocks(
         (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
          translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
 
-        # Create translation history navigation button
+        # Create translation history navigation button (hidden in server_mode)
         history_nav_btn = create_translation_history_button(get_label)
+        if server_mode:
+            history_nav_btn.visible = False
 
     # Create history page (initially hidden)
     with gr.Column(visible=False, elem_id="history-page") as history_page:
