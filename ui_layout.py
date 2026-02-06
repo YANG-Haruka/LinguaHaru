@@ -1715,10 +1715,12 @@ def create_footer():
         color: #4a5568;
         z-index: 100;
     ">
-        <span style="opacity: 0.8;">Crafted with </span>
-        <span style="color: #e8b4b8;">♥</span>
-        <span style="opacity: 0.8;"> by </span>
-        <span style="font-weight: 600; background: linear-gradient(135deg, #e8b4b8, #7eb8da); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Haruka-YANG</span>
+        <a href="https://www.harukayang.xyz/" target="_blank" style="text-decoration: none; color: inherit;">
+            <span style="opacity: 0.8;">Crafted with </span>
+            <span style="color: #e8b4b8;">♥</span>
+            <span style="opacity: 0.8;"> by </span>
+            <span style="font-weight: 600; background: linear-gradient(135deg, #e8b4b8, #7eb8da); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Haruka-YANG</span>
+        </a>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
         <span style="opacity: 0.8;">Version 5.0</span>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
