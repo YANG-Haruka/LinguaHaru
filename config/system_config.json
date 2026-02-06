@@ -16,7 +16,7 @@
     "show_glossary": false,
     "show_lan_mode": false,
     "excel_mode_2": false,
-    "excel_bilingual_mode": false,
+    "excel_bilingual_mode": true,
     "word_bilingual_mode": true,
     "default_thread_count_online": 2,
     "default_thread_count_offline": 4,

@@ -465,16 +465,12 @@ def update_excel_mode(excel_mode_2):
     write_system_config(config)
     return excel_mode_2
 
-def update_excel_bilingual_mode_with_auto_mode2(excel_bilingual_mode):
-    """Update system config with new Excel bilingual mode setting and auto-enable mode 2"""
+def update_excel_bilingual_mode(excel_bilingual_mode):
+    """Update system config with new Excel bilingual mode setting"""
     config = read_system_config()
     config["excel_bilingual_mode"] = excel_bilingual_mode
-    if excel_bilingual_mode:
-        config["excel_mode_2"] = True
-    
     write_system_config(config)
-
-    return excel_bilingual_mode, config["excel_mode_2"]
+    return excel_bilingual_mode
 
 def update_word_bilingual_mode(word_bilingual_mode):
     """Update system config with new Word bilingual mode setting"""
@@ -1264,8 +1260,10 @@ def show_mode_checkbox(files):
 
     # Check if at least one Excel file is present
     excel_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".xlsx"]
-    # Excel mode 2 and bilingual require xlwings (local Excel), hide in server_mode
-    excel_visible = bool(excel_files) and not server_mode
+    # Excel Mode 2 removed (requires xlwings, not available without local Excel)
+    excel_mode2_visible = False
+    # Excel Bilingual works with openpyxl, always available
+    excel_bilingual_visible = bool(excel_files)
 
     # Check if at least one Word file is present
     word_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".docx"]
@@ -1275,7 +1273,7 @@ def show_mode_checkbox(files):
     pdf_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".pdf"]
     pdf_visible = bool(pdf_files)
 
-    return gr.update(visible=excel_visible), gr.update(visible=excel_visible), gr.update(visible=word_visible), gr.update(visible=pdf_visible)
+    return gr.update(visible=excel_mode2_visible), gr.update(visible=excel_bilingual_visible), gr.update(visible=word_visible), gr.update(visible=pdf_visible)
 
 def update_continue_button(files):
     """Check if temp folders exist for uploaded files and update continue button state"""
@@ -1321,12 +1319,10 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
 
         # For Excel, Word, and PDF, return a partial class with mode parameters
         if file_extension.lower() == ".xlsx":
-            # Excel: use_xlwings for mode_2 or bilingual, bilingual_mode for bilingual
-            # xlwings requires local Excel installation, unavailable in server_mode
-            use_xlwings = (excel_mode_2 or excel_bilingual_mode) and not server_mode
+            # openpyxl only (xlwings/Mode 2 removed from deploy branch)
             return partial(translator_class,
-                          use_xlwings=use_xlwings,
-                          bilingual_mode=excel_bilingual_mode if not server_mode else False)
+                          use_xlwings=False,
+                          bilingual_mode=excel_bilingual_mode)
         elif file_extension.lower() == ".docx":
             # Word: bilingual_mode for bilingual
             return partial(translator_class, bilingual_mode=word_bilingual_mode)
@@ -1937,13 +1933,9 @@ with gr.Blocks(
     )
 
     excel_bilingual_checkbox.change(
-        update_excel_bilingual_mode_with_auto_mode2,
+        update_excel_bilingual_mode,
         inputs=excel_bilingual_checkbox,
-        outputs=[excel_bilingual_mode_state, excel_mode_2_state]
-    ).then(
-        lambda excel_bilingual_mode: gr.update(value=True) if excel_bilingual_mode else gr.update(),
-        inputs=excel_bilingual_checkbox,
-        outputs=excel_mode_checkbox
+        outputs=excel_bilingual_mode_state
     )
 
     word_bilingual_checkbox.change(
