@@ -2001,7 +2001,7 @@ def create_main_interface(config, get_label=None):
 
     file_input = gr.File(
         label=get_label("Upload Files"),
-        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"],
+        file_types=[".docx", ".pptx", ".xlsx", ".srt", ".txt", ".md"],
         file_count="multiple"
     )
 

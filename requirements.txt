@@ -6,9 +6,6 @@ openpyxl>=3.0.10
 python-docx>=1.1.0
 python-pptx>=1.0.0
 
-# PDF translation (BabelDOC handles its own dependencies)
-babeldoc
-
 # LLM & API
 openai>=1.59.6
 tiktoken>=0.8.0

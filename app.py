@@ -75,7 +75,6 @@ TRANSLATOR_MODULES = {
     ".docx": "translator.word_translator.WordTranslator",
     ".pptx": "translator.ppt_translator.PptTranslator",
     ".xlsx": "translator.excel_translator.ExcelTranslator",
-    ".pdf": "translator.pdf_translator.PdfTranslator",
     ".srt": "translator.subtitle_translator.SubtitlesTranslator",
     ".txt": "translator.txt_translator.TxtTranslator",
     ".md": "translator.md_translator.MdTranslator",
@@ -290,6 +289,13 @@ def clean_stop_flag(session_id):
     """Remove stop flag entry for a finished session"""
     with stop_lock:
         stop_flags.pop(session_id, None)
+
+def on_session_disconnect(session_id):
+    """Stop translation when user disconnects (page refresh/close)"""
+    if session_id:
+        with stop_lock:
+            stop_flags[session_id] = True
+        app_logger.info(f"Session disconnected, stopping translation: {session_id}")
 
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang,
@@ -951,7 +957,7 @@ def set_labels(session_lang: str):
         remember_key_checkbox: gr.update(label=labels.get("Remember Key", "Remember Key")),
         supported_types_hint: gr.update(value=f'<div style="text-align:center;padding:8px 16px;margin:4px auto;max-width:600px;'
                                              f'background:rgba(232,180,184,0.15);border-radius:8px;font-size:13px;color:var(--haru-text,#555);">'
-                                             f'{labels.get("Supported File Types", "Supported file types: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md")}</div>'),
+                                             f'{labels.get("Supported File Types", "Supported file types: .docx, .pptx, .xlsx, .srt, .txt, .md")}</div>'),
         file_input: gr.update(label=file_upload_label),
         output_file: gr.update(label=labels["Download Translated File"]),
         status_message: gr.update(label=labels["Status Message"]),
@@ -2384,6 +2390,9 @@ with gr.Blocks(
         }
         """
     )
+
+    # Stop translation when user disconnects (page refresh/close)
+    demo.unload(on_session_disconnect, inputs=[translation_session_id])
 
 #-------------------------------------------------------------------------
 # Application Launch

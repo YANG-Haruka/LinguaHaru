@@ -106,9 +106,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "API Key",
         "Remember Key": "Remember Key",
         "Enter your API key here": "Enter your API key here",
-        "Upload File": "Upload Office File (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Upload Office File (.docx, .pptx, .xlsx)",
         "Upload Files": "Upload Files",
-        "Supported File Types": "Supported file types: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Supported file types: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Download Translated File",
         "Status Message": "Status Message",
         "Translate": "Translate",
@@ -167,7 +167,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Tokens",
         "Char Limit Exceeded": "File exceeds the 100,000 character limit. Please use the GitHub project or Release version for larger files.",
         "Queue Position": "In queue, position: {position}",
-        "Server Notice": "Maximum 100,000 characters per file. For larger files, please use the <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub project</a> or Release version."
+        "Server Notice": "Maximum 100,000 characters per file. PDF translation is not supported in online mode. For larger files or PDF translation, please use the <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub project</a> or Release version.<br>Please do not refresh the page during translation, otherwise the progress will be lost."
     },
     # Simplified Chinese
     "zh": {
@@ -178,9 +178,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "API 密钥",
         "Remember Key": "记住密钥",
         "Enter your API key here": "在此输入您的 API 密钥",
-        "Upload File": "上传文件 (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "上传文件 (.docx, .pptx, .xlsx)",
         "Upload Files": "上传文件",
-        "Supported File Types": "支持的文件类型：.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "支持的文件类型：.docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "下载翻译文件",
         "Status Message": "状态消息",
         "Translate": "翻译",
@@ -239,7 +239,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Tokens",
         "Char Limit Exceeded": "文件超过10万字符上限，请自行使用 GitHub 构建项目或 Release 版本翻译大文件。",
         "Queue Position": "排队中，当前位置：第{position}位",
-        "Server Notice": "上传文件字数上限为 10 万字。超过上限的文件请自行使用 <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub 构建项目</a> 或 Release 版本。"
+        "Server Notice": "上传文件字数上限为 10 万字，在线模式不支持 PDF 翻译。超过上限的文件或 PDF 翻译请自行使用 <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub 构建项目</a> 或 Release 版本。<br>翻译过程中请勿刷新页面，否则进度将会丢失。"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -250,9 +250,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "API 金鑰",
         "Remember Key": "記住金鑰",
         "Enter your API key here": "在此輸入您的 API 金鑰",
-        "Upload File": "上傳檔案 (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "上傳檔案 (.docx, .pptx, .xlsx)",
         "Upload Files": "上傳檔案",
-        "Supported File Types": "支援的檔案類型：.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "支援的檔案類型：.docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "下載翻譯後的檔案",
         "Status Message": "狀態訊息",
         "Translate": "翻譯",
@@ -311,7 +311,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Tokens",
         "Char Limit Exceeded": "檔案超過10萬字元上限，請自行使用 GitHub 建構專案或 Release 版本翻譯大檔案。",
         "Queue Position": "排隊中，目前位置：第{position}位",
-        "Server Notice": "上傳檔案字數上限為 10 萬字。超過上限的檔案請自行使用 <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub 建構專案</a> 或 Release 版本。"
+        "Server Notice": "上傳檔案字數上限為 10 萬字，線上模式不支援 PDF 翻譯。超過上限的檔案或 PDF 翻譯請自行使用 <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub 建構專案</a> 或 Release 版本。<br>翻譯過程中請勿重新整理頁面，否則進度將會遺失。"
     },
     # Japanese
     "ja": {
@@ -322,9 +322,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "APIキー",
         "Remember Key": "キーを記憶",
         "Enter your API key here": "APIキーを入力してください",
-        "Upload File": "ファイルをアップロード (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "ファイルをアップロード (.docx, .pptx, .xlsx)",
         "Upload Files": "ファイルをアップロード",
-        "Supported File Types": "対応ファイル形式：.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "対応ファイル形式：.docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "翻訳ファイルをダウンロード",
         "Status Message": "ステータスメッセージ",
         "Translate": "翻訳",
@@ -383,7 +383,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "トークン",
         "Char Limit Exceeded": "ファイルが10万文字の上限を超えています。大きなファイルの翻訳にはGitHubプロジェクトまたはReleaseバージョンをご利用ください。",
         "Queue Position": "キューで待機中、現在の位置：{position}番目",
-        "Server Notice": "アップロードファイルの文字数上限は10万文字です。上限を超えるファイルは <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHubプロジェクト</a> またはReleaseバージョンをご利用ください。"
+        "Server Notice": "アップロードファイルの文字数上限は10万文字です。オンラインモードではPDF翻訳に対応していません。上限を超えるファイルやPDF翻訳は <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHubプロジェクト</a> またはReleaseバージョンをご利用ください。<br>翻訳中はページを更新しないでください。進行状況が失われます。"
     },
     # Spanish
     "es": {
@@ -394,9 +394,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "Clave API",
         "Remember Key": "Recordar clave",
         "Enter your API key here": "Ingrese su clave API aquí",
-        "Upload File": "Subir archivo (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Subir archivo (.docx, .pptx, .xlsx)",
         "Upload Files": "Subir archivos",
-        "Supported File Types": "Tipos de archivo compatibles: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Tipos de archivo compatibles: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Descargar archivo traducido",
         "Status Message": "Mensaje de estado",
         "Translate": "Traducir",
@@ -455,7 +455,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Tokens",
         "Char Limit Exceeded": "El archivo supera el límite de 100.000 caracteres. Utilice el proyecto de GitHub o la versión Release para archivos más grandes.",
         "Queue Position": "En cola, posición: {position}",
-        "Server Notice": "Límite de 100.000 caracteres por archivo. Para archivos más grandes, use el <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>proyecto de GitHub</a> o la versión Release."
+        "Server Notice": "Límite de 100.000 caracteres por archivo. La traducción de PDF no está disponible en el modo en línea. Para archivos más grandes o traducción de PDF, use el <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>proyecto de GitHub</a> o la versión Release.<br>No actualice la página durante la traducción, de lo contrario se perderá el progreso."
     },
     # French
     "fr": {
@@ -466,9 +466,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "Clé API",
         "Remember Key": "Se souvenir de la clé",
         "Enter your API key here": "Entrez votre clé API ici",
-        "Upload File": "Télécharger le fichier (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Télécharger le fichier (.docx, .pptx, .xlsx)",
         "Upload Files": "Télécharger les fichiers",
-        "Supported File Types": "Types de fichiers pris en charge : .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Types de fichiers pris en charge : .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Télécharger le fichier traduit",
         "Status Message": "Message d'état",
         "Translate": "Traduire",
@@ -527,7 +527,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Tokens",
         "Char Limit Exceeded": "Le fichier dépasse la limite de 100 000 caractères. Veuillez utiliser le projet GitHub ou la version Release pour les fichiers volumineux.",
         "Queue Position": "En file d'attente, position : {position}",
-        "Server Notice": "Limite de 100 000 caractères par fichier. Pour les fichiers volumineux, utilisez le <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>projet GitHub</a> ou la version Release."
+        "Server Notice": "Limite de 100 000 caractères par fichier. La traduction PDF n'est pas disponible en mode en ligne. Pour les fichiers volumineux ou la traduction PDF, utilisez le <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>projet GitHub</a> ou la version Release.<br>Veuillez ne pas actualiser la page pendant la traduction, sinon la progression sera perdue."
     },
     # German
     "de": {
@@ -538,9 +538,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "API-Schlüssel",
         "Remember Key": "Schlüssel merken",
         "Enter your API key here": "Geben Sie hier Ihren API-Schlüssel ein",
-        "Upload File": "Datei hochladen (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Datei hochladen (.docx, .pptx, .xlsx)",
         "Upload Files": "Dateien hochladen",
-        "Supported File Types": "Unterstützte Dateitypen: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Unterstützte Dateitypen: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Übersetzte Datei herunterladen",
         "Status Message": "Statusnachricht",
         "Translate": "Übersetzen",
@@ -599,7 +599,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Tokens",
         "Char Limit Exceeded": "Die Datei überschreitet das Limit von 100.000 Zeichen. Bitte verwenden Sie das GitHub-Projekt oder die Release-Version für größere Dateien.",
         "Queue Position": "In der Warteschlange, Position: {position}",
-        "Server Notice": "Maximal 100.000 Zeichen pro Datei. Für größere Dateien verwenden Sie bitte das <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub-Projekt</a> oder die Release-Version."
+        "Server Notice": "Maximal 100.000 Zeichen pro Datei. PDF-Übersetzung ist im Online-Modus nicht verfügbar. Für größere Dateien oder PDF-Übersetzung verwenden Sie bitte das <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub-Projekt</a> oder die Release-Version.<br>Bitte aktualisieren Sie die Seite während der Übersetzung nicht, da sonst der Fortschritt verloren geht."
     },
     # Italian
     "it": {
@@ -610,9 +610,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "Chiave API",
         "Remember Key": "Ricorda chiave",
         "Enter your API key here": "Inserisci qui la tua chiave API",
-        "Upload File": "Carica file (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Carica file (.docx, .pptx, .xlsx)",
         "Upload Files": "Carica file",
-        "Supported File Types": "Tipi di file supportati: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Tipi di file supportati: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Scarica file tradotto",
         "Status Message": "Messaggio di stato",
         "Translate": "Traduci",
@@ -671,7 +671,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Token",
         "Char Limit Exceeded": "Il file supera il limite di 100.000 caratteri. Utilizzare il progetto GitHub o la versione Release per file più grandi.",
         "Queue Position": "In coda, posizione: {position}",
-        "Server Notice": "Limite di 100.000 caratteri per file. Per file più grandi, utilizzare il <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>progetto GitHub</a> o la versione Release."
+        "Server Notice": "Limite di 100.000 caratteri per file. La traduzione PDF non è disponibile in modalità online. Per file più grandi o traduzione PDF, utilizzare il <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>progetto GitHub</a> o la versione Release.<br>Non aggiornare la pagina durante la traduzione, altrimenti i progressi andranno persi."
     },
     # Portuguese
     "pt": {
@@ -682,9 +682,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "Chave de API",
         "Remember Key": "Lembrar chave",
         "Enter your API key here": "Digite sua chave de API aqui",
-        "Upload File": "Enviar arquivo (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Enviar arquivo (.docx, .pptx, .xlsx)",
         "Upload Files": "Enviar arquivos",
-        "Supported File Types": "Tipos de arquivo suportados: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Tipos de arquivo suportados: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Baixar arquivo traduzido",
         "Status Message": "Mensagem de status",
         "Translate": "Traduzir",
@@ -743,7 +743,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Tokens",
         "Char Limit Exceeded": "O arquivo excede o limite de 100.000 caracteres. Utilize o projeto GitHub ou a versão Release para arquivos maiores.",
         "Queue Position": "Na fila, posição: {position}",
-        "Server Notice": "Limite de 100.000 caracteres por arquivo. Para arquivos maiores, utilize o <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>projeto GitHub</a> ou a versão Release."
+        "Server Notice": "Limite de 100.000 caracteres por arquivo. A tradução de PDF não está disponível no modo online. Para arquivos maiores ou tradução de PDF, utilize o <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>projeto GitHub</a> ou a versão Release.<br>Não atualize a página durante a tradução, caso contrário o progresso será perdido."
     },
     # Russian
     "ru": {
@@ -754,9 +754,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "API-ключ",
         "Remember Key": "Запомнить ключ",
         "Enter your API key here": "Введите ваш API-ключ здесь",
-        "Upload File": "Загрузить файл (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Загрузить файл (.docx, .pptx, .xlsx)",
         "Upload Files": "Загрузить файлы",
-        "Supported File Types": "Поддерживаемые типы файлов: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Поддерживаемые типы файлов: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Скачать переведенный файл",
         "Status Message": "Статусное сообщение",
         "Translate": "Перевести",
@@ -815,7 +815,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Токены",
         "Char Limit Exceeded": "Файл превышает лимит в 100 000 символов. Пожалуйста, используйте проект GitHub или версию Release для больших файлов.",
         "Queue Position": "В очереди, позиция: {position}",
-        "Server Notice": "Лимит 100 000 символов на файл. Для больших файлов используйте <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>проект GitHub</a> или версию Release."
+        "Server Notice": "Лимит 100 000 символов на файл. Перевод PDF недоступен в онлайн-режиме. Для больших файлов или перевода PDF используйте <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>проект GitHub</a> или версию Release.<br>Не обновляйте страницу во время перевода, иначе прогресс будет потерян."
     },
     # Korean
     "ko": {
@@ -826,9 +826,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "API 키",
         "Remember Key": "키 기억하기",
         "Enter your API key here": "여기에 API 키를 입력하세요",
-        "Upload File": "파일 업로드 (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "파일 업로드 (.docx, .pptx, .xlsx)",
         "Upload Files": "파일 업로드",
-        "Supported File Types": "지원 파일 형식: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "지원 파일 형식: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "번역된 파일 다운로드",
         "Status Message": "상태 메시지",
         "Translate": "번역",
@@ -887,7 +887,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "토큰",
         "Char Limit Exceeded": "파일이 10만 자 제한을 초과했습니다. 대용량 파일 번역은 GitHub 프로젝트 또는 Release 버전을 이용해 주세요.",
         "Queue Position": "대기 중, 현재 위치: {position}번째",
-        "Server Notice": "파일당 최대 10만 자까지 지원합니다. 대용량 파일은 <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub 프로젝트</a> 또는 Release 버전을 이용해 주세요."
+        "Server Notice": "파일당 최대 10만 자까지 지원합니다. 온라인 모드에서는 PDF 번역을 지원하지 않습니다. 대용량 파일이나 PDF 번역은 <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>GitHub 프로젝트</a> 또는 Release 버전을 이용해 주세요.<br>번역 중에는 페이지를 새로고침하지 마세요. 진행 상황이 손실됩니다."
     },
     # Thai
     "th": {
@@ -898,9 +898,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "คีย์ API",
         "Remember Key": "จำคีย์",
         "Enter your API key here": "ป้อนคีย์ API ของคุณที่นี่",
-        "Upload File": "อัปโหลดไฟล์ (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "อัปโหลดไฟล์ (.docx, .pptx, .xlsx)",
         "Upload Files": "อัปโหลดไฟล์",
-        "Supported File Types": "ประเภทไฟล์ที่รองรับ: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "ประเภทไฟล์ที่รองรับ: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "ดาวน์โหลดไฟล์ที่แปลแล้ว",
         "Status Message": "ข้อความสถานะ",
         "Translate": "แปล",
@@ -959,7 +959,7 @@ LABEL_TRANSLATIONS = {
         "Tokens": "โทเค็น",
         "Char Limit Exceeded": "ไฟล์เกินขีดจำกัด 100,000 ตัวอักษร กรุณาใช้โปรเจกต์ GitHub หรือเวอร์ชัน Release สำหรับไฟล์ขนาดใหญ่",
         "Queue Position": "อยู่ในคิว ตำแหน่ง: {position}",
-        "Server Notice": "จำกัด 100,000 ตัวอักษรต่อไฟล์ สำหรับไฟล์ขนาดใหญ่ กรุณาใช้ <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>โปรเจกต์ GitHub</a> หรือเวอร์ชัน Release"
+        "Server Notice": "จำกัด 100,000 ตัวอักษรต่อไฟล์ โหมดออนไลน์ไม่รองรับการแปล PDF สำหรับไฟล์ขนาดใหญ่หรือการแปล PDF กรุณาใช้ <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>โปรเจกต์ GitHub</a> หรือเวอร์ชัน Release<br>กรุณาอย่ารีเฟรชหน้าระหว่างการแปล มิฉะนั้นความคืบหน้าจะสูญหาย"
     },
     # Vietnamese
     "vi": {
@@ -970,9 +970,9 @@ LABEL_TRANSLATIONS = {
         "API Key": "Khóa API",
         "Remember Key": "Ghi nhớ khóa",
         "Enter your API key here": "Nhập khóa API của bạn tại đây",
-        "Upload File": "Tải lên tệp (.docx, .pptx, .xlsx, .pdf)",
+        "Upload File": "Tải lên tệp (.docx, .pptx, .xlsx)",
         "Upload Files": "Tải lên tệp",
-        "Supported File Types": "Các loại tệp được hỗ trợ: .docx, .pptx, .xlsx, .pdf, .srt, .txt, .md",
+        "Supported File Types": "Các loại tệp được hỗ trợ: .docx, .pptx, .xlsx, .srt, .txt, .md",
         "Download Translated File": "Tải xuống tệp đã dịch",
         "Status Message": "Thông báo trạng thái",
         "Translate": "Dịch",
@@ -1031,6 +1031,6 @@ LABEL_TRANSLATIONS = {
         "Tokens": "Token",
         "Char Limit Exceeded": "Tệp vượt quá giới hạn 100.000 ký tự. Vui lòng sử dụng dự án GitHub hoặc phiên bản Release cho các tệp lớn hơn.",
         "Queue Position": "Đang xếp hàng, vị trí: {position}",
-        "Server Notice": "Giới hạn 100.000 ký tự mỗi tệp. Đối với tệp lớn hơn, vui lòng sử dụng <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>dự án GitHub</a> hoặc phiên bản Release."
+        "Server Notice": "Giới hạn 100.000 ký tự mỗi tệp. Chế độ trực tuyến không hỗ trợ dịch PDF. Đối với tệp lớn hơn hoặc dịch PDF, vui lòng sử dụng <a href='https://github.com/YANG-Haruka/LinguaHaru' target='_blank' style='color:#7eb8da;text-decoration:underline;'>dự án GitHub</a> hoặc phiên bản Release.<br>Vui lòng không tải lại trang trong quá trình dịch, nếu không tiến trình sẽ bị mất."
     }
 }
