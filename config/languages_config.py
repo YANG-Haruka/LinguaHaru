@@ -163,7 +163,8 @@ LABEL_TRANSLATIONS = {
         "Success": "Success",
         "Failed": "Failed",
         "Stopped": "Stopped",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Char Limit Exceeded": "File exceeds the 100,000 character limit. Please use the GitHub project or Release version for larger files."
     },
     # Simplified Chinese
     "zh": {
@@ -231,7 +232,8 @@ LABEL_TRANSLATIONS = {
         "Success": "成功",
         "Failed": "失败",
         "Stopped": "已停止",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Char Limit Exceeded": "文件超过10万字符上限，请自行使用 GitHub 构建项目或 Release 版本翻译大文件。"
     },
     # Traditional Chinese
     "zh-Hant": {
@@ -299,7 +301,8 @@ LABEL_TRANSLATIONS = {
         "Success": "成功",
         "Failed": "失敗",
         "Stopped": "已停止",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Char Limit Exceeded": "檔案超過10萬字元上限，請自行使用 GitHub 建構專案或 Release 版本翻譯大檔案。"
     },
     # Japanese
     "ja": {
@@ -367,7 +370,8 @@ LABEL_TRANSLATIONS = {
         "Success": "成功",
         "Failed": "失敗",
         "Stopped": "停止済み",
-        "Tokens": "トークン"
+        "Tokens": "トークン",
+        "Char Limit Exceeded": "ファイルが10万文字の上限を超えています。大きなファイルの翻訳にはGitHubプロジェクトまたはReleaseバージョンをご利用ください。"
     },
     # Spanish
     "es": {
@@ -435,7 +439,8 @@ LABEL_TRANSLATIONS = {
         "Success": "Éxito",
         "Failed": "Fallido",
         "Stopped": "Detenido",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Char Limit Exceeded": "El archivo supera el límite de 100.000 caracteres. Utilice el proyecto de GitHub o la versión Release para archivos más grandes."
     },
     # French
     "fr": {
@@ -503,7 +508,8 @@ LABEL_TRANSLATIONS = {
         "Success": "Succès",
         "Failed": "Échec",
         "Stopped": "Arrêté",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Char Limit Exceeded": "Le fichier dépasse la limite de 100 000 caractères. Veuillez utiliser le projet GitHub ou la version Release pour les fichiers volumineux."
     },
     # German
     "de": {
@@ -571,7 +577,8 @@ LABEL_TRANSLATIONS = {
         "Success": "Erfolg",
         "Failed": "Fehlgeschlagen",
         "Stopped": "Gestoppt",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Char Limit Exceeded": "Die Datei überschreitet das Limit von 100.000 Zeichen. Bitte verwenden Sie das GitHub-Projekt oder die Release-Version für größere Dateien."
     },
     # Italian
     "it": {
@@ -639,7 +646,8 @@ LABEL_TRANSLATIONS = {
         "Success": "Successo",
         "Failed": "Fallito",
         "Stopped": "Interrotto",
-        "Tokens": "Token"
+        "Tokens": "Token",
+        "Char Limit Exceeded": "Il file supera il limite di 100.000 caratteri. Utilizzare il progetto GitHub o la versione Release per file più grandi."
     },
     # Portuguese
     "pt": {
@@ -707,7 +715,8 @@ LABEL_TRANSLATIONS = {
         "Success": "Sucesso",
         "Failed": "Falhou",
         "Stopped": "Parado",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Char Limit Exceeded": "O arquivo excede o limite de 100.000 caracteres. Utilize o projeto GitHub ou a versão Release para arquivos maiores."
     },
     # Russian
     "ru": {
@@ -775,7 +784,8 @@ LABEL_TRANSLATIONS = {
         "Success": "Успешно",
         "Failed": "Ошибка",
         "Stopped": "Остановлено",
-        "Tokens": "Токены"
+        "Tokens": "Токены",
+        "Char Limit Exceeded": "Файл превышает лимит в 100 000 символов. Пожалуйста, используйте проект GitHub или версию Release для больших файлов."
     },
     # Korean
     "ko": {
@@ -843,7 +853,8 @@ LABEL_TRANSLATIONS = {
         "Success": "성공",
         "Failed": "실패",
         "Stopped": "중지됨",
-        "Tokens": "토큰"
+        "Tokens": "토큰",
+        "Char Limit Exceeded": "파일이 10만 자 제한을 초과했습니다. 대용량 파일 번역은 GitHub 프로젝트 또는 Release 버전을 이용해 주세요."
     },
     # Thai
     "th": {
@@ -911,7 +922,8 @@ LABEL_TRANSLATIONS = {
         "Success": "สำเร็จ",
         "Failed": "ล้มเหลว",
         "Stopped": "หยุดแล้ว",
-        "Tokens": "โทเค็น"
+        "Tokens": "โทเค็น",
+        "Char Limit Exceeded": "ไฟล์เกินขีดจำกัด 100,000 ตัวอักษร กรุณาใช้โปรเจกต์ GitHub หรือเวอร์ชัน Release สำหรับไฟล์ขนาดใหญ่"
     },
     # Vietnamese
     "vi": {
@@ -979,6 +991,7 @@ LABEL_TRANSLATIONS = {
         "Success": "Thành công",
         "Failed": "Thất bại",
         "Stopped": "Đã dừng",
-        "Tokens": "Token"
+        "Tokens": "Token",
+        "Char Limit Exceeded": "Tệp vượt quá giới hạn 100.000 ký tự. Vui lòng sử dụng dự án GitHub hoặc phiên bản Release cho các tệp lớn hơn."
     }
 }

@@ -1320,6 +1320,48 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
         app_logger.exception(f"Error importing translator for {file_extension}: {e}")
         return None
 
+CHAR_LIMIT = 100_000
+GITHUB_URL = "https://github.com/YANG-Haruka/LinguaHaru"
+
+def count_file_chars(file_path):
+    """Count characters in a file based on its type"""
+    ext = os.path.splitext(file_path)[1].lower()
+    try:
+        if ext in (".txt", ".md", ".srt"):
+            with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                return len(f.read())
+        elif ext == ".docx":
+            from docx import Document
+            doc = Document(file_path)
+            return sum(len(p.text) for p in doc.paragraphs)
+        elif ext == ".pptx":
+            from pptx import Presentation
+            prs = Presentation(file_path)
+            total = 0
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        total += sum(len(p.text) for p in shape.text_frame.paragraphs)
+            return total
+        elif ext == ".xlsx":
+            from openpyxl import load_workbook
+            wb = load_workbook(file_path, read_only=True, data_only=True)
+            total = 0
+            for ws in wb.worksheets:
+                for row in ws.iter_rows(values_only=True):
+                    for cell in row:
+                        if cell is not None:
+                            total += len(str(cell))
+            wb.close()
+            return total
+        elif ext == ".pdf":
+            # Estimate from file size: ~2 chars per byte for text-heavy PDFs
+            return os.path.getsize(file_path) // 2
+    except Exception as e:
+        app_logger.warning(f"Error counting chars for {file_path}: {e}")
+    # Fallback: estimate from file size
+    return os.path.getsize(file_path)
+
 def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768, thread_count=4,
     excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True)
@@ -1328,15 +1370,24 @@ def translate_files(
     reset_stop_flag()  # Reset stop flag at beginning
     clean_server_cache()  # In server_mode, clean all previous cache
     clean_gradio_cache()
-    
+
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
-    
+
     if not files:
         return gr.update(value=None, visible=False), "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
 
     if use_online and not api_key and not server_mode:
         return gr.update(value=None, visible=False), "API key is required for online models.", gr.update(value=stop_text, interactive=False)
+
+    # Character limit check in server_mode
+    if server_mode:
+        total_chars = sum(count_file_chars(f.name) for f in (files if isinstance(files, list) else [files]))
+        if total_chars > CHAR_LIMIT:
+            limit_msg = labels.get("Char Limit Exceeded",
+                f"File exceeds the {CHAR_LIMIT:,} character limit. Please use the GitHub project or Release version for larger files.")
+            gr.Warning(limit_msg)
+            return gr.update(value=None, visible=False), f"{limit_msg}\n{GITHUB_URL}", gr.update(value=stop_text, interactive=False)
 
     src_lang_code = get_language_code(src_lang)
     dst_lang_code = get_language_code(dst_lang)
