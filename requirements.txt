@@ -3,7 +3,6 @@ gradio>=5.23.3
 
 # Document processing
 openpyxl>=3.0.10
-xlwings>=0.33.11
 python-docx>=1.1.0
 python-pptx>=1.0.0
 
