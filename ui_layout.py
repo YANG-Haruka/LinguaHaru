@@ -1846,7 +1846,7 @@ def create_settings_section(config):
                 visible=initial_show_thread_count
             )
 
-    with gr.Row(visible=False):
+    with gr.Row():
         excel_mode_checkbox = gr.Checkbox(
             label="Use Excel Mode 2",
             value=initial_excel_mode_2,
