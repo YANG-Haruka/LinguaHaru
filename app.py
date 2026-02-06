@@ -1648,7 +1648,8 @@ _is_main_process = multiprocessing.current_process().name == 'MainProcess'
 
 # Read initial configuration (needed for both main and subprocess)
 config = read_system_config()
-server_mode = config.get("server_mode", False)
+# server_mode activates only when config enables it AND running on Render (RENDER env var is auto-set by Render)
+server_mode = config.get("server_mode", False) and bool(os.environ.get("RENDER"))
 initial_lan_mode = config.get("lan_mode", False)
 initial_default_online = config.get("default_online", False)
 initial_max_token = config.get("max_token", 768)
