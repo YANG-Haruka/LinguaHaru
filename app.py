@@ -1344,10 +1344,19 @@ def translate_files(
     # Generate unique session ID for this translation request
     session_id = str(uuid.uuid4())[:8]
 
-    # Register session for disconnect detection
+    # Register session for disconnect detection, clean previous result
     if session_hash:
         with stop_lock:
+            old_session_id = active_sessions.get(session_hash)
             active_sessions[session_hash] = session_id
+        if old_session_id:
+            try:
+                _, result_dir, _ = get_custom_paths()
+                old_result_dir = os.path.join(result_dir, old_session_id)
+                if os.path.exists(old_result_dir):
+                    shutil.rmtree(old_result_dir, ignore_errors=True)
+            except Exception:
+                pass
 
     reset_stop_flag(session_id)
     clean_gradio_cache()
