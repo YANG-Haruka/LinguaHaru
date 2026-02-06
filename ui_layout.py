@@ -1722,7 +1722,7 @@ def create_footer():
             <span style="font-weight: 600; background: linear-gradient(135deg, #e8b4b8, #7eb8da); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Haruka-YANG</span>
         </a>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
-        <span style="opacity: 0.8;">Version 5.0</span>
+        <span style="opacity: 0.8;">Version 5.1</span>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
         <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank"
            style="
