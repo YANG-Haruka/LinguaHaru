@@ -1798,9 +1798,11 @@ def create_settings_section(config):
     initial_excel_mode_2 = config.get("excel_mode_2", False)
     initial_excel_bilingual_mode = config.get("excel_bilingual_mode", False)
     initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
+    server_mode = config.get("server_mode", False)
 
-    initial_show_mode_switch = config.get("show_mode_switch", True)
-    initial_show_lan_mode = config.get("show_lan_mode", True)
+    # In server_mode, hide mode switch and LAN mode
+    initial_show_mode_switch = False if server_mode else config.get("show_mode_switch", True)
+    initial_show_lan_mode = False if server_mode else config.get("show_lan_mode", True)
     initial_show_max_retries = config.get("show_max_retries", True)
     initial_show_thread_count = config.get("show_thread_count", True)
 
@@ -1930,10 +1932,14 @@ def create_main_interface(config, get_label=None):
 
     initial_default_online = config.get("default_online", False)
     initial_lan_mode = config.get("lan_mode", False)
+    server_mode = config.get("server_mode", False)
     remember_api_key = config.get("remember_api_key", False) if not initial_lan_mode else False
 
+    # Hide API key section entirely in server_mode
+    api_key_visible = initial_default_online and not server_mode
+
     # API Key section: [API Key] [Input Field] [记住密钥 ?]
-    with gr.Row(visible=initial_default_online, elem_id="api-key-section") as api_key_row:
+    with gr.Row(visible=api_key_visible, elem_id="api-key-section") as api_key_row:
         # [API Key] 标签 - 尽可能短
         gr.HTML("""
             <div class="api-key-label-group">

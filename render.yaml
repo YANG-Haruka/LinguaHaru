@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: linguaharu
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: LINGUAHARU_API_KEY
+        sync: false
+      - key: PYTHON_VERSION
+        value: 3.10.0

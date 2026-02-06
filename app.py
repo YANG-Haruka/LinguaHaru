@@ -297,7 +297,8 @@ def modified_translate_button_click(
     if not files:
         return output_file_update, "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
 
-    if use_online and not api_key:
+    # In server_mode, API key comes from environment variable, skip client-side check
+    if use_online and not api_key and not config.get("server_mode", False):
         return output_file_update, "API key is required for online models.", gr.update(value=stop_text, interactive=False)
 
     def wrapped_translate_func(files, model, src_lang, dst_lang,
@@ -990,7 +991,7 @@ def update_model_list_and_api_input(use_online):
 
         return (
             gr.update(choices=online_models, value=default_online_value),
-            gr.update(visible=True),
+            gr.update(visible=not server_mode),
             gr.update(value=saved_api_key),
             gr.update(value=thread_count)
         )
@@ -1578,6 +1579,7 @@ _is_main_process = multiprocessing.current_process().name == 'MainProcess'
 
 # Read initial configuration (needed for both main and subprocess)
 config = read_system_config()
+server_mode = config.get("server_mode", False)
 initial_lan_mode = config.get("lan_mode", False)
 initial_default_online = config.get("default_online", False)
 initial_max_token = config.get("max_token", 768)
@@ -2341,12 +2343,16 @@ if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
 
-    available_port = find_available_port(start_port=9980)
+    # In server_mode, use PORT env var (Render assigns this) or default to 10000
+    if server_mode:
+        available_port = int(os.environ.get("PORT", 10000))
+    else:
+        available_port = find_available_port(start_port=9980)
 
     # Enable queue for progress tracking
     demo.queue()
 
-    if initial_lan_mode:
-        demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=True)
+    if server_mode or initial_lan_mode:
+        demo.launch(server_name="0.0.0.0", server_port=available_port, share=False, inbrowser=not server_mode)
     else:
         demo.launch(server_port=available_port, share=False, inbrowser=True)

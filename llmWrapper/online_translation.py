@@ -92,6 +92,12 @@ def translate_online(api_key, messages, model):
             - success_status: True if API call successful, False if network/auth error
             - token_usage: dict with 'prompt_tokens', 'completion_tokens', 'total_tokens' or None
     """
+    # Fallback to environment variable if no API key provided
+    if not api_key:
+        api_key = os.environ.get("LINGUAHARU_API_KEY", "")
+    if not api_key:
+        return "API key not configured", False, None
+
     # Load model config
     model_config = load_model_config(model)
     if not model_config:

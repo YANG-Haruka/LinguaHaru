@@ -19,3 +19,4 @@ test.py
 *.ttf
 *.onnx
 .qodo
+.env
