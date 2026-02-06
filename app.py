@@ -145,16 +145,21 @@ def enqueue_task(
             return queue_msg
         
 def clean_session_cache(session_id):
-    """In server_mode, clean a specific session's temp/result/log subdirectory.
-    Called after each translation completes to free disk space."""
+    """In server_mode, clean a specific session's temp/log subdirectory immediately,
+    and schedule result directory cleanup after a delay to allow file download."""
     if not server_mode:
         return
     try:
         temp_dir, result_dir, log_dir = get_custom_paths()
-        for dir_path in [temp_dir, result_dir, log_dir]:
+        # Clean temp and log immediately
+        for dir_path in [temp_dir, log_dir]:
             session_dir = os.path.join(dir_path, session_id)
             if os.path.exists(session_dir):
                 shutil.rmtree(session_dir, ignore_errors=True)
+        # Delay result cleanup to allow user to download the file
+        result_session_dir = os.path.join(result_dir, session_id)
+        if os.path.exists(result_session_dir):
+            threading.Timer(300, lambda: shutil.rmtree(result_session_dir, ignore_errors=True)).start()
         clean_gradio_cache()
         app_logger.info(f"Session cache cleaned: {session_id}")
     except Exception as e:
