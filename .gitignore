@@ -21,3 +21,4 @@ test.py
 .qodo
 
 tests/_roundtrip_work/
+tests/fixtures/

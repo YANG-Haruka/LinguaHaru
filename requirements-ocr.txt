@@ -1,0 +1,6 @@
+# Optional: image translation module (OCR + render back onto the image)
+#   pip install -r requirements-ocr.txt
+# Uses PP-OCRv5 models on onnxruntime - no paddlepaddle required.
+rapidocr>=3.0
+onnxruntime>=1.17
+opencv-python-headless>=4.8

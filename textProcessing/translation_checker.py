@@ -52,12 +52,34 @@ def clean_json(text):
     text = re.sub(r',\s*\]', ']', text)
     return text
 
+# Structural placeholders that must survive translation untouched:
+# {{FIELD...}} / {{FOOTNOTE_REF_n}} etc., [formula_n], and line markers
+PLACEHOLDER_PATTERN = re.compile(r'\{\{[^}]+\}\}|\[formula_\d+\]|[␊␍]')
+
+
+def _placeholders_preserved(original, translated):
+    """Every structural placeholder in the source must appear in the translation."""
+    needed = PLACEHOLDER_PATTERN.findall(original)
+    if not needed:
+        return True
+    from collections import Counter
+    have = Counter(PLACEHOLDER_PATTERN.findall(translated))
+    need = Counter(needed)
+    return all(have[token] >= count for token, count in need.items())
+
+
 def is_translation_valid(original, translated, src_lang, dst_lang):
     """
     Check if translation is valid
     """
     # Basic checks
     if not translated or translated.strip() == "":
+        return False
+
+    # A translation that drops fields/formulas/line markers corrupts the
+    # document on write-back - send it to retry instead
+    if not _placeholders_preserved(original, translated):
+        app_logger.warning("Translation dropped structural placeholders, marking invalid")
         return False
  
     # Language validation
@@ -153,7 +175,9 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                 Console(highlight=True, tab_size=4).print(fail_table)
                 
                 _mark_all_as_failed(original_text, FAILED_JSON_PATH)
-                return { k: v for k, v in original_json.items() }
+                # Return failure (not the originals): returning source text here
+                # would poison previous_content context and double-report success
+                return {}
             else:
                 app_logger.warning("All translations identical - marking as failed")
                 fail_table = Table(

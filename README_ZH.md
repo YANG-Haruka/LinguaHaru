@@ -28,10 +28,10 @@
 1. [CUDA](https://developer.nvidia.com/cuda-downloads)   
 您需要安装CUDA（目前11.7和12.1测试没有问题）  
 
-2. Python (python==3.10)  
+2. Python (python==3.12)  
     建议使用[Conda](https://www.anaconda.com/download)创建虚拟环境  
     ```bash
-    conda create -n lingua-haru python=3.10
+    conda create -n lingua-haru python=3.12
     conda activate lingua-haru
     ```
 
@@ -39,6 +39,15 @@
     - 依赖包
         ```bash
         pip install -r requirements.txt
+        ```
+    - 可选模块（按需安装，UI 会自动启用对应功能）
+        ```bash
+        # 图像翻译（.png/.jpg 等）：OCR 识别 + 译文回填渲染
+        pip install -r requirements-ocr.txt
+
+        # 视频/音频字幕翻译（.mp4/.mp3 等）：Whisper 转写后翻译
+        # 还需要 ffmpeg 在 PATH 中（https://ffmpeg.org/）
+        pip install -r requirements-video.txt
         ```
 
 

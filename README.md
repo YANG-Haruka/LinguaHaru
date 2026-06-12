@@ -28,10 +28,10 @@ It provides the following features:
 1. [CUDA](https://developer.nvidia.com/cuda-downloads)   
 You need to install CUDA (currently 11.7 and 12.1 have been tested without issues)  
 
-2. Python (python==3.10)  
+2. Python (python==3.12)  
     It is recommended to use [Conda](https://www.anaconda.com/download) to create a virtual environment  
     ```bash
-    conda create -n lingua-haru python=3.10
+    conda create -n lingua-haru python=3.12
     conda activate lingua-haru
     ```
 
@@ -39,6 +39,15 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
     - Dependency packages
         ```bash
         pip install -r requirements.txt
+        ```
+    - Optional modules (install only what you need; the UI enables them automatically)
+        ```bash
+        # Image translation (.png/.jpg/...): OCR + render translation back onto the image
+        pip install -r requirements-ocr.txt
+
+        # Video/audio subtitle translation (.mp4/.mp3/...): transcribe with Whisper, then translate
+        # Also requires ffmpeg on PATH (https://ffmpeg.org/)
+        pip install -r requirements-video.txt
         ```
 
 

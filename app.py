@@ -47,7 +47,6 @@ from config.log_config import app_logger
 import socket
 import base64
 import threading
-import queue
 import time
 from functools import partial
 
@@ -80,12 +79,23 @@ TRANSLATOR_MODULES = {
     ".md": "translator.md_translator.MdTranslator",
 }
 
+# Optional modules: registered for all extensions, but the import inside
+# get_translator_class fails gracefully when the extra dependencies are not
+# installed (see requirements-ocr.txt / requirements-video.txt)
+from config.optional_modules import IMAGE_EXTENSIONS, MEDIA_EXTENSIONS
+for _ext in IMAGE_EXTENSIONS:
+    TRANSLATOR_MODULES[_ext] = "translator.image_translator.ImageTranslator"
+for _ext in MEDIA_EXTENSIONS:
+    TRANSLATOR_MODULES[_ext] = "translator.video_translator.VideoTranslator"
+
 # Note: Alternative translator modules have been merged into the main classes
 # Excel: use_xlwings and bilingual_mode parameters
 # Word: bilingual_mode parameter
 
-# Global task queue and counter
-task_queue = queue.Queue()
+# Translation slots: extra requests wait in their own handler thread so the
+# results go back to the user who submitted them
+MAX_CONCURRENT_TASKS = 1
+task_semaphore = threading.BoundedSemaphore(MAX_CONCURRENT_TASKS)
 active_tasks = 0
 task_lock = threading.Lock()
 
@@ -105,41 +115,6 @@ def generate_api_key_translations_js():
         }
     return json.dumps(js_translations, ensure_ascii=False)
 
-def enqueue_task(
-    translate_func, files, model, src_lang, dst_lang,
-    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
-):
-    """Enqueue translation task or execute immediately if no tasks running"""
-    global active_tasks
-    
-    with task_lock:
-        if active_tasks == 0:
-            # No active tasks, start immediately
-            active_tasks += 1
-            return None
-        else:
-            # Tasks running, add to queue
-            task_info = {
-                "files": files,
-                "model": model,
-                "src_lang": src_lang,
-                "dst_lang": dst_lang,
-                "use_online": use_online,
-                "api_key": api_key,
-                "max_retries": max_retries,
-                "max_token": max_token,
-                "thread_count": thread_count,
-                "excel_mode_2": excel_mode_2,
-                "excel_bilingual_mode": excel_bilingual_mode,
-                "word_bilingual_mode": word_bilingual_mode,
-                "pdf_bilingual_mode": pdf_bilingual_mode,
-                "glossary_name": glossary_name,
-                "session_lang": session_lang
-            }
-            task_queue.put(task_info)
-            queue_position = task_queue.qsize()
-            return f"Task added to queue. Position: {queue_position}"
-        
 def clean_gradio_cache():
     """Clean up old Gradio temporary files.
 
@@ -187,83 +162,37 @@ def process_task_with_queue(
     translate_func, files, model, src_lang, dst_lang,
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
 ):
-    """Process translation task and handle queue management"""
+    """Run the translation, waiting for a free slot if one is already running.
+
+    Blocking here (instead of handing the task to a background queue) keeps
+    the request attached to the caller, so the finished files are returned to
+    the user who submitted them. The old background queue translated queued
+    tasks but discarded their results."""
+    global active_tasks
     if progress is None:
         progress = gr.Progress(track_tqdm=True)
-    
-    queue_msg = enqueue_task(
-        translate_func, files, model, src_lang, dst_lang,
-        use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
-    )
 
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     stop_text = labels.get("Stop Translation", "Stop Translation")
-    
-    if queue_msg:
-        return gr.update(value=None, visible=False), queue_msg, gr.update(value=stop_text, interactive=False)
-    
+
+    task_semaphore.acquire()
+    with task_lock:
+        active_tasks += 1
     try:
         # Check if stop was requested before starting translation
         check_stop_requested()
-        
+
         result = translate_func(
             files, model, src_lang, dst_lang,
             use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
         )
-        process_next_task_in_queue(translate_func, progress)
-        
         return result[0], result[1], result[2]
     except Exception as e:
-        # process_next_task_in_queue decrements active_tasks itself
-        process_next_task_in_queue(translate_func, progress)
         return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False)
-
-def process_next_task_in_queue(translate_func, progress):
-    """Process next task in queue if available"""
-    global active_tasks
-    
-    with task_lock:
-        active_tasks -= 1
-        
-        if not task_queue.empty():
-            next_task = task_queue.get()
-            active_tasks += 1
-            threading.Thread(
-                target=process_queued_task,
-                args=(translate_func, next_task, progress),
-                daemon=True
-            ).start()
-
-def process_queued_task(translate_func, task_info, progress):
-    """Process task from queue in separate thread"""
-    try:
-        # Check if stop was requested before starting
-        check_stop_requested()
-        
-        if progress is None:
-            progress = gr.Progress(track_tqdm=True)
-        result = translate_func(
-            task_info["files"],
-            task_info["model"],
-            task_info["src_lang"],
-            task_info["dst_lang"],
-            task_info["use_online"],
-            task_info["api_key"],
-            task_info["max_retries"],
-            task_info["max_token"],
-            task_info["thread_count"],
-            task_info["excel_mode_2"],
-            task_info["excel_bilingual_mode"],
-            task_info["word_bilingual_mode"],
-            task_info.get("pdf_bilingual_mode", False),
-            task_info["glossary_name"],
-            task_info.get("session_lang", "en"),
-            progress
-        )    
-    except Exception as e:
-        app_logger.exception(f"Error processing queued task: {e}")
     finally:
-        process_next_task_in_queue(translate_func, progress)
+        with task_lock:
+            active_tasks -= 1
+        task_semaphore.release()
 
 class StopTranslationException(Exception):
     """Custom exception for when translation is stopped by user"""

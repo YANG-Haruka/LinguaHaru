@@ -1988,9 +1988,13 @@ def create_main_interface(config, get_label=None):
             </script>
         """, elem_id="api-help-container")
 
+    from config.optional_modules import available_optional_extensions
+    accepted_types = [".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"]
+    accepted_types += available_optional_extensions()
+
     file_input = gr.File(
         label=get_label("Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)"),
-        file_types=[".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md"],
+        file_types=accepted_types,
         file_count="multiple"
     )
 

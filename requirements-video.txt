@@ -1,0 +1,6 @@
+# Optional: video/audio subtitle translation module
+#   pip install -r requirements-video.txt
+# Also requires ffmpeg on PATH (https://ffmpeg.org/).
+# Whisper model size is configurable via LINGUAHARU_WHISPER_MODEL
+# (tiny/base/small/medium/large-v3/large-v3-turbo, default: small).
+faster-whisper>=1.1.0
