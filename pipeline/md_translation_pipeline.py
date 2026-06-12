@@ -388,12 +388,21 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                             
                             # If the cell has children elements, we need to be careful
                             if list(current_cell.children) and not all(isinstance(c, str) for c in current_cell.children):
-                                # Complex cell with nested elements - log this case
-                                app_logger.warning(f"Complex cell structure at index {cell_index}, translation may be incomplete")
-                                # Simple approach: replace text nodes only
+                                # Complex cell with nested elements: try to find a single
+                                # text node holding the whole cell text
+                                replaced = False
                                 for text_node in current_cell.find_all(text=True, recursive=True):
                                     if text_node.strip() == cell_info.get("original_text"):
                                         text_node.replace_with(translations[cell_count])
+                                        replaced = True
+                                        break
+                                if not replaced:
+                                    # Text is spread across nested tags (e.g. <b>foo</b>bar) -
+                                    # no single node matches. Replace the cell content wholesale:
+                                    # losing inner tags beats silently keeping the source text.
+                                    app_logger.warning(f"Complex cell structure at index {cell_index}, replacing whole cell content")
+                                    current_cell.clear()
+                                    current_cell.append(translations[cell_count])
                             else:
                                 # Simple text content - straightforward replacement
                                 current_cell.string = translations[cell_count]

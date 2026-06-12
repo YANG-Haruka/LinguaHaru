@@ -54,6 +54,11 @@ def read_file_with_encoding(file_path):
             app_logger.info(f"Trying to read file with encoding: {encoding}")
             with open(file_path, 'r', encoding=encoding) as f:
                 content = f.read()
+            if encoding in ('latin1', 'cp1252'):
+                # latin1 decodes any byte sequence, so reaching it usually means
+                # the real encoding was not recognized
+                app_logger.warning(f"File decoded with fallback encoding {encoding}; "
+                                   f"if the source is CJK text the result may be garbled")
             app_logger.info(f"Successfully read file with encoding: {encoding}")
             return content, encoding
         except UnicodeDecodeError as e:
@@ -103,33 +108,31 @@ def extract_txt_content_to_json(file_path, temp_dir):
     with open(os.path.join(temp_folder, "encoding_info.json"), "w", encoding="utf-8") as encoding_file:
         json.dump(encoding_info, encoding_file, ensure_ascii=False, indent=4)
     
-    # Split content by line
+    # Split content by line, keeping every line (including blank ones) so the
+    # original line structure can be reproduced on write-back
     lines = content.split('\n')
-    
-    # Process each line
+
     for line in lines:
-        line = line.strip()
-        
-        # Process all non-empty lines
-        if line:
-            count += 1
-            needs_translation = should_translate(line)
-            
-            line_data = {
-                "count_src": count,
-                "type": "paragraph",
-                "value": line,
-                "format": "\\x0a\\x0a",
-                "needs_translation": needs_translation
-            }
-            
-            all_content_data.append(line_data)
-            
-            # Add to translation queue if needed
-            if needs_translation:
-                translate_count += 1
-                translate_item = {k: v for k, v in line_data.items() if k != "needs_translation"}
-                content_data.append(translate_item)
+        line = line.rstrip('\r')
+        stripped = line.strip()
+        count += 1
+        needs_translation = bool(stripped) and should_translate(stripped)
+
+        line_data = {
+            "count_src": count,
+            "type": "paragraph",
+            "value": stripped,
+            "raw": line,
+            "needs_translation": needs_translation
+        }
+
+        all_content_data.append(line_data)
+
+        # Add to translation queue if needed
+        if needs_translation:
+            translate_count += 1
+            translate_item = {k: v for k, v in line_data.items() if k not in ("needs_translation", "raw")}
+            content_data.append(translate_item)
     
     # Save translation queue
     json_path = os.path.join(temp_folder, "src.json")
@@ -185,21 +188,22 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
         lang_suffix = "translated"
     result_path = os.path.join(result_folder, f"{filename}_{lang_suffix}.txt")
     
-    # Write content to new file (always in UTF-8)
+    # Write content to new file (always in UTF-8), reproducing the original
+    # line structure: blank lines, single newlines and indentation are kept
     try:
         with open(result_path, "w", encoding="utf-8") as result_file:
+            output_lines = []
             for item in all_content_data:
                 count = item["count_src"]
                 needs_translation = item.get("needs_translation", True)
-                
-                # Use translation if available, otherwise use original text
+                raw = item.get("raw", item["value"])
+
                 if needs_translation and count in translation_map:
-                    text_to_write = translation_map[count]
+                    leading_ws = raw[:len(raw) - len(raw.lstrip())]
+                    output_lines.append(leading_ws + translation_map[count])
                 else:
-                    text_to_write = item["value"]
-                
-                # Write text with paragraph separator
-                result_file.write(text_to_write + "\n\n")
+                    output_lines.append(raw)
+            result_file.write('\n'.join(output_lines))
         
         app_logger.info(f"Translated TXT document saved to: {result_path}")
         return result_path

@@ -857,7 +857,9 @@ class DocumentTranslator:
         base_name = os.path.basename(file_name)
         # Use source_lang2target_lang format (e.g., zh2ja)
         lang_suffix = f"{self.src_lang}2{self.dst_lang}"
-        final_output_path = os.path.join(result_folder, f"{base_name}_{lang_suffix}{file_extension}")
+        # Writers emit lowercase extensions; keep the returned path consistent
+        # (matters on case-sensitive filesystems when the upload was .DOCX etc.)
+        final_output_path = os.path.join(result_folder, f"{base_name}_{lang_suffix}{file_extension.lower()}")
 
         # Save translation summary
         self._save_translation_summary(status="success", output_file_path=final_output_path)
