@@ -1634,11 +1634,13 @@ with gr.Blocks(
 
         # Create settings section
         (use_online_model, lan_mode_checkbox, max_retries_slider,
-        thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox) = create_settings_section(config)
+        thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
+        auto_glossary_checkbox, rpm_limit_number) = create_settings_section(config)
 
         # Create model and glossary section
         (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
-         glossary_upload_file) = create_model_glossary_section(
+         glossary_upload_file, glossary_table, glossary_load_btn, glossary_save_btn,
+         glossary_editor_status) = create_model_glossary_section(
             config, local_models, online_models, get_glossary_files, get_default_glossary, get_label
         )
 
@@ -1656,6 +1658,56 @@ with gr.Blocks(
     # Hidden components for folder opening functionality
     folder_path_input = gr.Textbox(visible=False, elem_id="folder-path-input")
     folder_open_trigger = gr.Button(visible=False, elem_id="folder-open-trigger")
+
+    # Glossary editor handlers
+    def load_glossary_table(glossary_name):
+        import pandas as pd
+        path = os.path.join("glossary", f"{glossary_name}.csv") if glossary_name else None
+        if not path or not os.path.exists(path):
+            return gr.update(), f"Glossary not found: {glossary_name}"
+        for encoding in ("utf-8-sig", "utf-8", "gbk", "shift-jis"):
+            try:
+                df = pd.read_csv(path, encoding=encoding, dtype=str).fillna("")
+                return df, f"Loaded {len(df)} entries from {glossary_name}.csv"
+            except (UnicodeDecodeError, Exception) as e:
+                last_error = e
+                if not isinstance(e, UnicodeDecodeError):
+                    break
+        return gr.update(), f"Failed to load glossary: {last_error}"
+
+    def save_glossary_table(glossary_name, table):
+        path = os.path.join("glossary", f"{glossary_name}.csv") if glossary_name else None
+        if not path or not os.path.exists(path):
+            return f"Glossary not found: {glossary_name}"
+        try:
+            # Drop fully empty rows before writing back
+            table = table[~(table.astype(str).apply(lambda r: "".join(r).strip() == "", axis=1))]
+            table.to_csv(path, index=False, encoding="utf-8-sig")
+            return f"Saved {len(table)} entries to {glossary_name}.csv"
+        except Exception as e:
+            return f"Failed to save glossary: {e}"
+
+    glossary_load_btn.click(load_glossary_table, inputs=[glossary_choice],
+                            outputs=[glossary_table, glossary_editor_status])
+    glossary_save_btn.click(save_glossary_table, inputs=[glossary_choice, glossary_table],
+                            outputs=[glossary_editor_status])
+
+    # New settings persistence
+    def update_auto_glossary(enabled):
+        config = read_system_config()
+        config["auto_extract_glossary"] = bool(enabled)
+        write_system_config(config)
+
+    def update_rpm_limit(value):
+        config = read_system_config()
+        try:
+            config["rpm_limit"] = max(0, int(value or 0))
+        except (TypeError, ValueError):
+            config["rpm_limit"] = 0
+        write_system_config(config)
+
+    auto_glossary_checkbox.change(update_auto_glossary, inputs=[auto_glossary_checkbox])
+    rpm_limit_number.change(update_rpm_limit, inputs=[rpm_limit_number])
 
     # Event handlers
     use_online_model.change(

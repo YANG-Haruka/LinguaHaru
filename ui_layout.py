@@ -1865,8 +1865,24 @@ def create_settings_section(config):
             visible=False
         )
 
+    with gr.Row():
+        with gr.Column(scale=1):
+            auto_glossary_checkbox = gr.Checkbox(
+                label="AI Glossary Extraction",
+                value=config.get("auto_extract_glossary", False),
+                info="Extract terms with the LLM before translating"
+            )
+        with gr.Column(scale=1):
+            rpm_limit_number = gr.Number(
+                label="RPM Limit (0 = unlimited, restart to apply)",
+                value=config.get("rpm_limit", 0),
+                precision=0,
+                minimum=0
+            )
+
     return (use_online_model, lan_mode_checkbox, max_retries_slider,
-            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox)
+            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
+            auto_glossary_checkbox, rpm_limit_number)
 
 
 def create_model_glossary_section(config, local_models, online_models, get_glossary_files_func, get_default_glossary_func, get_label=None):
@@ -1920,7 +1936,20 @@ def create_model_glossary_section(config, local_models, online_models, get_gloss
                 elem_id="glossary-upload"
             )
 
-    return (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row, glossary_upload_file)
+    # Inline glossary editor (AiNiee-style table editing instead of
+    # re-uploading the CSV for every change)
+    with gr.Accordion(get_label("Edit Glossary"), open=False,
+                      visible=initial_show_glossary) as glossary_editor_acc:
+        glossary_table = gr.Dataframe(interactive=True, label="",
+                                      elem_id="glossary-editor-table")
+        with gr.Row():
+            glossary_load_btn = gr.Button(get_label("Load Glossary"), size="sm")
+            glossary_save_btn = gr.Button(get_label("Save Glossary"), size="sm", variant="primary")
+        glossary_editor_status = gr.Markdown("")
+
+    return (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
+            glossary_upload_file, glossary_table, glossary_load_btn, glossary_save_btn,
+            glossary_editor_status)
 
 
 def create_main_interface(config, get_label=None):
