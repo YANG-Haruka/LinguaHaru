@@ -1681,7 +1681,8 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
     
     # Counter for math formulas
     formula_counter = 0
-    
+    hyperlink_counter = 0
+
     # Get all runs in the paragraph
     if exclude_textbox_runs:
         all_runs = paragraph.xpath('.//w:r', namespaces=namespaces)
@@ -1857,7 +1858,7 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
             formula_counter += 1
             placeholder = f"[formula_{formula_counter}]"
             full_text += placeholder
-            
+
             # Store math formula info
             math_info.append({
                 'placeholder': placeholder,
@@ -1865,8 +1866,25 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
                 'run_index': -1,  # Direct child of paragraph
                 'position': len(full_text) - len(placeholder)
             })
-            
+
             app_logger.debug(f"Found direct math formula, created placeholder: {placeholder}")
+
+        elif tag_name == 'hyperlink':
+            # Inline hyperlink: its display text IS translated, wrapped in
+            # marker placeholders so the link element can be rebuilt at this
+            # exact position with the translated text inside
+            hyperlink_counter += 1
+            inner_text = "".join(
+                t.text or "" for t in child.xpath('.//w:t', namespaces=namespaces))
+            open_marker = f'{{{{HLINK_{hyperlink_counter}}}}}'
+            close_marker = f'{{{{/HLINK_{hyperlink_counter}}}}}'
+            full_text += open_marker + inner_text + close_marker
+            field_info.append({
+                'type': 'hyperlink',
+                'display_text': open_marker,
+                'close_text': close_marker,
+                'hyperlink_xml': etree.tostring(child, encoding='unicode'),
+            })
     
     # Clean up text by removing leading numbering patterns (now passing numbering_info)
     cleaned_text = remove_leading_numbering_patterns(full_text, numbering_info)
@@ -3853,7 +3871,13 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     
     # Also handle math formulas that are direct children of paragraph
     direct_math_formulas = paragraph.xpath('./m:oMath', namespaces=namespaces)
-    
+
+    # Hyperlinks captured in field_info are rebuilt at their marker positions,
+    # so the originals must be removed
+    direct_hyperlinks = []
+    if field_info and any(f.get('type') == 'hyperlink' for f in field_info):
+        direct_hyperlinks = paragraph.xpath('./w:hyperlink', namespaces=namespaces)
+
     # Get formatting from the first text run if available, or use original structure
     formatting = None
     if original_structure and original_structure.get('runs_info'):
@@ -3881,7 +3905,11 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     # Remove direct math formulas
     for math_formula in direct_math_formulas:
         paragraph.remove(math_formula)
-    
+
+    # Remove hyperlinks that will be rebuilt from field_info markers
+    for hyperlink in direct_hyperlinks:
+        paragraph.remove(hyperlink)
+
     # Add new text content with math formulas and fields
     if math_info or field_info:
         update_paragraph_content_with_math_and_fields_enhanced(
@@ -3900,10 +3928,20 @@ def update_paragraph_content_with_math_and_fields_enhanced(paragraph, new_text, 
     # Create mappings for placeholders
     field_mapping = create_field_mapping(field_info, field_placeholders) if field_info else {}
     math_mapping = create_math_mapping(math_info) if math_info else {}
-    
+
+    # Hyperlink markers: the opening marker maps to the stored hyperlink
+    # element; text between open/close markers goes inside the rebuilt link
+    hlink_open = {}
+    hlink_close = {}
+    for f in (field_info or []):
+        if f.get('type') == 'hyperlink':
+            hlink_open[f['display_text']] = f
+            hlink_close[f.get('close_text', '')] = f
+    active_hyperlink = None  # (hyperlink element, rPr template) while inside markers
+
     # Split text by both field and math placeholders and line breaks
     lines = new_text.split('\n')
-    
+
     for line_idx, line in enumerate(lines):
         if line_idx > 0:
             # Add line break before each line except the first
@@ -3924,25 +3962,58 @@ def update_paragraph_content_with_math_and_fields_enhanced(paragraph, new_text, 
             field_usage = {}
             
             for part in parts:
+                if part in hlink_open:
+                    # Rebuild the hyperlink element here; its runs are
+                    # recreated from the translated text that follows
+                    f = hlink_open[part]
+                    hl_elem = etree.fromstring(f['hyperlink_xml'])
+                    rpr_template = None
+                    for link_run in hl_elem.findall(f"{{{namespaces['w']}}}r"):
+                        rpr = link_run.find(f"{{{namespaces['w']}}}rPr")
+                        if rpr_template is None and rpr is not None:
+                            rpr_template = etree.tostring(rpr)
+                        hl_elem.remove(link_run)
+                    paragraph.append(hl_elem)
+                    active_hyperlink = (hl_elem, rpr_template)
+                    current_run = None
+                    continue
+
+                if part in hlink_close:
+                    active_hyperlink = None
+                    current_run = None
+                    continue
+
                 if part in field_placeholders:
                     # Handle field placeholder
                     current_run = process_field_placeholder(
                         paragraph, part, field_mapping, field_usage, namespaces, formatting, current_run
                     )
-                
+
                 elif part in math_placeholders:
                     # Handle math placeholder
                     current_run = process_math_placeholder(
                         paragraph, part, math_mapping, namespaces, formatting, current_run
                     )
-                
+
                 elif part or part == '':  # Regular text (including empty strings to preserve structure)
+                    if active_hyperlink is not None:
+                        # Text inside hyperlink markers goes into the link,
+                        # keeping the original link run style (color/underline)
+                        hl_elem, rpr_template = active_hyperlink
+                        link_run = etree.SubElement(hl_elem, f"{{{namespaces['w']}}}r")
+                        if rpr_template is not None:
+                            link_run.append(etree.fromstring(rpr_template))
+                        text_node = etree.SubElement(link_run, f"{{{namespaces['w']}}}t")
+                        text_node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+                        text_node.text = part
+                        continue
+
                     if current_run is None:
                         current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
-                    
+
                     text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
                     text_node.text = part
-                    
+
                     # Apply formatting if available
                     if formatting is not None:
                         existing_rPr = current_run.xpath('./w:rPr', namespaces=namespaces)
