@@ -2,10 +2,104 @@ import re
 import logging
 import json
 import os
+import threading
+import time
+from collections import deque
 from openai import OpenAI
 from config.log_config import app_logger
 
 CONFIG_DIR = "config/api_config"
+
+
+class HardApiError(Exception):
+    """Unrecoverable API error (bad key/config/quota): retrying cannot help,
+    so the whole translation should stop immediately instead of burning the
+    1-hour retry budget."""
+
+
+# --- multi-key rotation ----------------------------------------------------
+# The API key field accepts multiple comma-separated keys. Calls rotate
+# through them; keys that hit unrecoverable errors are quarantined and the
+# run only hard-fails when no usable key remains.
+_key_lock = threading.Lock()
+_key_counter = 0
+_bad_keys = set()
+
+
+def _split_keys(api_key):
+    return [k.strip() for k in (api_key or "").split(",") if k.strip()]
+
+
+def _pick_api_key(api_key):
+    global _key_counter
+    keys = _split_keys(api_key)
+    if len(keys) <= 1:
+        return api_key
+    with _key_lock:
+        usable = [k for k in keys if k not in _bad_keys]
+        if not usable:
+            raise HardApiError("All API keys failed authentication/quota checks")
+        _key_counter += 1
+        return usable[_key_counter % len(usable)]
+
+
+def _quarantine_key(api_key, used_key, reason):
+    """Mark one key as dead. Returns True if other keys remain usable."""
+    keys = _split_keys(api_key)
+    with _key_lock:
+        _bad_keys.add(used_key)
+        remaining = [k for k in keys if k not in _bad_keys]
+    app_logger.warning(f"API key ...{used_key[-6:]} quarantined ({reason}); "
+                       f"{len(remaining)} key(s) remaining")
+    return bool(remaining)
+
+
+# --- RPM limiter -----------------------------------------------------------
+class _RpmLimiter:
+    """Sliding-window requests-per-minute limiter.
+
+    Configured via "rpm_limit" in config/system_config.json (0/absent =
+    unlimited). The value is read once per process."""
+    _UNSET = object()
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.calls = deque()
+        self.limit = self._UNSET
+
+    def _load_limit(self):
+        try:
+            with open(os.path.join("config", "system_config.json"), encoding="utf-8") as f:
+                value = int(json.load(f).get("rpm_limit", 0))
+            return value if value > 0 else None
+        except Exception:
+            return None
+
+    def wait(self):
+        if self.limit is self._UNSET:
+            self.limit = self._load_limit()
+            if self.limit:
+                app_logger.info(f"RPM limit active: {self.limit} requests/minute")
+        if not self.limit:
+            return
+        while True:
+            with self.lock:
+                now = time.time()
+                while self.calls and now - self.calls[0] > 60:
+                    self.calls.popleft()
+                if len(self.calls) < self.limit:
+                    self.calls.append(now)
+                    return
+                sleep_for = 60 - (now - self.calls[0]) + 0.05
+            time.sleep(min(sleep_for, 5))
+
+
+_rpm_limiter = _RpmLimiter()
+
+# Error substrings that mean "retrying with the same key cannot succeed"
+_HARD_ERROR_MARKERS = ("unauthorized", "401", "invalid api key", "invalid_api_key",
+                       "incorrect api key", "403", "forbidden",
+                       "insufficient", "quota", "exceeded your current quota")
 
 def load_model_config(model):
     """
@@ -110,9 +204,12 @@ def translate_online(api_key, messages, model):
         app_logger.error(f"Invalid model config: {model}")
         return "Invalid model configuration", False, None
 
+    used_key = _pick_api_key(api_key)
+
     try:
+        _rpm_limiter.wait()
         # Initialize API client
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        client = OpenAI(api_key=used_key, base_url=base_url)
 
         # Prepare parameters for the API call
         params = {
@@ -149,17 +246,23 @@ def translate_online(api_key, messages, model):
         # Send request
         response = client.chat.completions.create(**params)
         
+    except HardApiError:
+        raise
     except Exception as e:
         error_msg = str(e).lower()
         app_logger.error(f"API call failed: {e}")
 
-        # Check for specific error types
+        # Hard errors: retrying the same key is pointless. Quarantine the key;
+        # if other keys remain the caller retries (soft) with the next key,
+        # otherwise abort the whole translation immediately.
+        if any(marker in error_msg for marker in _HARD_ERROR_MARKERS):
+            if len(_split_keys(api_key)) > 1 and _quarantine_key(api_key, used_key, str(e)[:80]):
+                return f"API key quarantined, retrying with next key: {str(e)}", False, None
+            raise HardApiError(f"Unrecoverable API error: {str(e)}")
+
+        # Soft errors: rate limit / network / server hiccups - worth retrying
         if "connection" in error_msg or "network" in error_msg:
             return f"Network error: {str(e)}", False, None
-        elif "unauthorized" in error_msg or "401" in error_msg:
-            return "Authentication failed - check API key", False, None
-        elif "insufficient" in error_msg or "quota" in error_msg:
-            return "Insufficient balance or quota exceeded", False, None
         elif "rate limit" in error_msg or "429" in error_msg:
             return "Rate limit exceeded", False, None
         else:

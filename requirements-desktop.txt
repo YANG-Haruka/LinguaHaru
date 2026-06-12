@@ -1,0 +1,4 @@
+# Optional: native desktop window for the web UI
+#   pip install -r requirements-desktop.txt
+#   python app_desktop.py
+pywebview>=5.0

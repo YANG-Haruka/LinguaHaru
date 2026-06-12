@@ -12,6 +12,15 @@ def should_translate(text_value):
     if not text_value:
         return False
 
+    # User-defined do-not-translate list takes absolute priority
+    # (config/text_rules.json)
+    try:
+        from config.text_rules import is_no_translate
+        if is_no_translate(text_value):
+            return False
+    except Exception:
+        pass
+
     # If contains multibyte characters (Chinese, Japanese, Korean, etc.), usually needs translation
     if is_multibyte(text_value):
         return True

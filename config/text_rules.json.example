@@ -1,0 +1,12 @@
+{
+    "replace_before": [
+        {"from": "OldProductName", "to": "NewProductName"}
+    ],
+    "replace_after": [
+        {"from": "误译写法", "to": "修正写法"}
+    ],
+    "no_translate": [
+        "BrandName",
+        "LinguaHaru"
+    ]
+}

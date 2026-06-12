@@ -11,6 +11,7 @@ from .calculation_tokens import num_tokens_from_string
 from config.translation_history import TranslationHistoryManager, create_translation_record
 
 from llmWrapper.llm_wrapper import translate_text, interruptible_sleep
+from llmWrapper.online_translation import HardApiError
 from textProcessing.text_separator import (
     stream_segment_json, split_text_by_token_limit,
     deduplicate_translation_content, create_deduped_json_for_translation,
@@ -351,15 +352,18 @@ class DocumentTranslator:
                             interruptible_sleep(1, self.check_for_stop)
                             continue
                 
+                except HardApiError:
+                    # Unrecoverable (bad key/quota): abort the whole task
+                    raise
                 except Exception as e:
                     elapsed_time = time.time() - start_time
                     remaining_time = max_retry_time - elapsed_time
-                    
+
                     if remaining_time <= 0:
                         app_logger.error(f"Error processing segment after 1 hour: {e}")
                         self._mark_segment_as_failed(segment)
                         return None
-                    
+
                     app_logger.warning(f"Error processing segment: {e}")
                     interruptible_sleep(min(1, remaining_time), self.check_for_stop)
                     continue
@@ -375,14 +379,28 @@ class DocumentTranslator:
                 self.update_ui_safely(progress_callback, 0.0, f"{self._get_status_message('Translating')}...")
 
             current_batch_completed = 0
+            failed_segments_count = 0
+            batch_start_time = time.time()
 
             for future in as_completed(futures):
                 try:
-                    future.result()
+                    if future.result() is None:
+                        failed_segments_count += 1
+                except HardApiError:
+                    # Cancel what hasn't started and abort the task
+                    for pending in futures:
+                        pending.cancel()
+                    raise
                 except Exception as e:
+                    failed_segments_count += 1
                     app_logger.error(f"Segment translation error: {e}")
 
                 current_batch_completed += 1
+                stats_desc = self._build_stats_desc(
+                    f"{self._get_status_message('Translating')}...",
+                    current_batch_completed, total_current_batch,
+                    batch_start_time, failed_segments_count
+                )
 
                 # Update progress
                 if self.continue_mode:
@@ -390,15 +408,11 @@ class DocumentTranslator:
                     batch_contribution = remaining_ratio * current_batch_progress
                     overall_progress = (1.0 - remaining_ratio) + batch_contribution
                     app_logger.info(f"Progress: {overall_progress:.2%}")
-                    self.update_ui_safely(
-                        progress_callback,
-                        overall_progress,
-                        f"{self._get_status_message('Translating')}..."
-                    )
+                    self.update_ui_safely(progress_callback, overall_progress, stats_desc)
                 else:
                     p = current_batch_completed / total_current_batch
                     app_logger.info(f"Progress: {p:.2%}")
-                    self.update_ui_safely(progress_callback, p, f"{self._get_status_message('Translating')}...")
+                    self.update_ui_safely(progress_callback, p, stats_desc)
 
     def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
         self.check_for_stop()
@@ -576,15 +590,17 @@ class DocumentTranslator:
                             interruptible_sleep(1, self.check_for_stop)
                             continue
                 
+                except HardApiError:
+                    raise
                 except Exception as e:
                     elapsed_time = time.time() - start_time
                     remaining_time = max_retry_time - elapsed_time
-                    
+
                     if remaining_time <= 0:
                         app_logger.error(f"Error processing failed segment: {e}")
                         self._mark_segment_as_failed(segment)
                         return None
-                    
+
                     app_logger.warning(f"Error processing failed segment: {e}")
                     interruptible_sleep(min(1, remaining_time), self.check_for_stop)
                     continue
@@ -607,6 +623,10 @@ class DocumentTranslator:
                     if result is None:
                         failed_count += 1
                         app_logger.debug(f"Segment processing failed")
+                except HardApiError:
+                    for pending in futures:
+                        pending.cancel()
+                    raise
                 except Exception as e:
                     failed_count += 1
                     app_logger.error(f"Failed segment error: {e}")
@@ -682,6 +702,100 @@ class DocumentTranslator:
         
         return new_content
     
+    def _maybe_extract_glossary(self, deduped_data, progress_callback=None):
+        """If enabled in system config, AI-extract terms from the document and
+        merge them with the user glossary for this run (user terms win)."""
+        try:
+            with open(os.path.join("config", "system_config.json"), encoding="utf-8") as f:
+                enabled = bool(json.load(f).get("auto_extract_glossary", False))
+        except Exception:
+            enabled = False
+        if not enabled:
+            return
+        try:
+            from textProcessing.glossary_extractor import (
+                extract_glossary_terms, write_merged_glossary)
+            from textProcessing.text_separator import load_glossary
+
+            self.update_ui_safely(progress_callback, 0,
+                                  f"{self._get_status_message('Extracting glossary')}...")
+            values = []
+            for item in (deduped_data or []):
+                value = item.get("value") if isinstance(item, dict) else (
+                    item if isinstance(item, str) else None)
+                if isinstance(value, str) and value.strip():
+                    values.append(value.strip())
+
+            terms = extract_glossary_terms(values, self.model, self.use_online,
+                                           self.api_key, self.src_lang, self.dst_lang)
+            if not terms:
+                return
+
+            user_entries = []
+            if self.glossary_path and os.path.exists(self.glossary_path):
+                user_entries = load_glossary(self.glossary_path, self.src_lang, self.dst_lang)
+
+            merged_path = os.path.join(self.file_dir, "auto_glossary.csv")
+            write_merged_glossary(terms, user_entries, merged_path,
+                                  self.src_lang, self.dst_lang)
+            self.glossary_path = merged_path
+
+            # Review copy next to the translation output
+            review_name = (os.path.splitext(os.path.basename(self.input_file_path))[0]
+                           + "_glossary.csv")
+            try:
+                shutil.copyfile(merged_path, os.path.join(self.result_dir, review_name))
+            except OSError:
+                pass
+            app_logger.info(f"Using merged glossary with {len(terms)} AI-extracted terms")
+        except Exception as e:
+            app_logger.warning(f"AI glossary extraction skipped due to error: {e}")
+
+    def _apply_text_rules(self, json_file_path, phase):
+        """Apply user replacement rules to a translation JSON file in place.
+
+        phase "replace_before" rewrites the "value" field (text sent to the
+        LLM); "replace_after" rewrites the "translated" field."""
+        from config.text_rules import load_rules, apply_replace_before, apply_replace_after
+        rules = load_rules()
+        if not rules.get(phase):
+            return
+        try:
+            with open(json_file_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            apply = apply_replace_before if phase == "replace_before" else apply_replace_after
+            field = "value" if phase == "replace_before" else "translated"
+            changed = 0
+            for item in data:
+                if isinstance(item, dict) and isinstance(item.get(field), str):
+                    replaced = apply(item[field])
+                    if replaced != item[field]:
+                        item[field] = replaced
+                        changed += 1
+            if changed:
+                with open(json_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=4)
+                app_logger.info(f"Applied {phase} rules to {changed} items")
+        except Exception as e:
+            app_logger.warning(f"Failed to apply {phase} rules: {e}")
+
+    def _build_stats_desc(self, base_desc, completed, total, batch_start_time, failed_count):
+        """Live stats line for the progress bar: speed, ETA, tokens, failures."""
+        try:
+            elapsed = max(time.time() - batch_start_time, 0.001)
+            rate_per_min = completed / elapsed * 60
+            remaining_s = (total - completed) * (elapsed / completed) if completed else 0
+            eta = f"{int(remaining_s // 60)}:{int(remaining_s % 60):02d}"
+            with self.lock:
+                tokens = self.total_tokens
+            desc = (f"{base_desc} {completed}/{total} | {rate_per_min:.1f}/min"
+                    f" | ETA {eta} | tokens {self._format_tokens(tokens)}")
+            if failed_count:
+                desc += f" | failed {failed_count}"
+            return desc
+        except Exception:
+            return base_desc
+
     def _clear_temp_folder(self):
         """Clear temp folder"""
         temp_folder = self.temp_dir
@@ -810,6 +924,13 @@ class DocumentTranslator:
             self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Splitting text')}...")
             split_text_by_token_limit(self.src_deduped_json_path)
 
+            # User pre-translation replacement rules (config/text_rules.json),
+            # applied to the text sent to the LLM; originals stay untouched
+            self._apply_text_rules(self.src_split_json_path, "replace_before")
+
+            # Optional AI glossary extraction (system_config: auto_extract_glossary)
+            self._maybe_extract_glossary(deduped_data, progress_callback)
+
         # Main translation
         app_logger.info("Starting translation...")
         self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Translating content')}...")
@@ -839,6 +960,9 @@ class DocumentTranslator:
             self.count_src_to_deduped_map,
             self.src_json_path
         )
+
+        # User post-translation replacement rules
+        self._apply_text_rules(self.result_json_path, "replace_after")
 
         # Write output
         app_logger.info("Writing output...")

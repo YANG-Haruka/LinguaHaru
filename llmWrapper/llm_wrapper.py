@@ -1,5 +1,5 @@
 from config.log_config import app_logger
-from llmWrapper.online_translation import translate_online
+from llmWrapper.online_translation import translate_online, HardApiError
 from llmWrapper.offline_translation import translate_offline
 import json
 import time
@@ -118,6 +118,9 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             # Interruptible sleep
             interruptible_sleep(wait_time, check_stop_callback)
 
+        except HardApiError:
+            # Bad key/config/quota - retrying cannot help, abort the task
+            raise
         except Exception as e:
             # Update time remaining
             elapsed_time = time.time() - start_time
