@@ -17,6 +17,9 @@ from config.log_config import app_logger
 TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
 PARA_TAGS = {f"{{{TEXT_NS}}}p", f"{{{TEXT_NS}}}h"}
 
+# User-supplied XML: disable entity resolution / DTD / network access (XXE)
+_SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
+
 
 def _iter_paragraphs(root):
     for el in root.iter():
@@ -40,7 +43,7 @@ def _apply_to_paragraph(el, translated):
 
 def extract_odt_content_to_json(file_path, temp_dir):
     with zipfile.ZipFile(file_path) as zf:
-        root = etree.fromstring(zf.read("content.xml"))
+        root = etree.fromstring(zf.read("content.xml"), parser=_SAFE_PARSER)
 
     content_data = []
     count = 0
@@ -87,7 +90,7 @@ def write_translated_content_to_odt(file_path, original_json_path, translated_js
             for info in zin.infolist():
                 data = zin.read(info.filename)
                 if info.filename == "content.xml":
-                    root = etree.fromstring(data)
+                    root = etree.fromstring(data, parser=_SAFE_PARSER)
                     # Materialize before mutating (live-iterator pitfall)
                     for index, el in enumerate(list(_iter_paragraphs(root))):
                         item = by_index.get(index)

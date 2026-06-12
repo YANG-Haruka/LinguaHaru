@@ -1660,9 +1660,25 @@ with gr.Blocks(
     folder_open_trigger = gr.Button(visible=False, elem_id="folder-open-trigger")
 
     # Glossary editor handlers
+    def _safe_glossary_path(glossary_name):
+        """Resolve a glossary name to a path strictly inside the glossary dir.
+
+        The name arrives from the client, so it must not be trusted: reject
+        anything that escapes the directory (e.g. ../config/...)."""
+        if not glossary_name:
+            return None
+        base = os.path.realpath("glossary")
+        candidate = os.path.realpath(os.path.join(base, f"{glossary_name}.csv"))
+        if not candidate.startswith(base + os.sep):
+            app_logger.warning(f"Rejected glossary name outside glossary dir: {glossary_name!r}")
+            return None
+        if os.path.basename(candidate) != f"{glossary_name}.csv":
+            return None
+        return candidate
+
     def load_glossary_table(glossary_name):
         import pandas as pd
-        path = os.path.join("glossary", f"{glossary_name}.csv") if glossary_name else None
+        path = _safe_glossary_path(glossary_name)
         if not path or not os.path.exists(path):
             return gr.update(), f"Glossary not found: {glossary_name}"
         for encoding in ("utf-8-sig", "utf-8", "gbk", "shift-jis"):
@@ -1676,7 +1692,7 @@ with gr.Blocks(
         return gr.update(), f"Failed to load glossary: {last_error}"
 
     def save_glossary_table(glossary_name, table):
-        path = os.path.join("glossary", f"{glossary_name}.csv") if glossary_name else None
+        path = _safe_glossary_path(glossary_name)
         if not path or not os.path.exists(path):
             return f"Glossary not found: {glossary_name}"
         try:
