@@ -79,6 +79,15 @@ TRANSLATOR_MODULES = {
     ".md": "translator.md_translator.MdTranslator",
     ".epub": "translator.epub_translator.EpubTranslator",
     ".csv": "translator.csv_translator.CsvTranslator",
+    ".tsv": "translator.csv_translator.CsvTranslator",
+    ".html": "translator.extra_formats_translator.HtmlTranslator",
+    ".htm": "translator.extra_formats_translator.HtmlTranslator",
+    ".odt": "translator.extra_formats_translator.OdtTranslator",
+    ".json": "translator.extra_formats_translator.JsonTranslator",
+    ".vtt": "translator.extra_formats_translator.VttTranslator",
+    ".ass": "translator.extra_formats_translator.AssTranslator",
+    ".ssa": "translator.extra_formats_translator.AssTranslator",
+    ".lrc": "translator.extra_formats_translator.LrcTranslator",
 }
 
 # Optional modules: registered for all extensions, but the import inside

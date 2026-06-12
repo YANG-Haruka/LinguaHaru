@@ -7,9 +7,14 @@
 import json
 import os
 import posixpath
+import re
 import zipfile
 
 from lxml import etree
+
+# Inline anchors are preserved through translation with marker placeholders
+# (same scheme as the Word pipeline); the link text itself IS translated
+HLINK_RE = re.compile(r"\{\{HLINK_(\d+)\}\}(.*?)\{\{/HLINK_\1\}\}", re.DOTALL)
 
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
@@ -61,17 +66,22 @@ def extract_epub_content_to_json(file_path, temp_dir):
             if root is None:
                 continue
             for block_index, el in enumerate(_iter_blocks(root)):
-                text = "".join(el.itertext()).strip()
-                if not text or not should_translate(text):
+                text, links = _extract_block(el)
+                text = text.strip()
+                plain = HLINK_RE.sub(lambda m: m.group(2), text)
+                if not plain.strip() or not should_translate(plain.strip()):
                     continue
                 count += 1
-                content_data.append({
+                item = {
                     "count_src": count,
                     "type": "text",
                     "value": text,
                     "doc_index": doc_index,
                     "block_index": block_index,
-                })
+                }
+                if links:
+                    item["links"] = links
+                content_data.append(item)
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
@@ -84,13 +94,70 @@ def extract_epub_content_to_json(file_path, temp_dir):
     return json_path
 
 
-def _apply_to_block(el, translated):
+def _extract_block(el):
+    """Block text with inline anchors wrapped in {{HLINK_n}} markers.
+
+    Returns (text, links) where links holds each anchor's attributes for
+    rebuilding at write-back."""
+    links = []
+
+    def render(node):
+        out = node.text or ""
+        for child in node:
+            if not isinstance(child.tag, str):
+                out += child.tail or ""
+                continue
+            if _local_name(child) == "a":
+                index = len(links)
+                links.append({"attrib": dict(child.attrib)})
+                inner = "".join(child.itertext())
+                out += f"{{{{HLINK_{index}}}}}{inner}{{{{/HLINK_{index}}}}}"
+            else:
+                out += render(child)
+            out += child.tail or ""
+        return out
+
+    return render(el), links
+
+
+def _apply_to_block(el, translated, links=None):
     """Write the translated text into a block element.
 
-    Simple blocks (no child elements) keep their structure; mixed-content
-    blocks are replaced wholesale - losing inline tags beats keeping the
-    source language."""
+    Anchors recorded at extraction are rebuilt at their marker positions.
+    Other simple blocks keep their structure; remaining mixed-content blocks
+    are replaced wholesale - losing inline tags beats keeping the source
+    language."""
     children = [c for c in el if isinstance(c.tag, str)]
+
+    if links and "{{HLINK_" in translated:
+        for child in children:
+            el.remove(child)
+        ns_prefix = (el.tag.rsplit("}", 1)[0] + "}"
+                     if isinstance(el.tag, str) and el.tag.startswith("{") else "")
+        el.text = ""
+        last_node = None
+        pos = 0
+        for match in HLINK_RE.finditer(translated):
+            leading = translated[pos:match.start()]
+            if last_node is None:
+                el.text += leading
+            else:
+                last_node.tail = (last_node.tail or "") + leading
+            anchor = etree.SubElement(el, ns_prefix + "a")
+            link_index = int(match.group(1))
+            if link_index < len(links):
+                for key, value in links[link_index].get("attrib", {}).items():
+                    anchor.set(key, value)
+            anchor.text = match.group(2)
+            last_node = anchor
+            pos = match.end()
+        trailing = translated[pos:]
+        if last_node is None:
+            el.text += trailing
+        else:
+            last_node.tail = (last_node.tail or "") + trailing
+        return
+
     if not children:
         el.text = translated
         return
@@ -145,7 +212,7 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                             continue
                         translated = translations.get(item["count_src"])
                         if translated:
-                            _apply_to_block(el, translated)
+                            _apply_to_block(el, translated, item.get("links"))
                     data = etree.tostring(root, xml_declaration=True, encoding="utf-8")
 
                 # mimetype must stay uncompressed (and it is first in

@@ -1989,7 +1989,9 @@ def create_main_interface(config, get_label=None):
         """, elem_id="api-help-container")
 
     from config.optional_modules import available_optional_extensions
-    accepted_types = [".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md", ".epub", ".csv"]
+    accepted_types = [".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md", ".epub",
+                      ".csv", ".tsv", ".html", ".htm", ".odt", ".json",
+                      ".vtt", ".ass", ".ssa", ".lrc"]
     accepted_types += available_optional_extensions()
 
     file_input = gr.File(

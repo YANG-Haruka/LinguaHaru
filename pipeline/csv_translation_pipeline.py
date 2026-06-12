@@ -80,7 +80,8 @@ def write_translated_content_to_csv(file_path, original_json_path, translated_js
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
-    result_path = os.path.join(result_dir, f"{filename}_{lang_suffix}.csv")
+    extension = os.path.splitext(file_path)[1].lower() or ".csv"  # also serves .tsv
+    result_path = os.path.join(result_dir, f"{filename}_{lang_suffix}{extension}")
 
     with open(result_path, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.writer(f, delimiter=layout["delimiter"])
