@@ -547,8 +547,14 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     app_logger.error(f"Failed to process slide {slide_index}: {e}")
                     continue
 
-            # Process notes slides
-            for slide_index, notes_path in enumerate(notes_slides, start=1):
+            # Process notes slides.
+            # Derive the notes path from each slide path exactly as extraction does
+            # (slides/slideN -> notesSlides/notesSlideN), so slide_index stays aligned
+            # when only some slides have notes.
+            for slide_index, slide_path in enumerate(slides, start=1):
+                notes_path = slide_path.replace('slides/slide', 'notesSlides/notesSlide')
+                if notes_path not in pptx.namelist():
+                    continue
                 try:
                     notes_xml = pptx.read(notes_path)
                     notes_tree = etree.fromstring(notes_xml)

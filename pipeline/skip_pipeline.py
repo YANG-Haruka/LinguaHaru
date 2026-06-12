@@ -194,7 +194,7 @@ def should_translate(text_value):
         r'^\d+(\.\d+)?\s*(px|pt|em|rem|ex|ch|vh|vw|vmin|vmax)$',      # CSS units
         r'^\d+(\.\d+)?\s*(rpm|bpm|ppm|dpi|fps)$',                     # Rates
         r'^\d+(\.\d+)?\s*(pa|kpa|mpa|gpa|psi|bar|atm|torr)$',         # Pressure
-        r'^\d+(\.\d+)?\s*([a-zA-Z]+)$',                               # General number + unit pattern
+        r'^\d+(\.\d+)?[a-zA-Z]{1,4}$',                                # General number + short unit, no space (100ms, 20mA) — a space + word is usually a numbered heading like "1 Introduction"
     ]
     
     for pattern in unit_patterns:
@@ -357,7 +357,7 @@ def should_translate(text_value):
 
     # Skip common technical abbreviations and codes
     tech_patterns = [
-        r'^[A-Z]{2,6}\d*$',                                          # API, HTTP, USB2, WIFI6
+        r'^[A-Z]{2,3}$',                                             # Short acronyms (API, SQL, USB) — longer all-caps words (TOTAL, NOTES, ERROR) are real content; caps+digits codes are covered below
         r'^[A-Z]+_[A-Z]+(_[A-Z]+)*$',                                # CONST_VALUE, MAX_SIZE
         r'^[A-Z]{1,3}\d{1,4}[A-Z]?$',                                # A1, AB12, ABC123D
         r'^\d{1,4}[A-Z]{1,4}$',                                      # 12A, 123ABC

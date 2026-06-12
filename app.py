@@ -141,24 +141,43 @@ def enqueue_task(
             return f"Task added to queue. Position: {queue_position}"
         
 def clean_gradio_cache():
-    """Clean up old Gradio temporary files"""
+    """Clean up old Gradio temporary files.
+
+    Skipped while other translation tasks are active: uploaded source files in
+    the Gradio cache (and tmp* extraction dirs) are re-opened during the final
+    write-back phase, so sweeping them would break in-flight sessions."""
+    with task_lock:
+        if active_tasks > 1:
+            app_logger.debug("Skipping Gradio cache cleanup: other tasks active")
+            return
     try:
         gradio_temp_dir = tempfile.gettempdir()
         cleaned_count = 0
-        
+
         for item in os.listdir(gradio_temp_dir):
             if item.startswith('gradio') or item.startswith('tmp'):
                 item_path = os.path.join(gradio_temp_dir, item)
-                try:
-                    if time.time() - os.path.getmtime(item_path) > 300:
-                        if os.path.isdir(item_path):
-                            shutil.rmtree(item_path, ignore_errors=True)
-                        else:
-                            os.remove(item_path)
-                        cleaned_count += 1
-                except Exception as e:
-                    app_logger.debug(f"Could not remove {item_path}: {e}")
-        
+                # Never remove the Gradio upload cache root itself
+                # (its mtime is old even when it holds fresh uploads);
+                # clean expired entries inside it instead.
+                if item == 'gradio' and os.path.isdir(item_path):
+                    try:
+                        targets = [os.path.join(item_path, sub) for sub in os.listdir(item_path)]
+                    except Exception:
+                        targets = []
+                else:
+                    targets = [item_path]
+                for target in targets:
+                    try:
+                        if time.time() - os.path.getmtime(target) > 300:
+                            if os.path.isdir(target):
+                                shutil.rmtree(target, ignore_errors=True)
+                            else:
+                                os.remove(target)
+                            cleaned_count += 1
+                    except Exception as e:
+                        app_logger.debug(f"Could not remove {target}: {e}")
+
         if cleaned_count > 0:
             app_logger.info(f"Cleaned {cleaned_count} Gradio cache items")
     except Exception as e:
@@ -169,7 +188,6 @@ def process_task_with_queue(
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
 ):
     """Process translation task and handle queue management"""
-    global active_tasks
     if progress is None:
         progress = gr.Progress(track_tqdm=True)
     
@@ -196,8 +214,7 @@ def process_task_with_queue(
         
         return result[0], result[1], result[2]
     except Exception as e:
-        with task_lock:
-            active_tasks -= 1
+        # process_next_task_in_queue decrements active_tasks itself
         process_next_task_in_queue(translate_func, progress)
         return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False)
 

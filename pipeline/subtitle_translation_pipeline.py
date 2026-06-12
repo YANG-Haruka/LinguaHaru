@@ -10,26 +10,39 @@ def extract_srt_content_to_json(file_path, temp_dir):
     with open(file_path, "r", encoding="utf-8") as file:
         srt_content = file.read()
     
+    # Tolerant of common SRT variants: 1-2 digit hours, '.' as millisecond
+    # separator, 1-3 millisecond digits
     srt_pattern = re.compile(
         r"(\d+)\s*\r?\n"
-        r"(\d{2}:\d{2}:\d{2},\d{3})\s*-->\s*"
-        r"(\d{2}:\d{2}:\d{2},\d{3})\s*\r?\n"
+        r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*"
+        r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*\r?\n"
         r"(.*?)(?=\r?\n\r?\n|\Z)",
         re.DOTALL
     )
-    
+
     content_data = []
-    
-    for match in srt_pattern.finditer(srt_content):
-        count, start_time, end_time, value = match.groups()
+
+    # Renumber sequentially: count_src is the translation lookup key, and
+    # malformed files can repeat cue numbers, which would collapse entries
+    for idx, match in enumerate(srt_pattern.finditer(srt_content), start=1):
+        _, start_time, end_time, value = match.groups()
         value = value.replace("\n", "␊").replace("\r", "␍")
-        
+
         content_data.append({
-            "count_src": int(count),
-            "start_time": start_time,
-            "end_time": end_time,
+            "count_src": idx,
+            "start_time": start_time.replace(".", ","),
+            "end_time": end_time.replace(".", ","),
             "value": value
         })
+
+    # Cues that don't match the pattern are silently absent from the output
+    # file, so make the loss visible
+    cue_count = srt_content.count("-->")
+    if cue_count != len(content_data):
+        app_logger.warning(
+            f"SRT parse mismatch: file contains {cue_count} cues but only "
+            f"{len(content_data)} were extracted; unparsed cues will be missing from the output"
+        )
     
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)

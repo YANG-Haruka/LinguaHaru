@@ -5,7 +5,7 @@ import time
 import uuid
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
+from threading import RLock
 from config.log_config import app_logger
 from .calculation_tokens import num_tokens_from_string
 from config.translation_history import TranslationHistoryManager, create_translation_record
@@ -43,7 +43,7 @@ class DocumentTranslator:
         self.translated_failed = True
         self.glossary_path = glossary_path
         self.num_threads = thread_count
-        self.lock = Lock()
+        self.lock = RLock()
         self.check_stop_requested = None
         self.last_ui_update_time = 0
         self.temp_dir = temp_dir
@@ -695,9 +695,14 @@ class DocumentTranslator:
             os.makedirs(temp_folder, exist_ok=True)
     
     def _mark_segment_as_failed(self, segment):
-        """Mark segment as failed"""
+        """Mark segment as failed. Thread-safe: self.lock is an RLock, so this
+        is safe to call both inside and outside `with self.lock:` blocks."""
         app_logger.debug(f"Marking segment as failed")
-        
+
+        with self.lock:
+            self._mark_segment_as_failed_locked(segment)
+
+    def _mark_segment_as_failed_locked(self, segment):
         # Ensure file exists
         if not os.path.exists(self.failed_json_path):
             try:

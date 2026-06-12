@@ -18,8 +18,14 @@ class DateConversionConfig:
 
 
 def clean_translation_brackets(text):
-    """Clean up translation text by removing bracket symbols while keeping content."""
+    """Clean up translation text by removing bracket symbols while keeping content.
+
+    Skipped for CJK target languages, where 《》 is legitimate punctuation
+    (book/work titles)."""
     if not text:
+        return text
+    target_lang = globals().get('_current_target_language') or ''
+    if target_lang.lower().startswith(('zh', 'ja', 'ko')):
         return text
     cleaned_text = text.replace('《', '').replace('》', '')
     return cleaned_text

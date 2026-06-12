@@ -1925,7 +1925,7 @@ def process_field_run(run, namespaces, run_idx):
         elif 'TIME' in instr_text:
             display_text = '{{TIME}}'
         else:
-            display_text = f'{{FIELD:{instr_text}}}'
+            display_text = f'{{{{FIELD:{instr_text}}}}}'
         
         return {
             'type': 'field_instruction',
@@ -1954,7 +1954,7 @@ def process_simple_field_run(run, namespaces, run_idx):
         elif 'TIME' in instr:
             display_text = '{{TIME}}'
         else:
-            display_text = f'{{FIELD:{instr}}}'
+            display_text = f'{{{{FIELD:{instr}}}}}'
         
         # Store the complete original field element for exact reconstruction
         original_field_xml = etree.tostring(fld_simples[0], encoding='unicode')

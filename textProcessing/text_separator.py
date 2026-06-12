@@ -612,6 +612,33 @@ def create_deduped_json_for_translation(deduped_data, output_path):
     app_logger.info(f"Created deduped file: {output_path} ({len(deduped_data)} items)")
     return output_path
 
+def _is_cjk_no_space(char):
+    """Characters from scripts written without spaces (han, kana, CJK/full-width punctuation)."""
+    code = ord(char)
+    return (
+        0x4E00 <= code <= 0x9FFF      # CJK unified ideographs
+        or 0x3400 <= code <= 0x4DBF   # CJK extension A
+        or 0x3040 <= code <= 0x30FF   # hiragana / katakana
+        or 0x3000 <= code <= 0x303F   # CJK punctuation
+        or 0xFF00 <= code <= 0xFF60   # full-width forms
+    )
+
+
+def _join_chunk_translations(chunks):
+    """Join translations of a split-up long text.
+
+    Latin-script targets need a space at chunk boundaries (words would glue
+    together); Chinese/Japanese must not get one."""
+    joined = chunks[0]
+    for nxt in chunks[1:]:
+        if (joined and nxt
+                and not joined[-1].isspace() and not nxt[0].isspace()
+                and not _is_cjk_no_space(joined[-1]) and not _is_cjk_no_space(nxt[0])):
+            joined += " "
+        joined += nxt
+    return joined
+
+
 def restore_translations_from_deduped(dst_translated_split_path, count_src_to_deduped_map, src_original_path):
     """Restore translations to original structure
     """
@@ -694,13 +721,15 @@ def restore_translations_from_deduped(dst_translated_split_path, count_src_to_de
                 for count_split in count_splits:
                     if count_split in count_split_to_translation:
                         translations.append(count_split_to_translation[count_split])
-                
-                if translations:
+
+                if len(translations) == len(count_splits):
                     # Join all translations (in case text was split)
-                    translated_value = "".join(translations)
+                    translated_value = _join_chunk_translations(translations)
                 else:
+                    # Partial chunks would produce a translation with missing
+                    # middle content - fall back to the original instead
                     missing_translations += 1
-                    app_logger.warning(f"No translation found for count_deduped: {count_deduped} (count_splits: {count_splits})")
+                    app_logger.warning(f"Translations incomplete for count_deduped: {count_deduped} ({len(translations)}/{len(count_splits)} chunks, count_splits: {count_splits})")
             else:
                 # Fallback: try using count_deduped as count_split directly
                 if count_deduped in count_split_to_translation:

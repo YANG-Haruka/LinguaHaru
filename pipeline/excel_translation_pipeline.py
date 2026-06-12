@@ -242,7 +242,6 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         row = cell_info["row"]
         column = cell_info["column"]
         original_text = cell_info["value"]
-        is_merged = cell_info.get("is_merged", False)
 
         # Get the translated text
         value = translations.get(count, None)
@@ -256,15 +255,11 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         # Replace line breaks to preserve format
         value = value.replace("␊", "\n").replace("␍", "\r")
 
-        # Write to the Excel cell
+        # Write to the Excel cell. Merged ranges from the original file are
+        # already preserved by openpyxl; writing the top-left cell is enough.
         sheet = workbook[sheet_name]
         cell = sheet.cell(row=row, column=column)
         cell.value = value
-
-        # Handle merged cells if applicable
-        if is_merged:
-            merge_range = f"{cell.coordinate}:{cell.coordinate}"
-            sheet.merge_cells(merge_range)
 
     # Final pass: Rename sheets with their translations
     for original_name, translated_name in sheet_name_translations.items():
