@@ -53,8 +53,9 @@ from functools import partial
 # Import separated UI layout module
 from ui_layout import (
     get_custom_css, create_header, create_footer, create_language_section,
-    create_settings_section, create_model_glossary_section, create_main_interface,
-    create_state_variables, create_theme_toggle, create_translation_history_button,
+    create_settings_section, create_file_mode_checkboxes, create_model_glossary_section,
+    create_glossary_tab_section, create_main_interface,
+    create_state_variables, create_theme_toggle,
     create_history_page_content
 )
 
@@ -914,10 +915,13 @@ def set_labels(session_lang: str):
             placeholder=labels.get("Language Name Placeholder", "e.g. Klingon")
         ),
         add_lang_button: gr.update(value=labels.get("Create Language", "Create")),
-        history_nav_btn: gr.update(value=f"📋 {labels.get('Translation History', 'Translation History')}"),
-        history_back_btn: gr.update(value=f"← {labels.get('Back', 'Back')}"),
         history_refresh_btn: gr.update(value=f"🔄 {labels.get('Refresh Records', 'Refresh')}"),
-        history_title: gr.update(value=f"<h2 style='text-align: center; margin: 20px 0;'>{labels.get('Translation History', 'Translation History')}</h2>")
+        history_title: gr.update(value=f"<h2 style='text-align: center; margin: 20px 0;'>{labels.get('Translation History', 'Translation History')}</h2>"),
+        glossary_editor_choice: gr.update(label=labels.get("Glossary", "Glossary"), choices=get_glossary_files()),
+        tab_translate: gr.update(label=labels.get("Translate", "Translate")),
+        tab_glossary: gr.update(label=labels.get("Glossary", "Glossary")),
+        tab_settings: gr.update(label=labels.get("Settings", "Settings")),
+        tab_history: gr.update(label=labels.get("History", "History"))
     }
 
 #-------------------------------------------------------------------------
@@ -1625,35 +1629,46 @@ with gr.Blocks(
     def get_label(key):
         return initial_labels.get(key, key)
 
-    # Main page content wrapped in a Column for page navigation
-    with gr.Column(visible=True, elem_id="main-page") as main_page:
-        # Create language selection section
-        src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button, custom_lang_row = create_language_section(
-            default_src_lang, default_dst_lang, get_label
-        )
+    # Paged layout: Translate / Glossary / Settings / History tabs
+    with gr.Tabs(elem_id="main-tabs"):
+        # Tab 1: core translation flow
+        with gr.Tab(get_label("Translate"), elem_id="tab-translate") as tab_translate:
+            with gr.Column(elem_id="main-page") as main_page:
+                # Create language selection section
+                src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button, custom_lang_row = create_language_section(
+                    default_src_lang, default_dst_lang, get_label
+                )
 
-        # Create settings section
-        (use_online_model, lan_mode_checkbox, max_retries_slider,
-        thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
-        auto_glossary_checkbox, rpm_limit_number) = create_settings_section(config)
+                # Create model and glossary section
+                (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
+                 glossary_upload_file) = create_model_glossary_section(
+                    config, local_models, online_models, get_glossary_files, get_default_glossary, get_label
+                )
 
-        # Create model and glossary section
-        (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
-         glossary_upload_file, glossary_table, glossary_load_btn, glossary_save_btn,
-         glossary_editor_status) = create_model_glossary_section(
-            config, local_models, online_models, get_glossary_files, get_default_glossary, get_label
-        )
+                # Per-file-type mode checkboxes (shown when matching files are uploaded)
+                (excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox,
+                 pdf_bilingual_checkbox) = create_file_mode_checkboxes(config)
 
-        # Create main interface
-        (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
-         translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
+                # Create main interface
+                (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
+                 translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
 
-        # Create translation history navigation button
-        history_nav_btn = create_translation_history_button(get_label)
+        # Tab 2: glossary editor with its own glossary picker
+        with gr.Tab(get_label("Glossary"), elem_id="tab-glossary") as tab_glossary:
+            (glossary_editor_choice, glossary_table, glossary_load_btn,
+             glossary_save_btn, glossary_editor_status) = create_glossary_tab_section(
+                config, get_glossary_files, get_default_glossary, get_label
+            )
 
-    # Create history page (initially hidden)
-    with gr.Column(visible=False, elem_id="history-page") as history_page:
-        history_back_btn, history_refresh_btn, history_title, history_list = create_history_page_content(get_label)
+        # Tab 3: settings
+        with gr.Tab(get_label("Settings"), elem_id="tab-settings") as tab_settings:
+            (use_online_model, lan_mode_checkbox, max_retries_slider,
+             thread_count_slider, auto_glossary_checkbox, rpm_limit_number) = create_settings_section(config)
+
+        # Tab 4: translation history
+        with gr.Tab(get_label("History"), elem_id="tab-history") as tab_history:
+            with gr.Column(elem_id="history-page") as history_page:
+                history_refresh_btn, history_title, history_list = create_history_page_content(get_label)
 
     # Hidden components for folder opening functionality
     folder_path_input = gr.Textbox(visible=False, elem_id="folder-path-input")
@@ -1703,9 +1718,9 @@ with gr.Blocks(
         except Exception as e:
             return f"Failed to save glossary: {e}"
 
-    glossary_load_btn.click(load_glossary_table, inputs=[glossary_choice],
+    glossary_load_btn.click(load_glossary_table, inputs=[glossary_editor_choice],
                             outputs=[glossary_table, glossary_editor_status])
-    glossary_save_btn.click(save_glossary_table, inputs=[glossary_choice, glossary_table],
+    glossary_save_btn.click(save_glossary_table, inputs=[glossary_editor_choice, glossary_table],
                             outputs=[glossary_editor_status])
 
     # New settings persistence
@@ -1898,6 +1913,14 @@ with gr.Blocks(
             outputs=[glossary_upload_row]
         )
 
+        # Keep the Glossary tab's picker following the selection on the Translate tab
+        glossary_choice.change(
+            lambda g: gr.update(choices=get_glossary_files(), value=g)
+            if (g and not is_add_glossary_option(g)) else gr.update(choices=get_glossary_files()),
+            inputs=[glossary_choice],
+            outputs=[glossary_editor_choice]
+        )
+
         # Auto-upload when file is selected (no button click needed)
         glossary_upload_file.change(
             upload_glossary_file,
@@ -1994,44 +2017,11 @@ with gr.Blocks(
         outputs=[src_lang, dst_lang, custom_lang_input, custom_lang_row]
     )
 
-    # Translation history event handlers - Page navigation using JavaScript
-    def navigate_to_history(session_lang):
-        """Navigate to history page and load records"""
-        html_content = load_translation_history(session_lang)
-        return html_content
-
-    # Navigate to history page
-    history_nav_btn.click(
-        navigate_to_history,
+    # Translation history event handlers - load records when the tab is opened
+    tab_history.select(
+        load_translation_history,
         inputs=[session_lang],
         outputs=[history_list]
-    ).then(
-        fn=None,
-        inputs=None,
-        outputs=None,
-        js="""
-        () => {
-            const mainPage = document.getElementById('main-page');
-            const historyPage = document.getElementById('history-page');
-            if (mainPage) mainPage.style.display = 'none';
-            if (historyPage) historyPage.style.display = 'block';
-        }
-        """
-    )
-
-    # Navigate back to main page
-    history_back_btn.click(
-        fn=None,
-        inputs=None,
-        outputs=None,
-        js="""
-        () => {
-            const mainPage = document.getElementById('main-page');
-            const historyPage = document.getElementById('history-page');
-            if (mainPage) mainPage.style.display = 'block';
-            if (historyPage) historyPage.style.display = 'none';
-        }
-        """
     )
 
     # Refresh history
@@ -2106,7 +2096,8 @@ with gr.Blocks(
             model_choice, glossary_choice, max_retries_slider, thread_count_slider,
             api_key_input, remember_key_checkbox, file_input, output_file, status_message, translate_button,
             continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, stop_button,
-            custom_lang_input, add_lang_button, history_nav_btn, history_back_btn, history_refresh_btn, history_title
+            custom_lang_input, add_lang_button, history_refresh_btn, history_title,
+            glossary_editor_choice, tab_translate, tab_glossary, tab_settings, tab_history
         ],
         js="""
         () => {
