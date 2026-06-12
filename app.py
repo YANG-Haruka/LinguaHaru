@@ -77,6 +77,8 @@ TRANSLATOR_MODULES = {
     ".srt": "translator.subtitle_translator.SubtitlesTranslator",
     ".txt": "translator.txt_translator.TxtTranslator",
     ".md": "translator.md_translator.MdTranslator",
+    ".epub": "translator.epub_translator.EpubTranslator",
+    ".csv": "translator.csv_translator.CsvTranslator",
 }
 
 # Optional modules: registered for all extensions, but the import inside

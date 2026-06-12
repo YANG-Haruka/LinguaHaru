@@ -270,13 +270,96 @@ def test_md():
     return ok
 
 
+def test_epub():
+    print("EPUB: block extraction, inline tags, zip structure (mimetype first+stored)")
+    from pipeline.epub_translation_pipeline import (
+        extract_epub_content_to_json, write_translated_content_to_epub)
+
+    src = os.path.join(WORK_DIR, "book_test.epub")
+    chapter = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter One Title</title></head>'
+        "<body><h1>The Beginning Chapter</h1>"
+        "<p>Plain paragraph of narrative text.</p>"
+        "<p><em>Fully emphasized paragraph text.</em></p>"
+        '<p>Mixed paragraph with <b>bold inside</b> and a tail.</p>'
+        "<ul><li>First list item text</li><li>Second list item text</li></ul>"
+        "</body></html>"
+    )
+    opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+           'unique-identifier="id"><metadata/><manifest>'
+           '<item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>'
+           '</manifest><spine><itemref idref="c1"/></spine></package>')
+    container = ('<?xml version="1.0"?><container version="1.0" '
+                 'xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
+                 '<rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>'
+                 "</rootfiles></container>")
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr("META-INF/container.xml", container, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("content.opf", opf, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("chapter1.xhtml", chapter, compress_type=zipfile.ZIP_DEFLATED)
+
+    src_json = extract_epub_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_epub(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           src_lang="en", dst_lang="ja")
+
+    with zipfile.ZipFile(out) as z:
+        first = z.infolist()[0]
+        chap = z.read("chapter1.xhtml").decode("utf-8")
+        names = z.namelist()
+
+    ok = check("mimetype first and uncompressed",
+               first.filename == "mimetype" and first.compress_type == zipfile.ZIP_STORED,
+               f"{first.filename} / {first.compress_type}")
+    ok &= check("all members preserved", set(names) == {"mimetype", "META-INF/container.xml",
+                                                        "content.opf", "chapter1.xhtml"}, str(names))
+    ok &= check("heading and paragraphs translated",
+                all(T + s in chap for s in ("The Beginning Chapter",
+                                            "Plain paragraph of narrative text.",
+                                            "First list item text")), chap)
+    ok &= check("single-inline-wrapper paragraph keeps <em>",
+                "<em>" in chap and T + "Fully emphasized paragraph text." in chap, chap)
+    ok &= check("mixed paragraph translated (wholesale)",
+                T + "Mixed paragraph with bold inside and a tail." in chap, chap)
+    return ok
+
+
+def test_csv():
+    print("CSV: semicolon delimiter, numbers untouched, text translated")
+    from pipeline.csv_translation_pipeline import (
+        extract_csv_content_to_json, write_translated_content_to_csv)
+
+    src = os.path.join(WORK_DIR, "data_test.csv")
+    with open(src, "w", encoding="utf-8", newline="") as f:
+        f.write("Product name;Unit price;Remarks\n"
+                "Steel bracket;12.50;Ships from warehouse\n"
+                "Copper wire;3.99;Currently out of stock\n")
+
+    src_json = extract_csv_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_csv(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    with open(out, encoding="utf-8-sig") as f:
+        rows = [line.split(";") for line in f.read().splitlines() if line]
+
+    ok = check("delimiter preserved", len(rows[0]) == 3, str(rows[0]))
+    ok &= check("header translated", rows[0][0] == T + "Product name", str(rows[0]))
+    ok &= check("numbers untouched", rows[1][1] == "12.50" and rows[2][1] == "3.99",
+                f"{rows[1][1]} / {rows[2][1]}")
+    ok &= check("text cells translated", rows[2][2] == T + "Currently out of stock", str(rows[2]))
+    return ok
+
+
 def main():
     shutil.rmtree(WORK_DIR, ignore_errors=True)
     os.makedirs(TEMP_DIR, exist_ok=True)
     os.makedirs(RESULT_DIR, exist_ok=True)
 
     results = {}
-    for fn in (test_docx, test_pptx, test_xlsx, test_srt, test_txt, test_md):
+    for fn in (test_docx, test_pptx, test_xlsx, test_srt, test_txt, test_md,
+               test_epub, test_csv):
         try:
             results[fn.__name__] = fn()
         except Exception as e:
