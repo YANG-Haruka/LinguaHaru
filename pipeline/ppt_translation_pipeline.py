@@ -50,9 +50,6 @@ def extract_ppt_content_to_json(file_path, temp_dir):
                     # Extract text from shapes (by shape)
                     count = _extract_shapes(slide_tree, slide_index, namespaces, content_data, count)
                     
-                    # Extract text from charts (by chart element)
-                    count = _extract_charts(slide_tree, slide_index, namespaces, content_data, count)
-                    
                     # Extract text from notes (by paragraph)
                     notes_path = slide_path.replace('slides/slide', 'notesSlides/notesSlide')
                     if notes_path in pptx.namelist():
@@ -64,6 +61,10 @@ def extract_ppt_content_to_json(file_path, temp_dir):
 
             # Extract text from SmartArt diagrams
             count = _extract_smartart(pptx, namespaces, content_data, count)
+
+            # Extract text from chart parts (titles, series/category labels live
+            # in ppt/charts/chartN.xml, not in the slide XML)
+            count = _extract_chart_parts(pptx, namespaces, content_data, count)
 
     except Exception as e:
         app_logger.error(f"Failed to process PPTX content: {e}")
@@ -85,6 +86,75 @@ def extract_ppt_content_to_json(file_path, temp_dir):
     except Exception as e:
         app_logger.error(f"Failed to save JSON file: {e}")
         raise
+
+def _extract_chart_parts(pptx, namespaces: Dict, content_data: List, count: int) -> int:
+    """Extract translatable text from ppt/charts/chartN.xml parts.
+
+    Covers rich-text runs (a:t - titles, axis titles, data labels) and string
+    cache values (c:strCache/c:pt/c:v - series names, category labels).
+    Numeric caches are left untouched."""
+    chart_files = sorted(name for name in pptx.namelist()
+                         if re.match(r"ppt/charts/chart\d+\.xml$", name))
+    for chart_file in chart_files:
+        try:
+            tree = etree.fromstring(pptx.read(chart_file))
+        except etree.XMLSyntaxError as e:
+            app_logger.warning(f"Failed to parse {chart_file}: {e}")
+            continue
+
+        for kind, nodes in (
+            ("a_t", tree.xpath('.//a:t', namespaces=namespaces)),
+            ("str_v", tree.xpath('.//c:strCache/c:pt/c:v', namespaces=namespaces)),
+        ):
+            for node_index, node in enumerate(nodes):
+                text = (node.text or "").strip()
+                if not text or not should_translate(text):
+                    continue
+                count += 1
+                content_data.append({
+                    "count_src": count,
+                    "type": "chart_part",
+                    "value": node.text,
+                    "chart_file": chart_file,
+                    "node_kind": kind,
+                    "node_index": node_index,
+                })
+    return count
+
+
+def _apply_chart_parts_translations(pptx, chart_items: List[Dict], translations: Dict,
+                                    temp_folder: str, namespaces: Dict):
+    """Write translated chart texts into chart XML parts under temp_folder."""
+    items_by_file = {}
+    for item in chart_items:
+        items_by_file.setdefault(item["chart_file"], []).append(item)
+
+    for chart_file, items in items_by_file.items():
+        try:
+            tree = etree.fromstring(pptx.read(chart_file))
+        except (KeyError, etree.XMLSyntaxError) as e:
+            app_logger.warning(f"Failed to load {chart_file} for write-back: {e}")
+            continue
+
+        nodes_by_kind = {
+            "a_t": tree.xpath('.//a:t', namespaces=namespaces),
+            "str_v": tree.xpath('.//c:strCache/c:pt/c:v', namespaces=namespaces),
+        }
+        for item in items:
+            translated = translations.get(str(item["count_src"]))
+            if not translated:
+                continue
+            nodes = nodes_by_kind.get(item["node_kind"], [])
+            if item["node_index"] < len(nodes):
+                nodes[item["node_index"]].text = translated.replace("␊", "\n").replace("␍", "\r")
+
+        out_path = os.path.join(temp_folder, chart_file)
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
+        with open(out_path, "wb") as f:
+            f.write(etree.tostring(tree, xml_declaration=True,
+                                   encoding="UTF-8", standalone="yes"))
+    app_logger.info(f"Applied chart translations to {len(items_by_file)} chart part(s)")
+
 
 def _extract_smartart(pptx, namespaces: Dict, content_data: List, count: int) -> int:
     """Extract text from SmartArt diagrams."""
@@ -583,8 +653,16 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
             if smartart_items:
                 _apply_smartart_translations(pptx, smartart_items, translations, temp_folder, namespaces)
 
-            # Create final PowerPoint file
-            _create_final_pptx(file_path, result_path, temp_folder, slides, notes_slides, diagram_files)
+            # Process chart parts (titles, series/category labels)
+            chart_items = [item for item in original_data if item.get('type') == 'chart_part']
+            if chart_items:
+                _apply_chart_parts_translations(pptx, chart_items, translations, temp_folder, namespaces)
+            chart_files = sorted({item['chart_file'] for item in chart_items})
+
+            # Create final PowerPoint file (chart parts ride the same
+            # modified-or-original mechanism as diagram files)
+            _create_final_pptx(file_path, result_path, temp_folder, slides, notes_slides,
+                               diagram_files + chart_files)
             
     except Exception as e:
         app_logger.error(f"Failed to write translated content: {e}")

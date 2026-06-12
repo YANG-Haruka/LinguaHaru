@@ -377,6 +377,50 @@ def test_pptx_complex():
     check("group structure intact", any(sh.shape_type == 6 for sh in prs2.slides[1].shapes))
 
 
+def test_pptx_chart():
+    print("PPTX chart: title, series and category labels translated; numbers untouched")
+    from pptx import Presentation
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE
+    from pptx.util import Inches
+    from pipeline.ppt_translation_pipeline import (
+        extract_ppt_content_to_json, write_translated_content_to_ppt)
+
+    src = os.path.join(WORK_DIR, "chart.pptx")
+    prs = Presentation()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    chart_data = CategoryChartData()
+    chart_data.categories = ["Eastern region", "Western region"]
+    chart_data.add_series("Quarterly revenue", (1234.5, 6789.0))
+    chart_shape = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED,
+                                         Inches(1), Inches(1), Inches(7), Inches(4),
+                                         chart_data)
+    chart_shape.chart.has_title = True
+    chart_shape.chart.chart_title.text_frame.text = "Revenue overview title"
+    prs.save(src)
+
+    src_json = extract_ppt_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f) if i.get("type") == "chart_part"]
+    check("chart texts extracted",
+          any("Revenue overview title" in v for v in extracted)
+          and any("Eastern region" in v for v in extracted)
+          and any("Quarterly revenue" in v for v in extracted), str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_ppt(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    with zipfile.ZipFile(out) as z:
+        chart_xml = "".join(z.read(n).decode("utf-8") for n in z.namelist()
+                            if n.startswith("ppt/charts/chart"))
+    check("chart title translated", T + "Revenue overview title" in chart_xml, chart_xml[:600])
+    check("category labels translated", T + "Eastern region" in chart_xml
+          and T + "Western region" in chart_xml, chart_xml[:600])
+    check("series name translated", T + "Quarterly revenue" in chart_xml, chart_xml[:600])
+    check("numeric values untouched", "1234.5" in chart_xml and "6789" in chart_xml,
+          chart_xml[:600])
+
+
 # ------------------------------------------------------------------ MD ----
 def test_md_complex():
     print("MD complex: code blocks, inline code, links, pipe tables")
@@ -449,7 +493,7 @@ def main():
     os.makedirs(RESULT_DIR, exist_ok=True)
 
     for fn in (test_docx_complex, test_xlsx_complex, test_pptx_complex,
-               test_md_complex, test_srt_complex):
+               test_pptx_chart, test_md_complex, test_srt_complex):
         try:
             fn()
         except Exception:
