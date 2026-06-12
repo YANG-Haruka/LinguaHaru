@@ -1795,10 +1795,6 @@ def create_settings_section(config):
     initial_thread_count_online = config.get("default_thread_count_online", 2)
     initial_thread_count_offline = config.get("default_thread_count_offline", 4)
     initial_thread_count = initial_thread_count_online if initial_default_online else initial_thread_count_offline
-    initial_excel_mode_2 = config.get("excel_mode_2", False)
-    initial_excel_bilingual_mode = config.get("excel_bilingual_mode", False)
-    initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
-
     initial_show_mode_switch = config.get("show_mode_switch", True)
     initial_show_lan_mode = config.get("show_lan_mode", True)
     initial_show_max_retries = config.get("show_max_retries", True)
@@ -1841,6 +1837,31 @@ def create_settings_section(config):
             )
 
     with gr.Row():
+        with gr.Column(scale=1):
+            auto_glossary_checkbox = gr.Checkbox(
+                label="AI Glossary Extraction",
+                value=config.get("auto_extract_glossary", False),
+                info="Extract terms with the LLM before translating"
+            )
+        with gr.Column(scale=1):
+            rpm_limit_number = gr.Number(
+                label="RPM Limit (0 = unlimited, restart to apply)",
+                value=config.get("rpm_limit", 0),
+                precision=0,
+                minimum=0
+            )
+
+    return (use_online_model, lan_mode_checkbox, max_retries_slider,
+            thread_count_slider, auto_glossary_checkbox, rpm_limit_number)
+
+
+def create_file_mode_checkboxes(config):
+    """Create the per-file-type mode checkboxes (shown when matching files are uploaded)"""
+    initial_excel_mode_2 = config.get("excel_mode_2", False)
+    initial_excel_bilingual_mode = config.get("excel_bilingual_mode", False)
+    initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
+
+    with gr.Row():
         excel_mode_checkbox = gr.Checkbox(
             label="Use Excel Mode 2",
             value=initial_excel_mode_2,
@@ -1865,24 +1886,8 @@ def create_settings_section(config):
             visible=False
         )
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            auto_glossary_checkbox = gr.Checkbox(
-                label="AI Glossary Extraction",
-                value=config.get("auto_extract_glossary", False),
-                info="Extract terms with the LLM before translating"
-            )
-        with gr.Column(scale=1):
-            rpm_limit_number = gr.Number(
-                label="RPM Limit (0 = unlimited, restart to apply)",
-                value=config.get("rpm_limit", 0),
-                precision=0,
-                minimum=0
-            )
-
-    return (use_online_model, lan_mode_checkbox, max_retries_slider,
-            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
-            auto_glossary_checkbox, rpm_limit_number)
+    return (excel_mode_checkbox, excel_bilingual_checkbox,
+            word_bilingual_checkbox, pdf_bilingual_checkbox)
 
 
 def create_model_glossary_section(config, local_models, online_models, get_glossary_files_func, get_default_glossary_func, get_label=None):
@@ -1936,9 +1941,28 @@ def create_model_glossary_section(config, local_models, online_models, get_gloss
                 elem_id="glossary-upload"
             )
 
-    # Inline glossary editor (AiNiee-style table editing instead of
-    # re-uploading the CSV for every change)
-    with gr.Accordion(get_label("Edit Glossary"), open=False,
+    return (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
+            glossary_upload_file)
+
+
+def create_glossary_tab_section(config, get_glossary_files_func, get_default_glossary_func, get_label=None):
+    """Create the Glossary tab: glossary picker + inline editor (AiNiee-style
+    table editing instead of re-uploading the CSV for every change)"""
+    if get_label is None:
+        get_label = lambda key: key
+
+    initial_show_glossary = config.get("show_glossary", True)
+
+    glossary_editor_choice = gr.Dropdown(
+        choices=get_glossary_files_func(),
+        label=get_label("Glossary"),
+        value=get_default_glossary_func(),
+        interactive=True,
+        visible=initial_show_glossary,
+        elem_id="glossary-editor-dropdown"
+    )
+
+    with gr.Accordion(get_label("Edit Glossary"), open=True,
                       visible=initial_show_glossary) as glossary_editor_acc:
         glossary_table = gr.Dataframe(interactive=True, label="",
                                       elem_id="glossary-editor-table")
@@ -1947,9 +1971,8 @@ def create_model_glossary_section(config, local_models, online_models, get_gloss
             glossary_save_btn = gr.Button(get_label("Save Glossary"), size="sm", variant="primary")
         glossary_editor_status = gr.Markdown("")
 
-    return (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
-            glossary_upload_file, glossary_table, glossary_load_btn, glossary_save_btn,
-            glossary_editor_status)
+    return (glossary_editor_choice, glossary_table, glossary_load_btn,
+            glossary_save_btn, glossary_editor_status)
 
 
 def create_main_interface(config, get_label=None):
@@ -2057,32 +2080,13 @@ def create_state_variables(config):
     }
 
 
-def create_translation_history_button(get_label=None):
-    """Create a button to navigate to translation history page"""
-    if get_label is None:
-        get_label = lambda key: key
-
-    # Button to navigate to history page
-    history_nav_btn = gr.Button(
-        f"📋 {get_label('Translation History')}",
-        elem_id="history-nav-btn"
-    )
-
-    return history_nav_btn
-
-
 def create_history_page_content(get_label=None):
     """Create the content for the translation history page"""
     if get_label is None:
         get_label = lambda key: key
 
-    # Back button at top
+    # Refresh button at top (right-aligned)
     with gr.Row(elem_id="history-back-row"):
-        history_back_btn = gr.Button(
-            f"← {get_label('Back')}",
-            elem_id="history-back-btn",
-            size="sm"
-        )
         gr.HTML("<div style='flex: 1;'></div>")  # Spacer
         history_refresh_btn = gr.Button(
             f"🔄 {get_label('Refresh Records')}",
@@ -2102,4 +2106,4 @@ def create_history_page_content(get_label=None):
         elem_id="history-list"
     )
 
-    return history_back_btn, history_refresh_btn, history_title, history_list
+    return history_refresh_btn, history_title, history_list

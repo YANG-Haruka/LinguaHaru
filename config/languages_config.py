@@ -148,6 +148,9 @@ LABEL_TRANSLATIONS = {
         "Hide API Key": "Hide API Key",
         "Security Tips": "Security Tips",
         "Security Tips Content": "This feature is only available in non-LAN mode. API keys are private data with security risks. Please enable with caution.",
+        # Tab labels
+        "Settings": "Settings",
+        "History": "History",
         # Translation History
         "Translation History": "Translation History",
         "Refresh Records": "Refresh",
@@ -216,6 +219,9 @@ LABEL_TRANSLATIONS = {
         "Hide API Key": "隐藏密钥",
         "Security Tips": "安全提示",
         "Security Tips Content": "此功能仅在非局域网模式下可用。密钥为个人隐私数据，存在安全风险，请确认后谨慎开启。",
+        # Tab labels
+        "Settings": "设置",
+        "History": "历史记录",
         # Translation History
         "Translation History": "翻译记录",
         "Refresh Records": "刷新",
@@ -284,6 +290,9 @@ LABEL_TRANSLATIONS = {
         "Security Tips Content": "此功能僅在非區域網路模式下可用。金鑰為個人隱私資料，存在安全風險，請確認後謹慎開啟。",
         "Show API Key": "顯示金鑰",
         "Hide API Key": "隱藏金鑰",
+        # Tab labels
+        "Settings": "設定",
+        "History": "歷史記錄",
         # Translation History
         "Translation History": "翻譯記錄",
         "Refresh Records": "重新整理",
@@ -352,6 +361,9 @@ LABEL_TRANSLATIONS = {
         "Security Tips Content": "この機能は非LANモードでのみ使用できます。APIキーは個人のプライバシーデータであり、セキュリティリスクがあります。慎重に有効にしてください。",
         "Show API Key": "キーを表示",
         "Hide API Key": "キーを非表示",
+        # Tab labels
+        "Settings": "設定",
+        "History": "履歴",
         # Translation History
         "Translation History": "翻訳履歴",
         "Refresh Records": "更新",
