@@ -185,6 +185,182 @@ def test_worker_end_to_end():
     return True
 
 
+def _run_worker(worker, timeout_ms=60000):
+    """Run a TranslationWorker to completion on a local event loop; returns
+    a dict with either 'path'/'missing' or 'error'."""
+    from PySide6.QtCore import QEventLoop, QTimer
+    result = {}
+    loop = QEventLoop()
+    worker.finished.connect(
+        lambda path, missing: (result.update(path=path, missing=missing), loop.quit()))
+    worker.failed.connect(lambda msg: (result.update(error=msg), loop.quit()))
+    QTimer.singleShot(timeout_ms, loop.quit)
+    worker.start()
+    loop.exec()
+    worker.wait(5000)
+    return result
+
+
+def test_proofread_roundtrip():
+    print("PROOFREAD: list/load/save/re-export round-trip + page construction")
+    from PySide6.QtWidgets import QApplication
+    from qt_app import backend
+    from qt_app.worker import TranslationWorker
+    from qt_app.proofread_page import ProofreadPage
+
+    app = QApplication.instance() or QApplication([])
+    install_fake_llm()
+
+    # page constructs without error
+    page = ProofreadPage(lang="en")
+    assert page.objectName() == "ProofreadPage"
+
+    os.makedirs(WORK_DIR, exist_ok=True)
+    src_path = os.path.join(WORK_DIR, "proof_doc.txt")
+    with open(src_path, "w", encoding="utf-8") as f:
+        f.write("First proofread line\nSecond proofread line\nThird proofread line\n")
+
+    config = backend.read_config()
+    saved = {k: config.get(k) for k in ("temp_dir", "result_dir", "log_dir")}
+    backend.set_config("temp_dir", os.path.join(WORK_DIR, "temp"))
+    backend.set_config("result_dir", os.path.join(WORK_DIR, "result"))
+    backend.set_config("log_dir", os.path.join(WORK_DIR, "log"))
+    try:
+        worker = TranslationWorker(
+            file_path=src_path, model="fake", use_online=True, api_key="x",
+            src_lang="English", dst_lang="Français",
+            max_token=2048, max_retries=2, thread_count=1,
+            glossary_name=None, bilingual_flags={},
+        )
+        res = _run_worker(worker)
+        assert "error" not in res, f"translation failed: {res.get('error')}"
+
+        docs = backend.list_proofread_docs()
+        assert "proof_doc" in docs, f"doc not listed: {docs}"
+
+        rows = backend.load_proofread_table("proof_doc")
+        assert len(rows) == 3, f"expected 3 rows, got {len(rows)}"
+        assert rows[0][1] == "First proofread line", rows[0]
+        assert rows[0][2].startswith(T), rows[0]
+
+        # row-count mismatch is refused
+        try:
+            backend.save_proofread_table("proof_doc", rows[:-1])
+            raise AssertionError("expected row-count mismatch refusal")
+        except ValueError:
+            pass
+
+        # edit one translated value and save
+        edit = "EDITED-BY-PROOFREADER ligne une"
+        rows[0] = (rows[0][0], rows[0][1], edit)
+        changed = backend.save_proofread_table("proof_doc", rows)
+        assert changed == 1, f"expected 1 changed, got {changed}"
+
+        # edit landed in dst_translated.json (translated only)
+        dst = os.path.join(WORK_DIR, "temp", "proof_doc", "dst_translated.json")
+        with open(dst, encoding="utf-8") as f:
+            data = json.load(f)
+        assert data[0]["translated"] == edit, data[0]
+        assert not data[0]["original"].startswith(T), data[0]
+
+        out_path = backend.export_proofread_doc("proof_doc")
+        assert os.path.exists(out_path), out_path
+        with open(out_path, encoding="utf-8") as f:
+            content = f.read()
+        assert edit in content, f"edited text missing from export: {content!r}"
+        assert T + "Second proofread line" in content, content
+        print(f"  PASS: proofread round-trip, export {os.path.basename(out_path)}")
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                backend.set_config(k, v)
+    return True
+
+
+def test_multifile_concurrent():
+    print("WORKER: two .txt files translated concurrently, both outputs present")
+    from PySide6.QtWidgets import QApplication
+    from PySide6.QtCore import QEventLoop, QTimer
+    from qt_app import backend
+    from qt_app.worker import TranslationWorker
+
+    app = QApplication.instance() or QApplication([])
+    install_fake_llm()
+
+    os.makedirs(WORK_DIR, exist_ok=True)
+    paths = []
+    for i in (1, 2):
+        p = os.path.join(WORK_DIR, f"multi_{i}.txt")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(f"File {i} first line\nFile {i} second line\n")
+        paths.append(p)
+
+    config = backend.read_config()
+    saved = {k: config.get(k) for k in ("temp_dir", "result_dir", "log_dir")}
+    backend.set_config("temp_dir", os.path.join(WORK_DIR, "temp"))
+    backend.set_config("result_dir", os.path.join(WORK_DIR, "result"))
+    backend.set_config("log_dir", os.path.join(WORK_DIR, "log"))
+    try:
+        outputs = {}
+        loop = QEventLoop()
+        workers = []
+        for p in paths:
+            w = TranslationWorker(
+                file_path=p, model="fake", use_online=True, api_key="x",
+                src_lang="English", dst_lang="Français",
+                max_token=2048, max_retries=2, thread_count=2,
+                glossary_name=None, bilingual_flags={},
+            )
+            w._tag = os.path.basename(p)
+            def done(path, missing, tag=w._tag):
+                outputs[tag] = path
+                if len(outputs) == len(paths):
+                    loop.quit()
+            w.finished.connect(done)
+            w.failed.connect(lambda msg: (outputs.update(_err=msg), loop.quit()))
+            workers.append(w)
+
+        QTimer.singleShot(90000, loop.quit)
+        for w in workers:  # start ALL concurrently (bounded pool >= 2)
+            w.start()
+        loop.exec()
+        for w in workers:
+            w.wait(5000)
+
+        assert "_err" not in outputs, f"a file failed: {outputs.get('_err')}"
+        assert len(outputs) == 2, f"expected 2 outputs, got {outputs}"
+        for tag, path in outputs.items():
+            assert path and os.path.exists(path), f"missing output for {tag}: {path}"
+            with open(path, encoding="utf-8") as f:
+                assert T in f.read(), f"no fake translation in {tag}"
+        print(f"  PASS: both files translated -> {sorted(outputs.keys())}")
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                backend.set_config(k, v)
+    return True
+
+
+def test_i18n_helper():
+    print("I18N: tr() returns zh for a known key and falls back for a missing one")
+    from qt_app.i18n import tr, UI_LANGS, lang_display_name, lang_from_display_name
+    from config.languages_config import LABEL_TRANSLATIONS
+
+    zh_translate = LABEL_TRANSLATIONS["zh"]["Translate"]
+    assert tr("Translate", "zh") == zh_translate, tr("Translate", "zh")
+    assert tr("Translate", "zh") != "Translate", "zh should differ from English key"
+
+    # missing key falls back to the key text itself, no crash
+    assert tr("This Key Does Not Exist", "zh") == "This Key Does Not Exist"
+    # unknown language falls back to English
+    assert tr("Translate", "xx") == LABEL_TRANSLATIONS["en"]["Translate"]
+
+    assert "en" in UI_LANGS and "zh" in UI_LANGS
+    assert lang_from_display_name(lang_display_name("ja")) == "ja"
+    print("  PASS: i18n helper zh + fallbacks")
+    return True
+
+
 def main():
     install_fake_llm()
     tests = [
@@ -193,6 +369,9 @@ def main():
         test_backend_glossary_roundtrip,
         test_backend_model_discovery,
         test_worker_end_to_end,
+        test_proofread_roundtrip,
+        test_multifile_concurrent,
+        test_i18n_helper,
     ]
     results = {}
     for fn in tests:
