@@ -1,0 +1,61 @@
+"""LinguaHaru native desktop app (Qt + Fluent Design).
+
+This is the RECOMMENDED native desktop experience (replacing the pywebview
+shell in app_desktop.py). It reuses LinguaHaru's translation backend directly
+and never imports the Gradio web app.
+
+    pip install -r requirements-qt.txt
+    python app_qt.py
+"""
+
+import os
+import sys
+from pathlib import Path
+
+
+def _patch_tiktoken():
+    """Use bundled tiktoken BPE files when present (mirrors app.py)."""
+    try:
+        import tiktoken.load
+    except ImportError:
+        return
+    tiktoken_dir = Path(__file__).parent / "models" / "tiktoken"
+    if not tiktoken_dir.exists():
+        return
+    mapping = {
+        "o200k_base.tiktoken": tiktoken_dir / "o200k_base.tiktoken",
+        "cl100k_base.tiktoken": tiktoken_dir / "cl100k_base.tiktoken",
+    }
+    original = tiktoken.load.read_file_cached
+
+    def patched(blobpath, expected_hash=None):
+        for pattern, local_path in mapping.items():
+            if pattern in blobpath and local_path.exists():
+                with open(local_path, "rb") as f:
+                    return f.read()
+        return original(blobpath, expected_hash)
+
+    tiktoken.load.read_file_cached = patched
+
+
+_patch_tiktoken()
+
+# Run with the repo root as cwd so config/glossary/temp resolve as expected.
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+
+def main():
+    import multiprocessing
+    multiprocessing.freeze_support()
+
+    from PySide6.QtWidgets import QApplication
+    from qt_app.main_window import MainWindow
+
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

@@ -60,6 +60,12 @@
     http://127.0.0.1:9980
     ```
 
+    **桌面应用 (Qt)** —— 推荐的原生桌面体验（Fluent Design 风格）：
+    ```bash
+    pip install -r requirements-qt.txt
+    python app_qt.py
+    ```
+
 5. 本地大语言模型支持  
     目前仅支持[Ollama](https://ollama.com/)  
     您需要下载Ollama依赖和用于翻译的模型
