@@ -486,14 +486,106 @@ def test_srt_complex():
     check("both cues present", result.count("-->") == 2, result)
 
 
+def build_simple_field_docx(path):
+    """Paragraph: 'text before {fldSimple PAGE} text after'.
+
+    The PAGE field is a paragraph-level w:fldSimple (a direct child of w:p),
+    sitting between two runs of plain text. This exercises mid-paragraph
+    simple-field ordering on write-back."""
+    from docx import Document
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    doc = Document()
+    p = doc.add_paragraph("text before ")
+    fld = OxmlElement("w:fldSimple")
+    fld.set(qn("w:instr"), " PAGE ")
+    # A cached result run inside the field (what Word shows)
+    run = OxmlElement("w:r")
+    t = OxmlElement("w:t")
+    t.text = "1"
+    run.append(t)
+    fld.append(run)
+    p._p.append(fld)
+    p.add_run(" text after")
+
+    doc.save(path)
+
+
+def test_docx_simple_field_order():
+    print("DOCX simple field: mid-paragraph w:fldSimple keeps position")
+    from pipeline.word_translation_pipeline import (
+        extract_word_content_to_json, write_translated_content_to_word)
+    from lxml import etree
+
+    src = os.path.join(WORK_DIR, "simple_field.docx")
+    build_simple_field_docx(src)
+
+    src_json = extract_word_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_word(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           bilingual_mode=False, src_lang="en", dst_lang="ja")
+
+    paras = docx_paragraph_texts_in_order(out)
+    para = next((p for p in paras if "text before" in p.replace(T, "")), "")
+
+    # --- content ---
+    check("surrounding text translated",
+          T in para and "text before" in para.replace(T, "")
+          and "text after" in para.replace(T, ""), repr(para))
+
+    # --- format: the fldSimple element survives ---
+    w = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    with zipfile.ZipFile(out) as z:
+        tree = etree.fromstring(z.read("word/document.xml"))
+    fld_simples = tree.findall(f".//{{{w}}}fldSimple")
+    check("fldSimple element survives write-back", len(fld_simples) == 1,
+          f"found {len(fld_simples)}")
+
+    # --- format: ordering preserved (before < field < after) ---
+    # Build the visible text of the paragraph in element order, with a marker
+    # where the fldSimple sits, so we can assert its mid-paragraph position.
+    body_p = next(p for p in tree.iter(f"{{{w}}}p")
+                  if "text before" in "".join(t.text or "" for t in p.iter(f"{{{w}}}t")))
+    # Walk leaves in document order. A <w:t> contributes its text, EXCEPT a
+    # <w:t> that lives inside the fldSimple (the field's cached result) which
+    # is marked as the field position instead. This works whether the field
+    # is a direct child of <w:p> or rebuilt inside a run.
+    pieces = []
+    seen_field = False
+    for node in body_p.iter():
+        tag = node.tag.split('}')[-1]
+        if tag == 'fldSimple':
+            pieces.append("<FIELD>")
+            seen_field = True
+        elif tag == 't' and node.text:
+            # Skip text nodes inside a fldSimple (cached field result)
+            parent = node.getparent()
+            inside_field = False
+            while parent is not None and parent is not body_p:
+                if parent.tag.split('}')[-1] == 'fldSimple':
+                    inside_field = True
+                    break
+                parent = parent.getparent()
+            if not inside_field:
+                pieces.append(node.text)
+    sequence = "".join(pieces)
+    before = sequence.find("text before")
+    field = sequence.find("<FIELD>")
+    after = sequence.find("text after")
+    check("fldSimple order preserved (before < field < after)",
+          0 <= before < field < after,
+          f"sequence={sequence!r}")
+
+
 def main():
     import shutil
     shutil.rmtree(WORK_DIR, ignore_errors=True)
     os.makedirs(TEMP_DIR, exist_ok=True)
     os.makedirs(RESULT_DIR, exist_ok=True)
 
-    for fn in (test_docx_complex, test_xlsx_complex, test_pptx_complex,
-               test_pptx_chart, test_md_complex, test_srt_complex):
+    for fn in (test_docx_complex, test_docx_simple_field_order, test_xlsx_complex,
+               test_pptx_complex, test_pptx_chart, test_md_complex, test_srt_complex):
         try:
             fn()
         except Exception:

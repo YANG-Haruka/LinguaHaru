@@ -179,7 +179,7 @@ def clean_gradio_cache():
 
 def process_task_with_queue(
     translate_func, files, model, src_lang, dst_lang,
-    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress, session_id
+    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_name, session_lang, progress, session_id
 ):
     """Run the translation, waiting for a free slot when all are busy.
 
@@ -203,7 +203,7 @@ def process_task_with_queue(
 
         result = translate_func(
             files, model, src_lang, dst_lang,
-            use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress
+            use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_name, session_lang, progress
         )
         return result[0], result[1], result[2]
     except Exception as e:
@@ -293,7 +293,7 @@ def local_model_choices(session_lang="en"):
 
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang,
-    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name,
+    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_name,
     session_lang, continue_mode=False, progress=gr.Progress(track_tqdm=True), request: gr.Request = None
 ):
     """Translate button handler. Registers a per-session id so concurrent
@@ -327,16 +327,16 @@ def modified_translate_button_click(
 
     def wrapped_translate_func(files, model, src_lang, dst_lang,
                               use_online, api_key, max_retries, max_token, thread_count,
-                              excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress):
+                              excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_name, session_lang, progress):
         return translate_files_func(files, model, src_lang, dst_lang,
                                    use_online, api_key, max_retries, max_token, thread_count,
-                                   excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang,
+                                   excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_name, session_lang,
                                    continue_mode=continue_mode, progress=progress, session_id=session_id)
 
     try:
         return process_task_with_queue(
             wrapped_translate_func, files, model, src_lang, dst_lang,
-            use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress, session_id
+            use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_name, session_lang, progress, session_id
         )
     finally:
         clean_stop_flag(session_id)
@@ -398,6 +398,8 @@ def read_system_config():
             "subtitle_bilingual_mode": False,
             "txt_bilingual_mode": False,
             "md_bilingual_mode": False,
+            "epub_bilingual_mode": False,
+            "html_bilingual_mode": False,
             "default_thread_count_online": 2,
             "default_thread_count_offline": 4,
             "default_src_lang": "English",
@@ -512,6 +514,20 @@ def update_md_bilingual_mode(md_bilingual_mode):
     config["md_bilingual_mode"] = md_bilingual_mode
     write_system_config(config)
     return md_bilingual_mode
+
+def update_epub_bilingual_mode(epub_bilingual_mode):
+    """Update system config with new EPUB bilingual mode setting"""
+    config = read_system_config()
+    config["epub_bilingual_mode"] = epub_bilingual_mode
+    write_system_config(config)
+    return epub_bilingual_mode
+
+def update_html_bilingual_mode(html_bilingual_mode):
+    """Update system config with new HTML bilingual mode setting"""
+    config = read_system_config()
+    config["html_bilingual_mode"] = html_bilingual_mode
+    write_system_config(config)
+    return html_bilingual_mode
 
 def update_language_preferences(src_lang=None, dst_lang=None):
     """Update system config with new language preferences"""
@@ -1076,6 +1092,8 @@ def export_proofread_doc(doc_name, session_lang, request: gr.Request = None):
             subtitle_bilingual_mode=bilingual,
             txt_bilingual_mode=bilingual,
             md_bilingual_mode=bilingual,
+            epub_bilingual_mode=bilingual,
+            html_bilingual_mode=bilingual,
         )
         if not translator_class:
             return gr.update(value=None, visible=False), f"Unsupported file type '{ext}'."
@@ -1225,6 +1243,8 @@ def set_labels(session_lang: str):
         subtitle_bilingual_checkbox: gr.update(label=labels.get("Subtitle Bilingual", "Subtitle Bilingual")),
         txt_bilingual_checkbox: gr.update(label=labels.get("TXT Bilingual", "TXT Bilingual")),
         md_bilingual_checkbox: gr.update(label=labels.get("MD Bilingual", "MD Bilingual")),
+        epub_bilingual_checkbox: gr.update(label=labels.get("EPUB Bilingual", "EPUB Bilingual")),
+        html_bilingual_checkbox: gr.update(label=labels.get("HTML Bilingual", "HTML Bilingual")),
         stop_button: gr.update(value=labels.get("Stop Translation", "Stop Translation")),
         custom_lang_input: gr.update(
             label=labels.get("New Language Name", "New language name"),
@@ -1540,9 +1560,9 @@ def get_default_dropdown_value(saved_lang, dropdown_choices):
     return saved_lang
 
 def show_mode_checkbox(files):
-    """Show mode checkboxes based on file types: Excel, Word, PDF, subtitles, TXT, MD"""
+    """Show mode checkboxes based on file types: Excel, Word, PDF, subtitles, TXT, MD, EPUB, HTML"""
     if not files:
-        return tuple(gr.update(visible=False) for _ in range(7))
+        return tuple(gr.update(visible=False) for _ in range(9))
 
     extensions = {os.path.splitext(f.name)[1].lower() for f in files}
 
@@ -1552,11 +1572,14 @@ def show_mode_checkbox(files):
     subtitle_visible = bool(extensions & {".srt", ".vtt"})
     txt_visible = ".txt" in extensions
     md_visible = ".md" in extensions
+    epub_visible = ".epub" in extensions
+    html_visible = bool(extensions & {".html", ".htm"})
 
     return (gr.update(visible=excel_visible), gr.update(visible=excel_visible),
             gr.update(visible=word_visible), gr.update(visible=pdf_visible),
             gr.update(visible=subtitle_visible), gr.update(visible=txt_visible),
-            gr.update(visible=md_visible))
+            gr.update(visible=md_visible), gr.update(visible=epub_visible),
+            gr.update(visible=html_visible))
 
 def update_continue_button(files, session_id=None):
     """Check if temp folders exist for uploaded files and update continue button state"""
@@ -1583,7 +1606,7 @@ def update_continue_button(files, session_id=None):
 # Translation Processing Functions
 #-------------------------------------------------------------------------
 
-def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode=False, excel_bilingual_mode=False, pdf_bilingual_mode=False, subtitle_bilingual_mode=False, txt_bilingual_mode=False, md_bilingual_mode=False):
+def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode=False, excel_bilingual_mode=False, pdf_bilingual_mode=False, subtitle_bilingual_mode=False, txt_bilingual_mode=False, md_bilingual_mode=False, epub_bilingual_mode=False, html_bilingual_mode=False):
     """Dynamically import and return appropriate translator class for file extension"""
     module_path = TRANSLATOR_MODULES.get(file_extension.lower())
 
@@ -1621,6 +1644,12 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
         elif file_extension.lower() == ".md":
             # Markdown: bilingual_mode appends originals as blockquotes
             return partial(translator_class, bilingual_mode=md_bilingual_mode)
+        elif file_extension.lower() == ".epub":
+            # EPUB: bilingual_mode inserts original as sibling block
+            return partial(translator_class, bilingual_mode=epub_bilingual_mode)
+        elif file_extension.lower() in (".html", ".htm"):
+            # HTML: bilingual_mode inserts original as sibling block
+            return partial(translator_class, bilingual_mode=html_bilingual_mode)
 
         return translator_class
     except (ImportError, AttributeError) as e:
@@ -1629,7 +1658,7 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
 
 def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768, thread_count=4,
-    excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, subtitle_bilingual_mode=False, txt_bilingual_mode=False, md_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True), session_id=None
+    excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, subtitle_bilingual_mode=False, txt_bilingual_mode=False, md_bilingual_mode=False, epub_bilingual_mode=False, html_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True), session_id=None
 ):
     """Translate one or multiple files using chosen model"""
     # Stop flag is reset per-session by the caller (modified_translate_button_click)
@@ -1661,14 +1690,14 @@ def translate_files(
         if isinstance(files, list) and len(files) > 1:
             result = process_multiple_files(
                 files, model, src_lang_code, dst_lang_code,
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang, session_id
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang, session_id
             )
         else:
             # Handle single file case
             single_file = files[0] if isinstance(files, list) else files
             result = process_single_file(
                 single_file, model, src_lang_code, dst_lang_code,
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang, session_id
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang, session_id
             )
         
         return result[0], result[1], gr.update(value=stop_text, interactive=False)
@@ -1692,7 +1721,7 @@ def translate_files(
 
 def process_single_file(
     file, model, src_lang_code, dst_lang_code,
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en", session_id=None
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en", session_id=None
 ):
     """Process single file for translation"""
     file_name = os.path.basename(file.name)
@@ -1717,7 +1746,7 @@ def process_single_file(
     file_name, file_extension = os.path.splitext(file.name)
 
     translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode,
-                                            subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode)
+                                            subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode)
 
     if not translator_class:
         return (
@@ -1821,7 +1850,7 @@ def process_single_file(
     
 def process_multiple_files(
     files, model, src_lang_code, dst_lang_code,
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en", session_id=None
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en", session_id=None
 ):
     """Process multiple files and return zip archive"""
     # Get custom paths from config, isolated per session
@@ -1844,7 +1873,7 @@ def process_multiple_files(
         for file_obj in files:
             _, ext = os.path.splitext(file_obj.name)
             if get_translator_class(ext, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode,
-                                    subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode):
+                                    subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode):
                 file_name = os.path.basename(file_obj.name)
                 valid_files.append((file_obj, file_name))
         
@@ -1877,7 +1906,7 @@ def process_multiple_files(
                 
                 # Create translator for this file, passing mode parameters
                 translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode,
-                                                        subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode)
+                                                        subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, epub_bilingual_mode, html_bilingual_mode)
                 if not translator_class:
                     continue  # Skip unsupported files (should not happen due to earlier validation)
                 
@@ -2079,6 +2108,8 @@ with gr.Blocks(
     subtitle_bilingual_mode_state = states['subtitle_bilingual_mode_state']
     txt_bilingual_mode_state = states['txt_bilingual_mode_state']
     md_bilingual_mode_state = states['md_bilingual_mode_state']
+    epub_bilingual_mode_state = states['epub_bilingual_mode_state']
+    html_bilingual_mode_state = states['html_bilingual_mode_state']
     thread_count_state = states['thread_count_state']
 
     default_src_lang, default_dst_lang = get_default_languages()
@@ -2107,7 +2138,8 @@ with gr.Blocks(
                 # Per-file-type mode checkboxes (shown when matching files are uploaded)
                 (excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox,
                  pdf_bilingual_checkbox, subtitle_bilingual_checkbox, txt_bilingual_checkbox,
-                 md_bilingual_checkbox) = create_file_mode_checkboxes(config)
+                 md_bilingual_checkbox, epub_bilingual_checkbox,
+                 html_bilingual_checkbox) = create_file_mode_checkboxes(config)
 
                 # Create main interface
                 (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
@@ -2404,6 +2436,18 @@ with gr.Blocks(
         outputs=md_bilingual_mode_state
     )
 
+    epub_bilingual_checkbox.change(
+        update_epub_bilingual_mode,
+        inputs=epub_bilingual_checkbox,
+        outputs=epub_bilingual_mode_state
+    )
+
+    html_bilingual_checkbox.change(
+        update_html_bilingual_mode,
+        inputs=html_bilingual_checkbox,
+        outputs=html_bilingual_mode_state
+    )
+
     def on_files_changed(files, session_lang, request: gr.Request = None):
         """Mode checkboxes + continue button + 'unfinished translation' hint"""
         session_id = _session_id_for_request(request)
@@ -2428,8 +2472,8 @@ with gr.Blocks(
         fn=on_files_changed,
         inputs=[file_input, session_lang],
         outputs=[excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
-                 subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, continue_button,
-                 status_message]
+                 subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, epub_bilingual_checkbox,
+                 html_bilingual_checkbox, continue_button, status_message]
     )
 
     # Glossary event handlers (only if glossary visible)
@@ -2466,7 +2510,7 @@ with gr.Blocks(
             file_input, model_choice, src_lang, dst_lang,
             use_online_model, api_key_input, max_retries_slider, max_token_state,
             thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
-            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, glossary_choice, session_lang
+            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, epub_bilingual_checkbox, html_bilingual_checkbox, glossary_choice, session_lang
         ],
         outputs=[output_file, status_message, stop_button]
     ).then(
@@ -2490,7 +2534,7 @@ with gr.Blocks(
             file_input, model_choice, src_lang, dst_lang,
             use_online_model, api_key_input, max_retries_slider, max_token_state,
             thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
-            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, glossary_choice, session_lang
+            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, epub_bilingual_checkbox, html_bilingual_checkbox, glossary_choice, session_lang
         ],
         outputs=[output_file, status_message, stop_button]
     ).then(
@@ -2628,7 +2672,7 @@ with gr.Blocks(
             model_choice, glossary_choice, max_retries_slider, thread_count_slider,
             api_key_input, remember_key_checkbox, file_input, output_file, status_message, translate_button,
             continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
-            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, stop_button,
+            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, epub_bilingual_checkbox, html_bilingual_checkbox, stop_button,
             custom_lang_input, add_lang_button, history_refresh_btn, history_title,
             glossary_editor_choice, tab_translate, tab_glossary, tab_settings, tab_history,
             # Appended entries - keep in the same order as the end of set_labels()

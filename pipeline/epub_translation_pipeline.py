@@ -46,6 +46,13 @@ def _parse_doc(data):
     return etree.fromstring(data, parser=parser)
 
 
+def _plain_text(text):
+    """Strip HLINK/INLINE markers, leaving the original visible text."""
+    plain = HLINK_RE.sub(lambda m: m.group(2), text)
+    plain = INLINE_RE.sub("", plain)
+    return plain.strip()
+
+
 def _local_name(el):
     return etree.QName(el).localname.lower() if isinstance(el.tag, str) else ""
 
@@ -229,8 +236,30 @@ def _apply_to_block(el, translated, links=None, inlines=None):
     el.text = translated
 
 
+def _insert_original_sibling(el, original_text):
+    """Insert a sibling block right after ``el`` carrying the original text.
+
+    Used by bilingual mode: the translated block stays in place and the
+    untouched source text follows it in a fresh element of the same tag (a
+    plain following <p>/<li>/... with only text). Returns the new element so
+    callers can keep iterating past it. The new block has no attributes so it
+    does not inherit ids/anchors that must stay unique."""
+    parent = el.getparent()
+    if parent is None:
+        return None
+    sibling = etree.SubElement(parent, el.tag)
+    # Place it immediately after el (SubElement appends to the end)
+    parent.remove(sibling)
+    parent.insert(parent.index(el) + 1, sibling)
+    sibling.text = original_text
+    sibling.tail = el.tail
+    el.tail = "\n"
+    return sibling
+
+
 def write_translated_content_to_epub(file_path, original_json_path, translated_json_path,
-                                     temp_dir, result_dir, src_lang=None, dst_lang=None):
+                                     temp_dir, result_dir, src_lang=None, dst_lang=None,
+                                     bilingual_mode=False):
     with open(original_json_path, encoding="utf-8") as f:
         original_data = json.load(f)
     with open(translated_json_path, encoding="utf-8") as f:
@@ -266,6 +295,9 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                             continue
                         translated = translations.get(item["count_src"])
                         if translated:
+                            # Original visible text (markers stripped) for the
+                            # bilingual sibling, captured before we mutate el
+                            original_plain = _plain_text(item["value"])
                             if item.get("head"):
                                 # Head text of a mixed container: replace
                                 # only the direct text, keep nested blocks
@@ -273,6 +305,9 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                             else:
                                 _apply_to_block(el, translated, item.get("links"),
                                                 item.get("inlines"))
+                            if (bilingual_mode and original_plain
+                                    and translated.strip() != original_plain.strip()):
+                                _insert_original_sibling(el, original_plain)
                     data = etree.tostring(root, xml_declaration=True, encoding="utf-8")
 
                 # mimetype must stay uncompressed (and it is first in

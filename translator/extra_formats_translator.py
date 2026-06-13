@@ -28,8 +28,19 @@ class _SimpleTranslator(DocumentTranslator):
 
 
 class HtmlTranslator(_SimpleTranslator):
+    """HTML translator. bilingual_mode inserts the original text as a sibling
+    block right after each translated block."""
     _extract = staticmethod(extract_html_content_to_json)
     _write = staticmethod(write_translated_content_to_html)
+
+    def __init__(self, *args, bilingual_mode=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bilingual_mode = bilingual_mode
+
+    def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
+        write_translated_content_to_html(self.input_file_path, json_path, translated_json_path,
+                                         self.temp_dir, self.result_dir, self.src_lang, self.dst_lang,
+                                         bilingual_mode=self.bilingual_mode)
 
 
 class OdtTranslator(_SimpleTranslator):
