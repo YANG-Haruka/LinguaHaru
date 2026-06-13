@@ -7,8 +7,7 @@ xlwings>=0.33.11
 python-docx>=1.1.0
 python-pptx>=1.0.0
 
-# PDF translation (BabelDOC handles its own dependencies)
-babeldoc
+# PDF translation moved to the optional module: requirements-pdf.txt
 
 # LLM & API
 openai>=1.59.6

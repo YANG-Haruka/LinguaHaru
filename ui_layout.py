@@ -1829,7 +1829,7 @@ def create_settings_section(config):
         with gr.Column(scale=1):
             thread_count_slider = gr.Slider(
                 minimum=1,
-                maximum=16,
+                maximum=64,
                 step=1,
                 value=initial_thread_count,
                 label="Thread Count",
@@ -1850,6 +1850,16 @@ def create_settings_section(config):
                 precision=0,
                 minimum=0
             )
+
+    # Optional module status (plugin-style: install only what you need)
+    from config.optional_modules import module_status
+    status_lines = ["| Module | Status | Engine | Install |", "|---|---|---|---|"]
+    for mod in module_status():
+        mark = "✅" if mod["available"] else "❌"
+        install = "—" if mod["available"] else f"`{mod['install']}`"
+        status_lines.append(f"| {mod['name']} | {mark} | {mod['detail']} | {install} |")
+    with gr.Accordion("Optional Modules", open=False):
+        gr.Markdown("\n".join(status_lines))
 
     return (use_online_model, lan_mode_checkbox, max_retries_slider,
             thread_count_slider, auto_glossary_checkbox, rpm_limit_number)
@@ -2041,9 +2051,10 @@ def create_main_interface(config, get_label=None):
         """, elem_id="api-help-container")
 
     from config.optional_modules import available_optional_extensions
-    accepted_types = [".docx", ".pptx", ".xlsx", ".pdf", ".srt", ".txt", ".md", ".epub",
+    accepted_types = [".docx", ".pptx", ".xlsx", ".srt", ".txt", ".md", ".epub",
                       ".csv", ".tsv", ".html", ".htm", ".odt", ".json",
                       ".vtt", ".ass", ".ssa", ".lrc"]
+    # .pdf / images / media join the list when their modules are installed
     accepted_types += available_optional_extensions()
 
     file_input = gr.File(

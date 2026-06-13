@@ -64,8 +64,8 @@ class _RpmLimiter:
 
     def __init__(self):
         self.lock = threading.Lock()
-        self.calls = deque()
-        self.limit = self._UNSET
+        self.windows = {}
+        self.limit = self._UNSET  # global limit, lazily loaded
 
     def _load_limit(self):
         try:
@@ -75,22 +75,30 @@ class _RpmLimiter:
         except Exception:
             return None
 
-    def wait(self):
-        if self.limit is self._UNSET:
-            self.limit = self._load_limit()
-            if self.limit:
-                app_logger.info(f"RPM limit active: {self.limit} requests/minute")
-        if not self.limit:
+    def wait(self, key="_global", limit_override=None):
+        """Per-model limits ("rpm" in the model's api_config json) override
+        the global "rpm_limit"; each scope keeps its own sliding window."""
+        if limit_override:
+            limit = limit_override
+        else:
+            if self.limit is self._UNSET:
+                self.limit = self._load_limit()
+                if self.limit:
+                    app_logger.info(f"RPM limit active: {self.limit} requests/minute")
+            limit = self.limit
+            key = "_global"
+        if not limit:
             return
         while True:
             with self.lock:
+                window = self.windows.setdefault(key, deque())
                 now = time.time()
-                while self.calls and now - self.calls[0] > 60:
-                    self.calls.popleft()
-                if len(self.calls) < self.limit:
-                    self.calls.append(now)
+                while window and now - window[0] > 60:
+                    window.popleft()
+                if len(window) < limit:
+                    window.append(now)
                     return
-                sleep_for = 60 - (now - self.calls[0]) + 0.05
+                sleep_for = 60 - (now - window[0]) + 0.05
             time.sleep(min(sleep_for, 5))
 
 
@@ -207,7 +215,12 @@ def translate_online(api_key, messages, model):
     used_key = _pick_api_key(api_key)
 
     try:
-        _rpm_limiter.wait()
+        # Per-model rpm from the model config overrides the global limit
+        model_rpm = model_config.get("rpm")
+        if model_rpm:
+            _rpm_limiter.wait(key=model, limit_override=int(model_rpm))
+        else:
+            _rpm_limiter.wait()
         # Initialize API client
         client = OpenAI(api_key=used_key, base_url=base_url)
 

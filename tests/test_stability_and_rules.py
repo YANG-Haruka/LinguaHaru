@@ -115,7 +115,16 @@ def test_rpm_limiter():
     for _ in range(50):
         limiter.wait()
     check("under the limit there is no blocking", time.time() - start < 0.5)
-    check("window tracks calls", len(limiter.calls) == 50, str(len(limiter.calls)))
+    check("global window tracks calls", len(limiter.windows["_global"]) == 50,
+          str({k: len(v) for k, v in limiter.windows.items()}))
+
+    # Per-model override keeps its own window, independent of the global one
+    for _ in range(7):
+        limiter.wait(key="(Gemini) Gemini-2.0-flash", limit_override=15)
+    check("per-model window independent",
+          len(limiter.windows["(Gemini) Gemini-2.0-flash"]) == 7
+          and len(limiter.windows["_global"]) == 50,
+          str({k: len(v) for k, v in limiter.windows.items()}))
 
 
 def test_text_rules():
