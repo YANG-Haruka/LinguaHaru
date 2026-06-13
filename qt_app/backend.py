@@ -23,6 +23,9 @@ from config.languages_config import (
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+# Cap on concurrent file translations (mirrors app.MAX_CONCURRENT_TASKS).
+MAX_CONCURRENT_TASKS = 3
+
 # --- Extension -> translator module (mirrors app.TRANSLATOR_MODULES) ---------
 TRANSLATOR_MODULES = {
     ".docx": "translator.word_translator.WordTranslator",
@@ -160,6 +163,7 @@ _DEFAULT_CONFIG = {
     "auto_extract_glossary": False,
     "rpm_limit": 0,
     "qt_theme": "light",
+    "qt_ui_lang": "en",
     "temp_dir": "temp",
     "result_dir": "result",
     "log_dir": "log",
@@ -307,6 +311,208 @@ def save_glossary(glossary_name, header, rows):
             writer.writerow(header)
         writer.writerows(cleaned)
     return len(cleaned)
+
+
+# --- Proofread (post-translation editing) -----------------------------------
+# Pure reimplementation of app.py's proofread helpers (no Gradio). For the
+# desktop single-user app the WHOLE temp tree (flat + one level deep) is the
+# user's own, so there is no session-hash containment - but the path-traversal
+# guard (realpath must stay inside temp) is preserved.
+
+def _proofread_doc_dir(doc_name):
+    """Resolve a proofread doc name to a folder strictly inside temp dir."""
+    if not doc_name:
+        return None
+    temp_dir, _, _ = get_custom_paths()
+    base = os.path.realpath(temp_dir)
+    candidate = os.path.realpath(os.path.join(base, doc_name))
+    if candidate != base and not candidate.startswith(base + os.sep):
+        return None
+    return candidate
+
+
+def _is_finished_doc(folder):
+    """True if folder has dst_translated.json + manifest.json and is not PDF."""
+    if not os.path.exists(os.path.join(folder, "dst_translated.json")):
+        return False
+    manifest_path = os.path.join(folder, "manifest.json")
+    if not os.path.exists(manifest_path):
+        return False
+    try:
+        with open(manifest_path, encoding="utf-8") as f:
+            manifest = json.load(f)
+    except Exception:
+        return False
+    # PDF re-export would re-run the whole BabelDOC pass; exclude it
+    return str(manifest.get("file_extension", "")).lower() != ".pdf"
+
+
+def list_proofread_docs():
+    """List finished, proofreadable docs across the whole temp tree.
+
+    Scans flat legacy docs (temp/<doc>) and one level deep (temp/<sub>/<doc>),
+    requiring dst_translated.json + manifest.json and excluding PDF."""
+    temp_dir, _, _ = get_custom_paths()
+    docs = []
+    try:
+        for name in sorted(os.listdir(temp_dir)):
+            folder = os.path.join(temp_dir, name)
+            if not os.path.isdir(folder):
+                continue
+            if _is_finished_doc(folder):
+                docs.append(name)
+                continue
+            # One level deep (session-id style subdirs)
+            for sub in sorted(os.listdir(folder)):
+                subfolder = os.path.join(folder, sub)
+                if os.path.isdir(subfolder) and _is_finished_doc(subfolder):
+                    docs.append(f"{name}/{sub}")
+    except OSError:
+        pass
+    return docs
+
+
+def load_proofread_table(doc_name):
+    """Load dst_translated.json as a list of (count_src, original, translated)
+    tuples for the editable table. Raises FileNotFoundError if missing."""
+    folder = _proofread_doc_dir(doc_name)
+    dst_path = os.path.join(folder, "dst_translated.json") if folder else None
+    if not dst_path or not os.path.exists(dst_path):
+        raise FileNotFoundError(f"Translation data not found: {doc_name}")
+    with open(dst_path, encoding="utf-8") as f:
+        data = json.load(f)
+    return [
+        (item.get("count_src"), item.get("original", ""), item.get("translated", ""))
+        for item in data
+    ]
+
+
+def save_proofread_table(doc_name, rows):
+    """Write edited 'translated' values back into dst_translated.json.
+
+    rows is a list of (count_src, original, translated). Only the translated
+    field is updated. Validates the row count matches the file and (when
+    count_src is intact) the row order. Refuses to wipe a non-empty file with
+    all-empty translations (mirrors the glossary empty-over-nonempty guard).
+    Returns the number of changed rows."""
+    folder = _proofread_doc_dir(doc_name)
+    dst_path = os.path.join(folder, "dst_translated.json") if folder else None
+    if not dst_path or not os.path.exists(dst_path):
+        raise FileNotFoundError(f"Translation data not found: {doc_name}")
+    with open(dst_path, encoding="utf-8") as f:
+        data = json.load(f)
+    if rows is None or len(rows) != len(data):
+        got = 0 if rows is None else len(rows)
+        raise ValueError(
+            f"Row count mismatch: expected {len(data)}, got {got}. Edits not saved.")
+
+    # Refuse to overwrite non-empty translations with an all-empty table
+    had_any = any(str(item.get("translated", "")).strip() for item in data)
+    now_any = any(str(r[2]).strip() for r in rows)
+    if had_any and not now_any:
+        raise ValueError(
+            "Refused: all translations are empty but the file is not. Load it first.")
+
+    changed = 0
+    for i, item in enumerate(data):
+        # Guard against reordered rows when count_src is intact
+        try:
+            if int(rows[i][0]) != int(item.get("count_src")):
+                raise ValueError(
+                    f"Row count mismatch: expected {len(data)}, got {len(rows)}. "
+                    "Edits not saved.")
+        except (TypeError, ValueError) as e:
+            if isinstance(e, ValueError) and "mismatch" in str(e):
+                raise
+        new_val = rows[i][2]
+        new_val = "" if new_val is None else str(new_val)
+        if new_val != item.get("translated", ""):
+            item["translated"] = new_val
+            changed += 1
+    with open(dst_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+    return changed
+
+
+def export_proofread_doc(doc_name):
+    """Re-export the document from the (edited) dst_translated.json using the
+    original-format writer and the copied original file. Returns the absolute
+    path of the regenerated file. Raises on failure."""
+    folder = _proofread_doc_dir(doc_name)
+    if not folder or not os.path.isdir(folder):
+        raise FileNotFoundError(f"Translation data not found: {doc_name}")
+    with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as f:
+        manifest = json.load(f)
+    ext = str(manifest.get("file_extension", "")).lower()
+    src_json = os.path.join(folder, "src.json")
+    dst_json = os.path.join(folder, "dst_translated.json")
+    original_copy = os.path.join(
+        folder, manifest.get("original_copy", f"{os.path.basename(doc_name)}{ext}"))
+    for required in (src_json, dst_json, original_copy):
+        if not os.path.exists(required):
+            raise FileNotFoundError(f"Translation data not found: {doc_name}")
+
+    bilingual = bool(manifest.get("bilingual_mode", False))
+    translator_class = get_translator_class(
+        ext,
+        excel_mode_2=bool(manifest.get("use_xlwings", False)),
+        word_bilingual_mode=bilingual,
+        excel_bilingual_mode=bilingual,
+        subtitle_bilingual_mode=bilingual,
+        txt_bilingual_mode=bilingual,
+        md_bilingual_mode=bilingual,
+        epub_bilingual_mode=bilingual,
+        html_bilingual_mode=bilingual,
+    )
+    if not translator_class:
+        raise ValueError(f"Unsupported file type '{ext}'.")
+
+    temp_dir, result_dir, log_dir = get_custom_paths()
+    translator = translator_class(
+        original_copy, manifest.get("model", ""), False, "",
+        manifest.get("src_lang", "en"), manifest.get("dst_lang", "en"), False,
+        max_token=768, max_retries=1, thread_count=1, glossary_path=None,
+        temp_dir=temp_dir, result_dir=result_dir,
+        session_lang="en", log_dir=log_dir,
+    )
+    translator.write_translated_json_to_file(src_json, dst_json)
+
+    src_lang_code = manifest.get("src_lang", "en")
+    dst_lang_code = manifest.get("dst_lang", "en")
+    copy_base = os.path.splitext(os.path.basename(original_copy))[0]
+    produced = os.path.join(result_dir, f"{copy_base}_{src_lang_code}2{dst_lang_code}{ext}")
+    if not os.path.exists(produced):
+        raise RuntimeError(f"Export produced no file ({produced})")
+    doc_leaf = os.path.basename(doc_name.replace("/", os.sep))
+    final_path = os.path.join(
+        result_dir, f"{doc_leaf}_{src_lang_code}2{dst_lang_code}_proofread{ext}")
+    os.replace(produced, final_path)
+    return final_path
+
+
+# --- Multi-file results packaging -------------------------------------------
+def zip_results(output_paths, file_results, dest_dir=None):
+    """Zip the given output files together with a results.txt per-file status
+    report (mirrors app.process_multiple_files). ``file_results`` is a list of
+    (file_name, status, detail). Returns the zip path."""
+    import zipfile
+
+    if dest_dir is None:
+        _, dest_dir, _ = get_custom_paths()
+    os.makedirs(dest_dir, exist_ok=True)
+    zip_path = os.path.join(dest_dir, "translated_files.zip")
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in output_paths:
+            if p and os.path.exists(p):
+                zf.writestr(os.path.basename(p), open(p, "rb").read())
+        lines = []
+        for name, status, detail in file_results:
+            line = f"{name}: {status}"
+            if detail:
+                line += f" - {detail}"
+            lines.append(line)
+        zf.writestr("results.txt", "\n".join(lines) + "\n")
+    return zip_path
 
 
 # --- Language helpers -------------------------------------------------------

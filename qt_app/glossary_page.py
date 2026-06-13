@@ -15,28 +15,32 @@ from qfluentwidgets import (
 )
 
 from qt_app import backend
+from qt_app.i18n import tr
 
 
 class GlossaryPage(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
         self.setObjectName("GlossaryPage")
+        self._lang = lang
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
-        layout.addWidget(StrongBodyLabel("Glossary Editor"))
+        self.title = StrongBodyLabel(tr("Edit Glossary", lang))
+        layout.addWidget(self.title)
 
         top = QHBoxLayout()
-        top.addWidget(BodyLabel("Glossary:"))
+        self.glossary_label = BodyLabel(tr("Glossary", lang) + ":")
+        top.addWidget(self.glossary_label)
         self.combo = ComboBox()
         self.combo.setMinimumWidth(220)
         self.refresh_combo()
         top.addWidget(self.combo)
         top.addStretch(1)
-        self.load_btn = PushButton(FluentIcon.SYNC, "Load")
+        self.load_btn = PushButton(FluentIcon.SYNC, tr("Load Glossary", lang))
         self.load_btn.clicked.connect(self.on_load)
-        self.save_btn = PrimaryPushButton(FluentIcon.SAVE, "Save")
+        self.save_btn = PrimaryPushButton(FluentIcon.SAVE, tr("Save Glossary", lang))
         self.save_btn.clicked.connect(self.on_save)
         top.addWidget(self.load_btn)
         top.addWidget(self.save_btn)
@@ -51,6 +55,13 @@ class GlossaryPage(QWidget):
         self._header = []
         if self.combo.count():
             self.on_load()
+
+    def retranslate(self, lang):
+        self._lang = lang
+        self.title.setText(tr("Edit Glossary", lang))
+        self.glossary_label.setText(tr("Glossary", lang) + ":")
+        self.load_btn.setText(tr("Load Glossary", lang))
+        self.save_btn.setText(tr("Save Glossary", lang))
 
     def refresh_combo(self):
         current = self.combo.currentText() if self.combo.count() else None
@@ -104,5 +115,5 @@ class GlossaryPage(QWidget):
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
-        bar("Glossary", text, orient=1, isClosable=True,
+        bar(tr("Glossary", self._lang), text, orient=1, isClosable=True,
             position=InfoBarPosition.TOP, duration=3000, parent=self)

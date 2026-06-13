@@ -14,11 +14,14 @@ from qfluentwidgets import (
 )
 
 from qt_app import backend
+from qt_app.i18n import tr
 from config.translation_history import (
     TranslationHistoryManager, format_duration, format_tokens,
 )
 
-_COLUMNS = ["Status", "Time", "Duration", "Tokens", "Languages", "Model", "File"]
+# label keys for the table header columns (resolved per UI language)
+_COLUMN_KEYS = ["Status", "Time", "Duration", "Tokens",
+                "Source Language", "Model", "Upload File"]
 
 
 def open_folder(path):
@@ -37,19 +40,21 @@ def open_folder(path):
 
 
 class HistoryPage(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
         self.setObjectName("HistoryPage")
+        self._lang = lang
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
         top = QHBoxLayout()
-        top.addWidget(StrongBodyLabel("Translation History"))
+        self.title = StrongBodyLabel(tr("Translation History", lang))
+        top.addWidget(self.title)
         top.addStretch(1)
-        self.refresh_btn = PushButton(FluentIcon.SYNC, "Refresh")
+        self.refresh_btn = PushButton(FluentIcon.SYNC, tr("Refresh Records", lang))
         self.refresh_btn.clicked.connect(self.reload)
-        self.open_btn = PushButton(FluentIcon.FOLDER, "Open Output Folder")
+        self.open_btn = PushButton(FluentIcon.FOLDER, tr("Open Output Folder", lang))
         self.open_btn.clicked.connect(self.on_open_folder)
         top.addWidget(self.refresh_btn)
         top.addWidget(self.open_btn)
@@ -58,13 +63,24 @@ class HistoryPage(QWidget):
         self.table = TableWidget()
         self.table.setBorderVisible(True)
         self.table.setBorderRadius(8)
-        self.table.setColumnCount(len(_COLUMNS))
-        self.table.setHorizontalHeaderLabels(_COLUMNS)
+        self.table.setColumnCount(len(_COLUMN_KEYS))
+        self._apply_headers()
         self.table.setSelectionBehavior(TableWidget.SelectRows)
         layout.addWidget(self.table, 1)
 
         self._records = []
         self.reload()
+
+    def _apply_headers(self):
+        self.table.setHorizontalHeaderLabels(
+            [tr(k, self._lang) for k in _COLUMN_KEYS])
+
+    def retranslate(self, lang):
+        self._lang = lang
+        self.title.setText(tr("Translation History", lang))
+        self.refresh_btn.setText(tr("Refresh Records", lang))
+        self.open_btn.setText(tr("Open Output Folder", lang))
+        self._apply_headers()
 
     def reload(self):
         _, _, log_dir = backend.get_custom_paths()

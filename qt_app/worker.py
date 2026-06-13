@@ -30,7 +30,8 @@ class TranslationWorker(QThread):
 
     def __init__(self, file_path, model, use_online, api_key, src_lang, dst_lang,
                  max_token, max_retries, thread_count, glossary_name,
-                 bilingual_flags, session_lang="en", parent=None):
+                 bilingual_flags, session_lang="en", isolation_subdir=None,
+                 parent=None):
         super().__init__(parent)
         self.file_path = file_path
         self.model = model
@@ -45,6 +46,10 @@ class TranslationWorker(QThread):
         # bilingual_flags: dict of config-key -> bool (e.g. word_bilingual_mode)
         self.bilingual_flags = dict(bilingual_flags or {})
         self.session_lang = session_lang
+        # Optional per-file subdir nested under temp/result/log to keep two
+        # uploads that share a base name from colliding (file_dir is derived
+        # from temp_dir/<basename>). None means use the shared dirs.
+        self.isolation_subdir = isolation_subdir
         self._stop = False
 
     def request_stop(self):
@@ -89,6 +94,12 @@ class TranslationWorker(QThread):
         dst_code = backend.language_code(self.dst_lang)
         gpath = backend.glossary_path(self.glossary_name) if self.glossary_name else None
         temp_dir, result_dir, log_dir = backend.get_custom_paths()
+        if self.isolation_subdir:
+            temp_dir = os.path.join(temp_dir, self.isolation_subdir)
+            result_dir = os.path.join(result_dir, self.isolation_subdir)
+            log_dir = os.path.join(log_dir, self.isolation_subdir)
+            for d in (temp_dir, result_dir, log_dir):
+                os.makedirs(d, exist_ok=True)
 
         from config.log_config import file_logger
         file_logger.create_file_log(os.path.basename(self.file_path), log_dir=log_dir)

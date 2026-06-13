@@ -1,11 +1,16 @@
 """Translate page: pick files, choose languages/model/glossary, translate.
 
-Translations run one file at a time on a TranslationWorker (QThread). Bilingual
-toggles appear contextually for the uploaded file types. On success an InfoBar
-shows and an "open output folder" button is enabled.
+Multi-file runs translate concurrently with a bounded pool (size = min(file
+count, backend.MAX_CONCURRENT_TASKS)). Each file runs on its own
+TranslationWorker (QThread); files that share a base name are isolated into a
+per-run subdir to avoid temp/result collisions. Per-file progress is aggregated
+into the ProgressBar + status. On completion a results summary is shown (and, for
+multi-file runs, a zip with a results.txt is produced). Stop cancels all
+in-flight files. Single-file behavior is unchanged.
 """
 
 import os
+import uuid
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QFormLayout,
@@ -18,35 +23,46 @@ from qfluentwidgets import (
 )
 
 from qt_app import backend
+from qt_app.i18n import tr
 from qt_app.worker import TranslationWorker
 from qt_app.history_page import open_folder
 
 
 class TranslatePage(QWidget):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
         self.setObjectName("TranslatePage")
+        self._lang = lang
         self._files = []
-        self._worker = None
+        self._workers = []          # active TranslationWorker list
+        self._progress = {}         # worker -> last fraction (for aggregation)
         self._last_output_dir = None
         self._bilingual_switches = {}  # config-key -> SwitchButton
+        # multi-file run state
+        self._queue = []
+        self._results = []          # successful output paths
+        self._file_results = []     # (name, status, detail)
+        self._run_subdir = None
+        self._running = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
-        layout.addWidget(StrongBodyLabel("Translate"))
+        self.title = StrongBodyLabel(tr("Translate", lang))
+        layout.addWidget(self.title)
 
         # --- File picker ---
         file_row = QHBoxLayout()
-        self.pick_btn = PushButton(FluentIcon.DOCUMENT, "Choose Files")
+        self.pick_btn = PushButton(FluentIcon.DOCUMENT, tr("Upload Files", lang))
         self.pick_btn.clicked.connect(self.on_pick_files)
         file_row.addWidget(self.pick_btn)
-        self.files_label = BodyLabel("No files selected")
+        self.files_label = BodyLabel(tr("Please select file(s) to translate.", lang))
         file_row.addWidget(self.files_label, 1)
         layout.addLayout(file_row)
-        layout.addWidget(CaptionLabel(
-            "Accepted: " + " ".join(backend.accepted_extensions())))
+        self.accepted_label = CaptionLabel(
+            "Accepted: " + " ".join(backend.accepted_extensions()))
+        layout.addWidget(self.accepted_label)
 
         # --- Languages with swap ---
         lang_row = QHBoxLayout()
@@ -64,10 +80,12 @@ class TranslatePage(QWidget):
             lambda v: backend.set_config("default_dst_lang", v))
         self.swap_btn = ToolButton(FluentIcon.ROTATE)
         self.swap_btn.clicked.connect(self.on_swap)
-        lang_row.addWidget(BodyLabel("From:"))
+        self.from_label = BodyLabel(tr("Source Language", lang))
+        self.to_label = BodyLabel(tr("Target Language", lang))
+        lang_row.addWidget(self.from_label)
         lang_row.addWidget(self.src_combo, 1)
         lang_row.addWidget(self.swap_btn)
-        lang_row.addWidget(BodyLabel("To:"))
+        lang_row.addWidget(self.to_label)
         lang_row.addWidget(self.dst_combo, 1)
         layout.addLayout(lang_row)
 
@@ -83,7 +101,8 @@ class TranslatePage(QWidget):
         self.online_switch.checkedChanged.connect(self.on_online_toggle)
         online_row.addWidget(self.online_switch)
         online_row.addStretch(1)
-        model_form.addRow(BodyLabel("Use online model"), online_row)
+        self.online_label = BodyLabel(tr("Use Online Model", lang))
+        model_form.addRow(self.online_label, online_row)
 
         model_row = QHBoxLayout()
         self.model_combo = ComboBox()
@@ -92,16 +111,18 @@ class TranslatePage(QWidget):
         self.refresh_models_btn = ToolButton(FluentIcon.SYNC)
         self.refresh_models_btn.clicked.connect(self.on_refresh_models)
         model_row.addWidget(self.refresh_models_btn)
-        model_form.addRow(BodyLabel("Model"), model_row)
+        self.model_label = BodyLabel(tr("Models", lang))
+        model_form.addRow(self.model_label, model_row)
 
         self.api_key_edit = PasswordLineEdit()
-        self.api_key_edit.setPlaceholderText("Enter your API key here")
-        self.api_key_label = BodyLabel("API Key")
+        self.api_key_edit.setPlaceholderText(tr("Enter your API key here", lang))
+        self.api_key_label = BodyLabel(tr("API Key", lang))
         model_form.addRow(self.api_key_label, self.api_key_edit)
 
         self.glossary_combo = ComboBox()
         self.glossary_combo.addItems(backend.get_glossary_files())
-        model_form.addRow(BodyLabel("Glossary"), self.glossary_combo)
+        self.glossary_label = BodyLabel(tr("Glossary", lang))
+        model_form.addRow(self.glossary_label, self.glossary_combo)
 
         layout.addWidget(model_card)
 
@@ -114,9 +135,9 @@ class TranslatePage(QWidget):
 
         # --- Action buttons ---
         action_row = QHBoxLayout()
-        self.translate_btn = PrimaryPushButton(FluentIcon.SEND, "Translate")
+        self.translate_btn = PrimaryPushButton(FluentIcon.SEND, tr("Translate", lang))
         self.translate_btn.clicked.connect(self.on_translate)
-        self.stop_btn = PushButton(FluentIcon.CANCEL, "Stop")
+        self.stop_btn = PushButton(FluentIcon.CANCEL, tr("Stop Translation", lang))
         self.stop_btn.clicked.connect(self.on_stop)
         self.stop_btn.setEnabled(False)
         action_row.addWidget(self.translate_btn)
@@ -133,7 +154,7 @@ class TranslatePage(QWidget):
 
         # --- Result ---
         result_row = QHBoxLayout()
-        self.open_output_btn = PushButton(FluentIcon.FOLDER, "Open Output Folder")
+        self.open_output_btn = PushButton(FluentIcon.FOLDER, tr("Open Output Folder", lang))
         self.open_output_btn.setEnabled(False)
         self.open_output_btn.clicked.connect(
             lambda: open_folder(self._last_output_dir))
@@ -145,6 +166,24 @@ class TranslatePage(QWidget):
 
         self.refresh_model_list()
         self._update_api_key_visibility()
+
+    # --- i18n ---
+    def retranslate(self, lang):
+        self._lang = lang
+        self.title.setText(tr("Translate", lang))
+        self.pick_btn.setText(tr("Upload Files", lang))
+        if not self._files:
+            self.files_label.setText(tr("Please select file(s) to translate.", lang))
+        self.from_label.setText(tr("Source Language", lang))
+        self.to_label.setText(tr("Target Language", lang))
+        self.online_label.setText(tr("Use Online Model", lang))
+        self.model_label.setText(tr("Models", lang))
+        self.api_key_label.setText(tr("API Key", lang))
+        self.api_key_edit.setPlaceholderText(tr("Enter your API key here", lang))
+        self.glossary_label.setText(tr("Glossary", lang))
+        self.translate_btn.setText(tr("Translate", lang))
+        self.stop_btn.setText(tr("Stop Translation", lang))
+        self.open_output_btn.setText(tr("Open Output Folder", lang))
 
     # --- helpers ---
     @staticmethod
@@ -182,7 +221,7 @@ class TranslatePage(QWidget):
     def on_pick_files(self):
         exts = backend.accepted_extensions()
         filt = "Supported files (" + " ".join(f"*{e}" for e in exts) + ");;All files (*)"
-        paths, _ = QFileDialog.getOpenFileNames(self, "Choose files", "", filt)
+        paths, _ = QFileDialog.getOpenFileNames(self, tr("Upload Files", self._lang), "", filt)
         if not paths:
             return
         self._files = paths
@@ -208,7 +247,7 @@ class TranslatePage(QWidget):
             label_key = key
             sw.checkedChanged.connect(
                 lambda v, k=label_key: backend.set_config(k, v))
-            row.addWidget(BodyLabel(backend.BILINGUAL_LABEL.get(key, key)))
+            row.addWidget(BodyLabel(tr(backend.BILINGUAL_LABEL.get(key, key), self._lang)))
             row.addStretch(1)
             row.addWidget(sw)
             container = QWidget()
@@ -235,42 +274,64 @@ class TranslatePage(QWidget):
             self.model_combo.clear()
             self.model_combo.addItems(models or ["(no models found)"])
             self._set_combo(self.model_combo, current)
-            self._info("Models", status)
+            self._info(tr("Models", self._lang), status)
         else:
             backend.scan_local_models(force_refresh=True)
             self.refresh_model_list()
-            self._info("Models", "Local model list refreshed.")
+            self._info(tr("Models", self._lang), "Local model list refreshed.")
 
     def on_translate(self):
+        if self._running:
+            return
         if not self._files:
-            self._info("Translate", "Please choose file(s) first.", error=True)
+            self._info(tr("Translate", self._lang),
+                       tr("Please select file(s) to translate.", self._lang), error=True)
             return
         model = self.model_combo.currentText()
         if not model or model == "(no models found)":
-            self._info("Translate", "Please select a model.", error=True)
+            self._info(tr("Translate", self._lang),
+                       tr("Please select a model first", self._lang), error=True)
             return
         use_online = self.online_switch.isChecked()
         api_key = self.api_key_edit.text()
         if use_online and not api_key:
-            self._info("Translate", "API key is required for online models.", error=True)
+            self._info(tr("Translate", self._lang),
+                       tr("API key is required for online models.", self._lang), error=True)
             return
 
-        # one file at a time; queue the rest
+        # Detect base-name collisions; only those files need isolation subdirs.
+        bases = [os.path.splitext(os.path.basename(p))[0] for p in self._files]
+        self._needs_isolation = len(set(bases)) != len(bases)
+        self._run_subdir = ("run_" + uuid.uuid4().hex[:8]) if self._needs_isolation else None
+
         self._queue = list(self._files)
+        self._total = len(self._files)
         self._results = []
+        self._file_results = []
+        self._workers = []
+        self._progress = {}
+        self._running = True
         self.translate_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        self._start_next()
+        self.open_output_btn.setEnabled(False)
+        self.progress.setValue(0)
+
+        pool = min(self._total, backend.MAX_CONCURRENT_TASKS)
+        for _ in range(pool):
+            self._start_next()
 
     def _start_next(self):
         if not self._queue:
-            self._finish_all()
             return
         file_path = self._queue.pop(0)
         config = backend.read_config()
         use_online = self.online_switch.isChecked()
         flags = {k: sw.isChecked() for k, sw in self._bilingual_switches.items()}
-        self._worker = TranslationWorker(
+        # Isolate by a per-file subdir only when base names collide.
+        isolation = None
+        if self._needs_isolation:
+            isolation = os.path.join(self._run_subdir, uuid.uuid4().hex[:6])
+        worker = TranslationWorker(
             file_path=file_path,
             model=self.model_combo.currentText(),
             use_online=use_online,
@@ -282,45 +343,91 @@ class TranslatePage(QWidget):
             thread_count=backend.thread_count_for_mode(use_online),
             glossary_name=self.glossary_combo.currentText(),
             bilingual_flags=flags,
+            session_lang=self._lang,
+            isolation_subdir=isolation,
         )
-        self._worker.progress.connect(self.on_progress)
-        self._worker.finished.connect(self.on_file_finished)
-        self._worker.failed.connect(self.on_file_failed)
-        self.status_label.setText(f"Translating {os.path.basename(file_path)}...")
-        self._worker.start()
+        worker._lh_file = file_path
+        worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
+        worker.finished.connect(lambda p, m, w=worker: self.on_file_finished(w, p, m))
+        worker.failed.connect(lambda msg, w=worker: self.on_file_failed(w, msg))
+        self._workers.append(worker)
+        self._progress[worker] = 0.0
+        worker.start()
+        self.status_label.setText(
+            tr("Translating", self._lang) + f" {os.path.basename(file_path)}...")
 
-    def on_progress(self, value, desc):
-        self.progress.setValue(int(value * 100))
+    def _aggregate_progress(self):
+        # Finished files count as 1.0; in-flight files use their last fraction.
+        finished = self._total - len(self._workers) - len(self._queue)
+        running_frac = sum(self._progress.values())
+        total_frac = finished + running_frac
+        return int((total_frac / self._total) * 100) if self._total else 0
+
+    def on_progress(self, worker, value, desc):
+        self._progress[worker] = float(value)
+        self.progress.setValue(self._aggregate_progress())
         if desc:
-            self.status_label.setText(desc)
+            name = os.path.basename(getattr(worker, "_lh_file", ""))
+            self.status_label.setText(f"{name}: {desc}" if name else desc)
 
-    def on_file_finished(self, output_path, missing):
+    def _retire(self, worker):
+        if worker in self._workers:
+            self._workers.remove(worker)
+        self._progress.pop(worker, None)
+        worker.wait(2000)
+        # Launch the next queued file to keep the pool full.
+        if self._queue and self._running:
+            self._start_next()
+        if not self._workers and not self._queue:
+            self._finish_all()
+
+    def on_file_finished(self, worker, output_path, missing):
+        name = os.path.basename(getattr(worker, "_lh_file", output_path))
         self._results.append(output_path)
         self._last_output_dir = os.path.dirname(output_path)
         self.open_output_btn.setEnabled(True)
+        detail = ""
         if missing:
-            self._info("Translate",
-                       f"Done with {len(missing)} missing segment(s): {os.path.basename(output_path)}")
-        self._start_next()
+            tmpl = tr("Missing Segments", self._lang)
+            detail = tmpl.format(count=len(missing)) if "{count}" in tmpl else f"{len(missing)} missing"
+        self._file_results.append((name, "ok", detail))
+        self._retire(worker)
 
-    def on_file_failed(self, message):
-        self.translate_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self.status_label.setText(message)
-        self._info("Translate", message, error=True)
+    def on_file_failed(self, worker, message):
+        name = os.path.basename(getattr(worker, "_lh_file", "?"))
+        self._file_results.append((name, "failed", message))
+        self.status_label.setText(f"{name}: {message}")
+        self._retire(worker)
 
     def on_stop(self):
-        if self._worker and self._worker.isRunning():
-            self._worker.request_stop()
-            self.status_label.setText("Stopping...")
+        self.status_label.setText(tr("Stopping", self._lang) + "...")
+        for worker in list(self._workers):
+            if worker.isRunning():
+                worker.request_stop()
+        # Drop anything not yet started so the pool drains.
+        self._queue = []
 
     def _finish_all(self):
+        self._running = False
         self.translate_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
-        if self._results:
+        ok = [r for r in self._file_results if r[1] == "ok"]
+        failed = [r for r in self._file_results if r[1] == "failed"]
+        if ok:
             self.progress.setValue(100)
-            self.status_label.setText(f"Completed {len(self._results)} file(s).")
-            self._info("Translate", f"Completed {len(self._results)} file(s).")
+        # For multi-file runs, package a zip with a per-file results.txt.
+        if len(self._file_results) > 1 and self._results:
+            try:
+                zip_path = backend.zip_results(self._results, self._file_results)
+                self._last_output_dir = os.path.dirname(zip_path)
+                self.open_output_btn.setEnabled(True)
+            except Exception:  # noqa: BLE001 - zipping is best-effort
+                pass
+        summary = f"{tr('Completed Files', self._lang)}: {len(ok)}"
+        if failed:
+            summary += f" | {tr('Failed', self._lang)}: {len(failed)}"
+        self.status_label.setText(summary)
+        self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
 
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
