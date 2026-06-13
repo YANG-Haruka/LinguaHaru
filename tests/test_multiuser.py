@@ -147,13 +147,50 @@ def test_concurrent_no_collision():
           and os.path.isdir(os.path.join(WORK, "result", "userB")))
 
 
+def test_proofread_cross_session_blocked():
+    print("proofread is scoped to the caller's session (no IDOR)")
+    import app
+
+    temp_dir, _, _ = app.get_custom_paths()
+
+    def _make_doc(session_id, doc):
+        folder = os.path.join(temp_dir, session_id, doc)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "dst_translated.json"), "w", encoding="utf-8") as f:
+            json.dump([{"count_src": 1, "original": "x", "translated": "y"}], f)
+        with open(os.path.join(folder, "manifest.json"), "w", encoding="utf-8") as f:
+            json.dump({"file_extension": ".txt"}, f)
+
+    sidA, sidB = "sessAAAAAAAA", "sessBBBBBBBB"
+    _make_doc(sidA, "docA")
+    _make_doc(sidB, "docB")
+    try:
+        listed_a = app.list_proofread_docs(sidA)
+        check("A sees its own doc", f"{sidA}/docA" in listed_a, str(listed_a))
+        check("A does NOT see B's doc", f"{sidB}/docB" not in listed_a, str(listed_a))
+
+        # A cannot resolve B's doc even by guessing the path
+        check("A cannot resolve B's doc dir",
+              app._proofread_doc_dir(f"{sidB}/docB", sidA) is None)
+        check("B can resolve its own doc dir",
+              app._proofread_doc_dir(f"{sidB}/docB", sidB) is not None)
+        # Classic traversal still blocked
+        check("traversal still blocked",
+              app._proofread_doc_dir("../config/system_config", sidA) is None)
+    finally:
+        import shutil
+        shutil.rmtree(os.path.join(temp_dir, sidA), ignore_errors=True)
+        shutil.rmtree(os.path.join(temp_dir, sidB), ignore_errors=True)
+
+
 def main():
     import shutil
     shutil.rmtree(WORK, ignore_errors=True)
     os.makedirs(WORK, exist_ok=True)
     install_fake_llm()
 
-    for fn in (test_session_id_derivation, test_stop_isolation, test_concurrent_no_collision):
+    for fn in (test_session_id_derivation, test_stop_isolation, test_concurrent_no_collision,
+               test_proofread_cross_session_blocked):
         try:
             fn()
         except Exception:

@@ -902,12 +902,25 @@ def open_folder_path(path):
 # Proofread (post-translation editing) Functions
 #-------------------------------------------------------------------------
 
-def _proofread_doc_dir(doc_name):
-    """Resolve a proofread doc name to a folder strictly inside the temp dir"""
+def _proofread_doc_dir(doc_name, session_id=None):
+    """Resolve a proofread doc name to a folder inside the temp dir.
+
+    A per-session doc ("<session_id>/<doc>") must belong to the CALLER's
+    session — this blocks cross-session access (IDOR) in multi-user mode.
+    Flat legacy docs ("<doc>", from before session isolation) are owner-less
+    and remain accessible."""
     if not doc_name:
         return None
     temp_dir, _, _ = get_custom_paths()
     base = os.path.realpath(temp_dir)
+
+    norm = doc_name.replace("\\", "/")
+    if "/" in norm:
+        owner = norm.split("/", 1)[0]
+        if not session_id or owner != session_id:
+            app_logger.warning(f"Rejected cross-session proofread doc: {doc_name!r}")
+            return None
+
     candidate = os.path.realpath(os.path.join(base, doc_name))
     if not candidate.startswith(base + os.sep):
         app_logger.warning(f"Rejected proofread doc outside temp dir: {doc_name!r}")
@@ -915,12 +928,14 @@ def _proofread_doc_dir(doc_name):
     return candidate
 
 
-def list_proofread_docs():
-    """List temp/<doc> folders holding a finished translation (dst_translated.json
-    + manifest.json).
+def list_proofread_docs(session_id=None):
+    """List finished translations (dst_translated.json + manifest.json) the
+    caller may proofread.
 
-    PDF is excluded for now: its writer goes through BabelDOC, which re-runs
-    the whole translation pass instead of a cheap JSON-to-document rewrite."""
+    Only the CALLER's own session folder (temp/<session_id>/<doc>) is scanned,
+    plus owner-less flat legacy docs (temp/<doc>, from before session
+    isolation) — never other users' session folders. PDF is excluded: its
+    writer goes through BabelDOC, which re-runs the whole translation pass."""
     temp_dir, _, _ = get_custom_paths()
     docs = []
 
@@ -939,41 +954,41 @@ def list_proofread_docs():
         return str(manifest.get("file_extension", "")).lower() != ".pdf"
 
     try:
+        # Flat legacy docs (pre-isolation, owner-less)
         for name in sorted(os.listdir(temp_dir)):
             folder = os.path.join(temp_dir, name)
-            if not os.path.isdir(folder):
-                continue
-            # Flat layout (legacy): temp/<doc>
-            if _is_finished_doc(folder):
+            if os.path.isdir(folder) and _is_finished_doc(folder):
                 docs.append(name)
-                continue
-            # Per-session layout: temp/<session_id>/<doc>
-            for sub in sorted(os.listdir(folder)):
-                subfolder = os.path.join(folder, sub)
-                if os.path.isdir(subfolder) and _is_finished_doc(subfolder):
-                    docs.append(f"{name}/{sub}")
+        # Only the caller's own session folder
+        if session_id:
+            sess_dir = os.path.join(temp_dir, session_id)
+            if os.path.isdir(sess_dir):
+                for sub in sorted(os.listdir(sess_dir)):
+                    subfolder = os.path.join(sess_dir, sub)
+                    if os.path.isdir(subfolder) and _is_finished_doc(subfolder):
+                        docs.append(f"{session_id}/{sub}")
     except OSError as e:
         app_logger.warning(f"Cannot list proofread docs: {e}")
     return docs
 
 
-def refresh_proofread_docs(current_value, session_lang):
-    """Refresh the proofread document dropdown"""
+def refresh_proofread_docs(current_value, session_lang, request: gr.Request = None):
+    """Refresh the proofread document dropdown (scoped to the caller's session)"""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-    docs = list_proofread_docs()
+    docs = list_proofread_docs(_session_id_for_request(request))
     value = current_value if current_value in docs else None
     status = "" if docs else labels.get("No proofread documents",
                                         "No proofreadable documents found. Finish a translation first (PDF is not supported).")
     return gr.update(choices=docs, value=value), status
 
 
-def load_proofread_table(doc_name, session_lang):
+def load_proofread_table(doc_name, session_lang, request: gr.Request = None):
     """Load dst_translated.json into an editable table (count_src, original, translated)"""
     import pandas as pd
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
     if not doc_name:
         return gr.update(), ""
-    folder = _proofread_doc_dir(doc_name)
+    folder = _proofread_doc_dir(doc_name, _session_id_for_request(request))
     dst_path = os.path.join(folder, "dst_translated.json") if folder else None
     if not dst_path or not os.path.exists(dst_path):
         return gr.update(), labels.get("Proofread folder missing", "Translation data not found: {name}").format(name=doc_name)
@@ -991,13 +1006,13 @@ def load_proofread_table(doc_name, session_lang):
         return gr.update(), f"Error: {e}"
 
 
-def save_proofread_table(doc_name, table, session_lang):
+def save_proofread_table(doc_name, table, session_lang, request: gr.Request = None):
     """Write edited 'translated' values back to dst_translated.json.
 
     Only the translated field is updated; row count (and count_src order when
     available) must match the file."""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-    folder = _proofread_doc_dir(doc_name)
+    folder = _proofread_doc_dir(doc_name, _session_id_for_request(request))
     dst_path = os.path.join(folder, "dst_translated.json") if folder else None
     if not dst_path or not os.path.exists(dst_path):
         return labels.get("Proofread folder missing", "Translation data not found: {name}").format(name=doc_name or "?")
@@ -1032,11 +1047,11 @@ def save_proofread_table(doc_name, table, session_lang):
         return f"Error: {e}"
 
 
-def export_proofread_doc(doc_name, session_lang):
+def export_proofread_doc(doc_name, session_lang, request: gr.Request = None):
     """Re-export the document from the (possibly edited) dst_translated.json,
     using the writer of the original format and the copied original file."""
     labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-    folder = _proofread_doc_dir(doc_name)
+    folder = _proofread_doc_dir(doc_name, _session_id_for_request(request))
     if not folder or not os.path.isdir(folder):
         return gr.update(value=None, visible=False), labels.get(
             "Proofread folder missing", "Translation data not found: {name}").format(name=doc_name or "?")
