@@ -1872,6 +1872,18 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
 
             app_logger.debug(f"Found direct math formula, created placeholder: {placeholder}")
 
+        elif tag_name == 'fldSimple':
+            # Paragraph-level simple field (a direct child of <w:p>, e.g. a
+            # mid-sentence PAGE field). Handled here so its placeholder is
+            # emitted at the right spot in full_text and the field is rebuilt
+            # in position on write-back. Without this branch the field would
+            # be dropped from the text stream and re-inserted out of order.
+            field_result = process_simple_field_run(child, namespaces, len(runs))
+            if field_result:
+                field_result['position'] = len(full_text)
+                full_text += field_result['display_text']
+                field_info.append(field_result)
+
         elif tag_name == 'hyperlink':
             # Inline hyperlink: its display text IS translated, wrapped in
             # marker placeholders so the link element can be rebuilt at this
@@ -1959,9 +1971,11 @@ def process_field_run(run, namespaces, run_idx):
     return None
 
 def process_simple_field_run(run, namespaces, run_idx):
-    """Process a run containing simple fields"""
-    fld_simples = run.xpath('.//w:fldSimple', namespaces=namespaces)
-    
+    """Process a run containing simple fields, or a fldSimple element itself
+    (paragraph-level simple fields are direct children of <w:p>)."""
+    # descendant-or-self: handles both a wrapping run and a bare fldSimple
+    fld_simples = run.xpath('descendant-or-self::w:fldSimple', namespaces=namespaces)
+
     if fld_simples:
         instr = fld_simples[0].get(f'{{{namespaces["w"]}}}instr', '')
         
@@ -3886,6 +3900,13 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     if field_info and any(f.get('type') == 'hyperlink' for f in field_info):
         direct_hyperlinks = paragraph.xpath('./w:hyperlink', namespaces=namespaces)
 
+    # Paragraph-level simple fields (direct children of <w:p>) captured in
+    # field_info are rebuilt at their placeholder positions, so the originals
+    # must be removed - otherwise they linger at the front, out of order
+    direct_simple_fields = []
+    if field_info and any(f.get('type') == 'simple_field' for f in field_info):
+        direct_simple_fields = paragraph.xpath('./w:fldSimple', namespaces=namespaces)
+
     # Get formatting from the first text run if available, or use original structure
     formatting = None
     if original_structure and original_structure.get('runs_info'):
@@ -3917,6 +3938,10 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     # Remove hyperlinks that will be rebuilt from field_info markers
     for hyperlink in direct_hyperlinks:
         paragraph.remove(hyperlink)
+
+    # Remove paragraph-level simple fields that will be rebuilt from field_info
+    for fld_simple in direct_simple_fields:
+        paragraph.remove(fld_simple)
 
     # Add new text content with math formulas and fields
     if math_info or field_info:

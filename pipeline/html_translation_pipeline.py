@@ -9,7 +9,7 @@ from lxml import html as lxml_html
 
 from .epub_translation_pipeline import (
     _iter_blocks, _apply_to_block, _extract_block, _has_block_descendant,
-    HLINK_RE, INLINE_RE)
+    _insert_original_sibling, _plain_text, HLINK_RE, INLINE_RE)
 from .skip_pipeline import should_translate
 from .txt_translation_pipeline import read_file_with_encoding
 from config.log_config import app_logger
@@ -65,7 +65,8 @@ def extract_html_content_to_json(file_path, temp_dir):
 
 
 def write_translated_content_to_html(file_path, original_json_path, translated_json_path,
-                                     temp_dir, result_dir, src_lang=None, dst_lang=None):
+                                     temp_dir, result_dir, src_lang=None, dst_lang=None,
+                                     bilingual_mode=False):
     content, encoding = read_file_with_encoding(file_path)
     root = _parse_html(content)
 
@@ -84,10 +85,14 @@ def write_translated_content_to_html(file_path, original_json_path, translated_j
             continue
         translated = translations.get(item["count_src"])
         if translated:
+            original_plain = _plain_text(item["value"])
             if item.get("head"):
                 el.text = translated
             else:
                 _apply_to_block(el, translated, item.get("links"), item.get("inlines"))
+            if (bilingual_mode and original_plain
+                    and translated.strip() != original_plain.strip()):
+                _insert_original_sibling(el, original_plain)
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"

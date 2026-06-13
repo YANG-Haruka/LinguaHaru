@@ -241,6 +241,130 @@ def test_docx_bilingual():
           "Second paragraph of content" in xml and T + "Second paragraph of content" in xml, xml[:500])
 
 
+# -------------------------------------------------------------------- html --
+def test_html_bilingual():
+    print("HTML bilingual: original inserted as sibling block after translation")
+    from pipeline.html_translation_pipeline import (
+        extract_html_content_to_json, write_translated_content_to_html)
+    from lxml import html as lxml_html
+
+    src = os.path.join(WORK_DIR, "bi_test.html")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write("<!DOCTYPE html><html><head><title>Doc title text</title>"
+                "<style>body { color: red; }</style></head>"
+                "<body><h1>Main heading content</h1>"
+                "<p>First paragraph of body text.</p>"
+                "<p>Second paragraph here too.</p>"
+                "</body></html>")
+
+    src_json = extract_html_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_html(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           src_lang="en", dst_lang="ja", bilingual_mode=True)
+    with open(out, encoding="utf-8") as f:
+        content = f.read()
+
+    check("translation present", T + "First paragraph of body text." in content, content)
+    check("original present alongside translation",
+          content.count("First paragraph of body text.") == 2, content)
+    check("heading bilingual", T + "Main heading content" in content
+          and content.count("Main heading content") == 2, content)
+    check("css untouched", "color: red" in content, content)
+
+    # Structure intact: each translated <p> is immediately followed by a
+    # sibling <p> holding the original (translation first, original after)
+    root = lxml_html.fromstring(content)
+    body = root.find(".//body")
+    blocks = [el for el in body if el.tag in ("h1", "p")]
+    texts = [el.text_content() for el in blocks]
+    idx_t = texts.index(T + "First paragraph of body text.")
+    check("original is a sibling right after the translated block",
+          texts[idx_t + 1] == "First paragraph of body text.", str(texts))
+    check("p element count doubled (4 blocks: 2 translated + 2 original)",
+          sum(1 for el in body if el.tag == "p") == 4,
+          str([el.tag for el in body]))
+
+    # Monolingual default unchanged
+    out_mono = write_translated_content_to_html(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                                src_lang="en", dst_lang="fr")
+    with open(out_mono, encoding="utf-8") as f:
+        mono = f.read()
+    check("default stays monolingual",
+          mono.count("First paragraph of body text.") == 1, mono)
+
+
+# -------------------------------------------------------------------- epub --
+def test_epub_bilingual():
+    print("EPUB bilingual: original sibling block after translation, zip structure intact")
+    from pipeline.epub_translation_pipeline import (
+        extract_epub_content_to_json, write_translated_content_to_epub)
+    from lxml import etree
+
+    src = os.path.join(WORK_DIR, "bi_book.epub")
+    chapter = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Chapter Title Text</title></head>'
+        "<body><h1>The First Chapter</h1>"
+        "<p>Plain narrative paragraph text.</p>"
+        "<p>Another paragraph of prose.</p>"
+        "</body></html>"
+    )
+    opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+           'unique-identifier="id"><metadata/><manifest>'
+           '<item id="c1" href="chapter1.xhtml" media-type="application/xhtml+xml"/>'
+           '</manifest><spine><itemref idref="c1"/></spine></package>')
+    container = ('<?xml version="1.0"?><container version="1.0" '
+                 'xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
+                 '<rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>'
+                 "</rootfiles></container>")
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr("META-INF/container.xml", container, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("content.opf", opf, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("chapter1.xhtml", chapter, compress_type=zipfile.ZIP_DEFLATED)
+
+    src_json = extract_epub_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_epub(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           src_lang="en", dst_lang="ja", bilingual_mode=True)
+
+    with zipfile.ZipFile(out) as z:
+        first = z.infolist()[0]
+        chap = z.read("chapter1.xhtml").decode("utf-8")
+        names = z.namelist()
+
+    check("mimetype first and uncompressed",
+          first.filename == "mimetype" and first.compress_type == zipfile.ZIP_STORED,
+          f"{first.filename} / {first.compress_type}")
+    check("all members preserved", set(names) == {"mimetype", "META-INF/container.xml",
+                                                  "content.opf", "chapter1.xhtml"}, str(names))
+    check("translation present", T + "Plain narrative paragraph text." in chap, chap)
+    check("original present alongside translation",
+          chap.count("Plain narrative paragraph text.") == 2, chap)
+    check("heading bilingual",
+          T + "The First Chapter" in chap and chap.count("The First Chapter") == 2, chap)
+
+    # Structure intact: original is a sibling block right after the translation
+    root = etree.fromstring(chap.encode("utf-8"))
+    body = next(el for el in root.iter() if etree.QName(el).localname.lower() == "body")
+    blocks = [el for el in body if etree.QName(el).localname.lower() in ("h1", "p")]
+    texts = ["".join(el.itertext()) for el in blocks]
+    idx_t = texts.index(T + "Plain narrative paragraph text.")
+    check("original is a sibling right after the translated block",
+          texts[idx_t + 1] == "Plain narrative paragraph text.", str(texts))
+    p_count = sum(1 for el in body if etree.QName(el).localname.lower() == "p")
+    check("p element count doubled (4: 2 translated + 2 original)", p_count == 4,
+          str([etree.QName(el).localname for el in body]))
+
+    # Monolingual default unchanged
+    out_mono = write_translated_content_to_epub(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                                src_lang="en", dst_lang="fr")
+    with zipfile.ZipFile(out_mono) as z:
+        chap_mono = z.read("chapter1.xhtml").decode("utf-8")
+    check("default stays monolingual",
+          chap_mono.count("Plain narrative paragraph text.") == 1, chap_mono)
+
+
 # ------------------------------------------------------------- model fetch --
 def test_model_fetch():
     print("Online model auto-fetch: /models -> (Fetched) configs, graceful failure")
@@ -350,7 +474,7 @@ def main():
 
     for fn in (test_srt_bilingual, test_vtt_bilingual, test_txt_bilingual,
                test_md_bilingual, test_xlsx_bilingual_openpyxl, test_docx_bilingual,
-               test_model_fetch):
+               test_html_bilingual, test_epub_bilingual, test_model_fetch):
         try:
             fn()
         except Exception:
