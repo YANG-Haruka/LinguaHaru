@@ -5,6 +5,9 @@ import os
 import re
 import datetime
 from lxml import etree
+
+# User-supplied XML: disable entity resolution / DTD / network access (XXE)
+_SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
 from zipfile import ZipFile, ZIP_DEFLATED
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
@@ -109,7 +112,7 @@ def extract_word_content_to_json(file_path, save_temp_dir):
             'm': 'http://schemas.openxmlformats.org/officeDocument/2006/math'  # Math namespace
         }
         
-        document_tree = etree.fromstring(document_xml)
+        document_tree = etree.fromstring(document_xml, parser=_SAFE_PARSER)
         
         # Parse numbering and styles information
         numbering_info = {}
@@ -198,7 +201,7 @@ def extract_footnotes_translatable_content(footnotes_xml, namespaces):
         return footnote_items
     
     try:
-        footnotes_tree = etree.fromstring(footnotes_xml)
+        footnotes_tree = etree.fromstring(footnotes_xml, parser=_SAFE_PARSER)
         
         # Get all footnotes, excluding separator and continuation separator footnotes
         footnotes = footnotes_tree.xpath('//w:footnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]', namespaces=namespaces)
@@ -284,7 +287,7 @@ def extract_smartart_content(docx, namespaces):
                 diagram_index = int(diagram_match.group(1))
                 
                 drawing_xml = docx.read(drawing_path)
-                drawing_tree = etree.fromstring(drawing_xml)
+                drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
                 
                 # Find all shapes with text content in SmartArt
                 shapes = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
@@ -2612,7 +2615,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         document_xml_path = os.path.join(temp_dir, 'word', 'document.xml')
         with open(document_xml_path, 'rb') as f:
             document_xml = f.read()
-        document_tree = etree.fromstring(document_xml)
+        document_tree = etree.fromstring(document_xml, parser=_SAFE_PARSER)
         
         # Load and update numbering.xml if exists
         numbering_tree = None
@@ -2630,7 +2633,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         if os.path.exists(footnotes_xml_path):
             with open(footnotes_xml_path, 'rb') as f:
                 footnotes_xml = f.read()
-            footnotes_tree = etree.fromstring(footnotes_xml)
+            footnotes_tree = etree.fromstring(footnotes_xml, parser=_SAFE_PARSER)
             if bilingual_mode:
                 update_footnotes_with_bilingual_format(footnotes_tree, original_data, translations, namespaces)
             else:
@@ -2858,7 +2861,7 @@ def update_smartart_with_translations(temp_dir, original_data, translations, nam
             if os.path.exists(drawing_file_path):
                 with open(drawing_file_path, 'rb') as f:
                     drawing_xml = f.read()
-                drawing_tree = etree.fromstring(drawing_xml)
+                drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
                 
                 for item in items:
                     count = str(item['count_src'])
@@ -4748,7 +4751,7 @@ def apply_smartart_translations_bilingual(temp_dir, original_data, translations,
             if os.path.exists(drawing_file_path):
                 with open(drawing_file_path, 'rb') as f:
                     drawing_xml = f.read()
-                drawing_tree = etree.fromstring(drawing_xml)
+                drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
 
                 for item in items:
                     item_id = str(item.get("id", item.get("count_src")))

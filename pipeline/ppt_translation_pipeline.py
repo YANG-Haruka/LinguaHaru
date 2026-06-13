@@ -2,6 +2,9 @@
 import json
 import os
 from lxml import etree
+
+# User-supplied XML: disable entity resolution / DTD / network access (XXE)
+_SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
 from zipfile import ZipFile
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
@@ -39,7 +42,7 @@ def extract_ppt_content_to_json(file_path, temp_dir):
             for slide_index, slide_path in enumerate(slides, start=1):
                 try:
                     slide_xml = pptx.read(slide_path)
-                    slide_tree = etree.fromstring(slide_xml)
+                    slide_tree = etree.fromstring(slide_xml, parser=_SAFE_PARSER)
                     
                     # Extract text from text boxes (by paragraph)
                     count = _extract_text_boxes(slide_tree, slide_index, namespaces, content_data, count)
@@ -97,7 +100,7 @@ def _extract_chart_parts(pptx, namespaces: Dict, content_data: List, count: int)
                          if re.match(r"ppt/charts/chart\d+\.xml$", name))
     for chart_file in chart_files:
         try:
-            tree = etree.fromstring(pptx.read(chart_file))
+            tree = etree.fromstring(pptx.read(chart_file), parser=_SAFE_PARSER)
         except etree.XMLSyntaxError as e:
             app_logger.warning(f"Failed to parse {chart_file}: {e}")
             continue
@@ -131,7 +134,7 @@ def _apply_chart_parts_translations(pptx, chart_items: List[Dict], translations:
 
     for chart_file, items in items_by_file.items():
         try:
-            tree = etree.fromstring(pptx.read(chart_file))
+            tree = etree.fromstring(pptx.read(chart_file), parser=_SAFE_PARSER)
         except (KeyError, etree.XMLSyntaxError) as e:
             app_logger.warning(f"Failed to load {chart_file} for write-back: {e}")
             continue
@@ -175,7 +178,7 @@ def _extract_smartart(pptx, namespaces: Dict, content_data: List, count: int) ->
             diagram_index = int(diagram_match.group(1))
             
             drawing_xml = pptx.read(drawing_path)
-            drawing_tree = etree.fromstring(drawing_xml)
+            drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
             
             # Find all shapes with text content in SmartArt
             shapes = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
@@ -393,7 +396,7 @@ def _extract_notes(pptx, notes_path: str, slide_index: int, namespaces: Dict, co
     """Extract text from slide notes, merging runs within the same paragraph."""
     try:
         notes_xml = pptx.read(notes_path)
-        notes_tree = etree.fromstring(notes_xml)
+        notes_tree = etree.fromstring(notes_xml, parser=_SAFE_PARSER)
         
         # Get all paragraphs in notes
         paragraphs = notes_tree.xpath('.//a:p', namespaces=namespaces)
@@ -597,7 +600,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
             for slide_index, slide_path in enumerate(slides, start=1):
                 try:
                     slide_xml = pptx.read(slide_path)
-                    slide_tree = etree.fromstring(slide_xml)
+                    slide_tree = etree.fromstring(slide_xml, parser=_SAFE_PARSER)
                     
                     # Get items for this slide
                     slide_items = [item for item in original_data if item.get('slide_index') == slide_index]
@@ -627,7 +630,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     continue
                 try:
                     notes_xml = pptx.read(notes_path)
-                    notes_tree = etree.fromstring(notes_xml)
+                    notes_tree = etree.fromstring(notes_xml, parser=_SAFE_PARSER)
                     
                     # Get notes items for this slide
                     notes_items = [item for item in original_data 
@@ -695,7 +698,7 @@ def _apply_smartart_translations(pptx, smartart_items: List[Dict], translations:
         try:
             if drawing_path in pptx.namelist():
                 drawing_xml = pptx.read(drawing_path)
-                drawing_tree = etree.fromstring(drawing_xml)
+                drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
                 
                 for item in items:
                     count = str(item['count_src'])

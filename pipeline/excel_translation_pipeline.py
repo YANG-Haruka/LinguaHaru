@@ -8,6 +8,9 @@ import shutil
 from datetime import datetime
 from zipfile import ZipFile
 from lxml import etree
+
+# User-supplied XML: disable entity resolution / DTD / network access (XXE)
+_SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
 from typing import Dict, List, Any, Tuple, Set
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
@@ -748,7 +751,7 @@ def _extract_drawing_content_from_excel(file_path: str, content_data: List, coun
                     sheet_name = sheet_drawing_map.get(drawing_index, f"Sheet{drawing_index}")
 
                     drawing_xml = excel_zip.read(drawing_path)
-                    drawing_tree = etree.fromstring(drawing_xml)
+                    drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
 
                     count = _extract_textboxes_from_drawing(
                         drawing_tree, namespaces, content_data, count,
@@ -1061,7 +1064,7 @@ def _extract_smartart_from_excel(file_path: str, content_data: List, count: int)
                     diagram_index = int(diagram_match.group(1))
 
                     drawing_xml = excel_zip.read(drawing_path)
-                    drawing_tree = etree.fromstring(drawing_xml)
+                    drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
 
                     shapes = drawing_tree.xpath('.//dsp:sp[.//dsp:txBody]', namespaces=namespaces)
 
@@ -1702,7 +1705,7 @@ def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: Lis
                     if drawing_path in original_zip.namelist():
                         try:
                             drawing_xml = original_zip.read(drawing_path)
-                            drawing_tree = etree.fromstring(drawing_xml)
+                            drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
 
                             for item in items:
                                 count = str(item['count_src'])
@@ -1942,7 +1945,7 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                     if drawing_path in original_zip.namelist():
                         try:
                             drawing_xml = original_zip.read(drawing_path)
-                            drawing_tree = etree.fromstring(drawing_xml)
+                            drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
 
                             for item in items:
                                 count = str(item['count_src'])
@@ -2177,7 +2180,7 @@ def _apply_excel_drawing_bilingual_translations_to_file(file_path: str, drawing_
                     if drawing_path in original_zip.namelist():
                         try:
                             drawing_xml = original_zip.read(drawing_path)
-                            drawing_tree = etree.fromstring(drawing_xml)
+                            drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
 
                             for item in items:
                                 count = str(item['count_src'])
@@ -2295,7 +2298,7 @@ def _apply_excel_smartart_bilingual_translations_to_file(file_path: str, smartar
                     if drawing_path in original_zip.namelist():
                         try:
                             drawing_xml = original_zip.read(drawing_path)
-                            drawing_tree = etree.fromstring(drawing_xml)
+                            drawing_tree = etree.fromstring(drawing_xml, parser=_SAFE_PARSER)
 
                             for item in items:
                                 count = str(item['count_src'])
