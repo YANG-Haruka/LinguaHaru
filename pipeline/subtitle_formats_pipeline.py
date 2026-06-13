@@ -84,7 +84,8 @@ def extract_vtt_content_to_json(file_path, temp_dir):
 
 
 def write_translated_content_to_vtt(file_path, original_json_path, translated_json_path,
-                                    temp_dir, result_dir, src_lang=None, dst_lang=None):
+                                    temp_dir, result_dir, src_lang=None, dst_lang=None,
+                                    bilingual_mode=False):
     layout, _, translations = _load_for_writeback(
         file_path, temp_dir, original_json_path, translated_json_path)
 
@@ -92,7 +93,12 @@ def write_translated_content_to_vtt(file_path, original_json_path, translated_js
     for line_index, count in layout["line_map"].items():
         translated = translations.get(count)
         if translated:
-            lines[int(line_index)] = translated.replace("␊", "\n").replace("␍", "")
+            translated = translated.replace("␊", "\n").replace("␍", "")
+            original = lines[int(line_index)]
+            if bilingual_mode and translated.strip() != original.strip():
+                # Bilingual cue: translation first, original below
+                translated = f"{translated}\n{original}"
+            lines[int(line_index)] = translated
 
     result_path = _result_path(file_path, result_dir, src_lang, dst_lang)
     with open(result_path, "w", encoding="utf-8") as f:

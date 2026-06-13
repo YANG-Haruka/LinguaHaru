@@ -126,6 +126,71 @@ def load_model_config(model):
         app_logger.error(f"Failed to parse JSON file: {json_path}")
         return None
 
+def _sanitize_model_filename(model_id):
+    """Make a model id safe to use as a Windows/Unix filename."""
+    sanitized = model_id
+    for char in '<>:"/\\|?*':
+        sanitized = sanitized.replace(char, '_')
+    return sanitized.strip() or "model"
+
+
+def fetch_models_into_configs(selected_model, api_key, timeout=5):
+    """
+    Query the selected model config's base_url via the OpenAI-compatible
+    GET /models endpoint and write a "(Fetched) <id>.json" config (copying
+    base_url and generation params from the selected config, with "model"
+    replaced) for every model id not already covered by a hand-written config.
+
+    Re-fetching overwrites the same "(Fetched) ..." files, so the list
+    self-dedupes. Failures are graceful: nothing is written.
+
+    Returns:
+        tuple: (added_count, error_message). error_message is None on success.
+    """
+    base_config = load_model_config(selected_model)
+    if not base_config or not base_config.get("base_url"):
+        return 0, f"No base_url in config for '{selected_model}'"
+
+    keys = _split_keys(api_key)
+    try:
+        client = OpenAI(api_key=keys[0] if keys else (api_key or "-"),
+                        base_url=base_config["base_url"], timeout=timeout)
+        page = client.models.list()
+    except Exception as e:
+        app_logger.warning(f"Model list fetch failed for {selected_model}: {e}")
+        return 0, f"Model list fetch failed: {e}"
+
+    # Model ids already covered by hand-written (non-fetched) configs
+    covered_ids = set()
+    try:
+        for fname in os.listdir(CONFIG_DIR):
+            if not fname.endswith(".json") or fname.startswith("(Fetched)"):
+                continue
+            existing = load_model_config(os.path.splitext(fname)[0])
+            if existing and existing.get("model"):
+                covered_ids.add(existing["model"])
+    except OSError as e:
+        return 0, f"Cannot read config dir: {e}"
+
+    added = 0
+    for entry in getattr(page, "data", None) or []:
+        model_id = getattr(entry, "id", None)
+        if not model_id or model_id in covered_ids:
+            continue
+        new_config = dict(base_config)
+        new_config["model"] = model_id
+        target = os.path.join(CONFIG_DIR, f"(Fetched) {_sanitize_model_filename(model_id)}.json")
+        try:
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump(new_config, f, ensure_ascii=False, indent=4)
+            added += 1
+        except OSError as e:
+            app_logger.warning(f"Could not write fetched model config {target}: {e}")
+
+    app_logger.info(f"Fetched model list from {base_config['base_url']}: {added} config(s) written")
+    return added, None
+
+
 def fix_json_format(text):
     """
     Fix the JSON format of the response text.

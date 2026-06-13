@@ -21,6 +21,7 @@ test.py
 .qodo
 
 tests/_roundtrip_work/
+tests/_bilingual_work/
 tests/fixtures/
 config/text_rules.json
 .playwright-mcp/
