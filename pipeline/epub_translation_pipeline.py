@@ -4,6 +4,7 @@
 # All other zip members (css, images, fonts, opf, ncx) pass through
 # untouched. The mimetype member is kept first and uncompressed as the EPUB
 # spec requires.
+import copy
 import json
 import os
 import posixpath
@@ -15,6 +16,13 @@ from lxml import etree
 # Inline anchors are preserved through translation with marker placeholders
 # (same scheme as the Word pipeline); the link text itself IS translated
 HLINK_RE = re.compile(r"\{\{HLINK_(\d+)\}\}(.*?)\{\{/HLINK_\1\}\}", re.DOTALL)
+# Text-less inline elements (img, br, ...) are preserved the same way: a
+# self-closing {{INLINE_n}} marker stands in for the element, which is
+# re-inserted verbatim at write-back. Losing an image would be data loss.
+INLINE_RE = re.compile(r"\{\{INLINE_(\d+)\}\}")
+# Combined scan used at write-back to rebuild a block in one pass
+_TOKEN_RE = re.compile(
+    r"\{\{HLINK_(\d+)\}\}(.*?)\{\{/HLINK_\1\}\}|\{\{INLINE_(\d+)\}\}", re.DOTALL)
 
 from .skip_pipeline import should_translate
 from config.log_config import app_logger
@@ -42,16 +50,24 @@ def _local_name(el):
     return etree.QName(el).localname.lower() if isinstance(el.tag, str) else ""
 
 
+def _has_block_descendant(el):
+    return any(_local_name(d) in BLOCK_TAGS for d in el.iterdescendants())
+
+
 def _iter_blocks(root):
     """Translatable block elements in document order.
 
     Nested blocks (e.g. a <p> inside an <li>) are yielded for the innermost
-    block only, so no text is extracted twice."""
+    block only, so no text is extracted twice. A block that CONTAINS nested
+    blocks but also has direct head text (e.g. <li>head<ul>...</ul></li>)
+    is yielded too, so the head text is not silently left untranslated;
+    such blocks are handled head-text-only (see "head" items)."""
     for el in root.iter():
         if _local_name(el) not in BLOCK_TAGS:
             continue
-        # Skip if a descendant is itself a block (translate the leaves)
-        if any(_local_name(d) in BLOCK_TAGS for d in el.iterdescendants()):
+        if _has_block_descendant(el):
+            if (el.text or "").strip():
+                yield el
             continue
         yield el
 
@@ -66,9 +82,16 @@ def extract_epub_content_to_json(file_path, temp_dir):
             if root is None:
                 continue
             for block_index, el in enumerate(_iter_blocks(root)):
-                text, links = _extract_block(el)
+                head = _has_block_descendant(el)
+                if head:
+                    # Mixed container: only its direct head text is
+                    # translated; nested blocks are separate items
+                    text, links, inlines = (el.text or ""), None, None
+                else:
+                    text, links, inlines = _extract_block(el)
                 text = text.strip()
                 plain = HLINK_RE.sub(lambda m: m.group(2), text)
+                plain = INLINE_RE.sub("", plain)
                 if not plain.strip() or not should_translate(plain.strip()):
                     continue
                 count += 1
@@ -79,8 +102,12 @@ def extract_epub_content_to_json(file_path, temp_dir):
                     "doc_index": doc_index,
                     "block_index": block_index,
                 }
+                if head:
+                    item["head"] = True
                 if links:
                     item["links"] = links
+                if inlines:
+                    item["inlines"] = inlines
                 content_data.append(item)
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -95,11 +122,14 @@ def extract_epub_content_to_json(file_path, temp_dir):
 
 
 def _extract_block(el):
-    """Block text with inline anchors wrapped in {{HLINK_n}} markers.
+    """Block text with inline anchors wrapped in {{HLINK_n}} markers and
+    text-less inline elements (img, br, ...) replaced by {{INLINE_n}}.
 
-    Returns (text, links) where links holds each anchor's attributes for
-    rebuilding at write-back."""
+    Returns (text, links, inlines) where links holds each anchor's
+    attributes and inlines the serialized elements, both for rebuilding at
+    write-back."""
     links = []
+    inlines = []
 
     def render(node):
         out = node.text or ""
@@ -112,24 +142,34 @@ def _extract_block(el):
                 links.append({"attrib": dict(child.attrib)})
                 inner = "".join(child.itertext())
                 out += f"{{{{HLINK_{index}}}}}{inner}{{{{/HLINK_{index}}}}}"
+            elif not "".join(child.itertext()).strip():
+                # No text content (img, br, hr, empty span): keep verbatim
+                clone = copy.deepcopy(child)
+                clone.tail = None
+                index = len(inlines)
+                inlines.append(etree.tostring(clone, encoding="unicode"))
+                out += f"{{{{INLINE_{index}}}}}"
             else:
                 out += render(child)
             out += child.tail or ""
         return out
 
-    return render(el), links
+    return render(el), links, inlines
 
 
-def _apply_to_block(el, translated, links=None):
+def _apply_to_block(el, translated, links=None, inlines=None):
     """Write the translated text into a block element.
 
-    Anchors recorded at extraction are rebuilt at their marker positions.
-    Other simple blocks keep their structure; remaining mixed-content blocks
-    are replaced wholesale - losing inline tags beats keeping the source
-    language."""
+    Anchors and text-less inline elements recorded at extraction are rebuilt
+    at their marker positions. Other simple blocks keep their structure;
+    remaining mixed-content blocks are replaced wholesale - losing inline
+    tags beats keeping the source language."""
     children = [c for c in el if isinstance(c.tag, str)]
 
-    if links and "{{HLINK_" in translated:
+    # Any recorded inline element forces the rebuild path even if the
+    # translation dropped its marker: the fallback below re-appends it
+    has_markers = (links and "{{HLINK_" in translated) or bool(inlines)
+    if has_markers:
         for child in children:
             el.remove(child)
         ns_prefix = (el.tag.rsplit("}", 1)[0] + "}"
@@ -137,25 +177,39 @@ def _apply_to_block(el, translated, links=None):
         el.text = ""
         last_node = None
         pos = 0
-        for match in HLINK_RE.finditer(translated):
+        used_inlines = set()
+        for match in _TOKEN_RE.finditer(translated):
             leading = translated[pos:match.start()]
             if last_node is None:
                 el.text += leading
             else:
                 last_node.tail = (last_node.tail or "") + leading
-            anchor = etree.SubElement(el, ns_prefix + "a")
-            link_index = int(match.group(1))
-            if link_index < len(links):
-                for key, value in links[link_index].get("attrib", {}).items():
-                    anchor.set(key, value)
-            anchor.text = match.group(2)
-            last_node = anchor
+            if match.group(1) is not None:  # {{HLINK_n}}text{{/HLINK_n}}
+                anchor = etree.SubElement(el, ns_prefix + "a")
+                link_index = int(match.group(1))
+                if links and link_index < len(links):
+                    for key, value in links[link_index].get("attrib", {}).items():
+                        anchor.set(key, value)
+                anchor.text = match.group(2)
+                last_node = anchor
+            else:  # {{INLINE_n}}
+                inline_index = int(match.group(3))
+                if inlines and inline_index < len(inlines):
+                    node = etree.fromstring(inlines[inline_index])
+                    el.append(node)
+                    last_node = node
+                    used_inlines.add(inline_index)
             pos = match.end()
         trailing = translated[pos:]
         if last_node is None:
             el.text += trailing
         else:
             last_node.tail = (last_node.tail or "") + trailing
+        # A dropped {{INLINE_n}} marker must not lose the element (an image,
+        # typically): re-append any that the translation failed to carry
+        for inline_index, raw in enumerate(inlines or []):
+            if inline_index not in used_inlines:
+                el.append(etree.fromstring(raw))
         return
 
     if not children:
@@ -212,7 +266,13 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                             continue
                         translated = translations.get(item["count_src"])
                         if translated:
-                            _apply_to_block(el, translated, item.get("links"))
+                            if item.get("head"):
+                                # Head text of a mixed container: replace
+                                # only the direct text, keep nested blocks
+                                el.text = translated
+                            else:
+                                _apply_to_block(el, translated, item.get("links"),
+                                                item.get("inlines"))
                     data = etree.tostring(root, xml_declaration=True, encoding="utf-8")
 
                 # mimetype must stay uncompressed (and it is first in

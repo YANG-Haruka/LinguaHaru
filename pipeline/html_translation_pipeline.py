@@ -7,7 +7,9 @@ import os
 
 from lxml import html as lxml_html
 
-from .epub_translation_pipeline import _iter_blocks, _apply_to_block, _extract_block, HLINK_RE
+from .epub_translation_pipeline import (
+    _iter_blocks, _apply_to_block, _extract_block, _has_block_descendant,
+    HLINK_RE, INLINE_RE)
 from .skip_pipeline import should_translate
 from .txt_translation_pipeline import read_file_with_encoding
 from config.log_config import app_logger
@@ -24,9 +26,16 @@ def extract_html_content_to_json(file_path, temp_dir):
     content_data = []
     count = 0
     for block_index, el in enumerate(_iter_blocks(root)):
-        text, links = _extract_block(el)
+        head = _has_block_descendant(el)
+        if head:
+            # Mixed container (e.g. <li>head<ul>...</ul></li>): only its
+            # direct head text is translated; nested blocks are own items
+            text, links, inlines = (el.text or ""), None, None
+        else:
+            text, links, inlines = _extract_block(el)
         text = text.strip()
         plain = HLINK_RE.sub(lambda m: m.group(2), text)
+        plain = INLINE_RE.sub("", plain)
         if not plain.strip() or not should_translate(plain.strip()):
             continue
         count += 1
@@ -36,8 +45,12 @@ def extract_html_content_to_json(file_path, temp_dir):
             "value": text,
             "block_index": block_index,
         }
+        if head:
+            item["head"] = True
         if links:
             item["links"] = links
+        if inlines:
+            item["inlines"] = inlines
         content_data.append(item)
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -71,7 +84,10 @@ def write_translated_content_to_html(file_path, original_json_path, translated_j
             continue
         translated = translations.get(item["count_src"])
         if translated:
-            _apply_to_block(el, translated, item.get("links"))
+            if item.get("head"):
+                el.text = translated
+            else:
+                _apply_to_block(el, translated, item.get("links"), item.get("inlines"))
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"

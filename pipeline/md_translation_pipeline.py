@@ -111,6 +111,21 @@ def extract_md_content_to_json(file_path, temp_dir):
             position_index += 1
             continue
         
+        # Reference-style link definitions ([id]: url "title") are pure
+        # targets: translating them would corrupt the link. Keep them
+        # untouched (the optional "title" is not translated either).
+        # Footnote definitions ([^id]: prose) are NOT matched - their text
+        # is real content and goes through the normal path below.
+        if re.match(r'^\s{0,3}\[(?!\^)[^\]]+\]:\s*\S+\s*("[^"]*"|\'[^\']*\'|\([^)]*\))?\s*$', line):
+            structure_items.append({
+                "index": position_index,
+                "type": "link_definition",
+                "value": line,
+                "translate": False
+            })
+            position_index += 1
+            continue
+
         # Check if line is base64 image
         if is_base64_image(line):
             structure_items.append({
