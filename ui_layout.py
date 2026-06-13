@@ -1797,8 +1797,11 @@ def get_accepted_file_types():
     return accepted + available_optional_extensions()
 
 
-def create_settings_section(config):
+def create_settings_section(config, get_label=None):
     """Create settings section"""
+    if get_label is None:
+        get_label = lambda key: key
+
     initial_lan_mode = config.get("lan_mode", False)
     initial_default_online = config.get("default_online", False)
     initial_max_retries = config.get("max_retries", 4)
@@ -1849,13 +1852,13 @@ def create_settings_section(config):
     with gr.Row():
         with gr.Column(scale=1):
             auto_glossary_checkbox = gr.Checkbox(
-                label="AI Glossary Extraction",
+                label=get_label("AI Glossary Extraction"),
                 value=config.get("auto_extract_glossary", False),
-                info="Extract terms with the LLM before translating"
+                info=get_label("AI Glossary Extraction Info")
             )
         with gr.Column(scale=1):
             rpm_limit_number = gr.Number(
-                label="RPM Limit (0 = unlimited, restart to apply)",
+                label=get_label("RPM Limit (0 = unlimited, restart to apply)"),
                 value=config.get("rpm_limit", 0),
                 precision=0,
                 minimum=0
@@ -1868,11 +1871,12 @@ def create_settings_section(config):
         mark = "✅" if mod["available"] else "❌"
         install = "—" if mod["available"] else f"`{mod['install']}`"
         status_lines.append(f"| {mod['name']} | {mark} | {mod['detail']} | {install} |")
-    with gr.Accordion("Optional Modules", open=False):
+    with gr.Accordion(get_label("Optional Modules"), open=False) as optional_modules_acc:
         gr.Markdown("\n".join(status_lines))
 
     return (use_online_model, lan_mode_checkbox, max_retries_slider,
-            thread_count_slider, auto_glossary_checkbox, rpm_limit_number)
+            thread_count_slider, auto_glossary_checkbox, rpm_limit_number,
+            optional_modules_acc)
 
 
 def create_file_mode_checkboxes(config):
@@ -1880,6 +1884,7 @@ def create_file_mode_checkboxes(config):
     initial_excel_mode_2 = config.get("excel_mode_2", False)
     initial_excel_bilingual_mode = config.get("excel_bilingual_mode", False)
     initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
+    initial_pdf_bilingual_mode = config.get("pdf_bilingual_mode", False)
     initial_subtitle_bilingual_mode = config.get("subtitle_bilingual_mode", False)
     initial_txt_bilingual_mode = config.get("txt_bilingual_mode", False)
     initial_md_bilingual_mode = config.get("md_bilingual_mode", False)
@@ -1905,7 +1910,7 @@ def create_file_mode_checkboxes(config):
 
         pdf_bilingual_checkbox = gr.Checkbox(
             label="Use PDF Bilingual Mode",
-            value=False,
+            value=initial_pdf_bilingual_mode,
             visible=False
         )
 
@@ -2015,7 +2020,41 @@ def create_glossary_tab_section(config, get_glossary_files_func, get_default_glo
         glossary_editor_status = gr.Markdown("")
 
     return (glossary_editor_choice, glossary_table, glossary_load_btn,
-            glossary_save_btn, glossary_editor_status)
+            glossary_save_btn, glossary_editor_status, glossary_editor_acc)
+
+
+def create_proofread_tab_section(get_label=None, list_docs_func=None):
+    """Create the Proofread tab: pick a finished translation from temp/,
+    edit the translated column in a table, then re-export the document."""
+    if get_label is None:
+        get_label = lambda key: key
+    initial_docs = list_docs_func() if list_docs_func else []
+
+    with gr.Row(elem_id="proofread-picker-row"):
+        proofread_doc_choice = gr.Dropdown(
+            choices=initial_docs,
+            label=get_label("Proofread Document"),
+            value=None,
+            interactive=True,
+            elem_id="proofread-doc-dropdown"
+        )
+        proofread_refresh_btn = gr.Button(
+            f"🔄 {get_label('Refresh List')}",
+            size="sm",
+            elem_id="proofread-refresh-btn"
+        )
+
+    proofread_table = gr.Dataframe(interactive=True, label="",
+                                   elem_id="proofread-table")
+    with gr.Row():
+        proofread_save_btn = gr.Button(get_label("Save Edits"), size="sm", variant="primary")
+        proofread_export_btn = gr.Button(get_label("Re-export"), size="sm")
+    proofread_status = gr.Markdown("")
+    proofread_file = gr.File(label=get_label("Download Translated File"), visible=False,
+                             elem_id="proofread-file")
+
+    return (proofread_doc_choice, proofread_refresh_btn, proofread_table,
+            proofread_save_btn, proofread_export_btn, proofread_status, proofread_file)
 
 
 def create_main_interface(config, get_label=None):

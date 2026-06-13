@@ -42,6 +42,7 @@ import shutil
 import json
 from importlib import import_module
 from llmWrapper.offline_translation import populate_sum_model
+from llmWrapper.online_translation import HardApiError
 from typing import List, Tuple
 from config.log_config import app_logger
 import socket
@@ -156,7 +157,9 @@ def clean_gradio_cache():
                     targets = [item_path]
                 for target in targets:
                     try:
-                        if time.time() - os.path.getmtime(target) > 300:
+                        # 24h threshold: a 5-minute window wiped files that
+                        # users uploaded a while before clicking Translate
+                        if time.time() - os.path.getmtime(target) > 86400:
                             if os.path.isdir(target):
                                 shutil.rmtree(target, ignore_errors=True)
                             else:
@@ -236,6 +239,24 @@ def check_stop_requested():
             raise StopTranslationException("Translation stopped by user")
         return False
 
+def get_no_model_placeholder(session_lang="en"):
+    """Localized guidance entry shown in the model dropdown when no local model exists"""
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    return labels.get("No Local Model Placeholder",
+                      "No local model detected — install Ollama or enable online models in Settings")
+
+def is_no_model_placeholder(value):
+    """Check if the selected model value is the 'no local model' guidance entry (any language)"""
+    if not value:
+        return False
+    placeholders = {t.get("No Local Model Placeholder") for t in LABEL_TRANSLATIONS.values()
+                    if t.get("No Local Model Placeholder")}
+    return value in placeholders
+
+def local_model_choices(session_lang="en"):
+    """Local model list for the dropdown; falls back to a guidance placeholder"""
+    return local_models if local_models else [get_no_model_placeholder(session_lang)]
+
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang,
     use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name,
@@ -253,10 +274,17 @@ def modified_translate_button_click(
     reset_stop_flag()
 
     if not files:
-        return output_file_update, "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
+        return output_file_update, labels.get("Please select file(s) to translate.", "Please select file(s) to translate."), gr.update(value=stop_text, interactive=False)
+
+    # Block translation when no model is selected or only the guidance
+    # placeholder ("no local model detected") is selected
+    if not model:
+        return output_file_update, labels.get("Please select a model first", "Please select a model first."), gr.update(value=stop_text, interactive=False)
+    if is_no_model_placeholder(model):
+        return output_file_update, get_no_model_placeholder(session_lang), gr.update(value=stop_text, interactive=False)
 
     if use_online and not api_key:
-        return output_file_update, "API key is required for online models.", gr.update(value=stop_text, interactive=False)
+        return output_file_update, labels.get("API key is required for online models.", "API key is required for online models."), gr.update(value=stop_text, interactive=False)
 
     def wrapped_translate_func(files, model, src_lang, dst_lang,
                               use_online, api_key, max_retries, max_token, thread_count,
@@ -826,6 +854,191 @@ def open_folder_path(path):
 
 
 #-------------------------------------------------------------------------
+# Proofread (post-translation editing) Functions
+#-------------------------------------------------------------------------
+
+def _proofread_doc_dir(doc_name):
+    """Resolve a proofread doc name to a folder strictly inside the temp dir"""
+    if not doc_name:
+        return None
+    temp_dir, _, _ = get_custom_paths()
+    base = os.path.realpath(temp_dir)
+    candidate = os.path.realpath(os.path.join(base, doc_name))
+    if not candidate.startswith(base + os.sep):
+        app_logger.warning(f"Rejected proofread doc outside temp dir: {doc_name!r}")
+        return None
+    return candidate
+
+
+def list_proofread_docs():
+    """List temp/<doc> folders holding a finished translation (dst_translated.json
+    + manifest.json).
+
+    PDF is excluded for now: its writer goes through BabelDOC, which re-runs
+    the whole translation pass instead of a cheap JSON-to-document rewrite."""
+    temp_dir, _, _ = get_custom_paths()
+    docs = []
+    try:
+        for name in sorted(os.listdir(temp_dir)):
+            folder = os.path.join(temp_dir, name)
+            if not os.path.isdir(folder):
+                continue
+            if not os.path.exists(os.path.join(folder, "dst_translated.json")):
+                continue
+            manifest_path = os.path.join(folder, "manifest.json")
+            if not os.path.exists(manifest_path):
+                continue
+            try:
+                with open(manifest_path, encoding="utf-8") as f:
+                    manifest = json.load(f)
+            except Exception:
+                continue
+            if str(manifest.get("file_extension", "")).lower() == ".pdf":
+                continue
+            docs.append(name)
+    except OSError as e:
+        app_logger.warning(f"Cannot list proofread docs: {e}")
+    return docs
+
+
+def refresh_proofread_docs(current_value, session_lang):
+    """Refresh the proofread document dropdown"""
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    docs = list_proofread_docs()
+    value = current_value if current_value in docs else None
+    status = "" if docs else labels.get("No proofread documents",
+                                        "No proofreadable documents found. Finish a translation first (PDF is not supported).")
+    return gr.update(choices=docs, value=value), status
+
+
+def load_proofread_table(doc_name, session_lang):
+    """Load dst_translated.json into an editable table (count_src, original, translated)"""
+    import pandas as pd
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    if not doc_name:
+        return gr.update(), ""
+    folder = _proofread_doc_dir(doc_name)
+    dst_path = os.path.join(folder, "dst_translated.json") if folder else None
+    if not dst_path or not os.path.exists(dst_path):
+        return gr.update(), labels.get("Proofread folder missing", "Translation data not found: {name}").format(name=doc_name)
+    try:
+        with open(dst_path, encoding="utf-8") as f:
+            data = json.load(f)
+        df = pd.DataFrame({
+            "count_src": [item.get("count_src") for item in data],
+            labels.get("Original Text", "Original"): [item.get("original", "") for item in data],
+            labels.get("Translated Text", "Translation"): [item.get("translated", "") for item in data],
+        })
+        return df, labels.get("Loaded entries", "Loaded {count} row(s) from {name}").format(count=len(df), name=doc_name)
+    except Exception as e:
+        app_logger.exception(f"Error loading proofread table for {doc_name}")
+        return gr.update(), f"Error: {e}"
+
+
+def save_proofread_table(doc_name, table, session_lang):
+    """Write edited 'translated' values back to dst_translated.json.
+
+    Only the translated field is updated; row count (and count_src order when
+    available) must match the file."""
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    folder = _proofread_doc_dir(doc_name)
+    dst_path = os.path.join(folder, "dst_translated.json") if folder else None
+    if not dst_path or not os.path.exists(dst_path):
+        return labels.get("Proofread folder missing", "Translation data not found: {name}").format(name=doc_name or "?")
+    try:
+        with open(dst_path, encoding="utf-8") as f:
+            data = json.load(f)
+        if table is None or len(table) != len(data):
+            got = 0 if table is None else len(table)
+            return labels.get("Row count mismatch",
+                              "Row count mismatch: expected {expected}, got {got}. Edits not saved.").format(
+                                  expected=len(data), got=got)
+        changed = 0
+        for i, item in enumerate(data):
+            # Guard against reordered rows when count_src is intact
+            try:
+                if int(table.iloc[i, 0]) != int(item.get("count_src")):
+                    return labels.get("Row count mismatch",
+                                      "Row count mismatch: expected {expected}, got {got}. Edits not saved.").format(
+                                          expected=len(data), got=len(table))
+            except (TypeError, ValueError):
+                pass
+            new_val = table.iloc[i, 2]
+            new_val = "" if new_val is None else str(new_val)
+            if new_val != item.get("translated", ""):
+                item["translated"] = new_val
+                changed += 1
+        with open(dst_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        return labels.get("Edits saved", "Saved {count} edited row(s).").format(count=changed)
+    except Exception as e:
+        app_logger.exception(f"Error saving proofread edits for {doc_name}")
+        return f"Error: {e}"
+
+
+def export_proofread_doc(doc_name, session_lang):
+    """Re-export the document from the (possibly edited) dst_translated.json,
+    using the writer of the original format and the copied original file."""
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    folder = _proofread_doc_dir(doc_name)
+    if not folder or not os.path.isdir(folder):
+        return gr.update(value=None, visible=False), labels.get(
+            "Proofread folder missing", "Translation data not found: {name}").format(name=doc_name or "?")
+    try:
+        with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as f:
+            manifest = json.load(f)
+        ext = str(manifest.get("file_extension", "")).lower()
+        src_json = os.path.join(folder, "src.json")
+        dst_json = os.path.join(folder, "dst_translated.json")
+        original_copy = os.path.join(folder, manifest.get("original_copy", f"{doc_name}{ext}"))
+        for required in (src_json, dst_json, original_copy):
+            if not os.path.exists(required):
+                return gr.update(value=None, visible=False), labels.get(
+                    "Proofread folder missing", "Translation data not found: {name}").format(name=doc_name)
+
+        bilingual = bool(manifest.get("bilingual_mode", False))
+        translator_class = get_translator_class(
+            ext,
+            excel_mode_2=bool(manifest.get("use_xlwings", False)),
+            word_bilingual_mode=bilingual,
+            excel_bilingual_mode=bilingual,
+            subtitle_bilingual_mode=bilingual,
+            txt_bilingual_mode=bilingual,
+            md_bilingual_mode=bilingual,
+        )
+        if not translator_class:
+            return gr.update(value=None, visible=False), f"Unsupported file type '{ext}'."
+
+        temp_dir, result_dir, log_dir = get_custom_paths()
+        translator = translator_class(
+            original_copy, manifest.get("model", ""), False, "",
+            manifest.get("src_lang", "en"), manifest.get("dst_lang", "en"), False,
+            max_token=768, max_retries=1, thread_count=1, glossary_path=None,
+            temp_dir=temp_dir, result_dir=result_dir,
+            session_lang=session_lang, log_dir=log_dir
+        )
+        translator.write_translated_json_to_file(src_json, dst_json)
+
+        # Writers name the output after the input file; rename the fresh
+        # export to <doc>_<src>2<dst>_proofread<ext> so it does not get
+        # confused with the original translation result
+        src_lang_code = manifest.get("src_lang", "en")
+        dst_lang_code = manifest.get("dst_lang", "en")
+        copy_base = os.path.splitext(os.path.basename(original_copy))[0]
+        produced = os.path.join(result_dir, f"{copy_base}_{src_lang_code}2{dst_lang_code}{ext}")
+        if not os.path.exists(produced):
+            return gr.update(value=None, visible=False), f"Error: export produced no file ({produced})"
+        final_path = os.path.join(result_dir, f"{doc_name}_{src_lang_code}2{dst_lang_code}_proofread{ext}")
+        os.replace(produced, final_path)
+
+        return (gr.update(value=final_path, visible=True),
+                labels.get("Export completed", "Re-export completed"))
+    except Exception as e:
+        app_logger.exception(f"Error re-exporting proofread doc {doc_name}")
+        return gr.update(value=None, visible=False), f"Error: {e}"
+
+
+#-------------------------------------------------------------------------
 # Language and Localization Functions
 #-------------------------------------------------------------------------
 
@@ -951,14 +1164,32 @@ def set_labels(session_lang: str):
         tab_translate: gr.update(label=labels.get("Translate", "Translate")),
         tab_glossary: gr.update(label=labels.get("Glossary", "Glossary")),
         tab_settings: gr.update(label=labels.get("Settings", "Settings")),
-        tab_history: gr.update(label=labels.get("History", "History"))
+        tab_history: gr.update(label=labels.get("History", "History")),
+        # New entries are appended at the END so the demo.load outputs list
+        # stays positionally aligned (see demo.load below)
+        auto_glossary_checkbox: gr.update(
+            label=labels.get("AI Glossary Extraction", "AI Glossary Extraction"),
+            info=labels.get("AI Glossary Extraction Info", "Extract terms with the LLM before translating")),
+        rpm_limit_number: gr.update(
+            label=labels.get("RPM Limit (0 = unlimited, restart to apply)", "RPM Limit (0 = unlimited, restart to apply)")),
+        optional_modules_acc: gr.update(label=labels.get("Optional Modules", "Optional Modules")),
+        glossary_editor_acc: gr.update(label=labels.get("Edit Glossary", "Edit Glossary")),
+        glossary_load_btn: gr.update(value=labels.get("Load Glossary", "Load Glossary")),
+        glossary_save_btn: gr.update(value=labels.get("Save Glossary", "Save Glossary")),
+        tab_proofread: gr.update(label=labels.get("Proofread", "Proofread")),
+        proofread_doc_choice: gr.update(label=labels.get("Proofread Document", "Document"),
+                                        choices=list_proofread_docs()),
+        proofread_refresh_btn: gr.update(value=f"🔄 {labels.get('Refresh List', 'Refresh List')}"),
+        proofread_save_btn: gr.update(value=labels.get("Save Edits", "Save Edits")),
+        proofread_export_btn: gr.update(value=labels.get("Re-export", "Re-export")),
+        proofread_file: gr.update(label=labels.get("Download Translated File", "Download Translated File"))
     }
 
 #-------------------------------------------------------------------------
 # UI and Model Functions
 #-------------------------------------------------------------------------
 
-def update_model_list_and_api_input(use_online):
+def update_model_list_and_api_input(use_online, session_lang="en"):
     """Switch model options and show/hide API Key, update config"""
     # Update system config with new online mode
     update_online_mode(use_online)
@@ -986,12 +1217,13 @@ def update_model_list_and_api_input(use_online):
             gr.update(value=thread_count)
         )
     else:
+        choices = local_model_choices(session_lang)
         if default_local_model and default_local_model in local_models:
             default_local_value = default_local_model
         else:
-            default_local_value = local_models[0] if local_models else None
+            default_local_value = choices[0] if choices else None
         return (
-            gr.update(choices=local_models, value=default_local_value),
+            gr.update(choices=choices, value=default_local_value),
             gr.update(visible=False),
             gr.update(value=""),
             gr.update(value=thread_count)
@@ -1109,7 +1341,7 @@ def scan_online_models():
         return []
 
 
-def refresh_models(use_online, selected_model, api_key):
+def refresh_models(use_online, selected_model, api_key, session_lang="en"):
     """Refresh model list.
 
     Offline: re-scan local models. Online: query the selected config's
@@ -1133,8 +1365,9 @@ def refresh_models(use_online, selected_model, api_key):
         # Re-populate local models (force refresh to rescan)
         local_models = populate_sum_model(force_refresh=True) or []
         app_logger.info(f"Local models refreshed: {len(local_models)} entries")
+        choices = local_model_choices(session_lang)
         return (
-            gr.update(choices=local_models, value=local_models[0] if local_models else None),
+            gr.update(choices=choices, value=local_models[0] if local_models else choices[0]),
             f"Local model list refreshed: {len(local_models)} entries."
         )
 
@@ -1178,12 +1411,12 @@ def init_ui(request: gr.Request):
         else:
             model_value = online_models[0] if online_models else None
     else:
-        model_choices = local_models
+        model_choices = local_model_choices(user_lang)
         if default_local_model and default_local_model in local_models:
             model_value = default_local_model
         else:
-            model_value = local_models[0] if local_models else None
-    
+            model_value = model_choices[0] if model_choices else None
+
     label_updates = set_labels(user_lang)
 
     # Add visibility updates for max_retries, thread_count, and glossary
@@ -1333,10 +1566,10 @@ def translate_files(
     stop_text = labels.get("Stop Translation", "Stop Translation")
     
     if not files:
-        return gr.update(value=None, visible=False), "Please select file(s) to translate.", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), labels.get("Please select file(s) to translate.", "Please select file(s) to translate."), gr.update(value=stop_text, interactive=False)
 
     if use_online and not api_key:
-        return gr.update(value=None, visible=False), "API key is required for online models.", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), labels.get("API key is required for online models.", "API key is required for online models."), gr.update(value=stop_text, interactive=False)
 
     src_lang_code = get_language_code(src_lang)
     dst_lang_code = get_language_code(dst_lang)
@@ -1368,7 +1601,19 @@ def translate_files(
         return result[0], result[1], gr.update(value=stop_text, interactive=False)
         
     except StopTranslationException:
-        return gr.update(value=None, visible=False), "Translation stopped by user.", gr.update(value=stop_text, interactive=False)
+        return gr.update(value=None, visible=False), labels.get("Translation stopped by user.", "Translation stopped by user."), gr.update(value=stop_text, interactive=False)
+    except HardApiError as e:
+        # Unrecoverable API error: map to an actionable, localized message.
+        # The raw detail stays in the log only.
+        app_logger.error(f"Hard API error: {e}")
+        emsg = str(e).lower()
+        if "all api keys" in emsg:
+            msg = labels.get("API Keys Exhausted", "All API keys failed (invalid or out of quota). Please replace the key(s).")
+        elif any(m in emsg for m in ("quota", "insufficient", "balance", "402")):
+            msg = labels.get("API Quota Error", "Insufficient balance/quota. Please top up or switch to another key.")
+        else:
+            msg = labels.get("API Auth Error", "API key is invalid or expired. Please check the API Key at the top of the Translate tab.")
+        return gr.update(value=None, visible=False), msg, gr.update(value=stop_text, interactive=False)
     except Exception as e:
         return gr.update(value=None, visible=False), f"Error: {str(e)}", gr.update(value=stop_text, interactive=False)
 
@@ -1390,7 +1635,7 @@ def process_single_file(
     app_logger.info(f"Source language: {src_lang_code}, Target language: {dst_lang_code}, Model: {model}")
     
     file_name, file_extension = os.path.splitext(file.name)
-    
+
     translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode,
                                             subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode)
 
@@ -1399,6 +1644,22 @@ def process_single_file(
             gr.update(value=None, visible=False),
             f"Unsupported file type '{file_extension}'."
         )
+
+    # Get translated labels (used by the except handlers too)
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+
+    def continue_hint(translator_obj):
+        """Localized 'progress saved, use Continue Translation' hint, only when
+        temp progress actually exists (and the format supports continuing)."""
+        try:
+            if (translator_obj and file_extension.lower() != ".pdf"
+                    and os.path.exists(translator_obj.src_json_path)):
+                return " | " + labels.get(
+                    "Progress Saved Hint",
+                    "Progress saved. Re-upload the same file and click 'Continue Translation' to resume.")
+        except Exception:
+            pass
+        return ""
 
     try:
         # Pass check_stop_requested function to translator with custom paths
@@ -1416,22 +1677,21 @@ def process_single_file(
         # Add check_stop_requested as attribute
         translator.check_stop_requested = check_stop_requested
 
-        # Get translated labels
-        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-
         progress_callback(0, desc=f"{labels.get('Extracting text', 'Extracting text')}...")
 
         translated_file_path, missing_counts = translator.process(
             file_name, file_extension, progress_callback=progress_callback
         )
 
-        # Format completion message with tokens
+        # Format completion message with final stats (segments, speed, tokens)
         completion_msg = labels.get("Translation completed", "Translation completed")
         tokens_msg = labels.get("Total tokens used", "Total tokens used")
 
-        # Get total tokens from translator
+        final_stats = getattr(translator, 'final_stats', '')
         total_tokens = getattr(translator, 'total_tokens', 0)
-        if total_tokens > 0:
+        if final_stats:
+            final_msg = f"{completion_msg} | {final_stats}"
+        elif total_tokens > 0:
             # Format tokens with K suffix for thousands
             if total_tokens >= 1000:
                 tokens_str = f"{total_tokens / 1000:.1f}K"
@@ -1445,27 +1705,39 @@ def process_single_file(
 
         if missing_counts:
             msg = f"Warning: Missing segments for keys: {sorted(missing_counts)}"
+            if final_stats:
+                msg = f"{msg} | {final_stats}"
             return gr.update(value=translated_file_path, visible=True), msg
 
         return gr.update(value=translated_file_path, visible=True), final_msg
-    
+
     except StopTranslationException:
         app_logger.info("Translation stopped by user")
         # Save stopped status to history
-        if 'translator' in locals() and translator:
-            translator.save_stopped_summary()
-        return gr.update(value=None, visible=False), "Translation stopped by user."
+        translator_obj = locals().get('translator')
+        if translator_obj:
+            translator_obj.save_stopped_summary()
+        stop_msg = labels.get("Translation stopped by user.", "Translation stopped by user.")
+        return gr.update(value=None, visible=False), stop_msg + continue_hint(translator_obj)
+    except HardApiError:
+        # Save failed status, then let translate_files map it to an actionable message
+        translator_obj = locals().get('translator')
+        if translator_obj:
+            translator_obj.save_failed_summary()
+        raise
     except ValueError as e:
         # Save failed status to history
-        if 'translator' in locals() and translator:
-            translator.save_failed_summary()
-        return gr.update(value=None, visible=False), f"Translation failed: {str(e)}"
+        translator_obj = locals().get('translator')
+        if translator_obj:
+            translator_obj.save_failed_summary()
+        return gr.update(value=None, visible=False), f"Translation failed: {str(e)}" + continue_hint(translator_obj)
     except Exception as e:
         app_logger.exception("Error processing file")
         # Save failed status to history
-        if 'translator' in locals() and translator:
-            translator.save_failed_summary()
-        return gr.update(value=None, visible=False), f"Error: {str(e)}"
+        translator_obj = locals().get('translator')
+        if translator_obj:
+            translator_obj.save_failed_summary()
+        return gr.update(value=None, visible=False), f"Error: {str(e)}" + continue_hint(translator_obj)
     
 def process_multiple_files(
     files, model, src_lang_code, dst_lang_code,
@@ -1490,15 +1762,20 @@ def process_multiple_files(
                 file_name = os.path.basename(file_obj.name)
                 valid_files.append((file_obj, file_name))
         
+        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+
         if not valid_files:
             shutil.rmtree(temp_zip_dir)
-            return gr.update(value=None, visible=False), "No supported files found."
-        
+            return gr.update(value=None, visible=False), labels.get("No supported files found.", "No supported files found.")
+
+        # Per-file outcome tracking: (file name, "ok"/"failed", detail)
+        file_results = []
+
         # Create zip file
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
             total_files = len(valid_files)
             total_tokens = 0  # Track total tokens across all files
-            
+
             for i, (file_obj, rel_path) in enumerate(valid_files):
                 # Create new log file for current file being processed
                 from config.log_config import file_logger
@@ -1540,19 +1817,25 @@ def process_multiple_files(
                         overall_info = f" (File {i+1}/{total_files})"
                         progress_callback(i / total_files + value / total_files, desc=f"{file_desc}{overall_info}")
                     
-                    translated_file_path, _ = translator.process(
+                    translated_file_path, missing_counts = translator.process(
                         os.path.join(output_dir, base_name),
                         file_extension,
                         progress_callback=file_progress
                     )
-                    
+
                     # Add to zip
                     zipf.write(
-                        translated_file_path, 
+                        translated_file_path,
                         os.path.basename(translated_file_path)
                     )
                     # Accumulate total tokens
                     total_tokens += getattr(translator, 'total_tokens', 0)
+                    if missing_counts:
+                        file_results.append((rel_path, "ok",
+                                             labels.get("Missing Segments", "{count} segment(s) missing")
+                                             .format(count=len(missing_counts))))
+                    else:
+                        file_results.append((rel_path, "ok", ""))
 
                 except StopTranslationException:
                     app_logger.info(f"Translation stopped by user for file {rel_path}")
@@ -1560,31 +1843,61 @@ def process_multiple_files(
                         translator.save_stopped_summary()
                     # Re-raise to stop processing all files
                     raise
+                except HardApiError:
+                    # Unrecoverable API error: continuing would fail every
+                    # remaining file too - abort the whole batch
+                    if 'translator' in locals() and translator:
+                        translator.save_failed_summary()
+                    raise
                 except Exception as e:
                     app_logger.exception(f"Error processing file {rel_path}: {e}")
                     # Save failed status to history
                     if 'translator' in locals() and translator:
                         translator.save_failed_summary()
-                    # Continue with next file
+                    # Record the failure and continue with next file
+                    reason = str(e).strip() or type(e).__name__
+                    if len(reason) > 120:
+                        reason = reason[:117] + "..."
+                    file_results.append((rel_path, "failed", reason))
 
-        # Get translated labels
-        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
-        completion_msg = labels.get("Translation completed", "Translation completed")
+            # Per-file status report inside the zip
+            ok_label = labels.get("Success", "Success")
+            failed_label = labels.get("Failed", "Failed")
+            report_lines = []
+            for name, status, detail in file_results:
+                line = f"{name}: {ok_label if status == 'ok' else failed_label}"
+                if detail:
+                    line += f" ({detail})"
+                report_lines.append(line)
+            zipf.writestr("results.txt", "\n".join(report_lines) + "\n")
+
+        # Truthful localized summary: completed X/N | failed: a.docx (reason) | b.docx missing segments
+        succeeded = [r for r in file_results if r[1] == "ok"]
+        failed = [r for r in file_results if r[1] == "failed"]
         tokens_label = labels.get("Total tokens used", "Total tokens used")
 
-        # Format tokens
+        parts = [labels.get("Completed Files", "Completed {done}/{total}")
+                 .format(done=len(succeeded), total=total_files)]
+        if failed:
+            failed_label = labels.get("Failed", "Failed")
+            failed_str = "; ".join(f"{name} ({detail})" if detail else name
+                                   for name, _, detail in failed)
+            parts.append(f"{failed_label}: {failed_str}")
+        partial = [f"{name}: {detail}" for name, _, detail in succeeded if detail]
+        if partial:
+            parts.append("; ".join(partial))
         if total_tokens > 0:
-            if total_tokens >= 1000:
-                tokens_str = f"{total_tokens / 1000:.1f}K"
-            else:
-                tokens_str = str(total_tokens)
-            final_msg = f"{completion_msg} ({total_files} files) | {tokens_label}: {tokens_str}"
-        else:
-            final_msg = f"{completion_msg} ({total_files} files)"
+            tokens_str = f"{total_tokens / 1000:.1f}K" if total_tokens >= 1000 else str(total_tokens)
+            parts.append(f"{tokens_label}: {tokens_str}")
+        final_msg = " | ".join(parts)
 
         progress_callback(1, desc=final_msg)
         return gr.update(value=zip_path, visible=True), final_msg
-    
+
+    except (StopTranslationException, HardApiError):
+        # Bubble up so translate_files can show the proper localized message
+        shutil.rmtree(temp_zip_dir, ignore_errors=True)
+        raise
     except Exception as e:
         app_logger.exception("Error processing files")
         shutil.rmtree(temp_zip_dir)
@@ -1702,7 +2015,7 @@ with gr.Blocks(
                 # Create model and glossary section
                 (model_choice, model_refresh_btn, glossary_choice, glossary_upload_row,
                  glossary_upload_file) = create_model_glossary_section(
-                    config, local_models, online_models, get_glossary_files, get_default_glossary, get_label
+                    config, local_model_choices(), online_models, get_glossary_files, get_default_glossary, get_label
                 )
 
                 # Per-file-type mode checkboxes (shown when matching files are uploaded)
@@ -1717,19 +2030,27 @@ with gr.Blocks(
         # Tab 2: glossary editor with its own glossary picker
         with gr.Tab(get_label("Glossary"), elem_id="tab-glossary") as tab_glossary:
             (glossary_editor_choice, glossary_table, glossary_load_btn,
-             glossary_save_btn, glossary_editor_status) = create_glossary_tab_section(
+             glossary_save_btn, glossary_editor_status, glossary_editor_acc) = create_glossary_tab_section(
                 config, get_glossary_files, get_default_glossary, get_label
             )
 
         # Tab 3: settings
         with gr.Tab(get_label("Settings"), elem_id="tab-settings") as tab_settings:
             (use_online_model, lan_mode_checkbox, max_retries_slider,
-             thread_count_slider, auto_glossary_checkbox, rpm_limit_number) = create_settings_section(config)
+             thread_count_slider, auto_glossary_checkbox, rpm_limit_number,
+             optional_modules_acc) = create_settings_section(config, get_label)
 
         # Tab 4: translation history
         with gr.Tab(get_label("History"), elem_id="tab-history") as tab_history:
             with gr.Column(elem_id="history-page") as history_page:
                 history_refresh_btn, history_title, history_list = create_history_page_content(get_label)
+
+        # Tab 5: post-translation proofreading editor
+        with gr.Tab(get_label("Proofread"), elem_id="tab-proofread") as tab_proofread:
+            from ui_layout import create_proofread_tab_section
+            (proofread_doc_choice, proofread_refresh_btn, proofread_table,
+             proofread_save_btn, proofread_export_btn, proofread_status,
+             proofread_file) = create_proofread_tab_section(get_label, list_proofread_docs)
 
     # Hidden components for folder opening functionality
     folder_path_input = gr.Textbox(visible=False, elem_id="folder-path-input")
@@ -1791,6 +2112,21 @@ with gr.Blocks(
     glossary_editor_choice.change(load_glossary_table, inputs=[glossary_editor_choice],
                                   outputs=[glossary_table, glossary_editor_status])
 
+    # Proofread tab handlers
+    tab_proofread.select(refresh_proofread_docs, inputs=[proofread_doc_choice, session_lang],
+                         outputs=[proofread_doc_choice, proofread_status])
+    proofread_refresh_btn.click(refresh_proofread_docs, inputs=[proofread_doc_choice, session_lang],
+                                outputs=[proofread_doc_choice, proofread_status])
+    # Auto-load the table when a document is picked
+    proofread_doc_choice.change(load_proofread_table, inputs=[proofread_doc_choice, session_lang],
+                                outputs=[proofread_table, proofread_status])
+    proofread_save_btn.click(save_proofread_table,
+                             inputs=[proofread_doc_choice, proofread_table, session_lang],
+                             outputs=[proofread_status])
+    proofread_export_btn.click(export_proofread_doc,
+                               inputs=[proofread_doc_choice, session_lang],
+                               outputs=[proofread_file, proofread_status])
+
     # New settings persistence
     def update_auto_glossary(enabled):
         config = read_system_config()
@@ -1811,7 +2147,7 @@ with gr.Blocks(
     # Event handlers
     use_online_model.change(
         update_model_list_and_api_input,
-        inputs=use_online_model,
+        inputs=[use_online_model, session_lang],
         outputs=[model_choice, api_key_row, api_key_input, thread_count_slider]
     ).then(
         fn=None,
@@ -1899,7 +2235,7 @@ with gr.Blocks(
     # selected config's base_url (OpenAI-compatible /models endpoint)
     model_refresh_btn.click(
         refresh_models,
-        inputs=[use_online_model, model_choice, api_key_input],
+        inputs=[use_online_model, model_choice, api_key_input, session_lang],
         outputs=[model_choice, status_message]
     )
 
@@ -1982,11 +2318,31 @@ with gr.Blocks(
         outputs=md_bilingual_mode_state
     )
 
+    def on_files_changed(files, session_lang):
+        """Mode checkboxes + continue button + 'unfinished translation' hint"""
+        updates = [*show_mode_checkbox(files), update_continue_button(files)]
+        hint = gr.update()
+        try:
+            if files and (not isinstance(files, list) or len(files) == 1):
+                single = files[0] if isinstance(files, list) else files
+                if os.path.splitext(single.name)[1].lower() != ".pdf":
+                    has_temp, _ = check_temp_translation_exists(
+                        files if isinstance(files, list) else [files])
+                    if has_temp:
+                        labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+                        hint = gr.update(value=labels.get(
+                            "Unfinished Translation Detected",
+                            "Unfinished translation detected — you can click 'Continue Translation'."))
+        except Exception as e:
+            app_logger.debug(f"Continue-translation hint check failed: {e}")
+        return [*updates, hint]
+
     file_input.change(
-        fn=lambda files: [*show_mode_checkbox(files), update_continue_button(files)],
-        inputs=file_input,
+        fn=on_files_changed,
+        inputs=[file_input, session_lang],
         outputs=[excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
-                 subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, continue_button]
+                 subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, continue_button,
+                 status_message]
     )
 
     # Glossary event handlers (only if glossary visible)
@@ -2184,7 +2540,12 @@ with gr.Blocks(
             continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
             subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, stop_button,
             custom_lang_input, add_lang_button, history_refresh_btn, history_title,
-            glossary_editor_choice, tab_translate, tab_glossary, tab_settings, tab_history
+            glossary_editor_choice, tab_translate, tab_glossary, tab_settings, tab_history,
+            # Appended entries - keep in the same order as the end of set_labels()
+            auto_glossary_checkbox, rpm_limit_number, optional_modules_acc,
+            glossary_editor_acc, glossary_load_btn, glossary_save_btn,
+            tab_proofread, proofread_doc_choice, proofread_refresh_btn,
+            proofread_save_btn, proofread_export_btn, proofread_file
         ],
         js="""
         () => {
