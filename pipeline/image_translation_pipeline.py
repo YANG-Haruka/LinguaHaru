@@ -29,11 +29,50 @@ _FONT_CANDIDATES = [
 
 
 def _get_ocr_engine():
+    """Best available OCR engine.
+
+    If the heavy optional paddleocr package is installed, use PP-OCRv6
+    (paddlepaddle runtime); otherwise the lightweight default is RapidOCR
+    pinned to PP-OCRv5 ONNX models (v6 has no ONNX conversion yet).
+    Returns (kind, engine) with kind in {"paddle", "rapid"}."""
     global _ocr_engine
     if _ocr_engine is None:
-        app_logger.info("Loading RapidOCR engine...")
-        _ocr_engine = RapidOCR()
+        try:
+            from paddleocr import PaddleOCR
+            app_logger.info("Loading PaddleOCR engine (PP-OCRv6)...")
+            _ocr_engine = ("paddle", PaddleOCR(
+                ocr_version="PP-OCRv6",
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
+                use_textline_orientation=True,
+            ))
+        except Exception as e:
+            if not isinstance(e, ImportError):
+                app_logger.warning(f"PaddleOCR unavailable ({e}), falling back to RapidOCR")
+            app_logger.info("Loading RapidOCR engine (PP-OCRv5)...")
+            from rapidocr.utils.typings import OCRVersion
+            _ocr_engine = ("rapid", RapidOCR(params={
+                "Det.ocr_version": OCRVersion.PPOCRV5,
+                "Rec.ocr_version": OCRVersion.PPOCRV5,
+            }))
     return _ocr_engine
+
+
+def _run_ocr(file_path):
+    """Run OCR and normalize results to a list of (text, quad_points, score)."""
+    kind, engine = _get_ocr_engine()
+    if kind == "paddle":
+        result = engine.predict(file_path)[0]
+        texts = list(result.get("rec_texts") or [])
+        boxes = list(result.get("rec_polys") if result.get("rec_polys") is not None
+                     else result.get("rec_boxes") or [])
+        scores = list(result.get("rec_scores") or [])
+    else:
+        result = engine(file_path)
+        texts = list(result.txts or [])
+        boxes = list(result.boxes if result.boxes is not None else [])
+        scores = list(result.scores or [])
+    return texts, boxes, scores
 
 
 def _find_font_path():
@@ -45,25 +84,23 @@ def _find_font_path():
 
 def extract_image_content_to_json(file_path, temp_dir):
     """Run OCR on the image and save recognized text regions to src.json."""
-    engine = _get_ocr_engine()
-    result = engine(file_path)
+    texts, boxes, scores = _run_ocr(file_path)
 
     content_data = []
     regions = []
     count = 0
 
-    texts = list(result.txts or [])
-    boxes = list(result.boxes if result.boxes is not None else [])
-    scores = list(result.scores or [])
-
     for text, box, score in zip(texts, boxes, scores):
         text = (text or "").strip()
         if not text:
             continue
-        # Bounding rectangle from the 4-point quad
+        # Bounding rectangle: quads (N x 2 points) or flat [x1,y1,x2,y2]
         points = np.asarray(box, dtype=float)
-        x_min, y_min = points.min(axis=0)
-        x_max, y_max = points.max(axis=0)
+        if points.ndim == 1 and points.size == 4:
+            x_min, y_min, x_max, y_max = points
+        else:
+            x_min, y_min = points.min(axis=0)
+            x_max, y_max = points.max(axis=0)
         rect = [int(x_min), int(y_min), int(x_max), int(y_max)]
 
         count += 1
