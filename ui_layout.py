@@ -1787,6 +1787,16 @@ def create_language_section(default_src_lang, default_dst_lang, get_label=None):
     return src_lang, swap_button, dst_lang, custom_lang_input, add_lang_button, custom_lang_row
 
 
+def get_accepted_file_types():
+    """All accepted upload extensions: core formats plus whichever optional
+    modules (.pdf / images / media) are installed."""
+    from config.optional_modules import available_optional_extensions
+    accepted = [".docx", ".pptx", ".xlsx", ".srt", ".txt", ".md", ".epub",
+                ".csv", ".tsv", ".html", ".htm", ".odt", ".json",
+                ".vtt", ".ass", ".ssa", ".lrc"]
+    return accepted + available_optional_extensions()
+
+
 def create_settings_section(config):
     """Create settings section"""
     initial_lan_mode = config.get("lan_mode", False)
@@ -2050,12 +2060,7 @@ def create_main_interface(config, get_label=None):
             </script>
         """, elem_id="api-help-container")
 
-    from config.optional_modules import available_optional_extensions
-    accepted_types = [".docx", ".pptx", ".xlsx", ".srt", ".txt", ".md", ".epub",
-                      ".csv", ".tsv", ".html", ".htm", ".odt", ".json",
-                      ".vtt", ".ass", ".ssa", ".lrc"]
-    # .pdf / images / media join the list when their modules are installed
-    accepted_types += available_optional_extensions()
+    accepted_types = get_accepted_file_types()
 
     file_input = gr.File(
         label=f"{get_label('Upload Files')} ({' '.join(accepted_types)})",

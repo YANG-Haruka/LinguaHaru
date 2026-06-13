@@ -884,6 +884,9 @@ def set_labels(session_lang: str):
         file_upload_label = labels["Upload Files"]
     elif "Upload File" in labels:
         file_upload_label = labels["Upload File"] + "s"
+    # Keep the supported-format list visible after i18n relabeling
+    from ui_layout import get_accepted_file_types
+    file_upload_label = f"{file_upload_label} ({' '.join(get_accepted_file_types())})"
 
     # Update dropdown choices with translated "Add Custom Language" option
     custom_label = labels.get("Add Custom Language", "+ Add Custom...")
@@ -1713,6 +1716,10 @@ with gr.Blocks(
         try:
             # Drop fully empty rows before writing back
             table = table[~(table.astype(str).apply(lambda r: "".join(r).strip() == "", axis=1))]
+            # Saving an empty/never-loaded table over a non-empty glossary
+            # would wipe it - refuse instead of destroying user data
+            if len(table) == 0 and os.path.getsize(path) > 0:
+                return "Refused: table is empty but the glossary file is not. Load it first."
             table.to_csv(path, index=False, encoding="utf-8-sig")
             return f"Saved {len(table)} entries to {glossary_name}.csv"
         except Exception as e:
@@ -1722,6 +1729,9 @@ with gr.Blocks(
                             outputs=[glossary_table, glossary_editor_status])
     glossary_save_btn.click(save_glossary_table, inputs=[glossary_editor_choice, glossary_table],
                             outputs=[glossary_editor_status])
+    # Auto-load on selection so the editor never shows a stale/empty table
+    glossary_editor_choice.change(load_glossary_table, inputs=[glossary_editor_choice],
+                                  outputs=[glossary_table, glossary_editor_status])
 
     # New settings persistence
     def update_auto_glossary(enabled):
