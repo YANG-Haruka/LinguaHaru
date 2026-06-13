@@ -4,6 +4,10 @@
 #
 #   pip install -r requirements-desktop.txt
 #   python app_desktop.py
+#
+# NOTE: app_qt.py is now the RECOMMENDED native desktop UI. It is a true
+# native Qt + Fluent Design app (no embedded browser) that reuses the same
+# translation backend. This pywebview shell is kept as a fallback.
 import multiprocessing
 
 

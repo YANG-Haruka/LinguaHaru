@@ -60,6 +60,12 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
     http://127.0.0.1:9980
     ```
 
+    **Desktop app (Qt)** — recommended native desktop experience (Fluent Design):
+    ```bash
+    pip install -r requirements-qt.txt
+    python app_qt.py
+    ```
+
 5. Local large language model support  
     Currently only supports [Ollama](https://ollama.com/)  
     You need to download Ollama dependencies and models for translation
