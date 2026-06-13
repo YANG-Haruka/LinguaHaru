@@ -22,6 +22,7 @@ test.py
 
 tests/_roundtrip_work/
 tests/_bilingual_work/
+tests/_proofread_work/
 tests/fixtures/
 config/text_rules.json
 .playwright-mcp/

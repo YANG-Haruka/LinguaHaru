@@ -62,6 +62,9 @@ class DocumentTranslator:
         self.total_completion_tokens = 0
         self.total_tokens = 0
 
+        # Final run stats (segments / speed / tokens), filled at the end of process()
+        self.final_stats = ""
+
         # Setup file paths
         filename = os.path.splitext(os.path.basename(input_file_path))[0]
         self.file_dir = os.path.join(self.temp_dir, filename)
@@ -796,6 +799,37 @@ class DocumentTranslator:
         except Exception:
             return base_desc
 
+    def _write_manifest(self, file_extension):
+        """Persist what the Proofread tab needs to re-export this document:
+        a copy of the original input file plus a small manifest.json inside
+        self.file_dir. Best-effort and non-invasive: failures only log."""
+        try:
+            ext = file_extension.lower()
+            os.makedirs(self.file_dir, exist_ok=True)
+            # Keep the document's own base name: writers locate their
+            # intermediates (e.g. all_content.json) via temp_dir/<input name>,
+            # so the copy must resolve to this same folder on re-export.
+            base_name = os.path.splitext(os.path.basename(self.input_file_path))[0]
+            original_copy = f"{base_name}{ext}"
+            copy_path = os.path.join(self.file_dir, original_copy)
+            if not os.path.exists(copy_path) and os.path.exists(self.input_file_path):
+                shutil.copyfile(self.input_file_path, copy_path)
+            manifest = {
+                "input_file": os.path.basename(self.input_file_path),
+                "original_copy": original_copy,
+                "file_extension": ext,
+                "src_lang": self.src_lang,
+                "dst_lang": self.dst_lang,
+                "model": self.model,
+                "use_online": self.use_online,
+                "bilingual_mode": bool(getattr(self, "bilingual_mode", False)),
+                "use_xlwings": bool(getattr(self, "use_xlwings", False)),
+            }
+            with open(os.path.join(self.file_dir, "manifest.json"), "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            app_logger.warning(f"Could not write proofread manifest: {e}")
+
     def _clear_temp_folder(self):
         """Clear temp folder"""
         temp_folder = self.temp_dir
@@ -931,6 +965,9 @@ class DocumentTranslator:
             # Optional AI glossary extraction (system_config: auto_extract_glossary)
             self._maybe_extract_glossary(deduped_data, progress_callback)
 
+        # Persist re-export data (original copy + manifest) for the Proofread tab
+        self._write_manifest(file_extension)
+
         # Main translation
         app_logger.info("Starting translation...")
         self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Translating content')}...")
@@ -969,10 +1006,25 @@ class DocumentTranslator:
         self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Generating output')}...")
         self.write_translated_json_to_file(self.src_json_path, self.result_json_path, progress_callback)
 
+        # Final stats (segments, speed, tokens) for the completion status message
+        try:
+            elapsed = max((datetime.now() - self.translation_start_time).total_seconds(), 0.001)
+            with open(self.src_split_json_path, 'r', encoding='utf-8') as f:
+                seg_total = len(json.load(f))
+            rate_per_min = seg_total / elapsed * 60
+            self.final_stats = (f"{seg_total} {self._get_status_message('Segments')}"
+                                f" | {rate_per_min:.1f}/min"
+                                f" | {self._get_status_message('Total tokens used')}: "
+                                f"{self._format_tokens(self.total_tokens)}")
+        except Exception:
+            self.final_stats = ""
+
         # Complete - show total tokens used
         completion_msg = self._get_status_message('Translation completed')
         tokens_msg = self._get_status_message('Total tokens used')
-        if self.total_tokens > 0:
+        if self.final_stats:
+            completion_msg = f"{completion_msg} | {self.final_stats}"
+        elif self.total_tokens > 0:
             completion_msg = f"{completion_msg} | {tokens_msg}: {self._format_tokens(self.total_tokens)}"
         self.update_ui_safely(progress_callback, 1.0, completion_msg)
 
