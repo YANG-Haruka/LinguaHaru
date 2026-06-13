@@ -2047,7 +2047,7 @@ def create_main_interface(config, get_label=None):
     accepted_types += available_optional_extensions()
 
     file_input = gr.File(
-        label=get_label("Upload Files (.docx, .pptx, .xlsx, .pdf, .srt, .txt, .md)"),
+        label=f"{get_label('Upload Files')} ({' '.join(accepted_types)})",
         file_types=accepted_types,
         file_count="multiple"
     )
