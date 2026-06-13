@@ -1,5 +1,7 @@
 # Core UI
-gradio>=5.23.3
+# Pinned below 6: Gradio 6.x breaks this app's queue/event wiring
+# (tabs stick on a perpetual loading spinner). Stay on the 5.x line.
+gradio>=5.23.3,<6
 
 # Document processing
 openpyxl>=3.0.10
