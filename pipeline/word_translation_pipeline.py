@@ -2559,6 +2559,11 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         src_lang: Source language code (e.g., 'zh')
         dst_lang: Target language code (e.g., 'ja')
     """
+    # Bilingual helpers (bracket cleanup, date conversion) decide behavior by
+    # target language; without this call the CJK guard never activates and
+    # 《》 would be stripped / dates anglicized even for zh/ja/ko targets.
+    if bilingual_mode:
+        set_current_target_language(dst_lang)
 
     # Load translation data
     with open(original_json_path, "r", encoding="utf-8") as original_file:

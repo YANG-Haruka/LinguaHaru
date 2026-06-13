@@ -53,7 +53,8 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
         return _write_with_xlwings(file_path, original_json_path, translated_json_path,
                                    result_dir, bilingual_mode, src_lang, dst_lang)
     else:
-        return _write_with_openpyxl(file_path, original_json_path, translated_json_path, result_dir, src_lang, dst_lang)
+        return _write_with_openpyxl(file_path, original_json_path, translated_json_path,
+                                    result_dir, bilingual_mode, src_lang, dst_lang)
 
 
 # ============================================================================
@@ -207,7 +208,7 @@ def _extract_with_openpyxl(file_path, temp_dir):
 # OPENPYXL MODE - WRITING
 # ============================================================================
 
-def _write_with_openpyxl(file_path, original_json_path, translated_json_path, result_dir, src_lang=None, dst_lang=None):
+def _write_with_openpyxl(file_path, original_json_path, translated_json_path, result_dir, bilingual_mode=False, src_lang=None, dst_lang=None):
     """Write translated content using openpyxl library."""
     workbook = load_workbook(file_path)
 
@@ -232,7 +233,11 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             original_sheet_name = cell_info["value"]
             translated_sheet_name = translations.get(count)
             if translated_sheet_name:
-                sheet_name_translations[original_sheet_name] = translated_sheet_name.replace("␊", "\n").replace("␍", "\r")
+                if bilingual_mode:
+                    sheet_name_translations[original_sheet_name] = _format_bilingual_text(
+                        original_sheet_name, translated_sheet_name, "sheet_name")
+                else:
+                    sheet_name_translations[original_sheet_name] = translated_sheet_name.replace("␊", "\n").replace("␍", "\r")
 
     # Second pass: Update cell contents
     for cell_info in original_data:
@@ -256,7 +261,10 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             continue
 
         # Replace line breaks to preserve format
-        value = value.replace("␊", "\n").replace("␍", "\r")
+        if bilingual_mode:
+            value = _format_bilingual_text(original_text, value, "cell")
+        else:
+            value = value.replace("␊", "\n").replace("␍", "\r")
 
         # Write to the Excel cell. Merged ranges from the original file are
         # already preserved by openpyxl; writing the top-left cell is enough.

@@ -148,7 +148,7 @@ def extract_txt_content_to_json(file_path, temp_dir):
     app_logger.info(f"Original encoding: {used_encoding}, converted to UTF-8")
     return json_path
 
-def write_translated_content_to_txt(file_path, original_json_path, translated_json_path, temp_dir, result_dir, src_lang=None, dst_lang=None):
+def write_translated_content_to_txt(file_path, original_json_path, translated_json_path, temp_dir, result_dir, src_lang=None, dst_lang=None, bilingual_mode=False):
     """
     Write translated content back to a new TXT file, maintaining original paragraph format
     Output file is always saved in UTF-8 encoding
@@ -156,6 +156,8 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
     Args:
         src_lang: Source language code (e.g., 'zh')
         dst_lang: Target language code (e.g., 'ja')
+        bilingual_mode: If True, each translated line is followed by its
+                        original line (untranslated/blank lines stay single)
     """
     # Load all content data
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -200,7 +202,11 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
 
                 if needs_translation and count in translation_map:
                     leading_ws = raw[:len(raw) - len(raw.lstrip())]
-                    output_lines.append(leading_ws + translation_map[count])
+                    translated_line = leading_ws + translation_map[count]
+                    output_lines.append(translated_line)
+                    if bilingual_mode and translated_line.strip() != raw.strip():
+                        # Bilingual: translated line followed by the original line
+                        output_lines.append(raw)
                 else:
                     output_lines.append(raw)
             result_file.write('\n'.join(output_lines))

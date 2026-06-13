@@ -1880,6 +1880,9 @@ def create_file_mode_checkboxes(config):
     initial_excel_mode_2 = config.get("excel_mode_2", False)
     initial_excel_bilingual_mode = config.get("excel_bilingual_mode", False)
     initial_word_bilingual_mode = config.get("word_bilingual_mode", False)
+    initial_subtitle_bilingual_mode = config.get("subtitle_bilingual_mode", False)
+    initial_txt_bilingual_mode = config.get("txt_bilingual_mode", False)
+    initial_md_bilingual_mode = config.get("md_bilingual_mode", False)
 
     with gr.Row():
         excel_mode_checkbox = gr.Checkbox(
@@ -1906,8 +1909,28 @@ def create_file_mode_checkboxes(config):
             visible=False
         )
 
+        subtitle_bilingual_checkbox = gr.Checkbox(
+            label="Use Bilingual Subtitles",
+            value=initial_subtitle_bilingual_mode,
+            visible=False
+        )
+
+        txt_bilingual_checkbox = gr.Checkbox(
+            label="Use TXT Bilingual Mode",
+            value=initial_txt_bilingual_mode,
+            visible=False
+        )
+
+        md_bilingual_checkbox = gr.Checkbox(
+            label="Use Markdown Bilingual Mode",
+            value=initial_md_bilingual_mode,
+            visible=False
+        )
+
     return (excel_mode_checkbox, excel_bilingual_checkbox,
-            word_bilingual_checkbox, pdf_bilingual_checkbox)
+            word_bilingual_checkbox, pdf_bilingual_checkbox,
+            subtitle_bilingual_checkbox, txt_bilingual_checkbox,
+            md_bilingual_checkbox)
 
 
 def create_model_glossary_section(config, local_models, online_models, get_glossary_files_func, get_default_glossary_func, get_label=None):
@@ -2092,6 +2115,9 @@ def create_state_variables(config):
         'excel_bilingual_mode_state': gr.State(config.get("excel_bilingual_mode", False)),
         'word_bilingual_mode_state': gr.State(config.get("word_bilingual_mode", False)),
         'pdf_bilingual_mode_state': gr.State(config.get("pdf_bilingual_mode", False)),
+        'subtitle_bilingual_mode_state': gr.State(config.get("subtitle_bilingual_mode", False)),
+        'txt_bilingual_mode_state': gr.State(config.get("txt_bilingual_mode", False)),
+        'md_bilingual_mode_state': gr.State(config.get("md_bilingual_mode", False)),
         'thread_count_state': gr.State(config.get("default_thread_count_online", 2) if config.get("default_online", False) else config.get("default_thread_count_offline", 4))
     }
 

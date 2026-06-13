@@ -43,8 +43,18 @@ class JsonTranslator(_SimpleTranslator):
 
 
 class VttTranslator(_SimpleTranslator):
+    """WebVTT translator. bilingual_mode puts translation + original in each cue."""
     _extract = staticmethod(extract_vtt_content_to_json)
     _write = staticmethod(write_translated_content_to_vtt)
+
+    def __init__(self, *args, bilingual_mode=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bilingual_mode = bilingual_mode
+
+    def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
+        write_translated_content_to_vtt(self.input_file_path, json_path, translated_json_path,
+                                        self.temp_dir, self.result_dir, self.src_lang, self.dst_lang,
+                                        bilingual_mode=self.bilingual_mode)
 
 
 class AssTranslator(_SimpleTranslator):

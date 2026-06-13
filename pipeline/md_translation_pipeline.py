@@ -345,7 +345,7 @@ def extract_md_content_to_json(file_path, temp_dir):
     app_logger.info(f"Markdown content extracted to: {json_path}, total {count} lines to translate")
     return json_path
 
-def write_translated_content_to_md(file_path, original_json_path, translated_json_path, temp_dir, result_dir, src_lang=None, dst_lang=None):
+def write_translated_content_to_md(file_path, original_json_path, translated_json_path, temp_dir, result_dir, src_lang=None, dst_lang=None, bilingual_mode=False):
     """
     Write translated content to new Markdown file while preserving HTML structure
     Enhanced to handle complex HTML tables and base64 images
@@ -353,6 +353,10 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
     Args:
         src_lang: Source language code (e.g., 'zh')
         dst_lang: Target language code (e.g., 'ja')
+        bilingual_mode: If True, regular text lines get the original appended
+                        as a blockquote below the translation. Tables, HTML
+                        and code stay translation-only to avoid breaking
+                        structure.
     """
     # Get file paths
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -443,7 +447,16 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                 # Regular text
                 count = item.get("count_src")
                 if count in translations:
-                    final_lines.append(translations[count])
+                    translated_line = translations[count]
+                    final_lines.append(translated_line)
+                    original_line = item["value"]
+                    # Bilingual: append the original as a blockquote, but only
+                    # for plain text lines - pipe-table rows or existing
+                    # blockquotes would have their structure broken
+                    if (bilingual_mode and item["type"] == "text"
+                            and not original_line.lstrip().startswith(("|", ">"))
+                            and translated_line.strip() != original_line.strip()):
+                        final_lines.append("> " + original_line.strip())
                 else:
                     final_lines.append(item["value"])
     

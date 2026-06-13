@@ -172,7 +172,7 @@ def clean_gradio_cache():
 
 def process_task_with_queue(
     translate_func, files, model, src_lang, dst_lang,
-    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
+    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress
 ):
     """Run the translation, waiting for a free slot if one is already running.
 
@@ -196,7 +196,7 @@ def process_task_with_queue(
 
         result = translate_func(
             files, model, src_lang, dst_lang,
-            use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
+            use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress
         )
         return result[0], result[1], result[2]
     except Exception as e:
@@ -238,7 +238,7 @@ def check_stop_requested():
 
 def modified_translate_button_click(
     translate_files_func, files, model, src_lang, dst_lang,
-    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name,
+    use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name,
     session_lang, continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """Modified translate button click handler using task queue"""
@@ -260,15 +260,15 @@ def modified_translate_button_click(
 
     def wrapped_translate_func(files, model, src_lang, dst_lang,
                               use_online, api_key, max_retries, max_token, thread_count,
-                              excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress):
+                              excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress):
         return translate_files_func(files, model, src_lang, dst_lang,
                                    use_online, api_key, max_retries, max_token, thread_count,
-                                   excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang,
+                                   excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang,
                                    continue_mode=continue_mode, progress=progress)
-    
+
     return process_task_with_queue(
         wrapped_translate_func, files, model, src_lang, dst_lang,
-        use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_name, session_lang, progress
+        use_online, api_key, max_retries, max_token, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_name, session_lang, progress
     )
 
 def check_temp_translation_exists(files):
@@ -322,6 +322,9 @@ def read_system_config():
             "excel_bilingual_mode": False,
             "word_bilingual_mode": False,
             "pdf_bilingual_mode": False,
+            "subtitle_bilingual_mode": False,
+            "txt_bilingual_mode": False,
+            "md_bilingual_mode": False,
             "default_thread_count_online": 2,
             "default_thread_count_offline": 4,
             "default_src_lang": "English",
@@ -415,6 +418,27 @@ def update_pdf_bilingual_mode(pdf_bilingual_mode):
     config["pdf_bilingual_mode"] = pdf_bilingual_mode
     write_system_config(config)
     return pdf_bilingual_mode
+
+def update_subtitle_bilingual_mode(subtitle_bilingual_mode):
+    """Update system config with new subtitle (SRT/VTT) bilingual mode setting"""
+    config = read_system_config()
+    config["subtitle_bilingual_mode"] = subtitle_bilingual_mode
+    write_system_config(config)
+    return subtitle_bilingual_mode
+
+def update_txt_bilingual_mode(txt_bilingual_mode):
+    """Update system config with new TXT bilingual mode setting"""
+    config = read_system_config()
+    config["txt_bilingual_mode"] = txt_bilingual_mode
+    write_system_config(config)
+    return txt_bilingual_mode
+
+def update_md_bilingual_mode(md_bilingual_mode):
+    """Update system config with new Markdown bilingual mode setting"""
+    config = read_system_config()
+    config["md_bilingual_mode"] = md_bilingual_mode
+    write_system_config(config)
+    return md_bilingual_mode
 
 def update_language_preferences(src_lang=None, dst_lang=None):
     """Update system config with new language preferences"""
@@ -912,6 +936,9 @@ def set_labels(session_lang: str):
         excel_bilingual_checkbox: gr.update(label=labels.get("Excel Bilingual", "Excel Bilingual")),
         word_bilingual_checkbox: gr.update(label=labels.get("Word Bilingual", "Word Bilingual")),
         pdf_bilingual_checkbox: gr.update(label=labels.get("PDF Bilingual", "PDF Bilingual")),
+        subtitle_bilingual_checkbox: gr.update(label=labels.get("Subtitle Bilingual", "Subtitle Bilingual")),
+        txt_bilingual_checkbox: gr.update(label=labels.get("TXT Bilingual", "TXT Bilingual")),
+        md_bilingual_checkbox: gr.update(label=labels.get("MD Bilingual", "MD Bilingual")),
         stop_button: gr.update(value=labels.get("Stop Translation", "Stop Translation")),
         custom_lang_input: gr.update(
             label=labels.get("New Language Name", "New language name"),
@@ -1069,28 +1096,47 @@ def load_api_key_on_model_change(model_name, remember):
         return gr.update(value=saved_key)
     return gr.update(value="")
 
-def refresh_models(use_online):
-    """Refresh model list by re-scanning available models"""
+def scan_online_models():
+    """List online models from the api_config directory (filename = dropdown entry)"""
+    config_dir = "config/api_config"
+    try:
+        return sorted(
+            os.path.splitext(f)[0] for f in os.listdir(config_dir)
+            if f.endswith(".json") and f != "Custom.json"
+        )
+    except OSError as e:
+        app_logger.warning(f"Cannot scan online model configs: {e}")
+        return []
+
+
+def refresh_models(use_online, selected_model, api_key):
+    """Refresh model list.
+
+    Offline: re-scan local models. Online: query the selected config's
+    base_url via the OpenAI-compatible /models endpoint, write
+    "(Fetched) <id>.json" configs for new ids, then re-scan the config dir.
+    A failed fetch keeps the current list and reports why."""
     global local_models, online_models
 
-    # Re-populate local models (force refresh to rescan)
-    local_models = populate_sum_model(force_refresh=True) or []
-
-    # Online models are typically static, but we can refresh them too
-    online_models = [
-        "gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-4",
-        "gpt-3.5-turbo", "gpt-3.5-turbo-16k",
-        "deepseek-chat", "deepseek-reasoner",
-        "claude-sonnet-4-20250514", "claude-3-7-sonnet-20250219",
-        "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-pro", "gemini-1.5-flash"
-    ]
-
-    app_logger.info(f"Models refreshed. Local: {len(local_models)}, Online: {len(online_models)}")
-
     if use_online:
-        return gr.update(choices=online_models, value=online_models[0] if online_models else None)
+        from llmWrapper.online_translation import fetch_models_into_configs
+        added, error = fetch_models_into_configs(selected_model, api_key)
+        online_models = scan_online_models()
+        value = selected_model if selected_model in online_models else (online_models[0] if online_models else None)
+        if error:
+            status = f"Model list kept ({len(online_models)} entries). Fetch failed: {error}"
+        else:
+            status = f"Model list refreshed: {added} new model(s) fetched, {len(online_models)} total."
+        app_logger.info(f"Online models refreshed: {len(online_models)} entries, fetch added {added}")
+        return gr.update(choices=online_models, value=value), status
     else:
-        return gr.update(choices=local_models, value=local_models[0] if local_models else None)
+        # Re-populate local models (force refresh to rescan)
+        local_models = populate_sum_model(force_refresh=True) or []
+        app_logger.info(f"Local models refreshed: {len(local_models)} entries")
+        return (
+            gr.update(choices=local_models, value=local_models[0] if local_models else None),
+            f"Local model list refreshed: {len(local_models)} entries."
+        )
 
 def init_ui(request: gr.Request):
     """Set user language and update labels on page load"""
@@ -1188,23 +1234,23 @@ def get_default_dropdown_value(saved_lang, dropdown_choices):
     return saved_lang
 
 def show_mode_checkbox(files):
-    """Show mode checkboxes based on file types: Excel, Word, PDF"""
+    """Show mode checkboxes based on file types: Excel, Word, PDF, subtitles, TXT, MD"""
     if not files:
-        return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
+        return tuple(gr.update(visible=False) for _ in range(7))
 
-    # Check if at least one Excel file is present
-    excel_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".xlsx"]
-    excel_visible = bool(excel_files)
+    extensions = {os.path.splitext(f.name)[1].lower() for f in files}
 
-    # Check if at least one Word file is present
-    word_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".docx"]
-    word_visible = bool(word_files)
+    excel_visible = ".xlsx" in extensions
+    word_visible = ".docx" in extensions
+    pdf_visible = ".pdf" in extensions
+    subtitle_visible = bool(extensions & {".srt", ".vtt"})
+    txt_visible = ".txt" in extensions
+    md_visible = ".md" in extensions
 
-    # Check if at least one PDF file is present
-    pdf_files = [f for f in files if os.path.splitext(f.name)[1].lower() == ".pdf"]
-    pdf_visible = bool(pdf_files)
-
-    return gr.update(visible=excel_visible), gr.update(visible=excel_visible), gr.update(visible=word_visible), gr.update(visible=pdf_visible)
+    return (gr.update(visible=excel_visible), gr.update(visible=excel_visible),
+            gr.update(visible=word_visible), gr.update(visible=pdf_visible),
+            gr.update(visible=subtitle_visible), gr.update(visible=txt_visible),
+            gr.update(visible=md_visible))
 
 def update_continue_button(files):
     """Check if temp folders exist for uploaded files and update continue button state"""
@@ -1231,7 +1277,7 @@ def update_continue_button(files):
 # Translation Processing Functions
 #-------------------------------------------------------------------------
 
-def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode=False, excel_bilingual_mode=False, pdf_bilingual_mode=False):
+def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode=False, excel_bilingual_mode=False, pdf_bilingual_mode=False, subtitle_bilingual_mode=False, txt_bilingual_mode=False, md_bilingual_mode=False):
     """Dynamically import and return appropriate translator class for file extension"""
     module_path = TRANSLATOR_MODULES.get(file_extension.lower())
 
@@ -1260,6 +1306,15 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
         elif file_extension.lower() == ".pdf":
             # PDF: word_bilingual_mode for bilingual output (dual PDF)
             return partial(translator_class, word_bilingual_mode=pdf_bilingual_mode)
+        elif file_extension.lower() in (".srt", ".vtt"):
+            # Subtitles: bilingual_mode puts translation + original in each cue
+            return partial(translator_class, bilingual_mode=subtitle_bilingual_mode)
+        elif file_extension.lower() == ".txt":
+            # TXT: bilingual_mode writes translated line + original line
+            return partial(translator_class, bilingual_mode=txt_bilingual_mode)
+        elif file_extension.lower() == ".md":
+            # Markdown: bilingual_mode appends originals as blockquotes
+            return partial(translator_class, bilingual_mode=md_bilingual_mode)
 
         return translator_class
     except (ImportError, AttributeError) as e:
@@ -1268,7 +1323,7 @@ def get_translator_class(file_extension, excel_mode_2=False, word_bilingual_mode
 
 def translate_files(
     files, model, src_lang, dst_lang, use_online, api_key, max_retries=4, max_token=768, thread_count=4,
-    excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True)
+    excel_mode_2=False, excel_bilingual_mode=False, word_bilingual_mode=False, pdf_bilingual_mode=False, subtitle_bilingual_mode=False, txt_bilingual_mode=False, md_bilingual_mode=False, glossary_name="Default", session_lang="en", continue_mode=False, progress=gr.Progress(track_tqdm=True)
 ):
     """Translate one or multiple files using chosen model"""
     reset_stop_flag()  # Reset stop flag at beginning
@@ -1300,14 +1355,14 @@ def translate_files(
         if isinstance(files, list) and len(files) > 1:
             result = process_multiple_files(
                 files, model, src_lang_code, dst_lang_code,
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
             )
         else:
             # Handle single file case
             single_file = files[0] if isinstance(files, list) else files
             result = process_single_file(
                 single_file, model, src_lang_code, dst_lang_code,
-                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
+                use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang
             )
         
         return result[0], result[1], gr.update(value=stop_text, interactive=False)
@@ -1319,7 +1374,7 @@ def translate_files(
 
 def process_single_file(
     file, model, src_lang_code, dst_lang_code,
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
 ):
     """Process single file for translation"""
     file_name = os.path.basename(file.name)
@@ -1336,7 +1391,8 @@ def process_single_file(
     
     file_name, file_extension = os.path.splitext(file.name)
     
-    translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode)
+    translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode,
+                                            subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode)
 
     if not translator_class:
         return (
@@ -1413,7 +1469,7 @@ def process_single_file(
     
 def process_multiple_files(
     files, model, src_lang_code, dst_lang_code,
-    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
+    use_online, api_key, max_token, max_retries, thread_count, excel_mode_2, excel_bilingual_mode, word_bilingual_mode, pdf_bilingual_mode, subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode, glossary_path, continue_mode, progress_callback, session_lang="en"
 ):
     """Process multiple files and return zip archive"""
     # Get custom paths from config
@@ -1429,7 +1485,8 @@ def process_multiple_files(
         # Validate all files
         for file_obj in files:
             _, ext = os.path.splitext(file_obj.name)
-            if get_translator_class(ext, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode):
+            if get_translator_class(ext, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode,
+                                    subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode):
                 file_name = os.path.basename(file_obj.name)
                 valid_files.append((file_obj, file_name))
         
@@ -1456,7 +1513,8 @@ def process_multiple_files(
                 progress_callback(i / total_files, desc=f"Starting to process {rel_path} (File {i+1}/{total_files})")
                 
                 # Create translator for this file, passing mode parameters
-                translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode)
+                translator_class = get_translator_class(file_extension, excel_mode_2, word_bilingual_mode, excel_bilingual_mode, pdf_bilingual_mode,
+                                                        subtitle_bilingual_mode, txt_bilingual_mode, md_bilingual_mode)
                 if not translator_class:
                     continue  # Skip unsupported files (should not happen due to earlier validation)
                 
@@ -1576,11 +1634,7 @@ if _is_main_process:
     local_models = populate_sum_model() or []
     CUSTOM_LABEL = "+ Add Custom…"
     dropdown_choices = get_available_languages() + [CUSTOM_LABEL]
-    config_dir = "config/api_config"
-    online_models = [
-        os.path.splitext(f)[0] for f in os.listdir(config_dir)
-        if f.endswith(".json") and f != "Custom.json"
-    ]
+    online_models = scan_online_models()
 
     encoded_image, mime_type = load_application_icon(config)
 
@@ -1623,6 +1677,9 @@ with gr.Blocks(
     excel_bilingual_mode_state = states['excel_bilingual_mode_state']
     word_bilingual_mode_state = states['word_bilingual_mode_state']
     pdf_bilingual_mode_state = states['pdf_bilingual_mode_state']
+    subtitle_bilingual_mode_state = states['subtitle_bilingual_mode_state']
+    txt_bilingual_mode_state = states['txt_bilingual_mode_state']
+    md_bilingual_mode_state = states['md_bilingual_mode_state']
     thread_count_state = states['thread_count_state']
 
     default_src_lang, default_dst_lang = get_default_languages()
@@ -1650,7 +1707,8 @@ with gr.Blocks(
 
                 # Per-file-type mode checkboxes (shown when matching files are uploaded)
                 (excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox,
-                 pdf_bilingual_checkbox) = create_file_mode_checkboxes(config)
+                 pdf_bilingual_checkbox, subtitle_bilingual_checkbox, txt_bilingual_checkbox,
+                 md_bilingual_checkbox) = create_file_mode_checkboxes(config)
 
                 # Create main interface
                 (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
@@ -1837,11 +1895,12 @@ with gr.Blocks(
         outputs=api_key_input
     )
 
-    # Model refresh button
+    # Model refresh button: also fetches the online model list from the
+    # selected config's base_url (OpenAI-compatible /models endpoint)
     model_refresh_btn.click(
         refresh_models,
-        inputs=use_online_model,
-        outputs=model_choice
+        inputs=[use_online_model, model_choice, api_key_input],
+        outputs=[model_choice, status_message]
     )
 
     # Add LAN mode - also disable remember key when in LAN mode
@@ -1905,14 +1964,29 @@ with gr.Blocks(
         outputs=pdf_bilingual_mode_state
     )
 
+    subtitle_bilingual_checkbox.change(
+        update_subtitle_bilingual_mode,
+        inputs=subtitle_bilingual_checkbox,
+        outputs=subtitle_bilingual_mode_state
+    )
+
+    txt_bilingual_checkbox.change(
+        update_txt_bilingual_mode,
+        inputs=txt_bilingual_checkbox,
+        outputs=txt_bilingual_mode_state
+    )
+
+    md_bilingual_checkbox.change(
+        update_md_bilingual_mode,
+        inputs=md_bilingual_checkbox,
+        outputs=md_bilingual_mode_state
+    )
+
     file_input.change(
-        fn=lambda files: [show_mode_checkbox(files)[0],
-                        show_mode_checkbox(files)[1],
-                        show_mode_checkbox(files)[2],
-                        show_mode_checkbox(files)[3],
-                        update_continue_button(files)],
+        fn=lambda files: [*show_mode_checkbox(files), update_continue_button(files)],
         inputs=file_input,
-        outputs=[excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, continue_button]
+        outputs=[excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
+                 subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, continue_button]
     )
 
     # Glossary event handlers (only if glossary visible)
@@ -1948,7 +2022,8 @@ with gr.Blocks(
         inputs=[
             file_input, model_choice, src_lang, dst_lang,
             use_online_model, api_key_input, max_retries_slider, max_token_state,
-            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, glossary_choice, session_lang
+            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
+            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, glossary_choice, session_lang
         ],
         outputs=[output_file, status_message, stop_button]
     ).then(
@@ -1971,7 +2046,8 @@ with gr.Blocks(
         inputs=[
             file_input, model_choice, src_lang, dst_lang,
             use_online_model, api_key_input, max_retries_slider, max_token_state,
-            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, glossary_choice, session_lang
+            thread_count_slider, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
+            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, glossary_choice, session_lang
         ],
         outputs=[output_file, status_message, stop_button]
     ).then(
@@ -2105,7 +2181,8 @@ with gr.Blocks(
             src_lang, dst_lang, use_online_model, lan_mode_checkbox,
             model_choice, glossary_choice, max_retries_slider, thread_count_slider,
             api_key_input, remember_key_checkbox, file_input, output_file, status_message, translate_button,
-            continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox, stop_button,
+            continue_button, excel_mode_checkbox, excel_bilingual_checkbox, word_bilingual_checkbox, pdf_bilingual_checkbox,
+            subtitle_bilingual_checkbox, txt_bilingual_checkbox, md_bilingual_checkbox, stop_button,
             custom_lang_input, add_lang_button, history_refresh_btn, history_title,
             glossary_editor_choice, tab_translate, tab_glossary, tab_settings, tab_history
         ],

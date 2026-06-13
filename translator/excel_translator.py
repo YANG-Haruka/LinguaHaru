@@ -10,7 +10,8 @@ class ExcelTranslator(DocumentTranslator):
         use_xlwings: If True, use xlwings for extraction/writing (requires Excel installed).
                      This mode supports shapes, groups, SmartArt, and drawings.
         bilingual_mode: If True, format content as bilingual (original + translated).
-                        Only works when use_xlwings=True.
+                        Works in both modes; xlwings additionally covers shapes,
+                        SmartArt, and drawings.
     """
 
     def __init__(self, *args, use_xlwings=False, bilingual_mode=False, **kwargs):
