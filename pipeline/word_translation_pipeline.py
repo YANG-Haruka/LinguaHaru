@@ -3918,6 +3918,22 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     else:
         add_text_with_enhanced_formatting(paragraph, new_text, namespaces, formatting)
 
+def _append_run_text(run, text, namespaces):
+    """Append text to a run as w:t segments, restoring tab characters as
+    w:tab elements (a literal tab inside w:t is not honored by Word) and
+    marking segments with leading/trailing whitespace xml:space="preserve"
+    so Word does not collapse them."""
+    segments = text.split('\t')
+    for seg_idx, seg in enumerate(segments):
+        if seg_idx > 0:
+            etree.SubElement(run, f"{{{namespaces['w']}}}tab")
+        if seg or len(segments) == 1:
+            text_node = etree.SubElement(run, f"{{{namespaces['w']}}}t")
+            text_node.text = seg
+            if seg != seg.strip():
+                text_node.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+
+
 def update_paragraph_content_with_math_and_fields_enhanced(paragraph, new_text, namespaces, field_info=None, math_info=None, formatting=None, original_structure=None):
     """Update paragraph content while preserving math formulas and field variables with enhanced formatting"""
     
@@ -4011,8 +4027,7 @@ def update_paragraph_content_with_math_and_fields_enhanced(paragraph, new_text, 
                     if current_run is None:
                         current_run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
 
-                    text_node = etree.SubElement(current_run, f"{{{namespaces['w']}}}t")
-                    text_node.text = part
+                    _append_run_text(current_run, part, namespaces)
 
                     # Apply formatting if available
                     if formatting is not None:
@@ -4028,8 +4043,7 @@ def update_paragraph_content_with_math_and_fields_enhanced(paragraph, new_text, 
                 if formatting is not None:
                     cloned_rPr = etree.fromstring(etree.tostring(formatting))
                     text_run.insert(0, cloned_rPr)
-                text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
-                text_node.text = line
+                _append_run_text(text_run, line, namespaces)
 
 def create_field_mapping(field_info, field_placeholders):
     """Create mapping for field placeholders"""
@@ -4293,8 +4307,7 @@ def add_text_with_enhanced_formatting(paragraph, text, namespaces, formatting=No
             if formatting is not None:
                 cloned_rPr = etree.fromstring(etree.tostring(formatting))
                 text_run.insert(0, cloned_rPr)
-            text_node = etree.SubElement(text_run, f"{{{namespaces['w']}}}t")
-            text_node.text = part
+            _append_run_text(text_run, part, namespaces)
 
 def update_textbox_content_with_enhanced_preservation(textbox, new_text, namespaces, field_info=None, math_info=None):
     """Update textbox content with enhanced format preservation including math formulas"""

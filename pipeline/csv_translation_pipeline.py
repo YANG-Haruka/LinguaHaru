@@ -3,6 +3,7 @@
 # codes and other non-translatable cells pass through untouched. The
 # delimiter is sniffed from the file and reused on output.
 import csv
+import io
 import json
 import os
 
@@ -22,7 +23,8 @@ def extract_csv_content_to_json(file_path, temp_dir):
     content, encoding = read_file_with_encoding(file_path)
     delimiter = _sniff_delimiter(content[:4096])
 
-    rows = list(csv.reader(content.splitlines(), delimiter=delimiter))
+    # StringIO (not splitlines) so newlines embedded in quoted fields survive
+    rows = list(csv.reader(io.StringIO(content, newline=""), delimiter=delimiter))
 
     content_data = []
     count = 0
@@ -35,7 +37,7 @@ def extract_csv_content_to_json(file_path, temp_dir):
             content_data.append({
                 "count_src": count,
                 "type": "text",
-                "value": cell,
+                "value": cell.replace("\n", "␊").replace("\r", "␍"),
                 "row": row_index,
                 "col": col_index,
             })
