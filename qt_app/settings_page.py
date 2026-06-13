@@ -45,7 +45,6 @@ class SettingsPage(ScrollArea):
         self.ui_lang_combo.addItems([lang_display_name(l) for l in UI_LANGS])
         self.ui_lang_combo.setCurrentText(lang_display_name(lang))
         self.ui_lang_combo.currentTextChanged.connect(self._on_lang_combo)
-        # No dedicated label key exists; tr() falls back to the key text.
         self.ui_lang_label = BodyLabel(tr("Interface Language", lang))
         lang_form.addRow(self.ui_lang_label, self.ui_lang_combo)
         layout.addWidget(lang_card)

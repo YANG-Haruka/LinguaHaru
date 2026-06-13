@@ -156,6 +156,7 @@ LABEL_TRANSLATIONS = {
         # Tab labels
         "Settings": "Settings",
         "History": "History",
+        "Interface Language": "Interface Language",
         # Translation History
         "Translation History": "Translation History",
         "Refresh Records": "Refresh",
@@ -270,6 +271,7 @@ LABEL_TRANSLATIONS = {
         # Tab labels
         "Settings": "设置",
         "History": "历史记录",
+        "Interface Language": "界面语言",
         # Translation History
         "Translation History": "翻译记录",
         "Refresh Records": "刷新",
@@ -384,6 +386,7 @@ LABEL_TRANSLATIONS = {
         # Tab labels
         "Settings": "設定",
         "History": "歷史記錄",
+        "Interface Language": "介面語言",
         # Translation History
         "Translation History": "翻譯記錄",
         "Refresh Records": "重新整理",
@@ -498,6 +501,7 @@ LABEL_TRANSLATIONS = {
         # Tab labels
         "Settings": "設定",
         "History": "履歴",
+        "Interface Language": "表示言語",
         # Translation History
         "Translation History": "翻訳履歴",
         "Refresh Records": "更新",
@@ -619,7 +623,55 @@ LABEL_TRANSLATIONS = {
         "Success": "Éxito",
         "Failed": "Fallido",
         "Stopped": "Detenido",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Interface Language": "Idioma de la interfaz",
+        # Bilingual modules
+        "Subtitle Bilingual": "Habilitar subtítulos bilingües",
+        "TXT Bilingual": "Habilitar modo bilingüe TXT",
+        "MD Bilingual": "Habilitar modo bilingüe Markdown",
+        "EPUB Bilingual": "Habilitar modo bilingüe EPUB",
+        "HTML Bilingual": "Habilitar modo bilingüe HTML",
+        # Tab labels
+        "Settings": "Configuración",
+        "History": "Historial",
+        # Glossary editor
+        "Edit Glossary": "Editar glosario",
+        "Load Glossary": "Cargar glosario",
+        "Save Glossary": "Guardar glosario",
+        # Settings extras
+        "AI Glossary Extraction": "Extracción de glosario con IA",
+        "AI Glossary Extraction Info": "Extraer términos con el LLM antes de traducir",
+        "RPM Limit (0 = unlimited, restart to apply)": "Límite de RPM (0 = sin límite, reiniciar para aplicar)",
+        "Optional Modules": "Módulos opcionales",
+        # Runtime messages
+        "Please select file(s) to translate.": "Seleccione el/los archivo(s) a traducir.",
+        "API key is required for online models.": "Se requiere una clave API para los modelos en línea.",
+        "Translation stopped by user.": "Traducción detenida por el usuario.",
+        "No supported files found.": "No se encontraron archivos compatibles.",
+        "Please select a model first": "Seleccione primero un modelo.",
+        "No Local Model Placeholder": "No se detectó ningún modelo local: instale Ollama o active los modelos en línea en Configuración",
+        "Progress Saved Hint": "Progreso guardado. Vuelva a subir el mismo archivo y haga clic en 'Continuar traducción' para reanudar.",
+        "Unfinished Translation Detected": "Se detectó una traducción sin terminar: puede hacer clic en 'Continuar traducción'.",
+        "API Auth Error": "La clave API no es válida o ha caducado. Compruebe la clave API en la parte superior de la pestaña Traducir.",
+        "API Quota Error": "Saldo/cuota insuficiente. Recargue o cambie a otra clave.",
+        "API Keys Exhausted": "Todas las claves API fallaron (no válidas o sin cuota). Reemplace la(s) clave(s).",
+        "Completed Files": "Completado {done}/{total}",
+        "Missing Segments": "{count} segmento(s) faltante(s)",
+        "Segments": "segmentos",
+        # Proofread tab
+        "Proofread": "Revisar",
+        "Proofread Document": "Documento",
+        "Refresh List": "Actualizar lista",
+        "Save Edits": "Guardar cambios",
+        "Re-export": "Reexportar",
+        "Original Text": "Original",
+        "Translated Text": "Traducción",
+        "Edits saved": "Se guardaron {count} fila(s) editada(s).",
+        "Row count mismatch": "Número de filas no coincide: se esperaban {expected}, se obtuvieron {got}. Cambios no guardados.",
+        "No proofread documents": "No se encontraron documentos revisables. Complete primero una traducción (PDF no es compatible).",
+        "Proofread folder missing": "Datos de traducción no encontrados: {name}",
+        "Export completed": "Reexportación completada",
+        "Loaded entries": "Se cargaron {count} fila(s) de {name}"
     },
     # French
     "fr": {
@@ -687,7 +739,55 @@ LABEL_TRANSLATIONS = {
         "Success": "Succès",
         "Failed": "Échec",
         "Stopped": "Arrêté",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Interface Language": "Langue de l'interface",
+        # Bilingual modules
+        "Subtitle Bilingual": "Activer les sous-titres bilingues",
+        "TXT Bilingual": "Activer le mode bilingue TXT",
+        "MD Bilingual": "Activer le mode bilingue Markdown",
+        "EPUB Bilingual": "Activer le mode bilingue EPUB",
+        "HTML Bilingual": "Activer le mode bilingue HTML",
+        # Tab labels
+        "Settings": "Paramètres",
+        "History": "Historique",
+        # Glossary editor
+        "Edit Glossary": "Modifier le glossaire",
+        "Load Glossary": "Charger le glossaire",
+        "Save Glossary": "Enregistrer le glossaire",
+        # Settings extras
+        "AI Glossary Extraction": "Extraction de glossaire par IA",
+        "AI Glossary Extraction Info": "Extraire les termes avec le LLM avant de traduire",
+        "RPM Limit (0 = unlimited, restart to apply)": "Limite RPM (0 = illimité, redémarrer pour appliquer)",
+        "Optional Modules": "Modules optionnels",
+        # Runtime messages
+        "Please select file(s) to translate.": "Veuillez sélectionner le(s) fichier(s) à traduire.",
+        "API key is required for online models.": "Une clé API est requise pour les modèles en ligne.",
+        "Translation stopped by user.": "Traduction arrêtée par l'utilisateur.",
+        "No supported files found.": "Aucun fichier pris en charge trouvé.",
+        "Please select a model first": "Veuillez d'abord sélectionner un modèle.",
+        "No Local Model Placeholder": "Aucun modèle local détecté — installez Ollama ou activez les modèles en ligne dans les Paramètres",
+        "Progress Saved Hint": "Progression enregistrée. Téléchargez à nouveau le même fichier et cliquez sur « Continuer la traduction » pour reprendre.",
+        "Unfinished Translation Detected": "Traduction inachevée détectée — vous pouvez cliquer sur « Continuer la traduction ».",
+        "API Auth Error": "La clé API est invalide ou expirée. Veuillez vérifier la clé API en haut de l'onglet Traduire.",
+        "API Quota Error": "Solde/quota insuffisant. Veuillez recharger ou changer de clé.",
+        "API Keys Exhausted": "Toutes les clés API ont échoué (invalides ou quota épuisé). Veuillez remplacer la ou les clés.",
+        "Completed Files": "Terminé {done}/{total}",
+        "Missing Segments": "{count} segment(s) manquant(s)",
+        "Segments": "segments",
+        # Proofread tab
+        "Proofread": "Relecture",
+        "Proofread Document": "Document",
+        "Refresh List": "Actualiser la liste",
+        "Save Edits": "Enregistrer les modifications",
+        "Re-export": "Réexporter",
+        "Original Text": "Original",
+        "Translated Text": "Traduction",
+        "Edits saved": "{count} ligne(s) modifiée(s) enregistrée(s).",
+        "Row count mismatch": "Nombre de lignes incorrect : {expected} attendues, {got} obtenues. Modifications non enregistrées.",
+        "No proofread documents": "Aucun document relisible trouvé. Terminez d'abord une traduction (PDF non pris en charge).",
+        "Proofread folder missing": "Données de traduction introuvables : {name}",
+        "Export completed": "Réexportation terminée",
+        "Loaded entries": "{count} ligne(s) chargée(s) depuis {name}"
     },
     # German
     "de": {
@@ -755,7 +855,55 @@ LABEL_TRANSLATIONS = {
         "Success": "Erfolg",
         "Failed": "Fehlgeschlagen",
         "Stopped": "Gestoppt",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Interface Language": "Oberflächensprache",
+        # Bilingual modules
+        "Subtitle Bilingual": "Zweisprachige Untertitel aktivieren",
+        "TXT Bilingual": "TXT-Zweisprachenmodus aktivieren",
+        "MD Bilingual": "Markdown-Zweisprachenmodus aktivieren",
+        "EPUB Bilingual": "EPUB-Zweisprachenmodus aktivieren",
+        "HTML Bilingual": "HTML-Zweisprachenmodus aktivieren",
+        # Tab labels
+        "Settings": "Einstellungen",
+        "History": "Verlauf",
+        # Glossary editor
+        "Edit Glossary": "Glossar bearbeiten",
+        "Load Glossary": "Glossar laden",
+        "Save Glossary": "Glossar speichern",
+        # Settings extras
+        "AI Glossary Extraction": "KI-Glossarextraktion",
+        "AI Glossary Extraction Info": "Begriffe vor der Übersetzung mit dem LLM extrahieren",
+        "RPM Limit (0 = unlimited, restart to apply)": "RPM-Limit (0 = unbegrenzt, Neustart erforderlich)",
+        "Optional Modules": "Optionale Module",
+        # Runtime messages
+        "Please select file(s) to translate.": "Bitte wählen Sie die zu übersetzenden Datei(en) aus.",
+        "API key is required for online models.": "Für Online-Modelle ist ein API-Schlüssel erforderlich.",
+        "Translation stopped by user.": "Übersetzung vom Benutzer gestoppt.",
+        "No supported files found.": "Keine unterstützten Dateien gefunden.",
+        "Please select a model first": "Bitte wählen Sie zuerst ein Modell aus.",
+        "No Local Model Placeholder": "Kein lokales Modell erkannt — installieren Sie Ollama oder aktivieren Sie Online-Modelle in den Einstellungen",
+        "Progress Saved Hint": "Fortschritt gespeichert. Laden Sie dieselbe Datei erneut hoch und klicken Sie auf „Übersetzung fortsetzen“, um fortzufahren.",
+        "Unfinished Translation Detected": "Unvollständige Übersetzung erkannt — Sie können auf „Übersetzung fortsetzen“ klicken.",
+        "API Auth Error": "Der API-Schlüssel ist ungültig oder abgelaufen. Bitte überprüfen Sie den API-Schlüssel oben im Tab „Übersetzen“.",
+        "API Quota Error": "Unzureichendes Guthaben/Kontingent. Bitte aufladen oder zu einem anderen Schlüssel wechseln.",
+        "API Keys Exhausted": "Alle API-Schlüssel sind fehlgeschlagen (ungültig oder Kontingent erschöpft). Bitte ersetzen Sie die Schlüssel.",
+        "Completed Files": "Abgeschlossen {done}/{total}",
+        "Missing Segments": "{count} Segment(e) fehlen",
+        "Segments": "Segmente",
+        # Proofread tab
+        "Proofread": "Korrektur",
+        "Proofread Document": "Dokument",
+        "Refresh List": "Liste aktualisieren",
+        "Save Edits": "Änderungen speichern",
+        "Re-export": "Erneut exportieren",
+        "Original Text": "Original",
+        "Translated Text": "Übersetzung",
+        "Edits saved": "{count} bearbeitete Zeile(n) gespeichert.",
+        "Row count mismatch": "Zeilenanzahl stimmt nicht überein: erwartet {expected}, erhalten {got}. Änderungen nicht gespeichert.",
+        "No proofread documents": "Keine korrigierbaren Dokumente gefunden. Schließen Sie zuerst eine Übersetzung ab (PDF wird nicht unterstützt).",
+        "Proofread folder missing": "Übersetzungsdaten nicht gefunden: {name}",
+        "Export completed": "Erneuter Export abgeschlossen",
+        "Loaded entries": "{count} Zeile(n) aus {name} geladen"
     },
     # Italian
     "it": {
@@ -823,7 +971,55 @@ LABEL_TRANSLATIONS = {
         "Success": "Successo",
         "Failed": "Fallito",
         "Stopped": "Interrotto",
-        "Tokens": "Token"
+        "Tokens": "Token",
+        "Interface Language": "Lingua dell'interfaccia",
+        # Bilingual modules
+        "Subtitle Bilingual": "Abilita sottotitoli bilingue",
+        "TXT Bilingual": "Abilita modalità bilingue TXT",
+        "MD Bilingual": "Abilita modalità bilingue Markdown",
+        "EPUB Bilingual": "Abilita modalità bilingue EPUB",
+        "HTML Bilingual": "Abilita modalità bilingue HTML",
+        # Tab labels
+        "Settings": "Impostazioni",
+        "History": "Cronologia",
+        # Glossary editor
+        "Edit Glossary": "Modifica glossario",
+        "Load Glossary": "Carica glossario",
+        "Save Glossary": "Salva glossario",
+        # Settings extras
+        "AI Glossary Extraction": "Estrazione glossario con IA",
+        "AI Glossary Extraction Info": "Estrai i termini con l'LLM prima di tradurre",
+        "RPM Limit (0 = unlimited, restart to apply)": "Limite RPM (0 = illimitato, riavviare per applicare)",
+        "Optional Modules": "Moduli opzionali",
+        # Runtime messages
+        "Please select file(s) to translate.": "Seleziona il/i file da tradurre.",
+        "API key is required for online models.": "È necessaria una chiave API per i modelli online.",
+        "Translation stopped by user.": "Traduzione interrotta dall'utente.",
+        "No supported files found.": "Nessun file supportato trovato.",
+        "Please select a model first": "Seleziona prima un modello.",
+        "No Local Model Placeholder": "Nessun modello locale rilevato — installa Ollama o abilita i modelli online nelle Impostazioni",
+        "Progress Saved Hint": "Avanzamento salvato. Ricarica lo stesso file e fai clic su \"Continua traduzione\" per riprendere.",
+        "Unfinished Translation Detected": "Rilevata traduzione incompleta — puoi fare clic su \"Continua traduzione\".",
+        "API Auth Error": "La chiave API non è valida o è scaduta. Controlla la chiave API in alto nella scheda Traduci.",
+        "API Quota Error": "Saldo/quota insufficiente. Ricarica o passa a un'altra chiave.",
+        "API Keys Exhausted": "Tutte le chiavi API hanno fallito (non valide o quota esaurita). Sostituisci la/le chiave/i.",
+        "Completed Files": "Completato {done}/{total}",
+        "Missing Segments": "{count} segmento/i mancante/i",
+        "Segments": "segmenti",
+        # Proofread tab
+        "Proofread": "Revisione",
+        "Proofread Document": "Documento",
+        "Refresh List": "Aggiorna elenco",
+        "Save Edits": "Salva modifiche",
+        "Re-export": "Riesporta",
+        "Original Text": "Originale",
+        "Translated Text": "Traduzione",
+        "Edits saved": "Salvate {count} riga/righe modificata/e.",
+        "Row count mismatch": "Numero di righe non corrispondente: previste {expected}, ottenute {got}. Modifiche non salvate.",
+        "No proofread documents": "Nessun documento revisionabile trovato. Completa prima una traduzione (PDF non supportato).",
+        "Proofread folder missing": "Dati di traduzione non trovati: {name}",
+        "Export completed": "Riesportazione completata",
+        "Loaded entries": "Caricate {count} riga/righe da {name}"
     },
     # Portuguese
     "pt": {
@@ -891,7 +1087,55 @@ LABEL_TRANSLATIONS = {
         "Success": "Sucesso",
         "Failed": "Falhou",
         "Stopped": "Parado",
-        "Tokens": "Tokens"
+        "Tokens": "Tokens",
+        "Interface Language": "Idioma da interface",
+        # Bilingual modules
+        "Subtitle Bilingual": "Ativar legendas bilíngues",
+        "TXT Bilingual": "Ativar modo bilíngue TXT",
+        "MD Bilingual": "Ativar modo bilíngue Markdown",
+        "EPUB Bilingual": "Ativar modo bilíngue EPUB",
+        "HTML Bilingual": "Ativar modo bilíngue HTML",
+        # Tab labels
+        "Settings": "Configurações",
+        "History": "Histórico",
+        # Glossary editor
+        "Edit Glossary": "Editar glossário",
+        "Load Glossary": "Carregar glossário",
+        "Save Glossary": "Salvar glossário",
+        # Settings extras
+        "AI Glossary Extraction": "Extração de glossário por IA",
+        "AI Glossary Extraction Info": "Extrair termos com o LLM antes de traduzir",
+        "RPM Limit (0 = unlimited, restart to apply)": "Limite de RPM (0 = ilimitado, reiniciar para aplicar)",
+        "Optional Modules": "Módulos opcionais",
+        # Runtime messages
+        "Please select file(s) to translate.": "Selecione o(s) arquivo(s) a traduzir.",
+        "API key is required for online models.": "É necessária uma chave de API para modelos online.",
+        "Translation stopped by user.": "Tradução interrompida pelo usuário.",
+        "No supported files found.": "Nenhum arquivo compatível encontrado.",
+        "Please select a model first": "Selecione primeiro um modelo.",
+        "No Local Model Placeholder": "Nenhum modelo local detectado — instale o Ollama ou ative modelos online nas Configurações",
+        "Progress Saved Hint": "Progresso salvo. Envie novamente o mesmo arquivo e clique em \"Continuar tradução\" para retomar.",
+        "Unfinished Translation Detected": "Tradução incompleta detectada — você pode clicar em \"Continuar tradução\".",
+        "API Auth Error": "A chave de API é inválida ou expirou. Verifique a chave de API no topo da aba Traduzir.",
+        "API Quota Error": "Saldo/cota insuficiente. Recarregue ou troque para outra chave.",
+        "API Keys Exhausted": "Todas as chaves de API falharam (inválidas ou sem cota). Substitua a(s) chave(s).",
+        "Completed Files": "Concluído {done}/{total}",
+        "Missing Segments": "{count} segmento(s) ausente(s)",
+        "Segments": "segmentos",
+        # Proofread tab
+        "Proofread": "Revisão",
+        "Proofread Document": "Documento",
+        "Refresh List": "Atualizar lista",
+        "Save Edits": "Salvar edições",
+        "Re-export": "Reexportar",
+        "Original Text": "Original",
+        "Translated Text": "Tradução",
+        "Edits saved": "{count} linha(s) editada(s) salva(s).",
+        "Row count mismatch": "Número de linhas incompatível: esperado {expected}, obtido {got}. Edições não salvas.",
+        "No proofread documents": "Nenhum documento revisável encontrado. Conclua primeiro uma tradução (PDF não é compatível).",
+        "Proofread folder missing": "Dados de tradução não encontrados: {name}",
+        "Export completed": "Reexportação concluída",
+        "Loaded entries": "{count} linha(s) carregada(s) de {name}"
     },
     # Russian
     "ru": {
@@ -959,7 +1203,55 @@ LABEL_TRANSLATIONS = {
         "Success": "Успешно",
         "Failed": "Ошибка",
         "Stopped": "Остановлено",
-        "Tokens": "Токены"
+        "Tokens": "Токены",
+        "Interface Language": "Язык интерфейса",
+        # Bilingual modules
+        "Subtitle Bilingual": "Включить двуязычные субтитры",
+        "TXT Bilingual": "Включить двуязычный режим TXT",
+        "MD Bilingual": "Включить двуязычный режим Markdown",
+        "EPUB Bilingual": "Включить двуязычный режим EPUB",
+        "HTML Bilingual": "Включить двуязычный режим HTML",
+        # Tab labels
+        "Settings": "Настройки",
+        "History": "История",
+        # Glossary editor
+        "Edit Glossary": "Редактировать глоссарий",
+        "Load Glossary": "Загрузить глоссарий",
+        "Save Glossary": "Сохранить глоссарий",
+        # Settings extras
+        "AI Glossary Extraction": "Извлечение глоссария ИИ",
+        "AI Glossary Extraction Info": "Извлекать термины с помощью LLM перед переводом",
+        "RPM Limit (0 = unlimited, restart to apply)": "Лимит RPM (0 — без ограничения, перезапуск для применения)",
+        "Optional Modules": "Дополнительные модули",
+        # Runtime messages
+        "Please select file(s) to translate.": "Пожалуйста, выберите файл(ы) для перевода.",
+        "API key is required for online models.": "Для онлайн-моделей требуется API-ключ.",
+        "Translation stopped by user.": "Перевод остановлен пользователем.",
+        "No supported files found.": "Поддерживаемые файлы не найдены.",
+        "Please select a model first": "Сначала выберите модель.",
+        "No Local Model Placeholder": "Локальная модель не обнаружена — установите Ollama или включите онлайн-модели в Настройках",
+        "Progress Saved Hint": "Прогресс сохранён. Повторно загрузите тот же файл и нажмите «Продолжить перевод», чтобы возобновить.",
+        "Unfinished Translation Detected": "Обнаружен незавершённый перевод — вы можете нажать «Продолжить перевод».",
+        "API Auth Error": "API-ключ недействителен или истёк. Проверьте API-ключ вверху вкладки «Перевести».",
+        "API Quota Error": "Недостаточно средств/квоты. Пополните счёт или смените ключ.",
+        "API Keys Exhausted": "Все API-ключи недоступны (недействительны или исчерпана квота). Замените ключ(и).",
+        "Completed Files": "Завершено {done}/{total}",
+        "Missing Segments": "Пропущено сегментов: {count}",
+        "Segments": "сегменты",
+        # Proofread tab
+        "Proofread": "Корректура",
+        "Proofread Document": "Документ",
+        "Refresh List": "Обновить список",
+        "Save Edits": "Сохранить изменения",
+        "Re-export": "Повторный экспорт",
+        "Original Text": "Оригинал",
+        "Translated Text": "Перевод",
+        "Edits saved": "Сохранено изменённых строк: {count}.",
+        "Row count mismatch": "Несоответствие количества строк: ожидалось {expected}, получено {got}. Изменения не сохранены.",
+        "No proofread documents": "Документы для корректуры не найдены. Сначала завершите перевод (PDF не поддерживается).",
+        "Proofread folder missing": "Данные перевода не найдены: {name}",
+        "Export completed": "Повторный экспорт завершён",
+        "Loaded entries": "Загружено строк из {name}: {count}"
     },
     # Korean
     "ko": {
@@ -1027,7 +1319,55 @@ LABEL_TRANSLATIONS = {
         "Success": "성공",
         "Failed": "실패",
         "Stopped": "중지됨",
-        "Tokens": "토큰"
+        "Tokens": "토큰",
+        "Interface Language": "인터페이스 언어",
+        # Bilingual modules
+        "Subtitle Bilingual": "이중 언어 자막 활성화",
+        "TXT Bilingual": "TXT 이중 언어 모드 활성화",
+        "MD Bilingual": "Markdown 이중 언어 모드 활성화",
+        "EPUB Bilingual": "EPUB 이중 언어 모드 활성화",
+        "HTML Bilingual": "HTML 이중 언어 모드 활성화",
+        # Tab labels
+        "Settings": "설정",
+        "History": "기록",
+        # Glossary editor
+        "Edit Glossary": "용어집 편집",
+        "Load Glossary": "용어집 불러오기",
+        "Save Glossary": "용어집 저장",
+        # Settings extras
+        "AI Glossary Extraction": "AI 용어 추출",
+        "AI Glossary Extraction Info": "번역 전에 LLM으로 용어를 추출합니다",
+        "RPM Limit (0 = unlimited, restart to apply)": "RPM 제한 (0 = 무제한, 적용하려면 재시작)",
+        "Optional Modules": "선택 모듈",
+        # Runtime messages
+        "Please select file(s) to translate.": "번역할 파일을 선택하세요.",
+        "API key is required for online models.": "온라인 모델에는 API 키가 필요합니다.",
+        "Translation stopped by user.": "사용자가 번역을 중지했습니다.",
+        "No supported files found.": "지원되는 파일을 찾을 수 없습니다.",
+        "Please select a model first": "먼저 모델을 선택하세요.",
+        "No Local Model Placeholder": "로컬 모델이 감지되지 않음 — Ollama를 설치하거나 설정에서 온라인 모델을 활성화하세요",
+        "Progress Saved Hint": "진행 상황이 저장되었습니다. 같은 파일을 다시 업로드하고 '번역 계속하기'를 클릭하여 재개하세요.",
+        "Unfinished Translation Detected": "완료되지 않은 번역이 감지되었습니다 — '번역 계속하기'를 클릭할 수 있습니다.",
+        "API Auth Error": "API 키가 유효하지 않거나 만료되었습니다. 번역 탭 상단의 API 키를 확인하세요.",
+        "API Quota Error": "잔액/할당량이 부족합니다. 충전하거나 다른 키로 전환하세요.",
+        "API Keys Exhausted": "모든 API 키가 실패했습니다(무효하거나 할당량 소진). 키를 교체하세요.",
+        "Completed Files": "완료 {done}/{total}",
+        "Missing Segments": "{count}개 세그먼트 누락",
+        "Segments": "세그먼트",
+        # Proofread tab
+        "Proofread": "교정",
+        "Proofread Document": "문서",
+        "Refresh List": "목록 새로고침",
+        "Save Edits": "수정 저장",
+        "Re-export": "다시 내보내기",
+        "Original Text": "원문",
+        "Translated Text": "번역문",
+        "Edits saved": "{count}개 행의 수정을 저장했습니다.",
+        "Row count mismatch": "행 수 불일치: {expected}개 예상, {got}개 발견. 저장되지 않았습니다.",
+        "No proofread documents": "교정 가능한 문서가 없습니다. 먼저 번역을 완료하세요(PDF는 지원되지 않음).",
+        "Proofread folder missing": "번역 데이터를 찾을 수 없습니다: {name}",
+        "Export completed": "다시 내보내기 완료",
+        "Loaded entries": "{name}에서 {count}개 행을 불러왔습니다"
     },
     # Thai
     "th": {
@@ -1095,7 +1435,55 @@ LABEL_TRANSLATIONS = {
         "Success": "สำเร็จ",
         "Failed": "ล้มเหลว",
         "Stopped": "หยุดแล้ว",
-        "Tokens": "โทเค็น"
+        "Tokens": "โทเค็น",
+        "Interface Language": "ภาษาของอินเทอร์เฟซ",
+        # Bilingual modules
+        "Subtitle Bilingual": "เปิดใช้งานคำบรรยายสองภาษา",
+        "TXT Bilingual": "เปิดใช้งานโหมดสองภาษา TXT",
+        "MD Bilingual": "เปิดใช้งานโหมดสองภาษา Markdown",
+        "EPUB Bilingual": "เปิดใช้งานโหมดสองภาษา EPUB",
+        "HTML Bilingual": "เปิดใช้งานโหมดสองภาษา HTML",
+        # Tab labels
+        "Settings": "การตั้งค่า",
+        "History": "ประวัติ",
+        # Glossary editor
+        "Edit Glossary": "แก้ไขอภิธานศัพท์",
+        "Load Glossary": "โหลดอภิธานศัพท์",
+        "Save Glossary": "บันทึกอภิธานศัพท์",
+        # Settings extras
+        "AI Glossary Extraction": "การดึงอภิธานศัพท์ด้วย AI",
+        "AI Glossary Extraction Info": "ดึงคำศัพท์ด้วย LLM ก่อนการแปล",
+        "RPM Limit (0 = unlimited, restart to apply)": "ขีดจำกัด RPM (0 = ไม่จำกัด, รีสตาร์ทเพื่อใช้งาน)",
+        "Optional Modules": "โมดูลเสริม",
+        # Runtime messages
+        "Please select file(s) to translate.": "กรุณาเลือกไฟล์ที่ต้องการแปล",
+        "API key is required for online models.": "โมเดลออนไลน์ต้องใช้คีย์ API",
+        "Translation stopped by user.": "การแปลถูกหยุดโดยผู้ใช้",
+        "No supported files found.": "ไม่พบไฟล์ที่รองรับ",
+        "Please select a model first": "กรุณาเลือกโมเดลก่อน",
+        "No Local Model Placeholder": "ไม่พบโมเดลในเครื่อง — ติดตั้ง Ollama หรือเปิดใช้งานโมเดลออนไลน์ในการตั้งค่า",
+        "Progress Saved Hint": "บันทึกความคืบหน้าแล้ว อัปโหลดไฟล์เดิมอีกครั้งแล้วคลิก 'แปลต่อ' เพื่อดำเนินการต่อ",
+        "Unfinished Translation Detected": "ตรวจพบการแปลที่ยังไม่เสร็จ — คุณสามารถคลิก 'แปลต่อ' ได้",
+        "API Auth Error": "คีย์ API ไม่ถูกต้องหรือหมดอายุ กรุณาตรวจสอบคีย์ API ที่ด้านบนของแท็บแปล",
+        "API Quota Error": "ยอดคงเหลือ/โควตาไม่เพียงพอ กรุณาเติมเงินหรือเปลี่ยนคีย์",
+        "API Keys Exhausted": "คีย์ API ทั้งหมดใช้ไม่ได้ (ไม่ถูกต้องหรือโควตาหมด) กรุณาเปลี่ยนคีย์",
+        "Completed Files": "เสร็จ {done}/{total}",
+        "Missing Segments": "ขาด {count} เซกเมนต์",
+        "Segments": "เซกเมนต์",
+        # Proofread tab
+        "Proofread": "พิสูจน์อักษร",
+        "Proofread Document": "เอกสาร",
+        "Refresh List": "รีเฟรชรายการ",
+        "Save Edits": "บันทึกการแก้ไข",
+        "Re-export": "ส่งออกอีกครั้ง",
+        "Original Text": "ต้นฉบับ",
+        "Translated Text": "คำแปล",
+        "Edits saved": "บันทึกการแก้ไข {count} แถวแล้ว",
+        "Row count mismatch": "จำนวนแถวไม่ตรงกัน: คาดว่า {expected} ได้ {got} ไม่ได้บันทึกการแก้ไข",
+        "No proofread documents": "ไม่พบเอกสารที่พิสูจน์อักษรได้ กรุณาแปลให้เสร็จก่อน (ไม่รองรับ PDF)",
+        "Proofread folder missing": "ไม่พบข้อมูลการแปล: {name}",
+        "Export completed": "ส่งออกอีกครั้งเสร็จสมบูรณ์",
+        "Loaded entries": "โหลด {count} แถวจาก {name} แล้ว"
     },
     # Vietnamese
     "vi": {
@@ -1163,6 +1551,54 @@ LABEL_TRANSLATIONS = {
         "Success": "Thành công",
         "Failed": "Thất bại",
         "Stopped": "Đã dừng",
-        "Tokens": "Token"
+        "Tokens": "Token",
+        "Interface Language": "Ngôn ngữ giao diện",
+        # Bilingual modules
+        "Subtitle Bilingual": "Bật phụ đề song ngữ",
+        "TXT Bilingual": "Bật chế độ song ngữ TXT",
+        "MD Bilingual": "Bật chế độ song ngữ Markdown",
+        "EPUB Bilingual": "Bật chế độ song ngữ EPUB",
+        "HTML Bilingual": "Bật chế độ song ngữ HTML",
+        # Tab labels
+        "Settings": "Cài đặt",
+        "History": "Lịch sử",
+        # Glossary editor
+        "Edit Glossary": "Chỉnh sửa bảng thuật ngữ",
+        "Load Glossary": "Tải bảng thuật ngữ",
+        "Save Glossary": "Lưu bảng thuật ngữ",
+        # Settings extras
+        "AI Glossary Extraction": "Trích xuất thuật ngữ bằng AI",
+        "AI Glossary Extraction Info": "Trích xuất thuật ngữ bằng LLM trước khi dịch",
+        "RPM Limit (0 = unlimited, restart to apply)": "Giới hạn RPM (0 = không giới hạn, khởi động lại để áp dụng)",
+        "Optional Modules": "Mô-đun tùy chọn",
+        # Runtime messages
+        "Please select file(s) to translate.": "Vui lòng chọn (các) tệp cần dịch.",
+        "API key is required for online models.": "Cần có khóa API cho các mô hình trực tuyến.",
+        "Translation stopped by user.": "Người dùng đã dừng dịch.",
+        "No supported files found.": "Không tìm thấy tệp được hỗ trợ.",
+        "Please select a model first": "Vui lòng chọn mô hình trước.",
+        "No Local Model Placeholder": "Không phát hiện mô hình cục bộ — cài đặt Ollama hoặc bật mô hình trực tuyến trong Cài đặt",
+        "Progress Saved Hint": "Đã lưu tiến trình. Tải lên lại cùng một tệp và nhấp 'Tiếp tục dịch' để tiếp tục.",
+        "Unfinished Translation Detected": "Đã phát hiện bản dịch chưa hoàn tất — bạn có thể nhấp 'Tiếp tục dịch'.",
+        "API Auth Error": "Khóa API không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra Khóa API ở đầu tab Dịch.",
+        "API Quota Error": "Số dư/hạn mức không đủ. Vui lòng nạp thêm hoặc đổi khóa khác.",
+        "API Keys Exhausted": "Tất cả khóa API đều không dùng được (không hợp lệ hoặc hết hạn mức). Vui lòng thay khóa.",
+        "Completed Files": "Hoàn thành {done}/{total}",
+        "Missing Segments": "Thiếu {count} đoạn",
+        "Segments": "đoạn",
+        # Proofread tab
+        "Proofread": "Hiệu đính",
+        "Proofread Document": "Tài liệu",
+        "Refresh List": "Làm mới danh sách",
+        "Save Edits": "Lưu chỉnh sửa",
+        "Re-export": "Xuất lại",
+        "Original Text": "Bản gốc",
+        "Translated Text": "Bản dịch",
+        "Edits saved": "Đã lưu {count} hàng đã chỉnh sửa.",
+        "Row count mismatch": "Số hàng không khớp: cần {expected}, nhận được {got}. Chưa lưu chỉnh sửa.",
+        "No proofread documents": "Không tìm thấy tài liệu có thể hiệu đính. Hãy hoàn tất một bản dịch trước (không hỗ trợ PDF).",
+        "Proofread folder missing": "Không tìm thấy dữ liệu dịch: {name}",
+        "Export completed": "Xuất lại hoàn tất",
+        "Loaded entries": "Đã tải {count} hàng từ {name}"
     }
 }
