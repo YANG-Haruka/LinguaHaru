@@ -38,6 +38,13 @@ def _get_ocr_engine():
     global _ocr_engine
     if _ocr_engine is None:
         try:
+            # DLL load-order fix: paddle's oneDNN/MKL DLLs break ctranslate2
+            # (faster-whisper) if paddle loads first; the reverse order works.
+            # Pre-import faster_whisper when both optional modules are present.
+            try:
+                import faster_whisper  # noqa: F401
+            except ImportError:
+                pass
             from paddleocr import PaddleOCR
             app_logger.info("Loading PaddleOCR engine (PP-OCRv6)...")
             _ocr_engine = ("paddle", PaddleOCR(
@@ -45,6 +52,9 @@ def _get_ocr_engine():
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=True,
+                # paddle 3.3.1 oneDNN hits an unimplemented PIR op on
+                # Windows CPU (ConvertPirAttribute2RuntimeAttribute)
+                enable_mkldnn=False,
             ))
         except Exception as e:
             if not isinstance(e, ImportError):
