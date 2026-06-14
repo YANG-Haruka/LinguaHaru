@@ -273,6 +273,8 @@ async function boot() {
   fillSelect($("set-model"), BOOT.online_models, c.default_online_model);
   $("set-retries").value = c.max_retries;
   $("set-rpm").value = c.rpm_limit != null ? c.rpm_limit : 0;
+  $("set-thread-online").value = c.default_thread_count_online != null ? c.default_thread_count_online : 8;
+  $("set-thread-offline").value = c.default_thread_count_offline != null ? c.default_thread_count_offline : 4;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   renderModules();
   fillLiveTarget();
@@ -474,8 +476,18 @@ function listenProgress(taskId) {
   const es = new EventSource("/api/progress/" + taskId);
   es.onmessage = (ev) => {
     const d = JSON.parse(ev.data);
-    $("progress-bar").style.width = Math.round((d.progress || 0) * 100) + "%";
+    const pct = Math.round((d.progress || 0) * 100);
+    $("progress-bar").style.width = pct + "%";
+    $("prog-ring").style.setProperty("--p", (pct * 3.6) + "deg");
+    $("prog-pct").textContent = pct + "%";
     $("progress-desc").textContent = d.desc || "";
+    // Parse the backend stats line into the dashboard metric cards.
+    const desc = d.desc || "";
+    const m = (re) => { const x = desc.match(re); return x ? x[1] : "—"; };
+    $("m-speed").textContent = m(/([\d.]+)\s*lines\/min/i);
+    $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
+    $("m-eta").textContent = m(/ETA\s+([\d:]+)/i);
+    $("m-threads").textContent = m(/(\d+)\s*threads/i);
     if (d.status === "done") {
       es.close(); setBusy(false);
       $("download-link").href = "/api/download/" + taskId;
@@ -512,6 +524,8 @@ $("set-rpm").onchange = () => {
   $("settings-status").textContent = "RPM 限制已更新 —— 重启程序后生效。";
 };
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
+$("set-thread-online").onchange = () => saveConfig({ default_thread_count_online: parseInt($("set-thread-online").value || "8", 10) });
+$("set-thread-offline").onchange = () => saveConfig({ default_thread_count_offline: parseInt($("set-thread-offline").value || "4", 10) });
 $("set-model").onchange = refreshSettingsApiKeyPlaceholder;
 $("set-apikey").onchange = async () => {
   const key = $("set-apikey").value;

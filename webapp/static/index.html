@@ -142,7 +142,7 @@
     <section class="panel active" data-panel="translate">
       <div class="page-head">
         <div class="kicker mono">Translate</div>
-        <h2>翻译</h2>
+        <h2 data-i18n="Translate">翻译</h2>
         <p>上传文档、字幕、表格或媒体一键翻译，或对着麦克风实时口译 —— 都在这一页。</p>
       </div>
 
@@ -222,8 +222,20 @@
         </div>
 
         <div class="progress-wrap" id="progress-wrap" hidden>
-          <div class="progress"><div class="bar" id="progress-bar"></div></div>
-          <div class="muted" id="progress-desc"></div>
+          <div class="dash">
+            <div class="dash-ring">
+              <div class="ring" id="prog-ring" style="--p:0deg"><span id="prog-pct">0%</span></div>
+              <div class="dash-label" data-i18n="Task Progress">翻译进度</div>
+            </div>
+            <div class="dash-metrics">
+              <div class="metric"><div class="m-label" data-i18n="Average Speed">平均速度</div><div class="m-val mono"><span id="m-speed">—</span> <small data-i18n="lines/min">行/分</small></div></div>
+              <div class="metric"><div class="m-label" data-i18n="Token Usage">Token 用量</div><div class="m-val mono" id="m-tokens">—</div></div>
+              <div class="metric"><div class="m-label" data-i18n="Remaining Time">剩余时间</div><div class="m-val mono" id="m-eta">—</div></div>
+              <div class="metric"><div class="m-label" data-i18n="Thread Count">线程数</div><div class="m-val mono" id="m-threads">—</div></div>
+            </div>
+          </div>
+          <div class="progress" style="margin-top:14px"><div class="bar" id="progress-bar"></div></div>
+          <div class="muted" id="progress-desc" style="margin-top:8px"></div>
         </div>
 
         <div id="result" class="result" hidden>
@@ -285,7 +297,7 @@
     <section class="panel" data-panel="glossary">
       <div class="page-head">
         <div class="kicker mono">Library · Glossary</div>
-        <h2>词汇表</h2>
+        <h2 data-i18n="Glossary">词汇表</h2>
         <p>维护术语对照表，翻译时自动套用，保证专有名词一致。</p>
       </div>
       <div class="card">
@@ -308,7 +320,7 @@
     <section class="panel" data-panel="proofread">
       <div class="page-head">
         <div class="kicker mono">Library · Proofread</div>
-        <h2>校对</h2>
+        <h2 data-i18n="Proofread">校对</h2>
         <p>逐段查看原文与译文，手动修正后可重新导出。</p>
       </div>
       <div class="card row-2">
@@ -336,7 +348,7 @@
     <section class="panel" data-panel="history">
       <div class="page-head">
         <div class="kicker mono">Library · History</div>
-        <h2>历史记录</h2>
+        <h2 data-i18n="History">历史记录</h2>
         <p>查看过往翻译任务的文件、语言、模型与用量。</p>
       </div>
       <div class="card">
@@ -364,7 +376,7 @@
     <section class="panel" data-panel="modules">
       <div class="page-head">
         <div class="kicker mono">System · Plugins</div>
-        <h2>插件</h2>
+        <h2 data-i18n="Plugins">插件</h2>
         <p>按需安装可选能力模块。安装后重启程序即可扩展支持的文件类型。</p>
       </div>
       <div class="card">
@@ -378,7 +390,7 @@
     <section class="panel" data-panel="settings">
       <div class="page-head">
         <div class="kicker mono">System · Settings</div>
-        <h2>设置</h2>
+        <h2 data-i18n="Settings">设置</h2>
         <p>模型密钥、网络与重试。可选能力模块请前往「插件」。</p>
       </div>
       <div class="card">
@@ -399,6 +411,10 @@
         </div>
         <div class="row-2" style="margin-top:18px">
           <div class="field"><label>RPM 限制（每分钟请求数，0 = 不限制，重启后生效）</label><input type="number" id="set-rpm" min="0" max="100000" /></div>
+          <div class="field"><label>线程数 · 在线（每模型可在接口里单独设置）</label><input type="number" id="set-thread-online" min="1" max="64" /></div>
+        </div>
+        <div class="row-2" style="margin-top:18px">
+          <div class="field"><label>线程数 · 离线（本地模型）</label><input type="number" id="set-thread-offline" min="1" max="64" /></div>
         </div>
         <div class="muted" style="margin-top:14px">Google 密钥用于「实时语音」的 Gemini 3.5 Live Translate。</div>
       </div>

@@ -370,6 +370,20 @@ button.danger { color: #fff; background: #ef4444; border: none; }
 /* ----- interface language selector (sidebar bottom) ----- */
 .bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .ui-lang-select { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: .85rem; }
+
+/* ----- progress dashboard (mirrors the Qt ring + metric cards) ----- */
+.dash { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding: 18px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.dash-ring { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ring { width: 120px; height: 120px; border-radius: 50%; display: grid; place-items: center; position: relative;
+  background: conic-gradient(var(--accent) var(--p, 0deg), var(--border) 0); transition: background .3s; }
+.ring::before { content: ""; position: absolute; inset: 10px; border-radius: 50%; background: var(--surface); }
+.ring span { position: relative; font-size: 1.5rem; font-weight: 700; color: var(--text); }
+.dash-label { font-size: .85rem; color: var(--muted); }
+.dash-metrics { display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr)); gap: 12px; flex: 1; min-width: 280px; }
+.metric { padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.m-label { font-size: .78rem; color: var(--muted); }
+.m-val { font-size: 1.2rem; font-weight: 600; margin-top: 2px; color: var(--text); }
+.m-val small { font-size: .7rem; font-weight: 400; color: var(--muted); }
 .muted { color: var(--muted); font-size: 0.84rem; }
 #accepted { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.3px; color: var(--faint); }
 

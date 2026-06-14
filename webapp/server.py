@@ -146,7 +146,8 @@ async def update_config(payload: dict):
     allowed = {"default_online", "default_online_model", "default_src_lang",
                "default_dst_lang", "default_glossary", "stt_model",
                "translate_subtitles", "max_retries", "rpm_limit",
-               "auto_extract_glossary", "lan_mode"}
+               "auto_extract_glossary", "lan_mode",
+               "default_thread_count_online", "default_thread_count_offline"}
     config = backend.read_config()
     for k, v in payload.items():
         if k in allowed:
