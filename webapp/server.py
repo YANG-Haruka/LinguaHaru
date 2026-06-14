@@ -31,7 +31,9 @@ from config.log_config import app_logger
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(HERE, "static")
-UPLOAD_DIR = os.path.join(backend.REPO_ROOT, "temp", "_web_uploads")
+# Uploads must live OUTSIDE the translation temp dir: DocumentTranslator.process()
+# wipes temp/ on a fresh run, which would delete the file being translated.
+UPLOAD_DIR = os.path.join(backend.REPO_ROOT, "web_uploads")
 
 app = FastAPI(title="LinguaHaru Web")
 

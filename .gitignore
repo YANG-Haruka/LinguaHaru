@@ -30,3 +30,4 @@ config/text_rules.json
 linguaharu-ui-tabs.png
 tests/_selfshot.py
 tests/_diag.py
+web_uploads/
