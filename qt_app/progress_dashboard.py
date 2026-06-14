@@ -9,7 +9,7 @@ import time
 
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QGridLayout, QHBoxLayout
 
-from qfluentwidgets import TitleLabel, PushButton, FluentIcon
+from qfluentwidgets import TitleLabel, PushButton, FluentIcon, CaptionLabel
 
 from qt_app.i18n import tr
 from qt_app.widgets import MetricCard, RingMetricCard
@@ -86,6 +86,11 @@ class ProgressDashboard(QWidget):
         grid.addWidget(self.failed_card, 2, 1)
         grid.addWidget(self.stability_card, 2, 2)
         layout.addLayout(grid)
+
+        # Live status line: the backend's per-segment desc (rate / ETA / tokens).
+        self.status = CaptionLabel("")
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
         layout.addStretch(1)
 
         self._cards = {
@@ -108,9 +113,13 @@ class ProgressDashboard(QWidget):
             card.set_label(tr(key, lang))
         self.speed_card.sub.setText(tr("lines/min", lang))
 
+    def set_status(self, text):
+        self.status.setText(text or "")
+
     def start(self):
         self._start_time = time.monotonic()
         self.ring_card.set_value(0)
+        self.status.setText("")
 
     def update_metrics(self, percent, total_files, done_files, live_tasks,
                        failed, total_tokens):

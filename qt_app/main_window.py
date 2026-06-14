@@ -119,8 +119,10 @@ class MainWindow(FluentWindow):
         # Cross-page wiring.
         self.settings_page.on_ui_lang_changed = self.on_lang_changed
         self.interface_page.on_active_changed = self.translate_page.refresh_active_interface
-        # Clicking an unavailable format card jumps to the Plugins page.
+        # Clicking an unavailable format card jumps to the Plugins page; the
+        # interface button jumps to Interface Management.
         self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
+        self.translate_page.on_open_interface = lambda: self.switchTo(self.interface_page)
 
         # Interface-language picker + theme toggle pinned at the bottom of the
         # navigation rail (language above theme).

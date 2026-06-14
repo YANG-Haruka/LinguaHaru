@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ComboBox, PushButton, PrimaryPushButton, ProgressBar, SwitchButton,
     BodyLabel, CaptionLabel, CardWidget, TitleLabel,
-    InfoBar, InfoBarPosition, FluentIcon, ToolButton, PasswordLineEdit,
+    InfoBar, InfoBarPosition, FluentIcon, ToolButton,
     ScrollArea, FlowLayout,
 )
 
@@ -34,7 +34,7 @@ from qt_app.worker import TranslationWorker
 from qt_app.history_page import open_folder
 from qt_app.widgets import FormatCategoryCard
 from qt_app.progress_dashboard import ProgressDashboard
-from config.api_keys import load_api_key_for_model, save_api_key_for_model
+from config.api_keys import load_api_key_for_model
 from config.languages_config import LANGUAGE_MAP
 from pipeline.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, get_stt_model, SENSEVOICE_SUPPORTED_CODES)
@@ -43,11 +43,8 @@ from config.optional_modules import MEDIA_EXTENSIONS
 # Colorful format categories (label-key, formats, hex color, icon, module_key).
 # module_key (None = always available) gates optional plugins: pdf/image/video.
 _FORMAT_CATEGORIES = [
-    ("Books", "EPUB · TXT", "#7c3aed", FluentIcon.LIBRARY, None),
-    ("Documents", "DOCX · MD · PPTX · XLSX", "#2563eb", FluentIcon.DOCUMENT, None),
-    ("Subtitles", "SRT · ASS · VTT · LRC", "#0891b2", FluentIcon.MOVIE, None),
-    ("Data", "CSV · JSON · TSV", "#16a34a", FluentIcon.TILES, None),
-    ("Web", "HTML · ODT", "#ea580c", FluentIcon.GLOBE, None),
+    ("Documents", "DOCX · PPTX · XLSX · TXT · MD · EPUB · ODT", "#2563eb", FluentIcon.DOCUMENT, None),
+    ("Subtitles & Data", "SRT · VTT · ASS · LRC · CSV · JSON · TSV · HTML", "#0891b2", FluentIcon.MOVIE, None),
     ("Complex", "PDF", "#dc2626", FluentIcon.CERTIFICATE, "pdf"),
     ("Image", "PNG · JPG · BMP · WEBP", "#db2777", FluentIcon.PHOTO, "image"),
     ("Media", "MP4 · MP3 · MKV · WAV", "#9333ea", FluentIcon.VIDEO, "video"),
@@ -58,6 +55,7 @@ class TranslatePage(QStackedWidget):
     def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
         self.setObjectName("TranslatePage")
+        self.setAcceptDrops(True)  # drag files anywhere onto the page
         self._lang = lang
         self._files = []
         self._workers = []          # active TranslationWorker list
@@ -74,8 +72,9 @@ class TranslatePage(QStackedWidget):
         self._tokens = 0
         self._fmt_cards = []
         # Set by MainWindow: jump to the Plugins page when an unavailable
-        # format card is clicked.
+        # format card is clicked, and to the Interface page from the button.
         self.on_open_plugins = None
+        self.on_open_interface = None
 
         # --- controls view (scrollable) ---
         self._controls = ScrollArea()
@@ -150,39 +149,20 @@ class TranslatePage(QStackedWidget):
         lang_row.addWidget(self.dst_combo, 1)
         layout.addLayout(lang_row)
 
-        # --- Model card ---
+        # --- Active interface (chosen in Interface Management) + glossary ---
         model_card = CardWidget()
         model_form = QFormLayout(model_card)
         model_form.setContentsMargins(20, 14, 20, 14)
         model_form.setSpacing(10)
 
-        online_row = QHBoxLayout()
-        self.online_switch = SwitchButton()
-        self.online_switch.setChecked(config.get("default_online", False))
-        self.online_switch.checkedChanged.connect(self.on_online_toggle)
-        online_row.addWidget(self.online_switch)
-        online_row.addStretch(1)
-        self.online_label = BodyLabel(tr("Use Online Model", lang))
-        model_form.addRow(self.online_label, online_row)
-
-        model_row = QHBoxLayout()
-        self.model_combo = ComboBox()
-        self.model_combo.setMinimumWidth(160)
-        model_row.addWidget(self.model_combo, 1)
-        self.refresh_models_btn = ToolButton(FluentIcon.SYNC)
-        self.refresh_models_btn.clicked.connect(self.on_refresh_models)
-        model_row.addWidget(self.refresh_models_btn)
-        self.model_label = BodyLabel(tr("Models", lang))
-        model_form.addRow(self.model_label, model_row)
-
-        self.api_key_edit = PasswordLineEdit()
-        self.api_key_edit.setPlaceholderText(tr("Enter your API key here", lang))
-        self.api_key_label = BodyLabel(tr("API Key", lang))
-        model_form.addRow(self.api_key_label, self.api_key_edit)
-        # Per-provider key storage shared with the Web app: load the saved key
-        # when the model changes, save it (per provider) when edited.
-        self.model_combo.currentTextChanged.connect(self._on_model_changed)
-        self.api_key_edit.editingFinished.connect(self._on_api_key_edited)
+        iface_row = QHBoxLayout()
+        self.active_interface_label = BodyLabel("-")
+        iface_row.addWidget(self.active_interface_label, 1)
+        self.iface_btn = PushButton(FluentIcon.CONNECT, tr("Interface Management", lang))
+        self.iface_btn.clicked.connect(lambda: self.on_open_interface() if callable(self.on_open_interface) else None)
+        iface_row.addWidget(self.iface_btn)
+        self.iface_field_label = BodyLabel(tr("Current Interface", lang))
+        model_form.addRow(self.iface_field_label, iface_row)
 
         self.glossary_combo = ComboBox()
         self.glossary_combo.addItems(backend.get_glossary_files())
@@ -262,8 +242,7 @@ class TranslatePage(QStackedWidget):
         self.addWidget(self.dashboard)
         self.setCurrentWidget(self._controls)
 
-        self.refresh_model_list()
-        self._update_api_key_visibility()
+        self.refresh_active_interface()
 
     # --- i18n ---
     def retranslate(self, lang):
@@ -277,10 +256,9 @@ class TranslatePage(QStackedWidget):
             self.files_label.setText(tr("Please select file(s) to translate.", lang))
         self.from_label.setText(tr("Source Language", lang))
         self.to_label.setText(tr("Target Language", lang))
-        self.online_label.setText(tr("Use Online Model", lang))
-        self.model_label.setText(tr("Models", lang))
-        self.api_key_label.setText(tr("API Key", lang))
-        self.api_key_edit.setPlaceholderText(tr("Enter your API key here", lang))
+        self.iface_field_label.setText(tr("Current Interface", lang))
+        self.iface_btn.setText(tr("Interface Management", lang))
+        self.refresh_active_interface()
         self.glossary_label.setText(tr("Glossary", lang))
         self.stt_label.setText(tr("Speech-to-Text Model", lang))
         self.translate_subs_label.setText(tr("Translate Subtitles", lang))
@@ -325,43 +303,32 @@ class TranslatePage(QStackedWidget):
         self.glossary_combo.addItems(names)
         self._set_combo(self.glossary_combo, current)
 
-    def refresh_model_list(self):
-        use_online = self.online_switch.isChecked()
-        current = self.model_combo.currentText()
-        self.model_combo.clear()
-        if use_online:
-            models = backend.scan_online_models()
-        else:
-            models = backend.scan_local_models()
-        if not models:
-            models = ["(no models found)"]
-        self.model_combo.addItems(models)
-        # Prefer the active interface persisted by the Interface page.
-        active = backend.get_active_model(use_online)
-        self._set_combo(self.model_combo, active or current)
+    def _active(self):
+        """(use_online, model, api_key) for the interface chosen in 接口管理."""
+        online = backend.get_config("default_online", True)
+        model = backend.get_active_model(online)
+        api_key = load_api_key_for_model(model) if online else ""
+        return online, model, api_key
 
     def refresh_active_interface(self):
-        """Called by MainWindow when the Interface page changes the active model:
-        align the online switch + model selection to the persisted active one."""
-        online = backend.get_config("default_online", False)
-        self.online_switch.blockSignals(True)
-        self.online_switch.setChecked(online)
-        self.online_switch.blockSignals(False)
-        self._update_api_key_visibility()
-        self.refresh_model_list()
-
-    def _update_api_key_visibility(self):
-        show = self.online_switch.isChecked()
-        self.api_key_edit.setVisible(show)
-        self.api_key_label.setVisible(show)
+        """Reflect the active interface (set in Interface Management) in the
+        read-only label, so the user sees what will be used."""
+        online, model, _ = self._active()
+        if model:
+            tag = tr("Use Online Model", self._lang) if online else tr("Local", self._lang)
+            self.active_interface_label.setText(f"{model}  ·  {tag}")
+        else:
+            self.active_interface_label.setText(tr("No active interface", self._lang))
 
     # --- handlers ---
     def on_pick_files(self):
         exts = backend.accepted_extensions()
         filt = "Supported files (" + " ".join(f"*{e}" for e in exts) + ");;All files (*)"
         paths, _ = QFileDialog.getOpenFileNames(self, tr("Upload Files", self._lang), "", filt)
-        if not paths:
-            return
+        if paths:
+            self._set_files(paths)
+
+    def _set_files(self, paths):
         self._files = paths
         names = ", ".join(os.path.basename(p) for p in paths)
         self.files_label.setText(names if len(names) < 80 else f"{len(paths)} files selected")
@@ -371,6 +338,21 @@ class TranslatePage(QStackedWidget):
         self.media_card.setVisible(has_media)
         if has_media and 0 <= self.stt_combo.currentIndex() < len(self._stt_ids):
             self._apply_stt_language_restriction(self._stt_ids[self.stt_combo.currentIndex()])
+
+    # --- drag & drop ---
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        accepted = set(backend.accepted_extensions())
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        paths = [p for p in paths if os.path.splitext(p)[1].lower() in accepted]
+        if paths:
+            self._set_files(paths)
+        else:
+            self._info(tr("Translate", self._lang),
+                       tr("Please select file(s) to translate.", self._lang), error=True)
 
     def _rebuild_bilingual_switches(self):
         # clear existing
@@ -427,37 +409,6 @@ class TranslatePage(QStackedWidget):
         self._set_combo(self.src_combo, d)
         self._set_combo(self.dst_combo, s)
 
-    def _on_model_changed(self, model):
-        """Load the saved per-provider key for the newly selected online model."""
-        if self.online_switch.isChecked() and model and model != "(no models found)":
-            self.api_key_edit.setText(load_api_key_for_model(model))
-
-    def _on_api_key_edited(self):
-        """Persist the edited key for the current model's provider."""
-        if self.online_switch.isChecked():
-            model = self.model_combo.currentText()
-            if model and model != "(no models found)":
-                save_api_key_for_model(model, self.api_key_edit.text())
-
-    def on_online_toggle(self, value):
-        backend.set_config("default_online", value)
-        self._update_api_key_visibility()
-        self.refresh_model_list()
-
-    def on_refresh_models(self):
-        if self.online_switch.isChecked():
-            models, status = backend.fetch_online_models(
-                self.model_combo.currentText(), self.api_key_edit.text())
-            current = self.model_combo.currentText()
-            self.model_combo.clear()
-            self.model_combo.addItems(models or ["(no models found)"])
-            self._set_combo(self.model_combo, current)
-            self._info(tr("Models", self._lang), status)
-        else:
-            backend.scan_local_models(force_refresh=True)
-            self.refresh_model_list()
-            self._info(tr("Models", self._lang), "Local model list refreshed.")
-
     def on_translate(self):
         if self._running:
             return
@@ -465,16 +416,18 @@ class TranslatePage(QStackedWidget):
             self._info(tr("Translate", self._lang),
                        tr("Please select file(s) to translate.", self._lang), error=True)
             return
-        model = self.model_combo.currentText()
-        if not model or model == "(no models found)":
+        use_online, model, api_key = self._active()
+        if not model:
             self._info(tr("Translate", self._lang),
                        tr("Please select a model first", self._lang), error=True)
+            if callable(self.on_open_interface):
+                self.on_open_interface()
             return
-        use_online = self.online_switch.isChecked()
-        api_key = self.api_key_edit.text()
         if use_online and not api_key:
             self._info(tr("Translate", self._lang),
                        tr("API key is required for online models.", self._lang), error=True)
+            if callable(self.on_open_interface):
+                self.on_open_interface()
             return
 
         # Detect base-name collisions; only those files need isolation subdirs.
@@ -509,7 +462,7 @@ class TranslatePage(QStackedWidget):
             return
         file_path = self._queue.pop(0)
         config = backend.read_config()
-        use_online = self.online_switch.isChecked()
+        use_online, model, api_key = self._active()
         flags = {k: sw.isChecked() for k, sw in self._bilingual_switches.items()}
         # Isolate by a per-file subdir only when base names collide.
         isolation = None
@@ -517,9 +470,9 @@ class TranslatePage(QStackedWidget):
             isolation = os.path.join(self._run_subdir, uuid.uuid4().hex[:6])
         worker = TranslationWorker(
             file_path=file_path,
-            model=self.model_combo.currentText(),
+            model=model,
             use_online=use_online,
-            api_key=self.api_key_edit.text(),
+            api_key=api_key,
             src_lang=self.src_combo.currentText(),
             dst_lang=self.dst_combo.currentText(),
             max_token=config.get("max_token", 768),
@@ -569,7 +522,9 @@ class TranslatePage(QStackedWidget):
         self.progress.setValue(self._aggregate_progress())
         if desc:
             name = os.path.basename(getattr(worker, "_lh_file", ""))
-            self.status_label.setText(f"{name}: {desc}" if name else desc)
+            line = f"{name}: {desc}" if name else desc
+            self.status_label.setText(line)
+            self.dashboard.set_status(line)  # surface speed/ETA on the dashboard
             # Opportunistically scrape a token total from the final desc.
             self._tokens = max(self._tokens, _parse_tokens(desc))
         self._refresh_dashboard()
