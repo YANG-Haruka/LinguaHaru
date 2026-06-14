@@ -35,14 +35,17 @@ from qt_app.history_page import open_folder
 from qt_app.widgets import FormatCategoryCard
 from qt_app.progress_dashboard import ProgressDashboard
 
-# Colorful format categories (label-key, formats, hex color, icon).
+# Colorful format categories (label-key, formats, hex color, icon, module_key).
+# module_key (None = always available) gates optional plugins: pdf/image/video.
 _FORMAT_CATEGORIES = [
-    ("Books", "EPUB · TXT", "#7c3aed", FluentIcon.LIBRARY),
-    ("Documents", "DOCX · MD · PPTX · XLSX", "#2563eb", FluentIcon.DOCUMENT),
-    ("Subtitles", "SRT · ASS · VTT · LRC", "#0891b2", FluentIcon.MOVIE),
-    ("Data", "CSV · JSON · TSV", "#16a34a", FluentIcon.TILES),
-    ("Web", "HTML · ODT", "#ea580c", FluentIcon.GLOBE),
-    ("Complex", "PDF", "#dc2626", FluentIcon.CERTIFICATE),
+    ("Books", "EPUB · TXT", "#7c3aed", FluentIcon.LIBRARY, None),
+    ("Documents", "DOCX · MD · PPTX · XLSX", "#2563eb", FluentIcon.DOCUMENT, None),
+    ("Subtitles", "SRT · ASS · VTT · LRC", "#0891b2", FluentIcon.MOVIE, None),
+    ("Data", "CSV · JSON · TSV", "#16a34a", FluentIcon.TILES, None),
+    ("Web", "HTML · ODT", "#ea580c", FluentIcon.GLOBE, None),
+    ("Complex", "PDF", "#dc2626", FluentIcon.CERTIFICATE, "pdf"),
+    ("Image", "PNG · JPG · BMP · WEBP", "#db2777", FluentIcon.PHOTO, "image"),
+    ("Media", "MP4 · MP3 · MKV · WAV", "#9333ea", FluentIcon.VIDEO, "video"),
 ]
 
 
@@ -65,13 +68,16 @@ class TranslatePage(QStackedWidget):
         self._total = 0
         self._tokens = 0
         self._fmt_cards = []
+        # Set by MainWindow: jump to the Plugins page when an unavailable
+        # format card is clicked.
+        self.on_open_plugins = None
 
         # --- controls view (scrollable) ---
         self._controls = ScrollArea()
         self._controls.setWidgetResizable(True)
-        # Never scroll horizontally: keep all rows inside the viewport width
-        # so nothing gets cut off at the right edge.
-        self._controls.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Show a horizontal scrollbar only if truly needed (never CLIP content
+        # at the right edge, which is what AlwaysOff did).
+        self._controls.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self._controls.enableTransparentBackground()
         controls_host = QWidget()
         controls_host.setObjectName("translateControlsHost")
@@ -92,12 +98,14 @@ class TranslatePage(QStackedWidget):
         cat_flow = FlowLayout(cat_host, needAni=False)
         cat_flow.setHorizontalSpacing(12)
         cat_flow.setVerticalSpacing(12)
-        for key, fmts, color, icon in _FORMAT_CATEGORIES:
-            card = FormatCategoryCard(tr(key, lang), fmts, color, icon)
+        for key, fmts, color, icon, module_key in _FORMAT_CATEGORIES:
+            card = FormatCategoryCard(tr(key, lang), fmts, color, icon, module_key=module_key)
             card._lh_key = key
+            card.clicked.connect(lambda c=card: self._on_format_card(c))
             self._fmt_cards.append(card)
             cat_flow.addWidget(card)
         layout.addWidget(cat_host)
+        self._refresh_format_availability()
 
         # --- File picker ---
         file_row = QHBoxLayout()
@@ -109,6 +117,7 @@ class TranslatePage(QStackedWidget):
         layout.addLayout(file_row)
         self.accepted_label = CaptionLabel(
             "Accepted: " + " ".join(backend.accepted_extensions()))
+        self.accepted_label.setWordWrap(True)  # don't force the content wider than the viewport
         layout.addWidget(self.accepted_label)
 
         # --- Languages with swap ---
@@ -227,6 +236,7 @@ class TranslatePage(QStackedWidget):
         self.title.setText(tr("Translate", lang))
         for card in self._fmt_cards:
             card.set_title(tr(card._lh_key, lang))
+        self._refresh_format_availability()
         self.pick_btn.setText(tr("Upload Files", lang))
         if not self._files:
             self.files_label.setText(tr("Please select file(s) to translate.", lang))
@@ -241,6 +251,28 @@ class TranslatePage(QStackedWidget):
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.open_output_btn.setText(tr("Open Output Folder", lang))
         self.dashboard.retranslate(lang)
+
+    def _refresh_format_availability(self):
+        """Grey out optional-format cards whose plugin isn't installed."""
+        from config.optional_modules import (
+            pdf_translation_available, image_translation_available,
+            video_translation_available)
+        avail = {
+            "pdf": pdf_translation_available(),
+            "image": image_translation_available(),
+            "video": video_translation_available(),
+        }
+        for card in self._fmt_cards:
+            if card.module_key:
+                ok = avail.get(card.module_key, True)
+                card.set_available(ok, "" if ok else tr("Unavailable", self._lang))
+
+    def _on_format_card(self, card):
+        if card.module_key and not card._available:
+            self._info(tr("Plugins", self._lang),
+                       tr("Plugin Required", self._lang), error=True)
+            if callable(self.on_open_plugins):
+                self.on_open_plugins()
 
     # --- helpers ---
     @staticmethod

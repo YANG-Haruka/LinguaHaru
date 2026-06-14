@@ -11,17 +11,27 @@ from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget
 
 from qfluentwidgets import (
     CardWidget, SimpleCardWidget, IconWidget, CaptionLabel,
-    StrongBodyLabel, TitleLabel, FluentIcon, isDarkTheme,
+    StrongBodyLabel, TitleLabel, FluentIcon, isDarkTheme, InfoBadge,
 )
 
 
 class FormatCategoryCard(SimpleCardWidget):
     """A colorful rounded card for a file-format category (Books / Documents /
-    Subtitles / ...). Shows a tinted icon chip, a title and the format list."""
+    Subtitles / ...). Shows a tinted icon chip, a title and the format list.
 
-    def __init__(self, title, formats, color, icon=FluentIcon.DOCUMENT, parent=None):
+    Optional categories (PDF / Image / Media) can be marked unavailable when
+    their plugin isn't installed: the card dims, shows an 'unavailable' badge,
+    and emits ``clicked`` so the page can prompt the user to install it."""
+
+    clicked = Signal()
+
+    def __init__(self, title, formats, color, icon=FluentIcon.DOCUMENT,
+                 module_key=None, parent=None):
         super().__init__(parent)
         self._color = QColor(color)
+        self.module_key = module_key      # None = always-available core format
+        self._available = True
+        self._unavail_text = ""
         self.setFixedHeight(96)
         self.setMinimumWidth(150)
 
@@ -41,6 +51,8 @@ class FormatCategoryCard(SimpleCardWidget):
         self.title = StrongBodyLabel(title, self)
         top.addWidget(self.title)
         top.addStretch(1)
+        self._badge = None
+        self._badge_row = top
         layout.addLayout(top)
 
         self.formats = CaptionLabel(formats, self)
@@ -53,22 +65,43 @@ class FormatCategoryCard(SimpleCardWidget):
     def set_title(self, text):
         self.title.setText(text)
 
+    def set_available(self, available, unavailable_text=""):
+        """Mark this category available or not (only meaningful for optional
+        categories). ``unavailable_text`` is shown as a small badge."""
+        self._available = available
+        self._unavail_text = unavailable_text
+        if self._badge is not None:
+            self._badge.deleteLater()
+            self._badge = None
+        if not available and unavailable_text:
+            self._badge = InfoBadge.warning(unavailable_text, self)
+            self._badge_row.addWidget(self._badge)
+        self.setCursor(Qt.PointingHandCursor if self.module_key else Qt.ArrowCursor)
+        self._apply_color()
+
     def _apply_color(self):
         c = self._color
-        # Tinted chip background + white-ish icon; subtle card tint.
+        dim = (not self._available)
+        chip_alpha = 90 if dim else 255
         self._chip.setStyleSheet(
-            f"background-color: rgba({c.red()},{c.green()},{c.blue()},255);"
+            f"background-color: rgba({c.red()},{c.green()},{c.blue()},{chip_alpha});"
             "border-radius: 8px;")
         self._icon.setStyleSheet("background: transparent;")
-        # Left accent: tint the whole card faintly using the category color.
-        bg_alpha = 40 if not isDarkTheme() else 55
+        # Left accent + faint card tint (greyed out when unavailable).
+        bg_alpha = (18 if dim else (40 if not isDarkTheme() else 55))
+        border_alpha = 90 if dim else 255
         self.setStyleSheet(
             f"FormatCategoryCard {{ border-left: 4px solid "
-            f"rgba({c.red()},{c.green()},{c.blue()},255);"
+            f"rgba({c.red()},{c.green()},{c.blue()},{border_alpha});"
             f" background-color: rgba({c.red()},{c.green()},{c.blue()},{bg_alpha}); }}")
 
     def refresh_theme(self):
         self._apply_color()
+
+    def mouseReleaseEvent(self, event):
+        super().mouseReleaseEvent(event)
+        if event.button() == Qt.LeftButton:
+            self.clicked.emit()
 
 
 class MetricCard(SimpleCardWidget):

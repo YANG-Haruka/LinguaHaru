@@ -60,11 +60,10 @@ class MainWindow(FluentWindow):
             self._lang = "zh"
 
         self.setWindowTitle("LinguaHaru")
-        self.resize(1060, 720)
-        # Minimum size: small enough not to dominate the screen, large enough
-        # that the expanded nav + content still fit (content compresses to the
-        # viewport width because horizontal scrolling is disabled).
-        self.setMinimumSize(980, 640)
+        self.resize(1200, 800)
+        # Minimum size large enough that the expanded nav + content fit without
+        # the right edge getting cut off.
+        self.setMinimumSize(1100, 720)
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
 
@@ -120,6 +119,8 @@ class MainWindow(FluentWindow):
         # Cross-page wiring.
         self.settings_page.on_ui_lang_changed = self.on_lang_changed
         self.interface_page.on_active_changed = self.translate_page.refresh_active_interface
+        # Clicking an unavailable format card jumps to the Plugins page.
+        self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
 
         # Theme toggle pinned at the bottom of the navigation rail.
         nav.addItem(
@@ -164,6 +165,8 @@ class MainWindow(FluentWindow):
             self.interface_page.reload()
         elif current is self.translate_page:
             self.translate_page.refresh_active_interface()
+            # Reflect plugins that may have been installed since last view.
+            self.translate_page._refresh_format_availability()
 
     def on_lang_changed(self, lang):
         if lang not in UI_LANGS or lang == self._lang:
