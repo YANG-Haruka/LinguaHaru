@@ -163,7 +163,9 @@ _DEFAULT_CONFIG = {
     "auto_extract_glossary": False,
     "rpm_limit": 0,
     "qt_theme": "light",
-    "qt_ui_lang": "en",
+    "qt_ui_lang": "zh",
+    "default_online_model": "",
+    "default_local_model": "",
     "temp_dir": "temp",
     "result_dir": "result",
     "log_dir": "log",
@@ -244,6 +246,110 @@ def fetch_online_models(selected_model, api_key):
     if error:
         return models, f"Fetch failed: {error} (kept {len(models)} entries)"
     return models, f"Refreshed: {added} new model(s), {len(models)} total."
+
+
+# --- Interface management (config/api_config/*.json) -------------------------
+API_CONFIG_DIR = os.path.join(REPO_ROOT, "config", "api_config")
+
+# Prefixes used by the bundled "official" provider configs. Anything not starting
+# with one of these (and not the Custom template) is treated as user-added.
+_OFFICIAL_PREFIXES = (
+    "(Anthropic)", "(ChatGPT)", "(Deepseek)", "(Gemini)", "(GLM)", "(Grok)",
+    "(Siliconflow)", "(Siliconflow Pro)", "(Volcengine)", "(Fetched)",
+)
+
+
+def list_online_interfaces():
+    """All online interface configs as dicts: name, base_url, model, official."""
+    interfaces = []
+    try:
+        files = sorted(f for f in os.listdir(API_CONFIG_DIR)
+                       if f.endswith(".json") and f != "Custom.json")
+    except OSError:
+        return interfaces
+    for f in files:
+        name = os.path.splitext(f)[0]
+        cfg = read_api_config(name) or {}
+        official = name.startswith(_OFFICIAL_PREFIXES)
+        interfaces.append({
+            "name": name,
+            "base_url": cfg.get("base_url", ""),
+            "model": cfg.get("model", ""),
+            "official": official,
+        })
+    return interfaces
+
+
+def read_api_config(name):
+    """Read a single api_config/<name>.json (or None)."""
+    if not name:
+        return None
+    safe = os.path.basename(f"{name}.json")
+    path = os.path.join(API_CONFIG_DIR, safe)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def write_api_config(name, data):
+    """Create/overwrite an api_config/<name>.json with the given dict."""
+    if not name:
+        raise ValueError("Interface name is required.")
+    os.makedirs(API_CONFIG_DIR, exist_ok=True)
+    safe = os.path.basename(f"{name}.json")
+    path = os.path.join(API_CONFIG_DIR, safe)
+    cleaned = {k: v for k, v in data.items() if v not in ("", None)}
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cleaned, f, indent=4, ensure_ascii=False)
+    return path
+
+
+def delete_api_config(name):
+    """Delete an api_config/<name>.json. Returns True if removed."""
+    if not name:
+        return False
+    safe = os.path.basename(f"{name}.json")
+    path = os.path.join(API_CONFIG_DIR, safe)
+    try:
+        os.remove(path)
+        return True
+    except OSError:
+        return False
+
+
+def get_active_model(use_online):
+    """The persisted active model name for the given mode."""
+    key = "default_online_model" if use_online else "default_local_model"
+    return get_config(key, "")
+
+
+def set_active_model(name, use_online):
+    """Persist the active model for the given mode."""
+    key = "default_online_model" if use_online else "default_local_model"
+    return set_config(key, name)
+
+
+# --- Optional module installation (pip in a subprocess) ----------------------
+# Maps the optional-module name (as reported by config.optional_modules) to the
+# requirements file that installs it. The Plugins page runs these in a worker.
+OPTIONAL_REQUIREMENTS = {
+    "PDF": "requirements-pdf.txt",
+    "Image OCR": "requirements-ocr.txt",
+    "Video/Audio": "requirements-video.txt",
+}
+
+
+def install_command_for(module_name):
+    """The pip command (list form) that installs the given optional module, or
+    None if unknown."""
+    req = OPTIONAL_REQUIREMENTS.get(module_name)
+    if not req:
+        return None
+    import sys
+    req_path = os.path.join(REPO_ROOT, req)
+    return [sys.executable, "-m", "pip", "install", "-r", req_path]
 
 
 # --- Glossary (CSV, utf-8-sig, multi-encoding read) -------------------------

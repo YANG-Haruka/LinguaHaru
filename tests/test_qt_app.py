@@ -56,12 +56,72 @@ def test_main_window():
     assert w.glossary_page.objectName() == "GlossaryPage"
     assert w.settings_page.objectName() == "SettingsPage"
     assert w.history_page.objectName() == "HistoryPage"
+    assert w.proofread_page.objectName() == "ProofreadPage"
+    # new pages (interface mgmt, plugins) + the embedded progress dashboard
+    assert w.interface_page.objectName() == "InterfacePage"
+    assert w.plugins_page.objectName() == "PluginsPage"
+    assert w.translate_page.dashboard.objectName() == "ProgressDashboard"
     # theme toggle flips and persists
     before = w._theme_dark
     w.toggle_theme()
     assert w._theme_dark != before
     w.toggle_theme()  # restore
-    print("  PASS: main window + pages constructed")
+    # global retranslate touches every page without error
+    w.on_lang_changed("en")
+    w.on_lang_changed("zh")
+    print("  PASS: main window + all pages (incl. interface/plugins/dashboard)")
+    return True
+
+
+def test_new_pages_standalone():
+    print("PAGES: interface + plugins + dashboard construct standalone")
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    from qt_app.interface_page import InterfacePage
+    from qt_app.plugins_page import PluginsPage
+    from qt_app.progress_dashboard import ProgressDashboard
+
+    ip = InterfacePage(lang="zh")
+    assert ip.objectName() == "InterfacePage"
+    pp = PluginsPage(lang="zh")
+    assert pp.objectName() == "PluginsPage"
+    # optional-plugin cards reflect the three downloadable modules
+    assert len(pp._opt_cards) == 3, len(pp._opt_cards)
+    dash = ProgressDashboard(lang="zh")
+    dash.start()
+    dash.update_metrics(percent=50, total_files=4, done_files=2,
+                        live_tasks=1, failed=0, total_tokens=12345)
+    print("  PASS: new pages constructed + dashboard metrics updated")
+    return True
+
+
+def test_backend_interface_helpers():
+    print("BACKEND: interface read/write/active round-trip")
+    from qt_app import backend
+    name = "(Custom) _qt_itf_test"
+    saved_online = backend.get_config("default_online_model", "")
+    saved_default_online = backend.get_config("default_online", False)
+    try:
+        backend.write_api_config(name, {
+            "base_url": "https://x/v1", "model": "m", "temperature": 0.5})
+        cfg = backend.read_api_config(name)
+        assert cfg["base_url"] == "https://x/v1" and cfg["model"] == "m", cfg
+        names = [i["name"] for i in backend.list_online_interfaces()]
+        assert name in names, names
+        # not an official prefix -> custom
+        itf = next(i for i in backend.list_online_interfaces() if i["name"] == name)
+        assert itf["official"] is False
+        backend.set_active_model(name, use_online=True)
+        assert backend.get_active_model(use_online=True) == name
+        # install command maps to a requirements file
+        cmd = backend.install_command_for("PDF")
+        assert cmd and cmd[-2:] == ["-r", cmd[-1]] or "requirements-pdf.txt" in cmd[-1]
+        assert backend.install_command_for("Nope") is None
+        print("  PASS: interface helpers + install command")
+    finally:
+        backend.delete_api_config(name)
+        backend.set_config("default_online_model", saved_online)
+        backend.set_config("default_online", saved_default_online)
     return True
 
 
@@ -365,6 +425,8 @@ def main():
     install_fake_llm()
     tests = [
         test_main_window,
+        test_new_pages_standalone,
+        test_backend_interface_helpers,
         test_backend_resolution,
         test_backend_glossary_roundtrip,
         test_backend_model_discovery,

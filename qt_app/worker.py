@@ -12,11 +12,52 @@ actionable message (mirrors app.translate_files).
 """
 
 import os
+import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
 from llmWrapper.online_translation import HardApiError
 from qt_app import backend
+
+
+class InstallWorker(QThread):
+    """Runs ``pip install -r requirements-*.txt`` for an optional module off the
+    UI thread, streaming output lines and reporting success/failure.
+
+    Signals:
+        line(str)        -- a line of pip output
+        finished_ok(bool, str) -- (success, final message)
+    """
+
+    line = Signal(str)
+    finished_ok = Signal(bool, str)
+
+    def __init__(self, module_name, parent=None):
+        super().__init__(parent)
+        self.module_name = module_name
+
+    def run(self):
+        cmd = backend.install_command_for(self.module_name)
+        if not cmd:
+            self.finished_ok.emit(False, f"Unknown module: {self.module_name}")
+            return
+        self.line.emit("$ " + " ".join(cmd))
+        try:
+            proc = subprocess.Popen(
+                cmd, cwd=backend.REPO_ROOT, stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
+                errors="replace", bufsize=1,
+            )
+            for raw in proc.stdout:
+                self.line.emit(raw.rstrip())
+            proc.wait()
+        except Exception as e:  # noqa: BLE001 - surface any launch failure
+            self.finished_ok.emit(False, f"Error: {e}")
+            return
+        if proc.returncode == 0:
+            self.finished_ok.emit(True, "Installation finished")
+        else:
+            self.finished_ok.emit(False, f"pip exited with code {proc.returncode}")
 
 
 class _StopRequested(Exception):

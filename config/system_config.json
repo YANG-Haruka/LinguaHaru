@@ -26,5 +26,7 @@
     "result_dir": "result",
     "log_dir": "log",
     "remember_api_key": true,
-    "pdf_bilingual_mode": true
+    "pdf_bilingual_mode": true,
+    "qt_ui_lang": "zh",
+    "qt_theme": "light"
 }
