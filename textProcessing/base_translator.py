@@ -65,6 +65,12 @@ class DocumentTranslator:
         # Final run stats (segments / speed / tokens), filled at the end of process()
         self.final_stats = ""
 
+        # Cumulative progress: successfully translated segments vs. the total.
+        # Counted across the first pass AND every retry so progress only moves
+        # forward (failed segments don't count, retries don't reset to 0%).
+        self._total_segments = 0
+        self._completed_segments = 0
+
         # Setup file paths
         filename = os.path.splitext(os.path.basename(input_file_path))[0]
         self.file_dir = os.path.join(self.temp_dir, filename)
@@ -386,8 +392,10 @@ class DocumentTranslator:
             batch_start_time = time.time()
 
             for future in as_completed(futures):
+                ok = False
                 try:
-                    if future.result() is None:
+                    ok = future.result() is not None
+                    if not ok:
                         failed_segments_count += 1
                 except HardApiError:
                     # Cancel what hasn't started and abort the task
@@ -398,6 +406,9 @@ class DocumentTranslator:
                     failed_segments_count += 1
                     app_logger.error(f"Segment translation error: {e}")
 
+                if ok:
+                    with self.lock:
+                        self._completed_segments += 1
                 current_batch_completed += 1
                 stats_desc = self._build_stats_desc(
                     f"{self._get_status_message('Translating')}...",
@@ -405,17 +416,10 @@ class DocumentTranslator:
                     batch_start_time, failed_segments_count
                 )
 
-                # Update progress
-                if self.continue_mode:
-                    current_batch_progress = current_batch_completed / total_current_batch
-                    batch_contribution = remaining_ratio * current_batch_progress
-                    overall_progress = (1.0 - remaining_ratio) + batch_contribution
-                    app_logger.info(f"Progress: {overall_progress:.2%}")
-                    self.update_ui_safely(progress_callback, overall_progress, stats_desc)
-                else:
-                    p = current_batch_completed / total_current_batch
-                    app_logger.info(f"Progress: {p:.2%}")
-                    self.update_ui_safely(progress_callback, p, stats_desc)
+                # Cumulative progress: completed segments / total (never resets)
+                overall_progress = min(self._completed_segments / max(self._total_segments, 1), 1.0)
+                app_logger.info(f"Progress: {overall_progress:.2%}")
+                self.update_ui_safely(progress_callback, overall_progress, stats_desc)
 
     def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
         self.check_for_stop()
@@ -621,9 +625,11 @@ class DocumentTranslator:
             failed_count = 0
             
             for future in as_completed(futures):
+                ok = False
                 try:
                     result = future.result()
-                    if result is None:
+                    ok = result is not None
+                    if not ok:
                         failed_count += 1
                         app_logger.debug(f"Segment processing failed")
                 except HardApiError:
@@ -633,13 +639,18 @@ class DocumentTranslator:
                 except Exception as e:
                     failed_count += 1
                     app_logger.error(f"Failed segment error: {e}")
-                
+
+                if ok:
+                    with self.lock:
+                        self._completed_segments += 1
                 completed += 1
-                p = completed / total
-                app_logger.info(f"Progress: {p:.2%}")
+                # Cumulative progress: keep counting up from where we were, so a
+                # retry pass continues (e.g. 90% -> 100%) instead of restarting.
+                overall = min(self._completed_segments / max(self._total_segments, 1), 1.0)
+                app_logger.info(f"Progress: {overall:.2%}")
                 self.update_ui_safely(
-                    progress_callback, 
-                    p, 
+                    progress_callback,
+                    overall,
                     f"{retry_desc}...{retry_count+1}/{max_retries}"
                 )
 
@@ -967,6 +978,20 @@ class DocumentTranslator:
 
         # Persist re-export data (original copy + manifest) for the Proofread tab
         self._write_manifest(file_extension)
+
+        # Seed cumulative-progress counters: total segments to translate, and how
+        # many are already done (non-zero only in continue mode).
+        try:
+            with open(self.src_split_json_path, 'r', encoding='utf-8') as f:
+                self._total_segments = len(json.load(f))
+        except Exception:
+            self._total_segments = 0
+        try:
+            if os.path.exists(self.result_split_json_path):
+                with open(self.result_split_json_path, 'r', encoding='utf-8') as f:
+                    self._completed_segments = len(json.load(f))
+        except Exception:
+            self._completed_segments = 0
 
         # Main translation
         app_logger.info("Starting translation...")
