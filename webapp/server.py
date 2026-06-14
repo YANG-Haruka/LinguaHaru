@@ -19,6 +19,7 @@ import time
 import contextvars
 import hashlib
 import hmac
+import secrets
 
 from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
@@ -65,10 +66,30 @@ def server_mode_on():
 _admin_token = contextvars.ContextVar("admin_token", default="")
 
 
+_PBKDF2_ITERS = 200_000
+
+
 def _hash_pw(pw):
-    """SHA-256 hex of a password. We store only the hash (never plaintext, since
-    system_config.json is git-tracked) and compare hashes in constant time."""
-    return hashlib.sha256(str(pw).encode("utf-8")).hexdigest()
+    """Salted PBKDF2-HMAC-SHA256 of a password (stdlib, no extra deps). We store
+    only this hash — never plaintext, since system_config.json is git-tracked.
+    Format: pbkdf2_sha256$<iters>$<salt_hex>$<hash_hex>."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", str(pw).encode("utf-8"),
+                             bytes.fromhex(salt), _PBKDF2_ITERS)
+    return f"pbkdf2_sha256${_PBKDF2_ITERS}${salt}${dk.hex()}"
+
+
+def _verify_pw(pw, stored):
+    """Constant-time check of a password against a stored PBKDF2 hash."""
+    try:
+        algo, iters, salt, want = stored.split("$")
+        if algo != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", str(pw).encode("utf-8"),
+                                 bytes.fromhex(salt), int(iters))
+        return hmac.compare_digest(dk.hex(), want)
+    except Exception:
+        return False
 
 
 def _block_in_server_mode():
@@ -81,8 +102,7 @@ def _block_in_server_mode():
     pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
     if pw_hash and backend.get_config("lan_mode", False):
         token = _admin_token.get()
-        # constant-time compare of hashes (avoids timing side-channel)
-        if not (token and hmac.compare_digest(_hash_pw(token), pw_hash)):
+        if not (token and _verify_pw(token, pw_hash)):
             raise HTTPException(401, "Admin password required")
 
 
