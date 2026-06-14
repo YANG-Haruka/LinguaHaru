@@ -1,34 +1,51 @@
 """Translate page: pick files, choose languages/model/glossary, translate.
 
+The page is a QStackedWidget with two views:
+  - the controls view (colorful format-category header + file picker, languages,
+    model card, bilingual toggles, action buttons);
+  - the progress dashboard (grid of metric cards) shown while a run is active.
+
 Multi-file runs translate concurrently with a bounded pool (size = min(file
 count, backend.MAX_CONCURRENT_TASKS)). Each file runs on its own
 TranslationWorker (QThread); files that share a base name are isolated into a
 per-run subdir to avoid temp/result collisions. Per-file progress is aggregated
-into the ProgressBar + status. On completion a results summary is shown (and, for
-multi-file runs, a zip with a results.txt is produced). Stop cancels all
-in-flight files. Single-file behavior is unchanged.
+into the dashboard. On completion a results summary is shown (and, for multi-file
+runs, a zip with a results.txt is produced). Stop cancels all in-flight files.
 """
 
 import os
 import uuid
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QFormLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QFormLayout, QStackedWidget,
 )
 
 from qfluentwidgets import (
-    ComboBox, PushButton, PrimaryPushButton, ProgressBar, LineEdit,
-    SwitchButton, BodyLabel, StrongBodyLabel, CaptionLabel, CardWidget,
+    ComboBox, PushButton, PrimaryPushButton, ProgressBar, SwitchButton,
+    BodyLabel, CaptionLabel, CardWidget, TitleLabel,
     InfoBar, InfoBarPosition, FluentIcon, ToolButton, PasswordLineEdit,
+    ScrollArea, FlowLayout,
 )
 
 from qt_app import backend
 from qt_app.i18n import tr
 from qt_app.worker import TranslationWorker
 from qt_app.history_page import open_folder
+from qt_app.widgets import FormatCategoryCard
+from qt_app.progress_dashboard import ProgressDashboard
+
+# Colorful format categories (label-key, formats, hex color, icon).
+_FORMAT_CATEGORIES = [
+    ("Books", "EPUB · TXT", "#7c3aed", FluentIcon.LIBRARY),
+    ("Documents", "DOCX · MD · PPTX · XLSX", "#2563eb", FluentIcon.DOCUMENT),
+    ("Subtitles", "SRT · ASS · VTT · LRC", "#0891b2", FluentIcon.MOVIE),
+    ("Data", "CSV · JSON · TSV", "#16a34a", FluentIcon.TILES),
+    ("Web", "HTML · ODT", "#ea580c", FluentIcon.GLOBE),
+    ("Complex", "PDF", "#dc2626", FluentIcon.CERTIFICATE),
+]
 
 
-class TranslatePage(QWidget):
+class TranslatePage(QStackedWidget):
     def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
         self.setObjectName("TranslatePage")
@@ -44,13 +61,35 @@ class TranslatePage(QWidget):
         self._file_results = []     # (name, status, detail)
         self._run_subdir = None
         self._running = False
+        self._total = 0
+        self._tokens = 0
+        self._fmt_cards = []
 
-        layout = QVBoxLayout(self)
+        # --- controls view (scrollable) ---
+        self._controls = ScrollArea()
+        self._controls.setWidgetResizable(True)
+        self._controls.enableTransparentBackground()
+        controls_host = QWidget()
+        controls_host.setObjectName("translateControlsHost")
+        self._controls.setWidget(controls_host)
+        layout = QVBoxLayout(controls_host)
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
-        self.title = StrongBodyLabel(tr("Translate", lang))
+        self.title = TitleLabel(tr("Translate", lang))
         layout.addWidget(self.title)
+
+        # --- Colorful format-category header ---
+        cat_host = QWidget()
+        cat_flow = FlowLayout(cat_host, needAni=False)
+        cat_flow.setHorizontalSpacing(12)
+        cat_flow.setVerticalSpacing(12)
+        for key, fmts, color, icon in _FORMAT_CATEGORIES:
+            card = FormatCategoryCard(tr(key, lang), fmts, color, icon)
+            card._lh_key = key
+            self._fmt_cards.append(card)
+            cat_flow.addWidget(card)
+        layout.addWidget(cat_host)
 
         # --- File picker ---
         file_row = QHBoxLayout()
@@ -145,7 +184,7 @@ class TranslatePage(QWidget):
         action_row.addStretch(1)
         layout.addLayout(action_row)
 
-        # --- Progress + status ---
+        # --- Inline progress + status (kept for quick feedback) ---
         self.progress = ProgressBar()
         self.progress.setValue(0)
         layout.addWidget(self.progress)
@@ -164,6 +203,13 @@ class TranslatePage(QWidget):
 
         layout.addStretch(1)
 
+        # --- dashboard view ---
+        self.dashboard = ProgressDashboard(lang=lang, on_stop=self.on_stop)
+
+        self.addWidget(self._controls)
+        self.addWidget(self.dashboard)
+        self.setCurrentWidget(self._controls)
+
         self.refresh_model_list()
         self._update_api_key_visibility()
 
@@ -171,6 +217,8 @@ class TranslatePage(QWidget):
     def retranslate(self, lang):
         self._lang = lang
         self.title.setText(tr("Translate", lang))
+        for card in self._fmt_cards:
+            card.set_title(tr(card._lh_key, lang))
         self.pick_btn.setText(tr("Upload Files", lang))
         if not self._files:
             self.files_label.setText(tr("Please select file(s) to translate.", lang))
@@ -184,6 +232,7 @@ class TranslatePage(QWidget):
         self.translate_btn.setText(tr("Translate", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.open_output_btn.setText(tr("Open Output Folder", lang))
+        self.dashboard.retranslate(lang)
 
     # --- helpers ---
     @staticmethod
@@ -210,7 +259,19 @@ class TranslatePage(QWidget):
         if not models:
             models = ["(no models found)"]
         self.model_combo.addItems(models)
-        self._set_combo(self.model_combo, current)
+        # Prefer the active interface persisted by the Interface page.
+        active = backend.get_active_model(use_online)
+        self._set_combo(self.model_combo, active or current)
+
+    def refresh_active_interface(self):
+        """Called by MainWindow when the Interface page changes the active model:
+        align the online switch + model selection to the persisted active one."""
+        online = backend.get_config("default_online", False)
+        self.online_switch.blockSignals(True)
+        self.online_switch.setChecked(online)
+        self.online_switch.blockSignals(False)
+        self._update_api_key_visibility()
+        self.refresh_model_list()
 
     def _update_api_key_visibility(self):
         show = self.online_switch.isChecked()
@@ -310,11 +371,17 @@ class TranslatePage(QWidget):
         self._file_results = []
         self._workers = []
         self._progress = {}
+        self._tokens = 0
         self._running = True
         self.translate_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
         self.open_output_btn.setEnabled(False)
         self.progress.setValue(0)
+
+        # Switch to the metric dashboard for the duration of the run.
+        self.dashboard.start()
+        self._refresh_dashboard()
+        self.setCurrentWidget(self.dashboard)
 
         pool = min(self._total, backend.MAX_CONCURRENT_TASKS)
         for _ in range(pool):
@@ -355,6 +422,7 @@ class TranslatePage(QWidget):
         worker.start()
         self.status_label.setText(
             tr("Translating", self._lang) + f" {os.path.basename(file_path)}...")
+        self._refresh_dashboard()
 
     def _aggregate_progress(self):
         # Finished files count as 1.0; in-flight files use their last fraction.
@@ -363,12 +431,31 @@ class TranslatePage(QWidget):
         total_frac = finished + running_frac
         return int((total_frac / self._total) * 100) if self._total else 0
 
+    def _done_count(self):
+        return len([r for r in self._file_results if r[1] == "ok"])
+
+    def _failed_count(self):
+        return len([r for r in self._file_results if r[1] == "failed"])
+
+    def _refresh_dashboard(self):
+        self.dashboard.update_metrics(
+            percent=self._aggregate_progress(),
+            total_files=self._total,
+            done_files=self._done_count(),
+            live_tasks=len(self._workers),
+            failed=self._failed_count(),
+            total_tokens=self._tokens,
+        )
+
     def on_progress(self, worker, value, desc):
         self._progress[worker] = float(value)
         self.progress.setValue(self._aggregate_progress())
         if desc:
             name = os.path.basename(getattr(worker, "_lh_file", ""))
             self.status_label.setText(f"{name}: {desc}" if name else desc)
+            # Opportunistically scrape a token total from the final desc.
+            self._tokens = max(self._tokens, _parse_tokens(desc))
+        self._refresh_dashboard()
 
     def _retire(self, worker):
         if worker in self._workers:
@@ -378,6 +465,7 @@ class TranslatePage(QWidget):
         # Launch the next queued file to keep the pool full.
         if self._queue and self._running:
             self._start_next()
+        self._refresh_dashboard()
         if not self._workers and not self._queue:
             self._finish_all()
 
@@ -427,9 +515,33 @@ class TranslatePage(QWidget):
         if failed:
             summary += f" | {tr('Failed', self._lang)}: {len(failed)}"
         self.status_label.setText(summary)
+        self._refresh_dashboard()
+        # Return to the controls view so the user can start another run.
+        self.setCurrentWidget(self._controls)
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
 
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
         bar(title, text, orient=1, isClosable=True,
             position=InfoBarPosition.TOP, duration=4000, parent=self)
+
+
+def _parse_tokens(desc):
+    """Best-effort extraction of a token count from a status string like
+    '... Total tokens used: 12.3K' or '... 4500 tokens'."""
+    import re
+    m = re.search(r"([\d.]+)\s*([KkMm]?)\s*(?:tokens|tokens used)", desc)
+    if not m:
+        m = re.search(r"tokens?(?:\s*used)?\s*[:=]?\s*([\d.]+)\s*([KkMm]?)", desc)
+    if not m:
+        return 0
+    try:
+        val = float(m.group(1))
+    except ValueError:
+        return 0
+    unit = m.group(2).lower()
+    if unit == "k":
+        val *= 1000
+    elif unit == "m":
+        val *= 1_000_000
+    return int(val)
