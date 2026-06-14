@@ -115,6 +115,18 @@ class MainWindow(FluentWindow):
             position=NavigationItemPosition.BOTTOM,
         )
 
+        # Keep the navigation rail expanded by default (like AiNiee) so the
+        # text labels + group headers are always visible, instead of the
+        # width-dependent auto-collapse.
+        nav_iface = self.navigationInterface
+        try:
+            nav_iface.setExpandWidth(250)
+            nav_iface.setMinimumExpandWidth(820)  # window is 1100 wide
+            if hasattr(nav_iface, "expand"):
+                nav_iface.expand(useAni=False)
+        except Exception:
+            pass
+
         # Default to the Translate page on launch.
         self.switchTo(self.translate_page)
 
