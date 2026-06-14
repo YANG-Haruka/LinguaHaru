@@ -42,12 +42,13 @@ from config.optional_modules import MEDIA_EXTENSIONS
 
 # Colorful format categories (label-key, formats, hex color, icon, module_key).
 # module_key (None = always available) gates optional plugins: pdf/image/video.
+# Cohesive modern palette (Tailwind-500-ish), led by the indigo brand accent.
 _FORMAT_CATEGORIES = [
-    ("Documents", "DOCX · PPTX · XLSX · TXT · MD · EPUB · ODT", "#2563eb", FluentIcon.DOCUMENT, None),
-    ("Subtitles & Data", "SRT · VTT · ASS · LRC · CSV · JSON · TSV · HTML", "#0891b2", FluentIcon.MOVIE, None),
-    ("Complex", "PDF", "#dc2626", FluentIcon.CERTIFICATE, "pdf"),
-    ("Image", "PNG · JPG · BMP · WEBP", "#db2777", FluentIcon.PHOTO, "image"),
-    ("Media", "MP4 · MP3 · MKV · WAV", "#9333ea", FluentIcon.VIDEO, "video"),
+    ("Documents", "DOCX · PPTX · XLSX · TXT · MD · EPUB · ODT", "#4f6ef7", FluentIcon.DOCUMENT, None),
+    ("Subtitles & Data", "SRT · VTT · ASS · LRC · CSV · JSON · TSV · HTML", "#06b6d4", FluentIcon.MOVIE, None),
+    ("Complex", "PDF", "#f43f5e", FluentIcon.CERTIFICATE, "pdf"),
+    ("Image", "PNG · JPG · BMP · WEBP", "#ec4899", FluentIcon.PHOTO, "image"),
+    ("Media", "MP4 · MP3 · MKV · WAV", "#8b5cf6", FluentIcon.VIDEO, "video"),
 ]
 
 

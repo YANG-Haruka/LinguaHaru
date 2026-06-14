@@ -30,7 +30,7 @@ from qt_app.interface_page import InterfacePage
 from qt_app.plugins_page import PluginsPage
 
 ICON_PATH = os.path.join(backend.REPO_ROOT, "img", "ico.png")
-ACCENT_COLOR = "#2f6fed"          # blue accent (both themes)
+ACCENT_COLOR = "#4f6ef7"          # indigo-blue accent (matches the Web UI)
 LIGHT_BG = "#d7e6fb"             # light: clearly light-blue
 DARK_BG = "#0b1120"             # dark: deep navy-black
 
