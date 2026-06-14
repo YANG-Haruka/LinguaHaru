@@ -1022,6 +1022,22 @@ def load_proofread_table(doc_name, session_lang, request: gr.Request = None):
         return gr.update(), f"Error: {e}"
 
 
+def open_proofread_tab(current_value, session_lang, request: gr.Request = None):
+    """When the Proofread tab opens: refresh the doc list, auto-pick the first
+    document if none is selected, and load its table (so the editor isn't blank
+    — same auto-load behaviour as the glossary editor)."""
+    session_id = _session_id_for_request(request)
+    docs = list_proofread_docs(session_id)
+    chosen = current_value if current_value in docs else (docs[0] if docs else None)
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    if not chosen:
+        status = labels.get("No proofread documents",
+                            "No proofreadable documents found. Finish a translation first (PDF is not supported).")
+        return gr.update(choices=docs, value=None), status, gr.update()
+    table_update, tstatus = load_proofread_table(chosen, session_lang, request)
+    return gr.update(choices=docs, value=chosen), tstatus, table_update
+
+
 def save_proofread_table(doc_name, table, session_lang, request: gr.Request = None):
     """Write edited 'translated' values back to dst_translated.json.
 
@@ -2236,8 +2252,8 @@ with gr.Blocks(
               inputs=None, outputs=[glossary_table, glossary_editor_status])
 
     # Proofread tab handlers
-    tab_proofread.select(refresh_proofread_docs, inputs=[proofread_doc_choice, session_lang],
-                         outputs=[proofread_doc_choice, proofread_status])
+    tab_proofread.select(open_proofread_tab, inputs=[proofread_doc_choice, session_lang],
+                         outputs=[proofread_doc_choice, proofread_status, proofread_table])
     proofread_refresh_btn.click(refresh_proofread_docs, inputs=[proofread_doc_choice, session_lang],
                                 outputs=[proofread_doc_choice, proofread_status])
     # Auto-load the table when a document is picked
