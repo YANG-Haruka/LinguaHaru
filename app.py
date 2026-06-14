@@ -1414,6 +1414,41 @@ def save_api_key_on_change(api_key, remember, model_name):
         save_api_key_for_model(model_name, api_key)
 
 
+def api_key_warning_update(use_online, api_key, session_lang="en"):
+    """Show the 'API key not set' notice only when online mode is on and the
+    key is empty."""
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    text = "⚠️ " + labels.get("API Key Not Set", "API key is not set yet")
+    visible = bool(use_online) and not bool(str(api_key or "").strip())
+    return gr.update(value=text, visible=visible)
+
+
+def on_settings_api_key_change(api_key, model_name, use_online, session_lang="en"):
+    """API key edited on the Settings tab: persist it for the active model,
+    mirror it into the Translate tab's field, and refresh the warning."""
+    config = read_system_config()
+    config["remember_api_key"] = True
+    write_system_config(config)
+    if model_name and api_key:
+        save_api_key_for_model(model_name, api_key)
+    return gr.update(value=api_key), api_key_warning_update(use_online, api_key, session_lang)
+
+
+def on_translate_api_key_change(api_key, use_online, session_lang="en"):
+    """API key edited on the Translate tab: mirror into Settings + refresh warning."""
+    return gr.update(value=api_key), api_key_warning_update(use_online, api_key, session_lang)
+
+
+def init_api_key_ui():
+    """Initial value of the Settings key field + warning visibility on load."""
+    config = read_system_config()
+    use_online = config.get("default_online", False)
+    remember = config.get("remember_api_key", False) and use_online
+    model = config.get("default_online_model", "")
+    key = load_api_key_for_model(model) if remember else ""
+    return gr.update(value=key), api_key_warning_update(use_online, key)
+
+
 def load_api_key_on_model_change(model_name, remember):
     """Load API key when model changes"""
     if remember and model_name:
@@ -2139,7 +2174,7 @@ with gr.Blocks(
                  html_bilingual_checkbox) = create_file_mode_checkboxes(config)
 
                 # Create main interface
-                (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
+                (api_key_input, api_key_row, remember_key_checkbox, api_key_warning, file_input, output_file, status_message,
                  translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
 
         # Tab 2: glossary editor with its own glossary picker
@@ -2153,7 +2188,7 @@ with gr.Blocks(
         with gr.Tab(get_label("Settings"), elem_id="tab-settings") as tab_settings:
             (use_online_model, lan_mode_checkbox, max_retries_slider,
              thread_count_slider, auto_glossary_checkbox, rpm_limit_number,
-             optional_modules_acc) = create_settings_section(config, get_label)
+             settings_api_key, optional_modules_acc) = create_settings_section(config, get_label)
 
         # Tab 4: translation history
         with gr.Tab(get_label("History"), elem_id="tab-history") as tab_history:
@@ -2340,6 +2375,33 @@ with gr.Blocks(
         save_api_key_on_change,
         inputs=[api_key_input, remember_key_checkbox, model_choice],
         outputs=None
+    )
+    # Mirror the translate-tab key into the Settings field + refresh the warning.
+    api_key_input.change(
+        on_translate_api_key_change,
+        inputs=[api_key_input, use_online_model, session_lang],
+        outputs=[settings_api_key, api_key_warning]
+    )
+    # API key edited on the Settings tab: persist, mirror to translate, refresh warning.
+    settings_api_key.change(
+        on_settings_api_key_change,
+        inputs=[settings_api_key, model_choice, use_online_model, session_lang],
+        outputs=[api_key_input, api_key_warning]
+    )
+    # Toggling online/offline re-evaluates the warning.
+    use_online_model.change(
+        api_key_warning_update,
+        inputs=[use_online_model, api_key_input, session_lang],
+        outputs=api_key_warning
+    )
+    # Re-render the warning in the detected language once the browser language
+    # is resolved (init_api_key_ui runs before session_lang is known, so it
+    # falls back to English; this corrects the text without touching the
+    # alignment-sensitive set_labels output list).
+    session_lang.change(
+        api_key_warning_update,
+        inputs=[use_online_model, api_key_input, session_lang],
+        outputs=api_key_warning
     )
 
     # Load API key when model changes (if remember is enabled)
@@ -2897,6 +2959,15 @@ with gr.Blocks(
             setTimeout(() => window.initApiKeyEyeToggle(), 3000);
         }
         """
+    )
+
+    # Independent load: populate the Settings API-key field and set the
+    # "API key not set" warning visibility (kept separate from the big aligned
+    # demo.load above to avoid output-list misalignment).
+    demo.load(
+        fn=init_api_key_ui,
+        inputs=None,
+        outputs=[settings_api_key, api_key_warning],
     )
 
     # Separate event to update API key language after init

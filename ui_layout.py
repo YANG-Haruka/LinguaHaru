@@ -1974,6 +1974,16 @@ def create_settings_section(config, get_label=None):
                 minimum=0
             )
 
+    # API key (also settable here; mirrors the Translate tab's field)
+    with gr.Row():
+        settings_api_key = gr.Textbox(
+            label=get_label("API Key"),
+            placeholder=get_label("Enter your API key here"),
+            type="password",
+            value="",
+            elem_id="settings-api-key",
+        )
+
     # Optional module status (plugin-style: install only what you need)
     from config.optional_modules import module_status
     status_lines = ["| Module | Status | Engine | Install |", "|---|---|---|---|"]
@@ -1986,7 +1996,7 @@ def create_settings_section(config, get_label=None):
 
     return (use_online_model, lan_mode_checkbox, max_retries_slider,
             thread_count_slider, auto_glossary_checkbox, rpm_limit_number,
-            optional_modules_acc)
+            settings_api_key, optional_modules_acc)
 
 
 def create_file_mode_checkboxes(config):
@@ -2247,6 +2257,13 @@ def create_main_interface(config, get_label=None):
             </script>
         """, elem_id="api-help-container")
 
+    # Shown on the translate tab when online mode is on but no API key is set.
+    api_key_warning = gr.Markdown(
+        f"⚠️ {get_label('API Key Not Set')}",
+        visible=False,
+        elem_id="api-key-warning",
+    )
+
     accepted_types = get_accepted_file_types()
 
     file_input = gr.File(
@@ -2263,7 +2280,7 @@ def create_main_interface(config, get_label=None):
         continue_button = gr.Button(get_label("Continue Translation"), interactive=False)
         stop_button = gr.Button(get_label("Stop Translation"), interactive=False)
 
-    return (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
+    return (api_key_input, api_key_row, remember_key_checkbox, api_key_warning, file_input, output_file, status_message,
             translate_button, continue_button, stop_button)
 
 
