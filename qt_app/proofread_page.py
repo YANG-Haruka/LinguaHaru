@@ -5,7 +5,7 @@ translations with dst_translated.json + manifest.json, PDF excluded). Loading a
 doc fills an editable table (count_src | original [read-only] | translated
 [editable]). Save writes the edited translations back; Re-export regenerates the
 document via the original-format writer. All proofread logic is pure and lives
-in qt_app.backend.
+in core.backend.
 """
 
 import os
@@ -20,7 +20,7 @@ from qfluentwidgets import (
     StrongBodyLabel, InfoBar, InfoBarPosition, FluentIcon, ToolButton,
 )
 
-from qt_app import backend
+from core import backend
 from qt_app.i18n import tr
 from qt_app.history_page import open_folder
 

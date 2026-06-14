@@ -14,7 +14,7 @@ WORK_DIR, TEMP_DIR, RESULT_DIR = work_dirs("csv")
 
 def test_csv_quoted_delimiters():
     print("CSV: quoted fields containing the delimiter itself")
-    from pipeline.csv_translation_pipeline import (
+    from core.pipelines.csv_translation_pipeline import (
         extract_csv_content_to_json, write_translated_content_to_csv)
 
     src = os.path.join(WORK_DIR, "quoted.csv")
@@ -41,7 +41,7 @@ def test_csv_quoted_delimiters():
 
 def test_csv_quoted_newlines():
     print("CSV: quoted fields containing newlines")
-    from pipeline.csv_translation_pipeline import (
+    from core.pipelines.csv_translation_pipeline import (
         extract_csv_content_to_json, write_translated_content_to_csv)
 
     src = os.path.join(WORK_DIR, "newlines.csv")
@@ -66,7 +66,7 @@ def test_csv_quoted_newlines():
 
 def test_tsv_quoted_fields():
     print("TSV: quoted fields containing tabs and newlines")
-    from pipeline.csv_translation_pipeline import (
+    from core.pipelines.csv_translation_pipeline import (
         extract_csv_content_to_json, write_translated_content_to_csv)
 
     src = os.path.join(WORK_DIR, "quoted.tsv")

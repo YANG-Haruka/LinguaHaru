@@ -19,8 +19,8 @@ T = "[T]"
 
 def install_fake_llm():
     """Replace the LLM call inside the base translator pipeline."""
-    import textProcessing.base_translator as bt
-    from textProcessing.translation_checker import clean_json
+    import core.engine.base_translator as bt
+    from core.engine.translation_checker import clean_json
 
     def fake_translate_text(segments, previous_text, model, use_online, api_key,
                             system_prompt, user_prompt, previous_prompt,
@@ -50,7 +50,7 @@ def make_translator(cls, path, **overrides):
 def test_image():
     print("IMAGE: OCR -> translate -> render back")
     from PIL import Image, ImageDraw, ImageFont
-    from translator.image_translator import ImageTranslator
+    from core.translators.image_translator import ImageTranslator
 
     img_path = os.path.join(WORK_DIR, "img_test.png")
     image = Image.new("RGB", (800, 300), "white")
@@ -99,7 +99,7 @@ def _ensure_speech_fixture():
 
 def test_video():
     print("VIDEO/AUDIO: ffmpeg -> whisper -> SRT -> translate")
-    from translator.video_translator import VideoTranslator
+    from core.translators.video_translator import VideoTranslator
 
     wav_path = _ensure_speech_fixture()
     assert os.path.exists(wav_path), "speech.wav fixture missing"

@@ -49,7 +49,7 @@ def fake_translate(src_json_path):
 # --------------------------------------------------------------- subtitles --
 def test_srt_bilingual():
     print("SRT bilingual: translation first, original below, timestamps intact")
-    from pipeline.subtitle_translation_pipeline import (
+    from core.pipelines.subtitle_translation_pipeline import (
         extract_srt_content_to_json, write_translated_content_to_srt)
 
     src = os.path.join(WORK_DIR, "bi_test.srt")
@@ -82,7 +82,7 @@ def test_srt_bilingual():
 
 def test_vtt_bilingual():
     print("VTT bilingual: translation first, original below, header intact")
-    from pipeline.subtitle_formats_pipeline import (
+    from core.pipelines.subtitle_formats_pipeline import (
         extract_vtt_content_to_json, write_translated_content_to_vtt)
 
     src = os.path.join(WORK_DIR, "bi_test.vtt")
@@ -107,7 +107,7 @@ def test_vtt_bilingual():
 # --------------------------------------------------------------------- txt --
 def test_txt_bilingual():
     print("TXT bilingual: translated line followed by original, blanks preserved")
-    from pipeline.txt_translation_pipeline import (
+    from core.pipelines.txt_translation_pipeline import (
         extract_txt_content_to_json, write_translated_content_to_txt)
 
     src = os.path.join(WORK_DIR, "bi_test.txt")
@@ -141,7 +141,7 @@ def test_txt_bilingual():
 # ---------------------------------------------------------------------- md --
 def test_md_bilingual():
     print("MD bilingual: blockquote originals for text lines only, tables/code untouched")
-    from pipeline.md_translation_pipeline import (
+    from core.pipelines.md_translation_pipeline import (
         extract_md_content_to_json, write_translated_content_to_md)
 
     src = os.path.join(WORK_DIR, "bi_test.md")
@@ -178,7 +178,7 @@ def test_md_bilingual():
 def test_xlsx_bilingual_openpyxl():
     print("XLSX bilingual (openpyxl path): original + translation in cell")
     import openpyxl
-    from pipeline.excel_translation_pipeline import (
+    from core.pipelines.excel_translation_pipeline import (
         extract_excel_content_to_json, write_translated_content_to_excel)
 
     src = os.path.join(WORK_DIR, "bi_test.xlsx")
@@ -217,7 +217,7 @@ def test_xlsx_bilingual_openpyxl():
 def test_docx_bilingual():
     print("DOCX bilingual: original + translation, CJK brackets survive for ja target")
     from docx import Document
-    from pipeline.word_translation_pipeline import (
+    from core.pipelines.word_translation_pipeline import (
         extract_word_content_to_json, write_translated_content_to_word)
 
     src = os.path.join(WORK_DIR, "bi_test.docx")
@@ -244,7 +244,7 @@ def test_docx_bilingual():
 # -------------------------------------------------------------------- html --
 def test_html_bilingual():
     print("HTML bilingual: original inserted as sibling block after translation")
-    from pipeline.html_translation_pipeline import (
+    from core.pipelines.html_translation_pipeline import (
         extract_html_content_to_json, write_translated_content_to_html)
     from lxml import html as lxml_html
 
@@ -296,7 +296,7 @@ def test_html_bilingual():
 # -------------------------------------------------------------------- epub --
 def test_epub_bilingual():
     print("EPUB bilingual: original sibling block after translation, zip structure intact")
-    from pipeline.epub_translation_pipeline import (
+    from core.pipelines.epub_translation_pipeline import (
         extract_epub_content_to_json, write_translated_content_to_epub)
     from lxml import etree
 
@@ -368,7 +368,7 @@ def test_epub_bilingual():
 # ------------------------------------------------------------- model fetch --
 def test_model_fetch():
     print("Online model auto-fetch: /models -> (Fetched) configs, graceful failure")
-    import llmWrapper.online_translation as ot
+    import core.llm.online_translation as ot
 
     config_dir = os.path.join("config", "api_config")
     base_name = "(Test) FetchBase"

@@ -25,31 +25,20 @@ from qfluentwidgets import (
     ComboBox, PushButton, PrimaryPushButton, ProgressBar, SwitchButton,
     BodyLabel, CaptionLabel, CardWidget, TitleLabel,
     InfoBar, InfoBarPosition, FluentIcon, ToolButton,
-    ScrollArea, FlowLayout,
+    ScrollArea,
 )
 
-from qt_app import backend
+from core import backend
 from qt_app.i18n import tr
 from qt_app.worker import TranslationWorker
 from qt_app.history_page import open_folder
-from qt_app.widgets import FormatCategoryCard
+from qt_app.widgets import DropZone
 from qt_app.progress_dashboard import ProgressDashboard
-from config.api_keys import load_api_key_for_model
-from config.languages_config import LANGUAGE_MAP
-from pipeline.video_translation_pipeline import (
+from core.api_keys import load_api_key_for_model
+from core.languages_config import LANGUAGE_MAP
+from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, get_stt_model, SENSEVOICE_SUPPORTED_CODES)
-from config.optional_modules import MEDIA_EXTENSIONS
-
-# Colorful format categories (label-key, formats, hex color, icon, module_key).
-# module_key (None = always available) gates optional plugins: pdf/image/video.
-# Cohesive modern palette (Tailwind-500-ish), led by the indigo brand accent.
-_FORMAT_CATEGORIES = [
-    ("Documents", "DOCX · PPTX · XLSX · TXT · MD · EPUB · ODT", "#4f6ef7", FluentIcon.DOCUMENT, None),
-    ("Subtitles & Data", "SRT · VTT · ASS · LRC · CSV · JSON · TSV · HTML", "#06b6d4", FluentIcon.MOVIE, None),
-    ("Complex", "PDF", "#f43f5e", FluentIcon.CERTIFICATE, "pdf"),
-    ("Image", "PNG · JPG · BMP · WEBP", "#ec4899", FluentIcon.PHOTO, "image"),
-    ("Media", "MP4 · MP3 · MKV · WAV", "#8b5cf6", FluentIcon.VIDEO, "video"),
-]
+from core.optional_modules import MEDIA_EXTENSIONS
 
 
 class TranslatePage(QStackedWidget):
@@ -98,42 +87,26 @@ class TranslatePage(QStackedWidget):
         self.title = TitleLabel(tr("Translate", lang))
         layout.addWidget(self.title)
 
-        # --- Colorful format-category header ---
-        cat_host = QWidget()
-        cat_flow = FlowLayout(cat_host, needAni=False)
-        cat_flow.setHorizontalSpacing(12)
-        cat_flow.setVerticalSpacing(12)
-        for key, fmts, color, icon, module_key in _FORMAT_CATEGORIES:
-            card = FormatCategoryCard(tr(key, lang), fmts, color, icon, module_key=module_key)
-            card._lh_key = key
-            card.clicked.connect(lambda c=card: self._on_format_card(c))
-            self._fmt_cards.append(card)
-            cat_flow.addWidget(card)
-        layout.addWidget(cat_host)
+        # --- File picker: the one big click-or-drop module. The format
+        # categories (Books / Documents / Subtitles / ...) drift across its
+        # background as a marquee, so no separate card row is needed. ---
+        self.dropzone = DropZone(tr("Drop files to upload", lang))
+        self.dropzone.setMinimumHeight(190)
+        self.dropzone.clicked.connect(self.on_pick_files)
+        self.dropzone.filesDropped.connect(self._on_files_dropped)
+        layout.addWidget(self.dropzone)
         self._refresh_format_availability()
-
-        # --- File picker ---
-        file_row = QHBoxLayout()
-        self.pick_btn = PushButton(FluentIcon.DOCUMENT, tr("Upload Files", lang))
-        self.pick_btn.clicked.connect(self.on_pick_files)
-        file_row.addWidget(self.pick_btn)
-        self.files_label = BodyLabel(tr("Please select file(s) to translate.", lang))
-        file_row.addWidget(self.files_label, 1)
-        layout.addLayout(file_row)
-        self.accepted_label = CaptionLabel(
-            "Accepted: " + " ".join(backend.accepted_extensions()))
-        self.accepted_label.setWordWrap(True)  # don't force the content wider than the viewport
-        layout.addWidget(self.accepted_label)
 
         # --- Languages with swap ---
         lang_row = QHBoxLayout()
         self.src_combo = ComboBox()
         self.dst_combo = ComboBox()
         langs = backend.available_languages()
-        self.src_combo.addItems(langs)
+        # Source supports auto-detection ("Auto"); target is always concrete.
+        self.src_combo.addItems(["Auto"] + langs)
         self.dst_combo.addItems(langs)
         config = backend.read_config()
-        self._set_combo(self.src_combo, config.get("default_src_lang", "English"))
+        self._set_combo(self.src_combo, config.get("default_src_lang", "Auto"))
         self._set_combo(self.dst_combo, config.get("default_dst_lang", "English"))
         self.src_combo.currentTextChanged.connect(
             lambda v: backend.set_config("default_src_lang", v))
@@ -249,12 +222,10 @@ class TranslatePage(QStackedWidget):
     def retranslate(self, lang):
         self._lang = lang
         self.title.setText(tr("Translate", lang))
-        for card in self._fmt_cards:
-            card.set_title(tr(card._lh_key, lang))
-        self._refresh_format_availability()
-        self.pick_btn.setText(tr("Upload Files", lang))
-        if not self._files:
-            self.files_label.setText(tr("Please select file(s) to translate.", lang))
+        if self._files:
+            self.dropzone.set_prompt(self._file_summary(self._files))
+        else:
+            self.dropzone.set_prompt(tr("Drop files to upload", lang))
         self.from_label.setText(tr("Source Language", lang))
         self.to_label.setText(tr("Target Language", lang))
         self.iface_field_label.setText(tr("Current Interface", lang))
@@ -269,26 +240,10 @@ class TranslatePage(QStackedWidget):
         self.dashboard.retranslate(lang)
 
     def _refresh_format_availability(self):
-        """Grey out optional-format cards whose plugin isn't installed."""
-        from config.optional_modules import (
-            pdf_translation_available, image_translation_available,
-            video_translation_available)
-        avail = {
-            "pdf": pdf_translation_available(),
-            "image": image_translation_available(),
-            "video": video_translation_available(),
-        }
-        for card in self._fmt_cards:
-            if card.module_key:
-                ok = avail.get(card.module_key, True)
-                card.set_available(ok, "" if ok else tr("Unavailable", self._lang))
-
-    def _on_format_card(self, card):
-        if card.module_key and not card._available:
-            self._info(tr("Plugins", self._lang),
-                       tr("Plugin Required", self._lang), error=True)
-            if callable(self.on_open_plugins):
-                self.on_open_plugins()
+        """No-op: the colourful card row was removed; categories now live in the
+        drop-zone background marquee. Kept so page-change / theme / retranslate
+        callers don't need to special-case it."""
+        pass
 
     # --- helpers ---
     @staticmethod
@@ -329,10 +284,33 @@ class TranslatePage(QStackedWidget):
         if paths:
             self._set_files(paths)
 
+    def _on_files_dropped(self, paths):
+        """Files dropped onto the drop zone: keep only accepted extensions."""
+        accepted = set(backend.accepted_extensions())
+        paths = [p for p in paths if os.path.splitext(p)[1].lower() in accepted]
+        if paths:
+            self._set_files(paths)
+        else:
+            self._info(tr("Translate", self._lang),
+                       tr("Please select file(s) to translate.", self._lang), error=True)
+
+    def _file_summary(self, paths):
+        """One-line summary of the selection, like the Web dropzone text."""
+        if len(paths) == 1:
+            try:
+                mb = os.path.getsize(paths[0]) / 1048576
+            except OSError:
+                mb = 0
+            return f"{os.path.basename(paths[0])}  ({mb:.1f} MB)"
+        tmpl = tr("Files selected count", self._lang)
+        head = tmpl.format(count=len(paths)) if "{count}" in tmpl else f"{len(paths)} files: "
+        names = "、".join(os.path.basename(p) for p in paths)
+        s = head + names
+        return s if len(s) <= 80 else s[:79] + "…"
+
     def _set_files(self, paths):
         self._files = paths
-        names = ", ".join(os.path.basename(p) for p in paths)
-        self.files_label.setText(names if len(names) < 80 else f"{len(paths)} files selected")
+        self.dropzone.set_prompt(self._file_summary(paths))
         self._rebuild_bilingual_switches()
         # Show STT options only for media files; apply SenseVoice lang limits.
         has_media = any(os.path.splitext(p)[1].lower() in MEDIA_EXTENSIONS for p in paths)
@@ -398,6 +376,8 @@ class TranslatePage(QStackedWidget):
             allowed = [n for n in full if LANGUAGE_MAP.get(n) in SENSEVOICE_SUPPORTED_CODES]
         else:
             allowed = full
+        # "Auto" (source auto-detect) is always offered, incl. for SenseVoice.
+        allowed = ["Auto"] + allowed
         cur = self.src_combo.currentText()
         self.src_combo.blockSignals(True)
         self.src_combo.clear()
@@ -478,7 +458,7 @@ class TranslatePage(QStackedWidget):
             dst_lang=self.dst_combo.currentText(),
             max_token=config.get("max_token", 768),
             max_retries=config.get("max_retries", 4),
-            thread_count=backend.thread_count_for_mode(use_online),
+            thread_count=backend.thread_count_for_mode(use_online, model),
             glossary_name=self.glossary_combo.currentText(),
             bilingual_flags=flags,
             session_lang=self._lang,

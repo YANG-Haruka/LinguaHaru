@@ -38,7 +38,7 @@ def fake_translate(src_json_path):
 
 def test_html():
     print("HTML")
-    from pipeline.html_translation_pipeline import (
+    from core.pipelines.html_translation_pipeline import (
         extract_html_content_to_json, write_translated_content_to_html)
 
     src = os.path.join(WORK_DIR, "page.html")
@@ -67,7 +67,7 @@ def test_html():
 
 def test_odt():
     print("ODT")
-    from pipeline.odt_translation_pipeline import (
+    from core.pipelines.odt_translation_pipeline import (
         extract_odt_content_to_json, write_translated_content_to_odt)
 
     src = os.path.join(WORK_DIR, "doc.odt")
@@ -116,7 +116,7 @@ def test_odt():
 
 def test_json_format():
     print("JSON")
-    from pipeline.json_translation_pipeline import (
+    from core.pipelines.json_translation_pipeline import (
         extract_json_content_to_json, write_translated_content_to_json)
 
     src = os.path.join(WORK_DIR, "locale.json")
@@ -147,7 +147,7 @@ def test_json_format():
 
 def test_vtt():
     print("VTT")
-    from pipeline.subtitle_formats_pipeline import (
+    from core.pipelines.subtitle_formats_pipeline import (
         extract_vtt_content_to_json, write_translated_content_to_vtt)
 
     src = os.path.join(WORK_DIR, "subs.vtt")
@@ -173,7 +173,7 @@ def test_vtt():
 
 def test_ass():
     print("ASS")
-    from pipeline.subtitle_formats_pipeline import (
+    from core.pipelines.subtitle_formats_pipeline import (
         extract_ass_content_to_json, write_translated_content_to_ass)
 
     src = os.path.join(WORK_DIR, "subs.ass")
@@ -200,7 +200,7 @@ def test_ass():
 
 def test_lrc():
     print("LRC")
-    from pipeline.subtitle_formats_pipeline import (
+    from core.pipelines.subtitle_formats_pipeline import (
         extract_lrc_content_to_json, write_translated_content_to_lrc)
 
     src = os.path.join(WORK_DIR, "song.lrc")
@@ -224,7 +224,7 @@ def test_lrc():
 
 def test_tsv():
     print("TSV (via CSV pipeline)")
-    from pipeline.csv_translation_pipeline import (
+    from core.pipelines.csv_translation_pipeline import (
         extract_csv_content_to_json, write_translated_content_to_csv)
 
     src = os.path.join(WORK_DIR, "data.tsv")

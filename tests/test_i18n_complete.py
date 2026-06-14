@@ -17,7 +17,7 @@ for stream in (sys.stdout, sys.stderr):
     if hasattr(stream, "reconfigure"):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
-from config.languages_config import LABEL_TRANSLATIONS
+from core.languages_config import LABEL_TRANSLATIONS
 
 
 def test_no_missing_or_empty_keys():

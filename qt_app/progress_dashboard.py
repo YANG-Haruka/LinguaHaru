@@ -61,7 +61,7 @@ class ProgressDashboard(QWidget):
         grid.addWidget(self.ring_card, 0, 0, 2, 1)
 
         self.lines_card = MetricCard(tr("Line Stats", lang), "0", "",
-                                     FluentIcon.ALIGNMENT, "#0078d4")
+                                     FluentIcon.ALIGNMENT, "#0d83d6")
         self.elapsed_card = MetricCard(tr("Elapsed Time", lang), "00:00", "",
                                        FluentIcon.HISTORY, "#7a5af5")
         self.eta_card = MetricCard(tr("Remaining Time", lang), "--:--", "",

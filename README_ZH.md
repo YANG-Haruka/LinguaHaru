@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
+  <img src="assets/img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
 
 [English](README.md) | 简体中文 | [日本語](README_JP.md)  
 <br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/zh-Home" target="_blank">📚 使用说明 Wiki</a>
@@ -38,31 +38,34 @@
 3. 安装依赖
     - 依赖包
         ```bash
-        pip install -r requirements.txt
+        pip install -r requirements/base.txt
         ```
     - 可选模块（按需安装，UI 会自动启用对应功能）
         ```bash
         # 图像翻译（.png/.jpg 等）：OCR 识别 + 译文回填渲染
-        pip install -r requirements-ocr.txt
+        pip install -r requirements/ocr.txt
 
         # 视频/音频字幕翻译（.mp4/.mp3 等）：Whisper 转写后翻译
         # 还需要 ffmpeg 在 PATH 中（https://ffmpeg.org/）
-        pip install -r requirements-video.txt
+        pip install -r requirements/video.txt
         ```
 
 
 4. 运行工具
+
+    **Web 应用 (FastAPI)** —— 浏览器界面：
     ```bash
-    python app.py
+    pip install -r requirements/web.txt
+    python -m webapp.server
     ```
     默认访问地址为
     ```bash
-    http://127.0.0.1:9980
+    http://127.0.0.1:8080
     ```
 
     **桌面应用 (Qt)** —— 推荐的原生桌面体验（Fluent Design 风格）：
     ```bash
-    pip install -r requirements-qt.txt
+    pip install -r requirements/qt.txt
     python app_qt.py
     ```
 
@@ -76,7 +79,7 @@
 
 <h2 id="preview">预览</h2>
 <div align="center">
-  <img src="img/sample.gif" width="80%"/>
+  <img src="assets/img/sample.gif" width="80%"/>
 </div>
 
 

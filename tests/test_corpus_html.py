@@ -17,7 +17,7 @@ WORK_DIR, TEMP_DIR, RESULT_DIR = work_dirs("html")
 
 
 def _translate(name, html):
-    from pipeline.html_translation_pipeline import (
+    from core.pipelines.html_translation_pipeline import (
         extract_html_content_to_json, write_translated_content_to_html)
     src = os.path.join(WORK_DIR, name)
     with open(src, "w", encoding="utf-8") as f:

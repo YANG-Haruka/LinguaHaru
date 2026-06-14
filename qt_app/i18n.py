@@ -1,6 +1,6 @@
 """Tiny i18n helper for the Qt UI.
 
-Reuses config.languages_config.LABEL_TRANSLATIONS (the same label dictionary the
+Reuses core.languages_config.LABEL_TRANSLATIONS (the same label dictionary the
 Gradio web app uses). tr(key, lang) returns the localized string for the chosen
 UI language, falling back to English, then to the key itself - so a missing key
 never crashes the UI.
@@ -9,7 +9,7 @@ The chosen UI language is persisted to system_config.json under "qt_ui_lang"
 (see backend.get_config / set_config); helpers here just resolve strings.
 """
 
-from config.languages_config import LABEL_TRANSLATIONS
+from core.languages_config import LABEL_TRANSLATIONS
 
 # UI languages we expose in the selector (those with the most label coverage).
 UI_LANGS = ["en", "zh", "zh-Hant", "ja"]

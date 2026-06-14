@@ -16,8 +16,8 @@ import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
-from llmWrapper.online_translation import HardApiError
-from qt_app import backend
+from core.llm.online_translation import HardApiError
+from core import backend
 
 
 class InstallWorker(QThread):
@@ -39,7 +39,7 @@ class InstallWorker(QThread):
 
     def run(self):
         import sys
-        from config.module_manager import MODULE_SPECS
+        from core.module_manager import MODULE_SPECS
         spec = MODULE_SPECS.get(self.module_name)
         if not spec:
             self.finished_ok.emit(False, f"Unknown module: {self.module_name}")
@@ -47,6 +47,8 @@ class InstallWorker(QThread):
         reqfile, packages = spec
         if self.action == "uninstall":
             cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *packages]
+        elif self.action == "upgrade":
+            cmd = [sys.executable, "-m", "pip", "install", "-U", "-r", reqfile]
         else:
             cmd = [sys.executable, "-m", "pip", "install", "-r", reqfile]
         self.line.emit("$ " + " ".join(cmd))
@@ -66,6 +68,29 @@ class InstallWorker(QThread):
             self.finished_ok.emit(True, "Installation finished")
         else:
             self.finished_ok.emit(False, f"pip exited with code {proc.returncode}")
+
+
+class ModuleUpdateCheckWorker(QThread):
+    """Checks PyPI for a newer version of an installed module's package, off the
+    UI thread (the network call can block for seconds).
+
+    Signal:
+        result(str, dict) -- (module name, check_module_update() dict; {} if none)
+    """
+
+    result = Signal(str, dict)
+
+    def __init__(self, module_name, parent=None):
+        super().__init__(parent)
+        self.module_name = module_name
+
+    def run(self):
+        from core.module_manager import check_module_update
+        try:
+            info = check_module_update(self.module_name) or {}
+        except Exception:  # noqa: BLE001 - a failed check just shows nothing
+            info = {}
+        self.result.emit(self.module_name, info)
 
 
 class _StopRequested(Exception):
@@ -150,7 +175,7 @@ class TranslationWorker(QThread):
             for d in (temp_dir, result_dir, log_dir):
                 os.makedirs(d, exist_ok=True)
 
-        from config.log_config import file_logger
+        from core.log_config import file_logger
         file_logger.create_file_log(os.path.basename(self.file_path), log_dir=log_dir)
 
         translator = translator_class(

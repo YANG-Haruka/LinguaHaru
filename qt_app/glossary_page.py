@@ -15,7 +15,7 @@ from qfluentwidgets import (
     StrongBodyLabel, InfoBar, InfoBarPosition, FluentIcon,
 )
 
-from qt_app import backend
+from core import backend
 from qt_app.i18n import tr
 
 

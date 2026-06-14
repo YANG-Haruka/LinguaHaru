@@ -52,7 +52,7 @@ Closing paragraph after the table.
 
 def test_md_structures():
     print("MD: blockquotes, fenced code, inline code, ref links, images, tasks, tables")
-    from pipeline.md_translation_pipeline import (
+    from core.pipelines.md_translation_pipeline import (
         extract_md_content_to_json, write_translated_content_to_md)
 
     src = os.path.join(WORK_DIR, "structures.md")

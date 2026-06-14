@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
+  <img src="assets/img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
 
 English | [简体中文](README_ZH.md) | [日本語](README_JP.md) 
 <br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/en-Home" target="_blank">📚 User Guide (Wiki)</a>
@@ -38,31 +38,34 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
 3. Install dependencies
     - Dependency packages
         ```bash
-        pip install -r requirements.txt
+        pip install -r requirements/base.txt
         ```
     - Optional modules (install only what you need; the UI enables them automatically)
         ```bash
         # Image translation (.png/.jpg/...): OCR + render translation back onto the image
-        pip install -r requirements-ocr.txt
+        pip install -r requirements/ocr.txt
 
         # Video/audio subtitle translation (.mp4/.mp3/...): transcribe with Whisper, then translate
         # Also requires ffmpeg on PATH (https://ffmpeg.org/)
-        pip install -r requirements-video.txt
+        pip install -r requirements/video.txt
         ```
 
 
 4. Run the tool
+
+    **Web app (FastAPI)** — browser UI:
     ```bash
-    python app.py
+    pip install -r requirements/web.txt
+    python -m webapp.server
     ```
     Default access address is
     ```bash
-    http://127.0.0.1:9980
+    http://127.0.0.1:8080
     ```
 
     **Desktop app (Qt)** — recommended native desktop experience (Fluent Design):
     ```bash
-    pip install -r requirements-qt.txt
+    pip install -r requirements/qt.txt
     python app_qt.py
     ```
 
@@ -76,9 +79,29 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
 
 <h2 id="preview">Preview</h2>
 <div align="center">
-  <img src="img/sample.gif" width="80%"/>
+  <img src="assets/img/sample.gif" width="80%"/>
 </div>
 
+
+## Project Structure
+Clear split: **`core/` = backend** (all non-UI logic), **`webapp/` + `qt_app/` = frontends**, **`config/` = static config**, **`assets/` = static assets**, **`data/` = mutable runtime state**.
+```
+core/                Backend — all non-UI logic
+  engine/            Translation engine (base translator, response checker, splitter)
+  translators/       Per-format translator classes (docx, pptx, xlsx, pdf, srt, ...)
+  pipelines/         Per-format extract/restore + media (STT) / image (OCR)
+  llm/               LLM API wrappers (online / offline)
+  backend.py + services: languages, history, pricing, updater, api_keys,
+                     optional_modules, module_manager, prompts, logging
+webapp/              Web frontend — FastAPI (server.py) + static/ (HTML/CSS/JS)
+qt_app/              Desktop frontend — PySide6 + Fluent Widgets
+config/              Static config — system_config.json, api_config/, prompts/, locales/
+assets/              Static assets — img/ (icons, gif), models/ (tiktoken BPE)
+data/                Mutable runtime — temp/, result/, log/, web_uploads/ (gitignored);
+                     glossary/ (tracked); mykeys/ (gitignored, local API keys)
+requirements/        base.txt + per-feature extras (web, qt, ocr, pdf, video)
+tests/               Test suite (corpus per format, qt, web sessions, i18n, ...)
+```
 
 ## Reference Projects
 - [ollama-python](https://github.com/ollama/ollama-python)

@@ -1,5 +1,28 @@
 // LinguaHaru Web frontend — talks to the FastAPI backend.
 const $ = (id) => document.getElementById(id);
+
+// Inline 1px-stroke icons used by JS-generated markup (no emoji).
+const ICON = {
+  sun:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4"/></svg>',
+  moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>',
+  check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 6.5"/></svg>',
+  cross:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+};
+const pill = (cls, label, icon) => `<span class="pill ${cls}">${icon || ""}${label}</span>`;
+
+// Empty-state + loading-skeleton helpers (no emoji; 1px line glyphs).
+const EICON = {
+  inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-7h12l3 7"/><path d="M3 13v5a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-5"/><path d="M3 13h5l1.5 2.5h5L21 13"/></svg>',
+  files: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h5l4 4v11a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/><path d="M5 7v12a1 1 0 0 0 1 1h8"/></svg>',
+};
+const emptyState = (icon, title, sub) =>
+  `<div class="empty-state"><div class="es-icon">${icon}</div>` +
+  `<div class="es-title">${title}</div><div class="es-sub">${sub}</div></div>`;
+function tableSkeleton(t, n) {
+  t.innerHTML = "";
+  for (let i = 0; i < (n || 5); i++)
+    t.innerHTML += '<tr><td style="border:none;padding:5px 2px"><div class="skeleton"><div class="sk"></div></div></td></tr>';
+}
 let BOOT = null;
 let currentFiles = [];
 let currentTask = null;
@@ -75,17 +98,47 @@ document.querySelectorAll(".tab").forEach((t) => {
     if (t.dataset.tab === "glossary") loadGlossaryTable($("glossary-edit-select").value);
     if (t.dataset.tab === "proofread") loadProofreadDocs();
     if (t.dataset.tab === "history") loadHistory();
+    document.body.classList.remove("nav-open");
   };
 });
 
 // ----- theme -----
 function applyTheme(theme) {
-  document.documentElement.setAttribute("data-theme", theme);
-  $("theme-toggle").textContent = theme === "dark" ? "☀️" : "🌙";
+  const root = document.documentElement;
+  root.setAttribute("data-theme", theme);
+  root.style.colorScheme = theme === "dark" ? "dark" : "light";
+  $("theme-toggle").innerHTML = theme === "dark" ? ICON.sun : ICON.moon;
+  const tm = $("theme-toggle-m"); if (tm) tm.innerHTML = theme === "dark" ? ICON.sun : ICON.moon;
   localStorage.setItem("lh-theme", theme);
+  if (window.LHBackground) window.LHBackground.setMode(theme);
+  // Some engines don't recompute var()-based inherited `color` on attribute
+  // change when compositing layers (backdrop-filter) are present; force one
+  // synchronous restyle so every already-rendered surface tracks the theme.
+  if (document.body) {
+    document.body.style.display = "none";
+    void document.body.offsetHeight;
+    document.body.style.display = "";
+  }
 }
 $("theme-toggle").onclick = () =>
   applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+
+// ----- mobile drawer + mobile theme toggle -----
+const _toggleTheme = () =>
+  applyTheme(document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark");
+if ($("theme-toggle-m")) $("theme-toggle-m").onclick = _toggleTheme;
+if ($("nav-toggle")) $("nav-toggle").onclick = () => document.body.classList.toggle("nav-open");
+if ($("scrim")) $("scrim").onclick = () => document.body.classList.remove("nav-open");
+
+// ----- translate sub-mode: document / live -----
+document.querySelectorAll("#translate-mode .seg").forEach((s) => {
+  s.onclick = () => {
+    document.querySelectorAll("#translate-mode .seg").forEach((x) => x.classList.remove("active"));
+    document.querySelectorAll('.panel[data-panel="translate"] .subpane').forEach((x) => x.classList.remove("active"));
+    s.classList.add("active");
+    document.querySelector(`.panel[data-panel="translate"] .subpane[data-sub="${s.dataset.sub}"]`).classList.add("active");
+  };
+});
 
 // ----- bootstrap -----
 async function boot() {
@@ -93,45 +146,109 @@ async function boot() {
   BOOT = await api("/api/bootstrap");
   const c = BOOT.config;
 
-  fillSelect($("src-lang"), BOOT.languages, c.default_src_lang);
+  // Source supports auto-detection ("Auto"); target is always concrete.
+  fillSelect($("src-lang"), ["Auto"].concat(BOOT.languages), c.default_src_lang || "Auto");
   fillSelect($("dst-lang"), BOOT.languages, c.default_dst_lang);
   fillSelect($("model"), modelsForMode(c.default_online), c.default_online_model);
   fillSelect($("glossary"), BOOT.glossaries, c.default_glossary);
   fillSelect($("stt-model"), BOOT.stt_models, c.stt_model);
   $("translate-subs").checked = c.translate_subtitles;
-  $("accepted").textContent = "支持: " + acceptedExts().join(" ");
 
   // settings
   $("set-online").checked = c.default_online;
+  $("set-lan").checked = !!c.lan_mode;
+  $("set-auto-glossary").checked = !!c.auto_extract_glossary;
   fillSelect($("set-model"), BOOT.online_models, c.default_online_model);
   $("set-retries").value = c.max_retries;
+  $("set-rpm").value = c.rpm_limit != null ? c.rpm_limit : 0;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   renderModules();
   fillLiveTarget();
+  updateLiveHint();
+  if (BOOT.server_mode) applyServerMode();
   refreshApiKeyState();
+  refreshSettingsApiKeyPlaceholder();
   refreshMediaNote();
+  renderDropBg();
+  checkUpdate();
 }
 
-function acceptedExts() {
-  const core = [".docx", ".pptx", ".xlsx", ".srt", ".txt", ".md", ".epub", ".csv",
-    ".tsv", ".html", ".htm", ".odt", ".json", ".vtt", ".ass", ".ssa", ".lrc"];
-  const extra = [];
-  for (const m of BOOT.modules) {
-    if (!m.available) continue;
-    if (m.name === "PDF") extra.push(".pdf");
-    if (m.name === "Image OCR") extra.push(".png", ".jpg", ".jpeg", ".bmp", ".webp");
-    if (m.name === "Video/Audio") extra.push(...MEDIA_EXTS);
+// ----- update banner -----
+async function checkUpdate() {
+  try {
+    const u = await api("/api/update-check");
+    if (u && u.update) {
+      $("update-text").textContent = `发现新版本 ${u.latest}（当前 ${u.current}）`;
+      $("update-link").href = u.url;
+      $("update-banner").hidden = false;
+    }
+  } catch (e) { /* offline / unreachable — silently skip */ }
+}
+$("update-dismiss").onclick = () => { $("update-banner").hidden = true; };
+
+// In public-deploy (server) mode the server owns the model + key, so hide the
+// admin/settings UI and the per-translate model picker. Inline display:none
+// beats the .tab/.field stylesheet rules (HTML [hidden] would be overridden).
+function applyServerMode() {
+  document.body.classList.add("server-mode");
+  for (const t of ["settings", "history", "modules"]) {
+    const btn = document.querySelector(`.tab[data-tab="${t}"]`);
+    if (btn) btn.style.display = "none";
   }
-  return core.concat(extra);
+  const modelField = $("model").closest(".field");
+  if (modelField) modelField.style.display = "none";
+  $("apikey-warning").hidden = true;
+}
+
+// File-type icons that drift across the drop-zone background (same SVG set as
+// the Qt app, served from /assets/icons/filetypes/). [svgKey, suffix].
+const _DROP_ICONS = [
+  ["pdf", ".pdf"], ["docx", ".docx"], ["pptx", ".pptx"], ["xlsx", ".xlsx"],
+  ["epub", ".epub"], ["txt", ".txt"], ["md", ".md"], ["srt", ".srt"],
+  ["srt", ".vtt"], ["csv", ".csv"], ["json", ".json"], ["html", ".html"],
+  ["img", ".png"], ["img", ".jpg"], ["media", ".mp4"], ["media", ".mp3"],
+];
+
+// Fill the drop zone background with two rows of slowly scrolling file-type
+// icons (CSS animates them). Each row's set is duplicated so the -50% loop is
+// seamless.
+function renderDropBg() {
+  const bg = $("drop-bg");
+  if (!bg) return;
+  bg.innerHTML = "";
+  for (let row = 0; row < 2; row++) {
+    const track = document.createElement("div");
+    track.className = "ft-track ft-row-" + row;
+    for (let dup = 0; dup < 2; dup++) {
+      for (const [key, suf] of _DROP_ICONS) {
+        const sp = document.createElement("span");
+        sp.className = "ft";
+        sp.innerHTML = `<img src="/assets/icons/filetypes/${key}.svg" alt=""><i>${suf}</i>`;
+        track.appendChild(sp);
+      }
+    }
+    bg.appendChild(track);
+  }
 }
 
 // ----- API key state -----
 async function refreshApiKeyState() {
+  if (BOOT.server_mode) { $("apikey-warning").hidden = true; return; }
   const online = $("set-online").checked;
   const model = $("model").value;
   if (!online) { $("apikey-warning").hidden = true; return; }
   const st = await api("/api/apikey?model=" + encodeURIComponent(model));
   $("apikey-warning").hidden = st.has_key;
+}
+
+// Settings tab: reflect whether the selected model already has a saved key.
+// Called on load (where fillSelect sets the value without firing onchange) and
+// whenever the Settings model dropdown changes.
+async function refreshSettingsApiKeyPlaceholder() {
+  if (BOOT.server_mode) return;
+  const st = await api("/api/apikey?model=" + encodeURIComponent($("set-model").value));
+  $("set-apikey").value = "";
+  $("set-apikey").placeholder = st.has_key ? "已设置（留空则不修改）" : "在此输入您的 API 密钥";
 }
 
 // ----- model/lang/online wiring -----
@@ -162,7 +279,8 @@ function applySenseVoiceRestriction() {
     const codes = new Set(BOOT.sensevoice_codes);
     langs = BOOT.languages.filter((n) => codes.has(BOOT.language_map[n]));
   }
-  fillSelect($("src-lang"), langs, langs.includes(cur) ? cur : langs[0]);
+  langs = ["Auto"].concat(langs);   // source auto-detect always available
+  fillSelect($("src-lang"), langs, langs.includes(cur) ? cur : "Auto");
 }
 function refreshMediaNote() {
   $("media-note").textContent = isSenseVoice($("stt-model").value)
@@ -170,6 +288,8 @@ function refreshMediaNote() {
 }
 
 async function saveConfig(obj) {
+  // The server config is admin-owned in server mode; never persist per-user prefs.
+  if (BOOT && BOOT.server_mode) return;
   try { await api("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }); }
   catch (e) { console.warn("saveConfig", e); }
 }
@@ -198,7 +318,7 @@ function setFiles(list) {
 $("translate-btn").onclick = async () => {
   if (!currentFiles.length) { setStatus("请先选择文件。"); return; }
   const online = $("set-online").checked;
-  if (online) {
+  if (online && !BOOT.server_mode) {
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));
     if (!st.has_key) { setStatus("尚未设置 API 密钥，请在设置中填写。"); return; }
   }
@@ -223,6 +343,7 @@ $("translate-btn").onclick = async () => {
   fd.append("model", $("model").value);
   fd.append("use_online", online);
   fd.append("glossary", $("glossary").value);
+  fd.append("bilingual", $("translate-bilingual").checked);
 
   try {
     const { task_id } = await api("/api/translate", { method: "POST", body: fd });
@@ -268,12 +389,17 @@ $("set-online").onchange = () => {
   fillSelect($("model"), modelsForMode(online), online ? BOOT.config.default_online_model : null);
   refreshApiKeyState();
 };
-$("set-retries").onchange = () => saveConfig({ max_retries: parseInt($("set-retries").value || "4", 10) });
-$("set-model").onchange = async () => {
-  const st = await api("/api/apikey?model=" + encodeURIComponent($("set-model").value));
-  $("set-apikey").value = "";
-  $("set-apikey").placeholder = st.has_key ? "已设置（留空则不修改）" : "在此输入您的 API 密钥";
+$("set-lan").onchange = () => {
+  saveConfig({ lan_mode: $("set-lan").checked });
+  $("settings-status").textContent = "局域网模式已更新 —— 重启程序后生效。";
 };
+$("set-retries").onchange = () => saveConfig({ max_retries: parseInt($("set-retries").value || "4", 10) });
+$("set-rpm").onchange = () => {
+  saveConfig({ rpm_limit: parseInt($("set-rpm").value || "0", 10) });
+  $("settings-status").textContent = "RPM 限制已更新 —— 重启程序后生效。";
+};
+$("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
+$("set-model").onchange = refreshSettingsApiKeyPlaceholder;
 $("set-apikey").onchange = async () => {
   const key = $("set-apikey").value;
   if (!key) return;
@@ -281,6 +407,7 @@ $("set-apikey").onchange = async () => {
     body: JSON.stringify({ model: $("set-model").value, api_key: key }) });
   $("settings-status").textContent = "API 密钥已保存。";
   refreshApiKeyState();
+  refreshSettingsApiKeyPlaceholder();
 };
 
 function renderModules() {
@@ -292,7 +419,7 @@ function renderModules() {
   for (const m of BOOT.modules) {
     const tr = document.createElement("tr");
     const nameTd = document.createElement("td"); nameTd.textContent = m.name;
-    const statTd = document.createElement("td"); statTd.textContent = m.available ? "✅" : "❌";
+    const statTd = document.createElement("td"); statTd.innerHTML = m.available ? pill("on", "已安装", ICON.check) : pill("off", "未安装", ICON.cross);
     const engTd = document.createElement("td"); engTd.textContent = m.detail;
     const actTd = document.createElement("td");
     const btn = document.createElement("button");
@@ -301,12 +428,31 @@ function renderModules() {
     actTd.appendChild(btn);
     tr.append(nameTd, statTd, engTd, actTd);
     t.appendChild(tr);
+    if (m.available) checkModuleUpdate(m.name, actTd, statTd);
   }
 }
 
+// For an installed module, ask PyPI (server-side) whether a newer version
+// exists; if so, add an "升级" button. Reports only — clicking it confirms.
+async function checkModuleUpdate(name, actTd, statTd) {
+  let info;
+  try {
+    info = await api("/api/modules/update-check?name=" + encodeURIComponent(name));
+  } catch { return; }
+  if (!info || !info.update) return;
+  const up = document.createElement("button");
+  up.textContent = `升级 (${info.current} → ${info.latest})`;
+  up.style.marginLeft = "8px";
+  up.onclick = () => moduleAction(name, "upgrade", up, statTd);
+  actTd.appendChild(up);
+}
+
+const _MODULE_VERBS = { install: "安装", uninstall: "卸载", upgrade: "升级" };
+
 async function moduleAction(name, action, btn, statTd) {
   btn.disabled = true;
-  statTd.textContent = action === "install" ? "安装中…" : "卸载中…";
+  const verb = _MODULE_VERBS[action] || action;
+  statTd.innerHTML = pill("busy", verb + "中", "");
   await api("/api/modules/" + action, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name }) });
   const poll = setInterval(async () => {
@@ -315,11 +461,11 @@ async function moduleAction(name, action, btn, statTd) {
     clearInterval(poll);
     btn.disabled = false;
     if (s.status === "done") {
-      statTd.textContent = "✅ 完成";
-      $("settings-status").textContent = `${name} ${action === "install" ? "安装" : "卸载"}完成 —— 请重启程序以生效。`;
+      statTd.innerHTML = pill("on", "完成", ICON.check);
+      $("modules-status").textContent = `${name} ${verb}完成 —— 请重启程序以生效。`;
     } else {
-      statTd.textContent = "❌ 失败";
-      $("settings-status").textContent = `${name} 操作失败：` + (s.output || "").slice(-300);
+      statTd.innerHTML = pill("bad", "失败", ICON.cross);
+      $("modules-status").textContent = `${name} 操作失败：` + (s.output || "").slice(-300);
     }
   }, 1500);
 }
@@ -367,13 +513,15 @@ async function loadProofreadDocs() {
   const data = await api("/api/proofread/docs");
   fillSelect($("proofread-select"), data.docs.length ? data.docs : ["(无可校对文档)"]);
   if (!data.docs.length) {
-    $("proofread-table").replaceChildren();
-    $("proofread-status").textContent = "完成一次翻译后即可在此校对（不支持 PDF）。";
+    $("proofread-table").innerHTML = "<tr><td style='border:none'>" +
+      emptyState(EICON.files, "暂无可校对的文档", "完成一次翻译后会出现在这里（不支持 PDF）。") + "</td></tr>";
+    $("proofread-pager").replaceChildren();
+    $("proofread-status").textContent = "";
     return;
   }
   // Only build the (potentially large) table the first time — re-clicking the
   // tab just refreshes the doc list, so opening 校对 stays instant.
-  if ($("proofread-table").querySelectorAll("tr").length === 0) {
+  if (!$("proofread-table").querySelector("input")) {
     loadProofreadTable(data.docs[0]);
   }
 }
@@ -388,6 +536,7 @@ const PROOFREAD_PAGE = 100;
 
 async function loadProofreadTable(name) {
   $("proofread-status").textContent = "加载中…";
+  tableSkeleton($("proofread-table"), 6);
   const data = await api("/api/proofread?name=" + encodeURIComponent(name));
   proofreadCols = data.columns;
   proofreadRows = data.rows;
@@ -465,9 +614,12 @@ $("proofread-export").onclick = async () => {
   } catch (e) { $("proofread-status").textContent = "导出失败：" + e.message; }
 };
 
-// ----- live voice translation (Gemini 3.5 Live Translate) -----
+// ----- live voice translation (dual mode) -----
+//  · local : client VAD (vad-worklet) -> POST /api/live-local (SenseVoice + LLM)
+//  · google: stream 16k PCM over /ws/live-translate (Gemini 3.5 Live Translate)
 let liveWS = null, liveCtx = null, liveSrc = null, liveProc = null, liveStream = null;
 let playCtx = null, playTime = 0;
+let liveMode = "local", liveNode = null, liveRunning = false;
 
 function fillLiveTarget() {
   const sel = $("live-target");
@@ -483,7 +635,40 @@ function fillLiveTarget() {
 function setLiveStatus(t) { $("live-status").textContent = t; }
 function setLiveBusy(b) { $("live-start").disabled = b; $("live-stop").disabled = !b; }
 
+// Mode switch (disabled while a session is running).
+document.querySelectorAll("#live-mode .seg").forEach((s) => {
+  s.onclick = () => {
+    if (liveRunning) return;
+    document.querySelectorAll("#live-mode .seg").forEach((x) => x.classList.remove("active"));
+    s.classList.add("active");
+    liveMode = s.dataset.mode;
+    updateLiveHint();
+  };
+});
+
+// Show a hint when the chosen mode isn't ready (no plugin / no Google key).
+async function updateLiveHint() {
+  let msg = "";
+  if (liveMode === "local") {
+    if (!BOOT.local_live_available) msg = "本地模式需要「Video/Audio」插件（SenseVoice）。请前往「插件」安装。";
+  } else {
+    const st = await api("/api/apikey?model=" + encodeURIComponent("(Google) Live Translate")).catch(() => ({ has_key: false }));
+    if (!st.has_key) msg = "Google 实时翻译需要 Google API Key。请在「设置」中填写。";
+  }
+  $("live-hint-text").textContent = msg;
+  $("live-hint").hidden = !msg;
+  return !msg;  // ready?
+}
+
 $("live-start").onclick = async () => {
+  if (liveRunning) return;
+  if (!(await updateLiveHint())) return;   // blocked: hint already shown
+  if (liveMode === "google") startGoogle(); else startLocal();
+};
+$("live-stop").onclick = () => { if (liveMode === "google") stopGoogle(); else stopLocal(); };
+
+// --- Google (Gemini Live): continuous 16k PCM over WS, plays 24k reply audio ---
+async function startGoogle() {
   try {
     liveStream = await navigator.mediaDevices.getUserMedia(
       { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
@@ -499,7 +684,7 @@ $("live-start").onclick = async () => {
   liveWS = new WebSocket(`${proto}//${location.host}/ws/live-translate?target=${encodeURIComponent($("live-target").value)}`);
   liveWS.onopen = () => setLiveStatus("正在聆听…（对着麦克风说话）");
   liveWS.onmessage = onLiveMessage;
-  liveWS.onclose = () => setLiveStatus("连接已关闭");
+  liveWS.onclose = () => { setLiveStatus("连接已关闭"); liveRunning = false; setLiveBusy(false); };
   liveWS.onerror = () => setLiveStatus("连接错误");
 
   liveProc.onaudioprocess = (e) => {
@@ -507,16 +692,62 @@ $("live-start").onclick = async () => {
     liveWS.send(JSON.stringify({ audio: int16ToB64(downsamplePCM16(e.inputBuffer.getChannelData(0), srcRate)) }));
   };
   liveSrc.connect(liveProc); liveProc.connect(liveCtx.destination);
-  setLiveBusy(true);
-};
-
-$("live-stop").onclick = () => {
+  liveRunning = true; setLiveBusy(true);
+}
+function stopGoogle() {
   try { if (liveProc) liveProc.disconnect(); if (liveSrc) liveSrc.disconnect(); } catch (e) { /* */ }
   if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
   if (liveWS && liveWS.readyState === 1) { try { liveWS.send(JSON.stringify({ end: true })); } catch (e) {} liveWS.close(); }
   if (liveCtx) liveCtx.close();
-  setLiveBusy(false); setLiveStatus("已停止");
-};
+  liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
+}
+
+// --- Local (SenseVoice + LLM): audio-thread VAD segments -> POST per utterance ---
+async function startLocal() {
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia(
+      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) { setLiveStatus("无法访问麦克风：" + e.message); return; }
+  $("live-input").textContent = ""; $("live-output").textContent = "";
+  liveCtx = new AudioContext();
+  liveSrc = liveCtx.createMediaStreamSource(liveStream);
+  try {
+    await liveCtx.audioWorklet.addModule("/static/vad-worklet.js");
+    liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
+      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 850, minSegMs: 280, maxSegMs: 30000 } });
+    liveNode.port.onmessage = onVadMessage;
+    liveNode.port.postMessage({ type: "mode", mode: "open" });
+    liveSrc.connect(liveNode); liveNode.connect(liveCtx.destination);
+  } catch (e) {
+    setLiveStatus("VAD 初始化失败：" + e.message); stopLocal(); return;
+  }
+  liveRunning = true; setLiveBusy(true); setLiveStatus("正在聆听…（对着麦克风说话）");
+}
+function stopLocal() {
+  try {
+    if (liveNode) { if (liveNode.port) liveNode.port.postMessage({ type: "mode", mode: "block" }); liveNode.disconnect(); }
+    if (liveSrc) liveSrc.disconnect();
+  } catch (e) { /* */ }
+  if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
+  if (liveCtx) liveCtx.close();
+  liveNode = null; liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
+}
+function onVadMessage(e) {
+  const m = e.data || {};
+  if (m.type === "speechstart") setLiveStatus("识别中…");
+  else if (m.type === "segment") sendLocalUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
+}
+async function sendLocalUtterance(int16) {
+  try {
+    const r = await api("/api/live-local", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audio_b64: int16ToB64(int16), dst_lang: $("live-target").value,
+        model: $("model").value, use_online: $("set-online").checked }) });
+    if (r.source) appendLive("live-input", r.source + "\n");
+    if (r.translated) appendLive("live-output", r.translated + "\n");
+    if (liveRunning) setLiveStatus("正在聆听…（对着麦克风说话）");
+  } catch (e) { setLiveStatus("翻译失败：" + e.message); }
+}
 
 function downsamplePCM16(input, srcRate) {
   const ratio = srcRate / 16000, outLen = Math.floor(input.length / ratio);
@@ -565,21 +796,44 @@ $("set-google-key").onchange = async () => {
 };
 
 // ----- history -----
+let historyTypesFilled = false;
 async function loadHistory() {
-  const data = await api("/api/history");
   const t = $("history-table");
-  t.innerHTML = "<tr><th>文件</th><th>语言</th><th>模型</th><th>状态</th><th>Tokens</th><th>时间</th></tr>";
+  tableSkeleton(t, 7);
+  const ftype = $("history-type").value;
+  const [sortBy, descFlag] = ($("history-sort").value || "start_time|1").split("|");
+  let data;
+  try {
+    data = await api(`/api/history?file_type=${encodeURIComponent(ftype)}&sort_by=${sortBy}&desc=${descFlag === "1"}`);
+  }
+  catch (e) { t.innerHTML = "<tr><td style='border:none'>" + emptyState(EICON.inbox, "无法加载记录", e.message) + "</td></tr>"; return; }
+  // Populate the file-type filter once (from all types present).
+  if (!historyTypesFilled && data.file_types) {
+    for (const ft of data.file_types) {
+      const o = document.createElement("option"); o.value = ft; o.textContent = ft.toUpperCase(); $("history-type").appendChild(o);
+    }
+    historyTypesFilled = true;
+  }
+  if (!data.records.length) {
+    t.innerHTML = "<tr><td style='border:none'>" +
+      emptyState(EICON.inbox, "还没有翻译记录", "完成一次翻译后，项目会按文件类型与时间显示在这里。") + "</td></tr>";
+    return;
+  }
+  t.innerHTML = "<tr><th>文件</th><th>类型</th><th>语言</th><th>模型</th><th>状态</th><th>Tokens</th><th>费用</th><th>时间</th></tr>";
   for (const r of data.records) {
     const tr = document.createElement("tr");
+    const cost = (r.cost_amount != null && r.cost_currency) ? `${r.cost_amount} ${r.cost_currency}` : "";
     const cells = [
-      r.input_file || "", `${r.src_lang_display || r.src_lang || ""}→${r.dst_lang_display || r.dst_lang || ""}`,
+      r.input_file || "", (r.file_type || "").toUpperCase(),
+      `${r.src_lang_display || r.src_lang || ""}→${r.dst_lang_display || r.dst_lang || ""}`,
       r.model || "", r.status || "", r.total_tokens != null ? String(r.total_tokens) : "",
-      (r.start_time || "").replace("T", " ").slice(0, 19)];
+      cost, (r.start_time || "").replace("T", " ").slice(0, 19)];
     for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.appendChild(td); }
     t.appendChild(tr);
   }
-  if (!data.records.length) t.innerHTML += "<tr><td colspan='6' class='muted'>暂无记录</td></tr>";
 }
 $("history-refresh").onclick = loadHistory;
+$("history-type").onchange = loadHistory;
+$("history-sort").onchange = loadHistory;
 
 boot().catch((e) => { document.body.innerHTML = "<pre style='padding:24px'>启动失败: " + e.message + "</pre>"; });

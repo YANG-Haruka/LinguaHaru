@@ -29,8 +29,8 @@ T = "[T]"
 def install_fake_llm():
     """Replace the LLM call inside the base translator pipeline (see
     tests/test_optional_modules.py)."""
-    import textProcessing.base_translator as bt
-    from textProcessing.translation_checker import clean_json
+    import core.engine.base_translator as bt
+    from core.engine.translation_checker import clean_json
 
     def fake_translate_text(segments, previous_text, model, use_online, api_key,
                             system_prompt, user_prompt, previous_prompt,
@@ -57,9 +57,11 @@ def test_main_window():
     assert w.settings_page.objectName() == "SettingsPage"
     assert w.history_page.objectName() == "HistoryPage"
     assert w.proofread_page.objectName() == "ProofreadPage"
-    # new pages (interface mgmt, plugins) + the embedded progress dashboard
+    # new pages (interface mgmt, plugins, live voice) + the progress dashboard
     assert w.interface_page.objectName() == "InterfacePage"
     assert w.plugins_page.objectName() == "PluginsPage"
+    assert w.live_page.objectName() == "LivePage"
+    assert w.navigationInterface.widget("LivePage") is not None
     assert w.translate_page.dashboard.objectName() == "ProgressDashboard"
     # theme toggle flips and persists
     before = w._theme_dark
@@ -91,13 +93,31 @@ def test_new_pages_standalone():
     dash.start()
     dash.update_metrics(percent=50, total_files=4, done_files=2,
                         live_tasks=1, failed=0, total_tokens=12345)
-    print("  PASS: new pages constructed + dashboard metrics updated")
+
+    # Real-time voice page + its pure-Python PCM converters.
+    from qt_app.live_page import (
+        LivePage, _decode_to_mono_float, _resample, _encode_from_mono_float)
+    from PySide6.QtMultimedia import QAudioFormat
+    SF = QAudioFormat.SampleFormat
+    lv = LivePage(lang="zh")
+    assert lv.objectName() == "LivePage"
+    # Int16 encode->decode roundtrip stays within one quantization step.
+    floats = [0.5, -0.5, 0.25, -0.25, 0.0, 0.999, -0.999]
+    dec = _decode_to_mono_float(_encode_from_mono_float(floats, SF.Int16, 1), SF.Int16, 1)
+    assert max(abs(a - b) for a, b in zip(floats, dec)) < 1e-3
+    # 48k -> 16k decimates length ~3x; stereo with L=-R downmixes to silence.
+    assert abs(len(_resample(list(range(4800)), 48000, 16000)) - 1600) <= 1
+    stereo = [v for x in floats for v in (x, -x)]
+    mono = _decode_to_mono_float(
+        _encode_from_mono_float(stereo, SF.Int16, 1), SF.Int16, 2)
+    assert max(abs(v) for v in mono) < 1e-3
+    print("  PASS: new pages constructed + dashboard metrics + live PCM converters")
     return True
 
 
 def test_backend_interface_helpers():
     print("BACKEND: interface read/write/active round-trip")
-    from qt_app import backend
+    from core import backend
     name = "(Custom) _qt_itf_test"
     saved_online = backend.get_config("default_online_model", "")
     saved_default_online = backend.get_config("default_online", False)
@@ -115,7 +135,7 @@ def test_backend_interface_helpers():
         assert backend.get_active_model(use_online=True) == name
         # install command maps to a requirements file
         cmd = backend.install_command_for("PDF")
-        assert cmd and cmd[-2:] == ["-r", cmd[-1]] or "requirements-pdf.txt" in cmd[-1]
+        assert cmd and cmd[-2:] == ["-r", cmd[-1]] or "requirements/pdf.txt" in cmd[-1]
         assert backend.install_command_for("Nope") is None
         print("  PASS: interface helpers + install command")
     finally:
@@ -127,7 +147,7 @@ def test_backend_interface_helpers():
 
 def test_backend_resolution():
     print("BACKEND: extension -> class resolution (incl. bilingual partial)")
-    from qt_app import backend
+    from core import backend
 
     docx = backend.get_translator_class(".docx", word_bilingual_mode=True)
     assert isinstance(docx, partial), "docx should be a partial with bilingual_mode"
@@ -151,7 +171,7 @@ def test_backend_resolution():
 
 def test_backend_glossary_roundtrip():
     print("BACKEND: glossary load/save round-trip")
-    from qt_app import backend
+    from core import backend
 
     os.makedirs(backend.GLOSSARY_DIR, exist_ok=True)
     name = "_qt_test_glossary"
@@ -184,7 +204,7 @@ def test_backend_glossary_roundtrip():
 
 def test_backend_model_discovery():
     print("BACKEND: model-list discovery")
-    from qt_app import backend
+    from core import backend
     online = backend.scan_online_models()
     assert isinstance(online, list) and online, "expected online configs present"
     assert all(".json" not in m for m in online)
@@ -196,7 +216,7 @@ def test_worker_end_to_end():
     print("WORKER: end-to-end on a tiny .txt with fake LLM")
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import QEventLoop, QTimer
-    from qt_app import backend
+    from core import backend
     from qt_app.worker import TranslationWorker
 
     app = QApplication.instance() or QApplication([])
@@ -264,7 +284,7 @@ def _run_worker(worker, timeout_ms=60000):
 def test_proofread_roundtrip():
     print("PROOFREAD: list/load/save/re-export round-trip + page construction")
     from PySide6.QtWidgets import QApplication
-    from qt_app import backend
+    from core import backend
     from qt_app.worker import TranslationWorker
     from qt_app.proofread_page import ProofreadPage
 
@@ -341,7 +361,7 @@ def test_multifile_concurrent():
     print("WORKER: two .txt files translated concurrently, both outputs present")
     from PySide6.QtWidgets import QApplication
     from PySide6.QtCore import QEventLoop, QTimer
-    from qt_app import backend
+    from core import backend
     from qt_app.worker import TranslationWorker
 
     app = QApplication.instance() or QApplication([])
@@ -404,7 +424,7 @@ def test_multifile_concurrent():
 def test_i18n_helper():
     print("I18N: tr() returns zh for a known key and falls back for a missing one")
     from qt_app.i18n import tr, UI_LANGS, lang_display_name, lang_from_display_name
-    from config.languages_config import LABEL_TRANSLATIONS
+    from core.languages_config import LABEL_TRANSLATIONS
 
     zh_translate = LABEL_TRANSLATIONS["zh"]["Translate"]
     assert tr("Translate", "zh") == zh_translate, tr("Translate", "zh")

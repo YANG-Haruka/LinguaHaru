@@ -1,0 +1,474 @@
+"""Real-time voice translation page (Gemini 3.5 Live Translate).
+
+Mirrors the Web "实时语音" tab, but the desktop app talks to Gemini directly via
+LiveWorker (the Google key is local, so no proxy is needed). The mic is captured
+with QAudioSource and the translated speech is played through QAudioSink.
+
+Gemini Live needs 16 kHz mono PCM16 in and emits 24 kHz mono PCM16 out. Real
+audio devices rarely offer exactly that, and numpy isn't a base dependency, so
+the small pure-Python helpers below decode/resample/re-encode with the stdlib
+``array`` module. Transcripts arrive as incremental fragments and are appended.
+"""
+
+import array
+
+from PySide6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout,
+)
+
+from qfluentwidgets import (
+    ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
+    PrimaryPushButton, PushButton, CardWidget, TextEdit, FluentIcon, InfoBar,
+    InfoBarPosition,
+)
+
+from core import backend
+from qt_app.i18n import tr
+from qt_app.live_worker import LiveWorker, LocalLiveWorker
+from core.api_keys import load_api_key_for_model
+from core.languages_config import LANGUAGE_MAP
+from core.optional_modules import video_translation_available
+
+_GOOGLE_PROVIDER = "(Google) Live Translate"
+_IN_RATE = 16000   # Gemini input / SenseVoice input
+_OUT_RATE = 24000  # Gemini output
+
+# Energy-VAD thresholds for the local mode (mirror the Web vad-worklet).
+_VAD_ON_ABS, _VAD_ON_MUL = 0.009, 2.5
+_VAD_OFF_ABS, _VAD_OFF_MUL = 0.006, 1.7
+_VAD_ON_MS, _VAD_HANG_MS = 90, 850
+_VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
+
+
+# --------------------------------------------------------------------------- #
+# Pure-Python PCM conversion (no numpy). Samples are mono floats in [-1, 1].
+# --------------------------------------------------------------------------- #
+def _decode_to_mono_float(data, sample_format, channels):
+    """Decode interleaved PCM ``data`` to a list of mono float samples."""
+    from PySide6.QtMultimedia import QAudioFormat
+    SF = QAudioFormat.SampleFormat
+    if sample_format == SF.Int16:
+        a = array.array("h"); a.frombytes(data); scale = 32768.0
+        samples = [v / scale for v in a]
+    elif sample_format == SF.Int32:
+        a = array.array("i"); a.frombytes(data); scale = 2147483648.0
+        samples = [v / scale for v in a]
+    elif sample_format == SF.UInt8:
+        a = array.array("B"); a.frombytes(data)
+        samples = [(v - 128) / 128.0 for v in a]
+    elif sample_format == SF.Float:
+        a = array.array("f"); a.frombytes(data)
+        samples = list(a)
+    else:
+        return []
+    if channels > 1:
+        samples = [sum(samples[i:i + channels]) / channels
+                   for i in range(0, len(samples) - channels + 1, channels)]
+    return samples
+
+
+def _resample(samples, in_rate, out_rate):
+    """Linear-interpolate mono ``samples`` from ``in_rate`` to ``out_rate``."""
+    if in_rate == out_rate or not samples:
+        return samples
+    ratio = out_rate / in_rate
+    n = int(len(samples) * ratio)
+    last = len(samples) - 1
+    out = [0.0] * n
+    for i in range(n):
+        pos = i / ratio
+        i0 = int(pos)
+        s0 = samples[i0]
+        s1 = samples[i0 + 1] if i0 < last else s0
+        out[i] = s0 + (s1 - s0) * (pos - i0)
+    return out
+
+
+def _encode_from_mono_float(samples, sample_format, channels):
+    """Encode mono float ``samples`` to interleaved PCM bytes for the format."""
+    from PySide6.QtMultimedia import QAudioFormat
+    SF = QAudioFormat.SampleFormat
+    clamped = [max(-1.0, min(1.0, s)) for s in samples]
+    if channels > 1:
+        clamped = [s for s in clamped for _ in range(channels)]
+    if sample_format == SF.Int16:
+        return array.array("h", [int(s * 32767) for s in clamped]).tobytes()
+    if sample_format == SF.Int32:
+        return array.array("i", [int(s * 2147483647) for s in clamped]).tobytes()
+    if sample_format == SF.UInt8:
+        return array.array("B", [int(s * 127) + 128 for s in clamped]).tobytes()
+    if sample_format == SF.Float:
+        return array.array("f", clamped).tobytes()
+    return b""
+
+
+class LivePage(ScrollArea):
+    def __init__(self, parent=None, lang="en"):
+        super().__init__(parent)
+        self.setObjectName("LivePage")
+        self._lang = lang
+        self._mode = "local"    # "local" (SenseVoice+LLM) | "google" (Gemini Live)
+        self._worker = None
+        self._local_workers = []
+        self._source = None     # QAudioSource (mic)
+        self._mic_io = None
+        self._sink = None       # QAudioSink (playback)
+        self._play_io = None
+        self._in_fmt = None
+        self._out_fmt = None
+        # local-mode energy VAD state
+        self._vad_on = False
+        self._vad_buf = bytearray()
+        self._vad_voice_ms = 0.0
+        self._vad_sil_ms = 0.0
+        self._vad_floor = 0.003
+
+        self.setWidgetResizable(True)
+        self.enableTransparentBackground()
+        container = QWidget()
+        container.setObjectName("liveScrollContainer")
+        container.setStyleSheet(
+            "#liveScrollContainer { background-color: transparent; }")
+        self.setWidget(container)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(30, 22, 30, 22)
+        layout.setSpacing(14)
+
+        self.title = TitleLabel(tr("Real-Time Voice", lang))
+        layout.addWidget(self.title)
+        self.subtitle = CaptionLabel(tr("Real-Time Voice Subtitle", lang))
+        self.subtitle.setWordWrap(True)
+        layout.addWidget(self.subtitle)
+
+        # --- Mode: local (SenseVoice + LLM) vs Google (Gemini Live) ---
+        mode_card = CardWidget()
+        mode_row = QHBoxLayout(mode_card)
+        mode_row.setContentsMargins(20, 14, 20, 14)
+        mode_row.setSpacing(10)
+        self.mode_label = BodyLabel(tr("Live Mode", lang))
+        mode_row.addWidget(self.mode_label)
+        self.mode_combo = ComboBox()
+        self._mode_ids = ["local", "google"]
+        self.mode_combo.addItems([tr("Local Voice Mode", lang), tr("Google Voice Mode", lang)])
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        mode_row.addWidget(self.mode_combo, 1)
+        layout.addWidget(mode_card)
+        self.hint_label = CaptionLabel("")
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
+
+        # --- Controls: target language + start/stop ---
+        ctrl_card = CardWidget()
+        ctrl = QHBoxLayout(ctrl_card)
+        ctrl.setContentsMargins(20, 14, 20, 14)
+        ctrl.setSpacing(10)
+        self.target_label = BodyLabel(tr("Target Language", lang))
+        ctrl.addWidget(self.target_label)
+        self.target_combo = ComboBox()
+        self.target_combo.addItems(backend.available_languages())
+        config = backend.read_config()
+        self._set_combo(self.target_combo, config.get("default_dst_lang", "English"))
+        ctrl.addWidget(self.target_combo, 1)
+        self.start_btn = PrimaryPushButton(FluentIcon.MICROPHONE, tr("Start Listening", lang))
+        self.start_btn.clicked.connect(self.on_start)
+        ctrl.addWidget(self.start_btn)
+        self.stop_btn = PushButton(FluentIcon.CANCEL, tr("Stop", lang))
+        self.stop_btn.clicked.connect(self.on_stop)
+        self.stop_btn.setEnabled(False)
+        ctrl.addWidget(self.stop_btn)
+        layout.addWidget(ctrl_card)
+
+        self.status_label = CaptionLabel("")
+        layout.addWidget(self.status_label)
+
+        # --- Transcript panels ---
+        self.input_header = StrongBodyLabel(tr("Recognized Speech", lang))
+        layout.addWidget(self.input_header)
+        self.input_text = TextEdit()
+        self.input_text.setReadOnly(True)
+        self.input_text.setMinimumHeight(120)
+        layout.addWidget(self.input_text)
+
+        self.output_header = StrongBodyLabel(tr("Translation Result", lang))
+        layout.addWidget(self.output_header)
+        self.output_text = TextEdit()
+        self.output_text.setReadOnly(True)
+        self.output_text.setMinimumHeight(120)
+        layout.addWidget(self.output_text)
+
+        layout.addStretch(1)
+        self._update_hint()
+
+    # --- i18n ---
+    def retranslate(self, lang):
+        self._lang = lang
+        self.title.setText(tr("Real-Time Voice", lang))
+        self.subtitle.setText(tr("Real-Time Voice Subtitle", lang))
+        self.mode_label.setText(tr("Live Mode", lang))
+        cur = self.mode_combo.currentIndex()
+        self.mode_combo.blockSignals(True)
+        self.mode_combo.clear()
+        self.mode_combo.addItems([tr("Local Voice Mode", lang), tr("Google Voice Mode", lang)])
+        self.mode_combo.setCurrentIndex(max(0, cur))
+        self.mode_combo.blockSignals(False)
+        self.target_label.setText(tr("Target Language", lang))
+        self.start_btn.setText(tr("Start Listening", lang))
+        self.stop_btn.setText(tr("Stop", lang))
+        self.input_header.setText(tr("Recognized Speech", lang))
+        self.output_header.setText(tr("Translation Result", lang))
+        self._update_hint()
+
+    def _on_mode_changed(self, index):
+        if 0 <= index < len(self._mode_ids):
+            self._mode = self._mode_ids[index]
+        self._update_hint()
+
+    def _update_hint(self):
+        """Show a hint when the chosen mode isn't ready (no plugin / no key)."""
+        msg = ""
+        if self._mode == "local":
+            if not video_translation_available():
+                msg = tr("Local Voice Needs Plugin", self._lang)
+        else:
+            if not load_api_key_for_model(_GOOGLE_PROVIDER):
+                msg = tr("Google key not set", self._lang)
+        self.hint_label.setText(msg)
+
+    @staticmethod
+    def _set_combo(combo, value):
+        idx = combo.findText(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+
+    # --- lifecycle ---
+    def on_start(self):
+        if self._source is not None:
+            return
+        if self._mode == "google" and not load_api_key_for_model(_GOOGLE_PROVIDER):
+            self._info(tr("Google key not set", self._lang), error=True)
+            return
+        if self._mode == "local" and not video_translation_available():
+            self._info(tr("Local Voice Needs Plugin", self._lang), error=True)
+            return
+
+        self.input_text.clear()
+        self.output_text.clear()
+        self._reset_vad()
+
+        # Google mode needs playback (it returns spoken audio); local mode is
+        # text-only, so skip the speaker.
+        if not self._start_audio(with_playback=(self._mode == "google")):
+            return
+
+        if self._mode == "google":
+            target = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
+            self._worker = LiveWorker(load_api_key_for_model(_GOOGLE_PROVIDER), target)
+            self._worker.inputText.connect(self._append_input)
+            self._worker.outputText.connect(self._append_output)
+            self._worker.audio.connect(self._play_audio)
+            self._worker.status.connect(self._on_status)
+            self._worker.start()
+        else:
+            self.status_label.setText(tr("Listening", self._lang))
+
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.target_combo.setEnabled(False)
+        self.mode_combo.setEnabled(False)
+
+    def _start_audio(self, with_playback=True):
+        """Open the mic (QAudioSource); also the speaker (QAudioSink) if needed."""
+        try:
+            from PySide6.QtMultimedia import (
+                QAudioSource, QAudioSink, QAudioFormat, QMediaDevices)
+        except Exception as e:  # noqa: BLE001
+            self._info(f"QtMultimedia unavailable: {e}", error=True)
+            return False
+
+        def _fmt(rate):
+            f = QAudioFormat()
+            f.setSampleRate(rate)
+            f.setChannelCount(1)
+            f.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+            return f
+
+        in_dev = QMediaDevices.defaultAudioInput()
+        if in_dev is None or in_dev.isNull():
+            self._info(tr("No microphone found", self._lang), error=True)
+            return False
+
+        want_in = _fmt(_IN_RATE)
+        self._in_fmt = want_in if in_dev.isFormatSupported(want_in) else in_dev.preferredFormat()
+        self._source = QAudioSource(in_dev, self._in_fmt)
+        self._mic_io = self._source.start()
+        if self._mic_io is None:
+            self._info(tr("No microphone found", self._lang), error=True)
+            self._source = None
+            return False
+        self._mic_io.readyRead.connect(self._on_mic_ready)
+
+        if with_playback:
+            out_dev = QMediaDevices.defaultAudioOutput()
+            want_out = _fmt(_OUT_RATE)
+            self._out_fmt = want_out if out_dev.isFormatSupported(want_out) else out_dev.preferredFormat()
+            self._sink = QAudioSink(out_dev, self._out_fmt)
+            self._play_io = self._sink.start()
+        return True
+
+    def on_stop(self):
+        if self._worker is not None:
+            self._worker.stop()
+            self._worker.wait(2000)
+            self._worker = None
+        for w in list(self._local_workers):
+            w.wait(3000)
+        self._local_workers.clear()
+        if self._source is not None:
+            self._source.stop()
+            self._source = None
+            self._mic_io = None
+        if self._sink is not None:
+            self._sink.stop()
+            self._sink = None
+            self._play_io = None
+        self._reset_vad()
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self.target_combo.setEnabled(True)
+        self.mode_combo.setEnabled(True)
+        self.status_label.setText(tr("Connection closed", self._lang))
+
+    def hideEvent(self, event):
+        # Leaving the page must not keep the mic hot.
+        if self._source is not None:
+            self.on_stop()
+        super().hideEvent(event)
+
+    # --- audio I/O ---
+    def _on_mic_ready(self):
+        if self._mic_io is None:
+            return
+        data = bytes(self._mic_io.readAll().data())
+        if not data:
+            return
+        fmt = self._in_fmt
+        from PySide6.QtMultimedia import QAudioFormat
+        if (fmt.sampleRate() == _IN_RATE and fmt.channelCount() == 1
+                and fmt.sampleFormat() == QAudioFormat.SampleFormat.Int16):
+            pcm = data
+        else:
+            samples = _decode_to_mono_float(data, fmt.sampleFormat(), fmt.channelCount())
+            samples = _resample(samples, fmt.sampleRate(), _IN_RATE)
+            pcm = _encode_from_mono_float(samples, QAudioFormat.SampleFormat.Int16, 1)
+        if self._mode == "google":
+            if self._worker is not None:
+                self._worker.send_audio(pcm)
+        else:
+            self._vad_feed(pcm)
+
+    # --- local mode: energy VAD over 16k PCM16, dispatch each utterance ---
+    def _reset_vad(self):
+        self._vad_on = False
+        self._vad_buf = bytearray()
+        self._vad_voice_ms = 0.0
+        self._vad_sil_ms = 0.0
+        self._vad_floor = 0.003
+
+    def _vad_feed(self, pcm):
+        import array
+        import math
+        a = array.array("h")
+        a.frombytes(pcm)
+        if not a:
+            return
+        level = math.sqrt(sum((v / 32768.0) ** 2 for v in a) / len(a))
+        dt_ms = len(a) / _IN_RATE * 1000.0
+        on_th = max(_VAD_ON_ABS, self._vad_floor * _VAD_ON_MUL)
+        off_th = max(_VAD_OFF_ABS, self._vad_floor * _VAD_OFF_MUL)
+        if not self._vad_on:
+            if level < on_th:
+                self._vad_floor = self._vad_floor * 0.99 + level * 0.01
+            if level > on_th:
+                self._vad_voice_ms += dt_ms
+                if self._vad_voice_ms >= _VAD_ON_MS:
+                    self._vad_on = True
+                    self._vad_sil_ms = 0.0
+                    self._vad_buf = bytearray(pcm)
+            else:
+                self._vad_voice_ms = 0.0
+        else:
+            self._vad_buf += pcm
+            self._vad_sil_ms = self._vad_sil_ms + dt_ms if level < off_th else 0.0
+            dur_ms = len(self._vad_buf) / 2 / _IN_RATE * 1000.0
+            if self._vad_sil_ms >= _VAD_HANG_MS or dur_ms >= _VAD_MAX_MS:
+                utt = bytes(self._vad_buf)
+                self._vad_on = False
+                self._vad_voice_ms = 0.0
+                self._vad_buf = bytearray()
+                if dur_ms >= _VAD_MIN_MS:
+                    self._dispatch_local(utt)
+
+    def _dispatch_local(self, utt):
+        online = backend.get_config("default_online", True)
+        model = backend.get_active_model(online)
+        api_key = load_api_key_for_model(model) if online else ""
+        dst = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
+        self.status_label.setText(tr("Recognizing", self._lang))
+        w = LocalLiveWorker(utt, _IN_RATE, dst, model, online, api_key)
+        w.result.connect(self._on_local_result)
+        w.failed.connect(lambda e: self.status_label.setText("error: " + e))
+        w.finished.connect(lambda w=w: self._retire_local(w))
+        self._local_workers.append(w)
+        w.start()
+
+    def _retire_local(self, w):
+        if w in self._local_workers:
+            self._local_workers.remove(w)
+
+    def _on_local_result(self, source, translated):
+        if source:
+            self.input_text.insertPlainText(source + "\n")
+            self.input_text.ensureCursorVisible()
+        if translated:
+            self.output_text.insertPlainText(translated + "\n")
+            self.output_text.ensureCursorVisible()
+        if self._source is not None:
+            self.status_label.setText(tr("Listening", self._lang))
+
+    def _play_audio(self, data):
+        if self._play_io is None:
+            return
+        fmt = self._out_fmt
+        from PySide6.QtMultimedia import QAudioFormat
+        if (fmt.sampleRate() == _OUT_RATE and fmt.channelCount() == 1
+                and fmt.sampleFormat() == QAudioFormat.SampleFormat.Int16):
+            out = data
+        else:
+            samples = _decode_to_mono_float(
+                data, QAudioFormat.SampleFormat.Int16, 1)
+            samples = _resample(samples, _OUT_RATE, fmt.sampleRate())
+            out = _encode_from_mono_float(samples, fmt.sampleFormat(), fmt.channelCount())
+        self._play_io.write(out)
+
+    # --- worker signals ---
+    def _append_input(self, text):
+        self.input_text.insertPlainText(text)
+        self.input_text.ensureCursorVisible()
+
+    def _append_output(self, text):
+        self.output_text.insertPlainText(text)
+        self.output_text.ensureCursorVisible()
+
+    def _on_status(self, status):
+        if status == "listening":
+            self.status_label.setText(tr("Listening", self._lang))
+        elif status == "closed":
+            self.status_label.setText(tr("Connection closed", self._lang))
+        elif status.startswith("error:"):
+            self.status_label.setText(status)
+            self._info(status, error=True)
+
+    def _info(self, text, error=False):
+        bar = InfoBar.error if error else InfoBar.success
+        bar(tr("Real-Time Voice", self._lang), text, orient=1, isClosable=True,
+            position=InfoBarPosition.TOP, duration=4000, parent=self)

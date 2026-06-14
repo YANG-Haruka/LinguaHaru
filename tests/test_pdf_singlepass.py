@@ -32,7 +32,7 @@ def main():
     doc.save(pdf_path)
     doc.close()
 
-    import translator.pdf_translator as pt
+    import core.translators.pdf_translator as pt
 
     calls = []
 

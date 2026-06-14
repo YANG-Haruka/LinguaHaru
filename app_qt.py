@@ -3,7 +3,7 @@
 The native desktop experience: reuses LinguaHaru's translation backend
 directly and never imports the Gradio web app.
 
-    pip install -r requirements-qt.txt
+    pip install -r requirements/qt.txt
     python app_qt.py
 """
 
@@ -13,12 +13,12 @@ from pathlib import Path
 
 
 def _patch_tiktoken():
-    """Use bundled tiktoken BPE files when present (mirrors app.py)."""
+    """Use bundled tiktoken BPE files when present."""
     try:
         import tiktoken.load
     except ImportError:
         return
-    tiktoken_dir = Path(__file__).parent / "models" / "tiktoken"
+    tiktoken_dir = Path(__file__).parent / "assets" / "models" / "tiktoken"
     if not tiktoken_dir.exists():
         return
     mapping = {

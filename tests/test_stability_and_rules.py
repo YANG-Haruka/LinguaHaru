@@ -26,7 +26,7 @@ class FakeOpenAIError(Exception):
 
 def test_error_classification():
     print("Error classification + key rotation")
-    import llmWrapper.online_translation as ot
+    import core.llm.online_translation as ot
 
     # Reset rotation state
     ot._bad_keys.clear()
@@ -107,7 +107,7 @@ def test_error_classification():
 
 def test_rpm_limiter():
     print("RPM limiter")
-    from llmWrapper.online_translation import _RpmLimiter
+    from core.llm.online_translation import _RpmLimiter
 
     limiter = _RpmLimiter()
     limiter.limit = 100  # bypass config load
@@ -129,7 +129,7 @@ def test_rpm_limiter():
 
 def test_text_rules():
     print("Text rules (replace before/after, no-translate list)")
-    import config.text_rules as tr
+    import core.text_rules as tr
 
     rules_path = os.path.join("config", "text_rules.json")
     backup = None
@@ -151,7 +151,7 @@ def test_text_rules():
               tr.apply_replace_after("これは誤訳語です") == "これは正訳語です")
         check("no_translate matches", tr.is_no_translate("  KeepMeAsIs "))
 
-        from pipeline.skip_pipeline import should_translate
+        from core.pipelines.skip_pipeline import should_translate
         check("skip_pipeline honors no_translate list", not should_translate("KeepMeAsIs"))
         check("other text still translates", should_translate("Regular sentence here"))
     finally:
@@ -165,7 +165,7 @@ def test_text_rules():
 
 def test_glossary_parser():
     print("AI glossary parser")
-    from textProcessing.glossary_extractor import _parse_terms
+    from core.engine.glossary_extractor import _parse_terms
 
     raw = 'Here you go:\n[["Haruka", "ハルカ"], ["LinguaHaru", "リンガハル"]]\nDone.'
     terms = _parse_terms(raw)

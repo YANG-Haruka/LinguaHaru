@@ -57,7 +57,7 @@ def test_docx():
     from docx import Document
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from pipeline.word_translation_pipeline import (
+    from core.pipelines.word_translation_pipeline import (
         extract_word_content_to_json, write_translated_content_to_word)
 
     src = os.path.join(WORK_DIR, "field_test.docx")
@@ -112,7 +112,7 @@ def test_pptx():
     print("PPTX: sparse speaker notes stay on their own slide")
     from pptx import Presentation
     from pptx.util import Inches
-    from pipeline.ppt_translation_pipeline import (
+    from core.pipelines.ppt_translation_pipeline import (
         extract_ppt_content_to_json, write_translated_content_to_ppt)
 
     src = os.path.join(WORK_DIR, "notes_test.pptx")
@@ -154,7 +154,7 @@ def test_pptx():
 def test_xlsx():
     print("XLSX: merged cells survive without bogus 1x1 ranges")
     import openpyxl
-    from pipeline.excel_translation_pipeline import (
+    from core.pipelines.excel_translation_pipeline import (
         extract_excel_content_to_json, write_translated_content_to_excel)
 
     src = os.path.join(WORK_DIR, "merge_test.xlsx")
@@ -183,7 +183,7 @@ def test_xlsx():
 
 def test_srt():
     print("SRT: variant timestamps parsed, no cue lost")
-    from pipeline.subtitle_translation_pipeline import (
+    from core.pipelines.subtitle_translation_pipeline import (
         extract_srt_content_to_json, write_translated_content_to_srt)
 
     src = os.path.join(WORK_DIR, "variant_test.srt")
@@ -211,7 +211,7 @@ def test_srt():
 
 def test_txt():
     print("TXT: blank lines, single newlines and indentation preserved")
-    from pipeline.txt_translation_pipeline import (
+    from core.pipelines.txt_translation_pipeline import (
         extract_txt_content_to_json, write_translated_content_to_txt)
 
     src = os.path.join(WORK_DIR, "structure_test.txt")
@@ -245,7 +245,7 @@ def test_txt():
 
 def test_md():
     print("MD: HTML table cell with nested tags gets translated")
-    from pipeline.md_translation_pipeline import (
+    from core.pipelines.md_translation_pipeline import (
         extract_md_content_to_json, write_translated_content_to_md)
 
     src = os.path.join(WORK_DIR, "table_test.md")
@@ -272,7 +272,7 @@ def test_md():
 
 def test_epub():
     print("EPUB: block extraction, inline tags, zip structure (mimetype first+stored)")
-    from pipeline.epub_translation_pipeline import (
+    from core.pipelines.epub_translation_pipeline import (
         extract_epub_content_to_json, write_translated_content_to_epub)
 
     src = os.path.join(WORK_DIR, "book_test.epub")
@@ -328,7 +328,7 @@ def test_epub():
 
 def test_csv():
     print("CSV: semicolon delimiter, numbers untouched, text translated")
-    from pipeline.csv_translation_pipeline import (
+    from core.pipelines.csv_translation_pipeline import (
         extract_csv_content_to_json, write_translated_content_to_csv)
 
     src = os.path.join(WORK_DIR, "data_test.csv")

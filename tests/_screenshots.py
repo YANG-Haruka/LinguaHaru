@@ -44,7 +44,7 @@ def _prime_dashboard(window):
 def main():
     from PySide6.QtWidgets import QApplication
     from qfluentwidgets import setTheme, setThemeColor, Theme
-    from qt_app import backend
+    from core import backend
     from qt_app.main_window import MainWindow, ACCENT_COLOR
 
     saved_theme = backend.get_config("qt_theme", "light")

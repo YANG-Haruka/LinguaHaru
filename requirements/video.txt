@@ -1,0 +1,13 @@
+# Optional: video/audio subtitle translation module
+#   pip install -r requirements/video.txt
+# Also requires ffmpeg on PATH (https://ffmpeg.org/).
+# STT model is selectable in the UI (Settings). faster-whisper covers all
+# languages; SenseVoice (funasr) is faster/accurate for zh/en/ja/ko/yue only.
+faster-whisper>=1.1.0
+# SenseVoice STT engine (optional). NOTE: funasr does NOT declare torch as a
+# dependency, so it must be listed explicitly or SenseVoice fails at runtime
+# (ModuleNotFoundError: torch). The CPU build is fine; for GPU install the CUDA
+# build of torch separately (https://pytorch.org/get-started/locally/).
+torch>=2.0
+torchaudio>=2.0
+funasr>=1.1.0

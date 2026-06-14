@@ -36,7 +36,7 @@ def _build_odt(path, body):
 
 
 def _translate(name, body):
-    from pipeline.odt_translation_pipeline import (
+    from core.pipelines.odt_translation_pipeline import (
         extract_odt_content_to_json, write_translated_content_to_odt)
     src = os.path.join(WORK_DIR, name)
     _build_odt(src, body)

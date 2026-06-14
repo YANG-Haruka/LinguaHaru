@@ -158,7 +158,7 @@ def docx_paragraph_texts_in_order(path):
 
 def test_docx_complex():
     print("DOCX complex: hyperlinks, inline image, nested tables, fields, header/footer")
-    from pipeline.word_translation_pipeline import (
+    from core.pipelines.word_translation_pipeline import (
         extract_word_content_to_json, write_translated_content_to_word)
 
     src = os.path.join(WORK_DIR, "complex.docx")
@@ -236,7 +236,7 @@ def test_docx_complex():
 def test_xlsx_complex():
     print("XLSX complex: multi-sheet, merged cells, formulas, newlines, hyperlink")
     import openpyxl
-    from pipeline.excel_translation_pipeline import (
+    from core.pipelines.excel_translation_pipeline import (
         extract_excel_content_to_json, write_translated_content_to_excel)
 
     src = os.path.join(WORK_DIR, "complex.xlsx")
@@ -295,7 +295,7 @@ def test_pptx_complex():
     print("PPTX complex: table, grouped shapes, multi-run textbox, sparse notes")
     from pptx import Presentation
     from pptx.util import Inches, Pt
-    from pipeline.ppt_translation_pipeline import (
+    from core.pipelines.ppt_translation_pipeline import (
         extract_ppt_content_to_json, write_translated_content_to_ppt)
 
     src = os.path.join(WORK_DIR, "complex.pptx")
@@ -383,7 +383,7 @@ def test_pptx_chart():
     from pptx.chart.data import CategoryChartData
     from pptx.enum.chart import XL_CHART_TYPE
     from pptx.util import Inches
-    from pipeline.ppt_translation_pipeline import (
+    from core.pipelines.ppt_translation_pipeline import (
         extract_ppt_content_to_json, write_translated_content_to_ppt)
 
     src = os.path.join(WORK_DIR, "chart.pptx")
@@ -424,7 +424,7 @@ def test_pptx_chart():
 # ------------------------------------------------------------------ MD ----
 def test_md_complex():
     print("MD complex: code blocks, inline code, links, pipe tables")
-    from pipeline.md_translation_pipeline import (
+    from core.pipelines.md_translation_pipeline import (
         extract_md_content_to_json, write_translated_content_to_md)
 
     src = os.path.join(WORK_DIR, "complex.md")
@@ -464,7 +464,7 @@ def test_md_complex():
 # ----------------------------------------------------------------- SRT ----
 def test_srt_complex():
     print("SRT complex: multi-line cues, styling tags")
-    from pipeline.subtitle_translation_pipeline import (
+    from core.pipelines.subtitle_translation_pipeline import (
         extract_srt_content_to_json, write_translated_content_to_srt)
 
     src = os.path.join(WORK_DIR, "complex.srt")
@@ -514,7 +514,7 @@ def build_simple_field_docx(path):
 
 def test_docx_simple_field_order():
     print("DOCX simple field: mid-paragraph w:fldSimple keeps position")
-    from pipeline.word_translation_pipeline import (
+    from core.pipelines.word_translation_pipeline import (
         extract_word_content_to_json, write_translated_content_to_word)
     from lxml import etree
 

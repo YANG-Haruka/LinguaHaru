@@ -1,7 +1,7 @@
 """LinguaHaru Web — FastAPI backend (replaces the Gradio app).
 
-The translation backend is fully reused from qt_app.backend (which is Qt-free,
-pure-Python glue) and config.api_keys, so this layer is a thin HTTP wrapper:
+The translation backend is fully reused from core.backend (which is Qt-free,
+pure-Python glue) and core.api_keys, so this layer is a thin HTTP wrapper:
   - serves the custom frontend (webapp/static)
   - exposes config / models / glossary / API-key endpoints
   - runs a translation in a background thread and streams progress over SSE
@@ -9,40 +9,75 @@ pure-Python glue) and config.api_keys, so this layer is a thin HTTP wrapper:
 Run:  uvicorn webapp.server:app  (or python -m webapp.server)
 """
 import os
+import sys
 import json
 import shutil
 import threading
 import uuid
 import asyncio
 
-from fastapi import FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
+    Request)
 from fastapi.responses import (
     FileResponse, StreamingResponse, JSONResponse, HTMLResponse)
 from fastapi.staticfiles import StaticFiles
 
-from qt_app import backend
-from config.api_keys import (
+from core import backend
+from webapp import sessions
+from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)
-from config.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
-from config.optional_modules import module_status, MEDIA_EXTENSIONS
-from pipeline.video_translation_pipeline import (
+from core.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
+from core.optional_modules import (
+    module_status, MEDIA_EXTENSIONS, video_translation_available)
+from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, get_stt_model, SENSEVOICE_SUPPORTED_CODES)
-from config.log_config import app_logger
+from core.log_config import app_logger
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(HERE, "static")
+# In a PyInstaller one-file bundle the script runs from sys._MEIPASS (where the
+# spec drops webapp/static); otherwise resolve relative to this file.
+if getattr(sys, "frozen", False):
+    STATIC_DIR = os.path.join(sys._MEIPASS, "webapp", "static")
+    _ASSETS_DIR = os.path.join(sys._MEIPASS, "assets")
+else:
+    STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    _ASSETS_DIR = os.path.join(backend.REPO_ROOT, "assets")
 # Uploads must live OUTSIDE the translation temp dir: DocumentTranslator.process()
 # wipes temp/ on a fresh run, which would delete the file being translated.
-UPLOAD_DIR = os.path.join(backend.REPO_ROOT, "web_uploads")
+UPLOAD_DIR = os.path.join(backend.REPO_ROOT, "data", "web_uploads")
 
 app = FastAPI(title="LinguaHaru Web")
 
 
+def server_mode_on():
+    """Public-deploy mode: hide the key/model/admin UI, use the server's own
+    key, and bind externally. On via the ``server_mode`` config flag, or
+    automatically on Render (the ``RENDER`` env var is always set there)."""
+    return bool(backend.get_config("server_mode", False)) or bool(os.environ.get("RENDER"))
+
+
+def _block_in_server_mode():
+    """Admin-only endpoints (changing the server's model/key, installing
+    modules) are forbidden for public users."""
+    if server_mode_on():
+        raise HTTPException(403, "Disabled in server mode")
+
+
 @app.middleware("http")
-async def _cross_origin_isolation(request, call_next):
-    """Enable SharedArrayBuffer (needed by ffmpeg.wasm for in-browser audio
-    extraction). 'credentialless' lets us still load the CDN core files."""
+async def _session_and_isolation(request, call_next):
+    """Assign a per-browser session id (httponly cookie) used to isolate
+    translation paths and proofreading across concurrent users, and set the
+    cross-origin-isolation headers that ffmpeg.wasm needs for in-browser audio
+    extraction ('credentialless' still lets us load the CDN core files)."""
+    sid = request.cookies.get(sessions.SESSION_COOKIE)
+    issue = not sessions.valid_session_id(sid)
+    if issue:
+        sid = sessions.new_session_id()
+    request.state.session_id = sid
     resp = await call_next(request)
+    if issue:
+        resp.set_cookie(sessions.SESSION_COOKIE, sid, httponly=True,
+                        samesite="lax", max_age=7 * 24 * 3600)
     resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
     resp.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
     return resp
@@ -50,6 +85,11 @@ async def _cross_origin_isolation(request, call_next):
 # task_id -> {progress, desc, status, output, error, stop}
 TASKS = {}
 _TASKS_LOCK = threading.Lock()
+
+# Concurrency caps: each /api/translate spawns a background thread, so without a
+# ceiling many LAN users (or repeated clicks) could pile up unbounded workers.
+MAX_ACTIVE_TASKS = 6              # global across all sessions
+MAX_ACTIVE_TASKS_PER_SESSION = 2  # per browser/session
 
 
 # --------------------------------------------------------------------------- #
@@ -78,6 +118,8 @@ def bootstrap():
         "sensevoice_codes": sorted(SENSEVOICE_SUPPORTED_CODES),
         "language_map": LANGUAGE_MAP,
         "modules": module_status(),
+        "server_mode": server_mode_on(),
+        "local_live_available": video_translation_available(),
         "config": {
             "default_online": online,
             "default_online_model": config.get("default_online_model", ""),
@@ -87,8 +129,11 @@ def bootstrap():
             "stt_model": get_selected_stt_model(),
             "translate_subtitles": config.get("translate_subtitles", True),
             "max_retries": config.get("max_retries", 4),
-            "thread_count": config.get("default_thread_count_online", 8) if online
-            else config.get("default_thread_count_offline", 4),
+            "rpm_limit": config.get("rpm_limit", 0),
+            "auto_extract_glossary": config.get("auto_extract_glossary", False),
+            "lan_mode": config.get("lan_mode", False),
+            "thread_count": backend.thread_count_for_mode(
+                online, config.get("default_online_model")),
         },
         "labels": LABEL_TRANSLATIONS,
     }
@@ -97,15 +142,99 @@ def bootstrap():
 @app.post("/api/config")
 async def update_config(payload: dict):
     """Persist arbitrary settings keys (whitelisted)."""
+    _block_in_server_mode()
     allowed = {"default_online", "default_online_model", "default_src_lang",
                "default_dst_lang", "default_glossary", "stt_model",
                "translate_subtitles", "max_retries", "rpm_limit",
-               "auto_extract_glossary"}
+               "auto_extract_glossary", "lan_mode"}
     config = backend.read_config()
     for k, v in payload.items():
         if k in allowed:
             config[k] = v
     backend.write_config(config)
+    if "rpm_limit" in payload:  # apply the new RPM cap without a restart
+        from core.llm.online_translation import reset_rpm_limit_cache
+        reset_rpm_limit_cache()
+    return {"ok": True}
+
+
+# --------------------------------------------------------------------------- #
+# Interface management (mirrors the Qt Interface page): local / official /
+# custom provider cards, click to activate, configure params, add custom.
+# --------------------------------------------------------------------------- #
+def _resolve_active_interface(local, online_names):
+    use_online = backend.get_config("default_online", True)
+    online_active = backend.get_active_model(use_online=True)
+    local_active = backend.get_active_model(use_online=False)
+    if not use_online and local_active in local:
+        return local_active
+    if online_active in online_names:
+        return online_active
+    return online_names[0] if online_names else (local_active if local_active in local else "")
+
+
+@app.get("/api/interfaces")
+def list_interfaces():
+    try:
+        local = backend.scan_local_models()
+    except Exception:  # noqa: BLE001 - probing is best-effort
+        local = []
+    online = backend.list_online_interfaces()
+    online_names = [i["name"] for i in online]
+    return {
+        "active": _resolve_active_interface(local, online_names),
+        "use_online": backend.get_config("default_online", True),
+        "local": local,
+        "online": online,
+    }
+
+
+@app.post("/api/interface/activate")
+def activate_interface(payload: dict):
+    _block_in_server_mode()
+    name = payload.get("name")
+    online = bool(payload.get("online", True))
+    backend.set_active_model(name, use_online=online)
+    backend.set_config("default_online", online)
+    return {"ok": True, "active": name, "use_online": online}
+
+
+@app.get("/api/interface/config")
+def get_interface_config(name: str):
+    _block_in_server_mode()
+    cfg = backend.read_api_config(name) or {}
+    return {"name": name, "base_url": cfg.get("base_url", ""),
+            "model": cfg.get("model", ""), "temperature": cfg.get("temperature"),
+            "top_p": cfg.get("top_p"), "has_key": bool(load_api_key_for_model(name))}
+
+
+@app.post("/api/interface/save")
+def save_interface(payload: dict):
+    _block_in_server_mode()
+    name = (payload.get("name") or "").strip()
+    if not name:
+        raise HTTPException(400, "Interface name is required")
+    def _num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    backend.write_api_config(name, {
+        "base_url": (payload.get("base_url") or "").strip(),
+        "model": (payload.get("model") or "").strip(),
+        "temperature": _num(payload.get("temperature")),
+        "top_p": _num(payload.get("top_p")),
+    })
+    key = payload.get("api_key")
+    if key:  # only overwrite the stored key when a new one is supplied
+        save_api_key_for_model(name, key.strip())
+    return {"ok": True}
+
+
+@app.post("/api/interface/delete")
+def delete_interface(payload: dict):
+    _block_in_server_mode()
+    backend.delete_api_config(payload.get("name"))
     return {"ok": True}
 
 
@@ -118,6 +247,7 @@ def get_apikey(model: str):
 
 @app.post("/api/apikey")
 async def set_apikey(payload: dict):
+    _block_in_server_mode()
     model = payload.get("model", "")
     key = payload.get("api_key", "")
     save_api_key_for_model(model, key)
@@ -165,38 +295,45 @@ async def save_glossary(payload: dict):
 # --------------------------------------------------------------------------- #
 # Translation
 # --------------------------------------------------------------------------- #
-def _translate_one(task_id, file_path, model, use_online, src_lang, dst_lang,
-                   glossary_name, bilingual_flags, on_progress):
-    """Translate a single file; returns its output path. Raises on failure."""
+def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
+                   dst_lang, glossary_name, bilingual_flags, on_progress):
+    """Translate a single file; returns its output path. Raises on failure.
+
+    Paths are scoped to ``session_id`` so concurrent users never collide, and a
+    stop is honored either per-task (this run) or per-session (the caller hit
+    Stop / disconnected)."""
     ext = os.path.splitext(file_path)[1]
     stem = os.path.splitext(file_path)[0]
     translator_class = backend.get_translator_class(ext, **bilingual_flags)
     if translator_class is None:
         raise ValueError(f"Unsupported file type '{ext}'.")
 
-    api_key = load_api_key_for_model(model) if use_online else ""
+    # In server mode the key comes from the server (mykeys, or LINGUAHARU_API_KEY
+    # for a keyless Render deploy) — public users never supply one.
+    api_key = (load_api_key_for_model(model)
+               or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
     src_code = backend.language_code(src_lang)
     dst_code = backend.language_code(dst_lang)
     gpath = backend.glossary_path(glossary_name) if glossary_name else None
-    temp_dir, result_dir, log_dir = backend.get_custom_paths()
+    temp_dir, result_dir, log_dir = sessions.session_paths(session_id)
     config = backend.read_config()
 
-    from config.log_config import file_logger
+    from core.log_config import file_logger
     file_logger.create_file_log(os.path.basename(file_path), log_dir=log_dir)
 
     translator = translator_class(
         file_path, model, use_online, api_key, src_code, dst_code, False,
         max_token=config.get("max_token", 768),
         max_retries=config.get("max_retries", 4),
-        thread_count=config.get("default_thread_count_online", 8) if use_online
-        else config.get("default_thread_count_offline", 4),
+        thread_count=backend.thread_count_for_mode(use_online, model),
         glossary_path=gpath, temp_dir=temp_dir, result_dir=result_dir,
         session_lang="en", log_dir=log_dir,
     )
 
     def check_stop():
+        # Task-scoped only: stopping one task never aborts this session's others.
         with _TASKS_LOCK:
-            if TASKS[task_id].get("stop"):
+            if TASKS.get(task_id, {}).get("stop"):
                 raise RuntimeError("__stopped__")
     translator.check_stop_requested = check_stop
     output_path, _missing = translator.process(
@@ -204,8 +341,8 @@ def _translate_one(task_id, file_path, model, use_online, src_lang, dst_lang,
     return output_path
 
 
-def _run_translation(task_id, file_paths, model, use_online, src_lang, dst_lang,
-                     glossary_name, bilingual_flags):
+def _run_translation(task_id, session_id, file_paths, model, use_online,
+                     src_lang, dst_lang, glossary_name, bilingual_flags):
     """Background worker: translate one or more files; zip when more than one."""
     def set_state(**kw):
         with _TASKS_LOCK:
@@ -224,8 +361,8 @@ def _run_translation(task_id, file_paths, model, use_online, src_lang, dst_lang,
             on_progress(0.0, "Extracting text...")
             try:
                 outputs.append(_translate_one(
-                    task_id, fp, model, use_online, src_lang, dst_lang,
-                    glossary_name, bilingual_flags, on_progress))
+                    task_id, session_id, fp, model, use_online, src_lang,
+                    dst_lang, glossary_name, bilingual_flags, on_progress))
                 file_results.append((name, "success", ""))
             except RuntimeError as e:
                 if "__stopped__" in str(e):
@@ -255,6 +392,7 @@ def _run_translation(task_id, file_paths, model, use_online, src_lang, dst_lang,
 
 @app.post("/api/translate")
 async def translate(
+    request: Request,
     files: list[UploadFile],
     src_lang: str = Form(...),
     dst_lang: str = Form(...),
@@ -263,32 +401,49 @@ async def translate(
     glossary: str = Form(""),
     bilingual: bool = Form(False),
 ):
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    session_id = request.state.session_id
+    # Cap concurrent background translations (global + per-session) so repeated
+    # clicks or many LAN users can't pile up unbounded worker threads.
+    with _TASKS_LOCK:
+        running = [t for t in TASKS.values() if t.get("status") == "running"]
+        if len(running) >= MAX_ACTIVE_TASKS:
+            raise HTTPException(
+                429, "Server is busy (too many active translations). Please retry shortly.")
+        if sum(1 for t in running if t.get("session_id") == session_id) >= MAX_ACTIVE_TASKS_PER_SESSION:
+            raise HTTPException(
+                429, "You already have the maximum number of translations running. Please wait.")
+
+    # One upload dir per task (nested under the session) so concurrent or
+    # same-named uploads never clobber each other.
+    task_id = uuid.uuid4().hex[:12]
+    upload_dir = os.path.join(UPLOAD_DIR, session_id, task_id)
+    os.makedirs(upload_dir, exist_ok=True)
     dests = []
     for f in files:
-        dest = os.path.join(UPLOAD_DIR, os.path.basename(f.filename or "upload"))
+        dest = os.path.join(upload_dir, os.path.basename(f.filename or "upload"))
         with open(dest, "wb") as out:
             shutil.copyfileobj(f.file, out)
         dests.append(dest)
 
-    task_id = uuid.uuid4().hex[:12]
     with _TASKS_LOCK:
         TASKS[task_id] = {"progress": 0.0, "desc": "Queued...",
                           "status": "running", "output": None, "error": None,
-                          "stop": False}
+                          "stop": False, "session_id": session_id}
     flags = {k: bilingual for k in (
         "excel_bilingual_mode", "word_bilingual_mode", "pdf_bilingual_mode",
         "subtitle_bilingual_mode", "txt_bilingual_mode", "md_bilingual_mode",
         "epub_bilingual_mode", "html_bilingual_mode")}
     threading.Thread(target=_run_translation, args=(
-        task_id, dests, model, use_online, src_lang, dst_lang, glossary, flags),
-        daemon=True).start()
+        task_id, session_id, dests, model, use_online, src_lang, dst_lang,
+        glossary, flags), daemon=True).start()
     return {"task_id": task_id}
 
 
 @app.get("/api/progress/{task_id}")
-def progress(task_id: str):
-    if task_id not in TASKS:
+def progress(task_id: str, request: Request):
+    with _TASKS_LOCK:
+        owner = TASKS.get(task_id, {}).get("session_id")
+    if owner is None or owner != request.state.session_id:
         raise HTTPException(404, "Unknown task")
 
     def stream():
@@ -309,17 +464,23 @@ def progress(task_id: str):
 
 
 @app.post("/api/stop/{task_id}")
-def stop(task_id: str):
+def stop(task_id: str, request: Request):
+    sid = request.state.session_id
     with _TASKS_LOCK:
-        if task_id in TASKS:
-            TASKS[task_id]["stop"] = True
+        task = TASKS.get(task_id)
+        if task is not None and task.get("session_id") == sid:
+            task["stop"] = True   # task-scoped; other tasks in this session keep running
     return {"ok": True}
 
 
 @app.get("/api/download/{task_id}")
-def download(task_id: str):
+def download(task_id: str, request: Request):
+    sid = request.state.session_id
     with _TASKS_LOCK:
         state = dict(TASKS.get(task_id, {}))
+    # Only the task's owner may download its result.
+    if state.get("session_id") != sid:
+        raise HTTPException(404, "Result not ready")
     out = state.get("output")
     if not out or not os.path.exists(out):
         raise HTTPException(404, "Result not ready")
@@ -327,26 +488,31 @@ def download(task_id: str):
 
 
 # --------------------------------------------------------------------------- #
-# History
+# History (scoped to the caller's session)
 # --------------------------------------------------------------------------- #
 @app.get("/api/history")
-def history(limit: int = 100):
-    from config.translation_history import TranslationHistoryManager
-    _, _, log_dir = backend.get_custom_paths()
-    records = TranslationHistoryManager(log_dir=log_dir).get_all_records(limit=limit)
-    return {"records": records}
+def history(request: Request, limit: int = 200, file_type: str = "",
+            sort_by: str = "start_time", desc: bool = True):
+    from core.translation_history import TranslationHistoryManager
+    _, _, log_dir = sessions.session_paths(request.state.session_id)
+    h = TranslationHistoryManager(log_dir=log_dir)
+    records = h.get_all_records(limit=limit, file_type=(file_type or None),
+                                sort_by=sort_by, descending=desc)
+    return {"records": records, "file_types": h.file_types()}
 
 
 # --------------------------------------------------------------------------- #
-# Proofread
+# Proofread (scoped to the caller's session; IDOR / traversal protected)
 # --------------------------------------------------------------------------- #
 @app.get("/api/proofread/docs")
-def proofread_docs():
-    return {"docs": backend.list_proofread_docs()}
+def proofread_docs(request: Request):
+    return {"docs": sessions.list_proofread_docs(request.state.session_id)}
 
 
 @app.get("/api/proofread")
-def proofread_load(name: str):
+def proofread_load(name: str, request: Request):
+    if sessions.proofread_doc_dir(name, request.state.session_id) is None:
+        raise HTTPException(404, "Translation data not found")
     try:
         rows = backend.load_proofread_table(name)
     except FileNotFoundError as e:
@@ -357,8 +523,10 @@ def proofread_load(name: str):
 
 
 @app.post("/api/proofread")
-async def proofread_save(payload: dict):
+async def proofread_save(payload: dict, request: Request):
     name = payload.get("name")
+    if sessions.proofread_doc_dir(name, request.state.session_id) is None:
+        raise HTTPException(404, "Translation data not found")
     rows = [tuple(r) for r in payload.get("rows", [])]
     try:
         changed = backend.save_proofread_table(name, rows)
@@ -368,10 +536,20 @@ async def proofread_save(payload: dict):
 
 
 @app.post("/api/proofread/export")
-async def proofread_export(payload: dict):
+async def proofread_export(payload: dict, request: Request):
     name = payload.get("name")
+    sid = request.state.session_id
+    if sessions.proofread_doc_dir(name, sid) is None:
+        raise HTTPException(404, "Translation data not found")
     try:
         path = backend.export_proofread_doc(name)
+        # Move the export into the caller's session result dir so two users
+        # proofreading same-named docs can't read each other's output.
+        _, result_dir, _ = sessions.session_paths(sid)
+        dest = os.path.join(result_dir, os.path.basename(path))
+        if os.path.realpath(dest) != os.path.realpath(path):
+            os.replace(path, dest)
+            path = dest
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, str(e))
     EXPORTS[name] = path
@@ -382,7 +560,9 @@ EXPORTS = {}  # doc_name -> exported file path
 
 
 @app.get("/api/proofread/download")
-def proofread_download(name: str):
+def proofread_download(name: str, request: Request):
+    if sessions.proofread_doc_dir(name, request.state.session_id) is None:
+        raise HTTPException(404, "Export not ready")
     path = EXPORTS.get(name)
     if not path or not os.path.exists(path):
         raise HTTPException(404, "Export not ready")
@@ -396,18 +576,21 @@ MODULE_JOBS = {}  # name -> {"status": running|done|error, "output": str}
 
 
 def _run_module_job(name, action):
-    from config.module_manager import install_module, uninstall_module
-    ok, out = (install_module if action == "install" else uninstall_module)(name)
+    from core.module_manager import install_module, uninstall_module, upgrade_module
+    fn = {"install": install_module, "uninstall": uninstall_module,
+          "upgrade": upgrade_module}[action]
+    ok, out = fn(name)
     with _TASKS_LOCK:
         MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": out}
 
 
 @app.post("/api/modules/{action}")
 async def module_action(action: str, payload: dict):
-    if action not in ("install", "uninstall"):
-        raise HTTPException(400, "action must be install|uninstall")
+    _block_in_server_mode()
+    if action not in ("install", "uninstall", "upgrade"):
+        raise HTTPException(400, "action must be install|uninstall|upgrade")
     name = payload.get("name")
-    from config.module_manager import MODULE_SPECS
+    from core.module_manager import MODULE_SPECS
     if name not in MODULE_SPECS:
         raise HTTPException(404, f"Unknown module: {name}")
     with _TASKS_LOCK:
@@ -424,6 +607,18 @@ def module_status_endpoint(name: str):
     avail = {m["name"]: m["available"] for m in module_status()}
     job["available"] = avail.get(name, False)
     return job
+
+
+@app.get("/api/modules/update-check")
+def module_update_check(name: str):
+    """Report whether a newer version of the module's package exists on PyPI.
+
+    Reports only — the upgrade itself is the user-confirmed
+    POST /api/modules/upgrade. Returns {} when there's nothing to report.
+    """
+    _block_in_server_mode()
+    from core.module_manager import check_module_update
+    return check_module_update(name) or {}
 
 
 # --------------------------------------------------------------------------- #
@@ -503,9 +698,117 @@ async def live_translate(ws: WebSocket):
             pass
 
 
+# --------------------------------------------------------------------------- #
+# Real-time voice translation — LOCAL path (SenseVoice STT + LLM translate).
+# The client does VAD and POSTs one complete utterance (16 kHz mono PCM16,
+# base64); we recognize it locally then translate with the active model. No
+# Google key needed; requires the Video/Audio plugin (funasr).
+# --------------------------------------------------------------------------- #
+_STT_LOCK = threading.Lock()  # funasr is not thread-safe — serialize recognition
+
+
+@app.post("/api/live-local")
+async def live_local(payload: dict, request: Request):
+    if not video_translation_available():
+        raise HTTPException(400, "Local STT needs the Video/Audio plugin (funasr).")
+    import base64
+    try:
+        pcm = base64.b64decode(payload.get("audio_b64", ""))
+    except Exception:
+        raise HTTPException(400, "Bad audio payload")
+    if not pcm:
+        return {"source": "", "translated": ""}
+
+    dst_lang = payload.get("dst_lang", "en")
+    model = payload.get("model", "")
+    use_online = bool(payload.get("use_online", True))
+
+    from core.pipelines.video_translation_pipeline import recognize_utterance
+    from core.llm.llm_wrapper import translate_text_simple
+    loop = asyncio.get_event_loop()
+
+    def _recognize():
+        with _STT_LOCK:
+            return recognize_utterance(pcm, sample_rate=16000)
+    source, detected = await loop.run_in_executor(None, _recognize)
+    if not source:
+        return {"source": "", "translated": ""}
+
+    api_key = (load_api_key_for_model(model)
+               or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
+    src_code = detected or "auto"
+
+    def _translate():
+        return translate_text_simple(source, src_code, dst_lang, model, use_online, api_key)
+    try:
+        translated, ok, _usage = await loop.run_in_executor(None, _translate)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Translate failed: {e}")
+    return {"source": source, "translated": translated if ok else ""}
+
+
+# --------------------------------------------------------------------------- #
+# Update check (GitHub Releases, China-friendly mirrors). Cached 1h so it never
+# blocks page loads repeatedly; the frontend shows a dismissible banner.
+# --------------------------------------------------------------------------- #
+_UPDATE_CACHE = {"ts": 0.0, "data": None}
+
+
+@app.get("/api/update-check")
+def update_check():
+    import time as _time
+    from core.updater import check_for_update
+    now = _time.time()
+    if now - _UPDATE_CACHE["ts"] > 3600 or _UPDATE_CACHE["data"] is None:
+        _UPDATE_CACHE["data"] = check_for_update()
+        _UPDATE_CACHE["ts"] = now
+    return _UPDATE_CACHE["data"] or {"update": False}
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+# Serve assets/ (file-type SVG icons, images) so the Web UI can reuse the same
+# icon set as the Qt app. core.paths.ASSETS_DIR is __file__-anchored, so it
+# resolves under _MEIPASS in a frozen build too.
+if os.path.isdir(_ASSETS_DIR):
+    app.mount("/assets", StaticFiles(directory=_ASSETS_DIR), name="assets")
+
+
+def server_host():
+    """Bind address: 0.0.0.0 (reachable from other devices) in LAN mode or
+    server/deploy mode, otherwise loopback-only."""
+    external = backend.get_config("lan_mode", False) or server_mode_on()
+    return "0.0.0.0" if external else "127.0.0.1"
+
+
+def find_free_port(preferred, host, tries=50):
+    """First free port at/after `preferred` (a busy 8080 rolls to 8081, ...).
+
+    Probes with a strict bind (no SO_REUSEADDR): on Windows SO_REUSEADDR would
+    let the probe bind an already-listened port and falsely report it free.
+    Also skips Windows reserved/excluded ranges (bind raises PermissionError)."""
+    import socket
+    for p in range(preferred, preferred + tries):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind((host, p))
+                return p
+            except OSError:
+                continue
+    return preferred  # let uvicorn surface the bind error if all are taken
+
+
+def server_port(host):
+    """Port to listen on. A deploy platform assigns PORT and it must be used
+    verbatim; locally we auto-roll past an already-occupied port."""
+    if os.environ.get("PORT"):
+        return int(os.environ["PORT"])
+    return find_free_port(8080, host)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="127.0.0.1", port=8080)
+    host = server_host()
+    port = server_port(host)
+    print(f"LinguaHaru Web → http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}")
+    uvicorn.run(app, host=host, port=port)

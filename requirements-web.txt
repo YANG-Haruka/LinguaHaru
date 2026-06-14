@@ -1,6 +1,0 @@
-# LinguaHaru Web (FastAPI) — the custom frontend that replaces the Gradio app.
-#   pip install -r requirements-web.txt
-# Run:  python -m webapp.server   (or: uvicorn webapp.server:app --port 8080)
-fastapi>=0.115
-uvicorn>=0.30
-python-multipart>=0.0.9

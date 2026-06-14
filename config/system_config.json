@@ -19,14 +19,15 @@
     "word_bilingual_mode": true,
     "default_thread_count_online": 8,
     "default_thread_count_offline": 4,
-    "default_src_lang": "English",
+    "default_src_lang": "Auto",
     "default_dst_lang": "中文",
     "default_glossary": "Default",
-    "temp_dir": "temp",
-    "result_dir": "result",
-    "log_dir": "log",
+    "temp_dir": "data/temp",
+    "result_dir": "data/result",
+    "log_dir": "data/log",
     "remember_api_key": true,
     "pdf_bilingual_mode": true,
     "qt_ui_lang": "zh",
-    "qt_theme": "light"
+    "qt_theme": "dark",
+    "stt_model": "sensevoice-small"
 }

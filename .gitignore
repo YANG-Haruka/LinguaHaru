@@ -1,12 +1,12 @@
-Result/
+data/result/
 __pycache__/
-temp/
+data/temp/
 test/
 .vs/
 .gradio/
 .qodo/
-log/
-mykeys/
+data/log/
+data/mykeys/
 build/
 dist/
 .claude/
@@ -30,5 +30,5 @@ config/text_rules.json
 linguaharu-ui-tabs.png
 tests/_selfshot.py
 tests/_diag.py
-web_uploads/
+data/web_uploads/
 mock_data/

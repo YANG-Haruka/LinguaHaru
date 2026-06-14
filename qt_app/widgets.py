@@ -5,14 +5,21 @@ Translate page (colorful format-category cards), the Plugins / Interface pages
 (provider entry cards) and the progress dashboard (metric cards).
 """
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+import os
+
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF
+from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath, QPixmap
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget
 
 from qfluentwidgets import (
     CardWidget, SimpleCardWidget, IconWidget, CaptionLabel,
-    StrongBodyLabel, TitleLabel, FluentIcon, isDarkTheme, InfoBadge,
+    StrongBodyLabel, TitleLabel, FluentIcon, isDarkTheme, InfoBadge, themeColor,
 )
+
+from core.paths import ASSETS_DIR
+
+_FILETYPES_DIR = os.path.join(ASSETS_DIR, "icons", "filetypes")
 
 
 class FormatCategoryCard(SimpleCardWidget):
@@ -21,9 +28,8 @@ class FormatCategoryCard(SimpleCardWidget):
 
     Optional categories (PDF / Image / Media) can be marked unavailable when
     their plugin isn't installed: the card dims, shows an 'unavailable' badge,
-    and emits ``clicked`` so the page can prompt the user to install it."""
-
-    clicked = Signal()
+    and emits ``clicked`` (inherited from SimpleCardWidget) so the page can
+    prompt the user to install it."""
 
     def __init__(self, title, formats, color, icon=FluentIcon.DOCUMENT,
                  module_key=None, parent=None):
@@ -98,21 +104,176 @@ class FormatCategoryCard(SimpleCardWidget):
     def refresh_theme(self):
         self._apply_color()
 
-    def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
-        if event.button() == Qt.LeftButton:
-            self.clicked.emit()
 
-    def mouseDoubleClickEvent(self, event):
-        super().mouseDoubleClickEvent(event)
-        if event.button() == Qt.LeftButton:
-            self.doubleClicked.emit()
+# File-type chips that drift across the drop zone background: (suffix, svg key
+# under assets/icons/filetypes/). Each chip = the SVG document icon + the suffix.
+_FILE_TYPES = [
+    (".pdf", "pdf"), (".docx", "docx"), (".pptx", "pptx"), (".xlsx", "xlsx"),
+    (".epub", "epub"), (".txt", "txt"), (".md", "md"), (".srt", "srt"),
+    (".vtt", "srt"), (".csv", "csv"), (".json", "json"), (".html", "html"),
+    (".png", "img"), (".jpg", "img"), (".mp4", "media"), (".mp3", "media"),
+]
+
+
+class DropZone(SimpleCardWidget):
+    """A big clickable upload region with a dashed border that also accepts
+    drag-and-dropped files (mirrors the Web UI's dropzone). A marquee of
+    file-type chips (a coloured document icon + suffix, e.g. red ".pdf",
+    blue ".docx") drifts across the background. ``clicked`` is inherited from
+    SimpleCardWidget; ``filesDropped`` carries the dropped local paths."""
+
+    filesDropped = Signal(list)
+    _CHIP_GAP = 30
+
+    def __init__(self, prompt, icon=FluentIcon.CLOUD, parent=None):
+        super().__init__(parent)
+        self.setAcceptDrops(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(190)
+        self._hot = False           # highlighted while a drag hovers over it
+        self._scroll = 0.0          # marquee offset in px
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setSpacing(8)
+        layout.setAlignment(Qt.AlignCenter)
+
+        self.icon = IconWidget(icon, self)
+        self.icon.setFixedSize(40, 40)
+        layout.addWidget(self.icon, 0, Qt.AlignHCenter)
+
+        self.prompt = StrongBodyLabel(prompt, self)
+        self.prompt.setAlignment(Qt.AlignCenter)
+        self.prompt.setWordWrap(True)
+        layout.addWidget(self.prompt, 0, Qt.AlignHCenter)
+
+        # ~30 fps marquee animation (paused while hidden).
+        self._timer = QTimer(self)
+        self._timer.setInterval(33)
+        self._timer.timeout.connect(self._tick)
+
+    def set_prompt(self, text):
+        self.prompt.setText(text)
+
+    def _tick(self):
+        self._scroll += 0.6  # px/frame ≈ 18 px/s
+        self.update()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._timer.isActive():
+            self._timer.start()
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        self._timer.stop()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self._hot = True
+            self.update()
+
+    def dragLeaveEvent(self, _event):
+        self._hot = False
+        self.update()
+
+    def dropEvent(self, event):
+        self._hot = False
+        self.update()
+        paths = [u.toLocalFile() for u in event.mimeData().urls() if u.isLocalFile()]
+        if paths:
+            self.filesDropped.emit(paths)
+
+    _ICON_H = 32
+    _ICON_W = round(32 * 48 / 60)   # SVG viewBox is 48x60
+    _svg_cache = {}
+
+    def _icon_pixmap(self, key):
+        """Render (and cache) a file-type SVG to a QPixmap at icon height."""
+        dpr = self.devicePixelRatioF() or 1.0
+        ck = (key, round(dpr, 2))
+        pm = DropZone._svg_cache.get(ck)
+        if pm is None:
+            r = QSvgRenderer(os.path.join(_FILETYPES_DIR, key + ".svg"))
+            pm = QPixmap(round(self._ICON_W * dpr), round(self._ICON_H * dpr))
+            pm.fill(Qt.transparent)
+            pm.setDevicePixelRatio(dpr)
+            pp = QPainter(pm)
+            pp.setRenderHint(QPainter.Antialiasing, True)
+            r.render(pp)
+            pp.end()
+            DropZone._svg_cache[ck] = pm
+        return pm
+
+    def _chip_width(self, fm, suffix):
+        return self._ICON_W + 5 + fm.horizontalAdvance(suffix)
+
+    def _draw_chip(self, p, x, yc, suffix, key, opacity):
+        """Draw one chip: the SVG document icon + its suffix (e.g. '.pdf')."""
+        p.setOpacity(opacity)
+        pm = self._icon_pixmap(key)
+        p.drawPixmap(int(x), int(yc - self._ICON_H / 2), pm)
+        col = QColor(70, 80, 95) if not isDarkTheme() else QColor(200, 210, 225)
+        p.setPen(col)
+        fm = p.fontMetrics()
+        p.drawText(int(x + self._ICON_W + 5), int(yc + fm.ascent() / 2 - 1), suffix)
+        p.setOpacity(1.0)
+
+    def _draw_chip_row(self, p, widths, period, yc, phase, opacity):
+        x = -((self._scroll + phase) % period) - period
+        while x < self.width():
+            cx = x
+            for (suffix, key), w in zip(_FILE_TYPES, widths):
+                if -60 < cx < self.width() + 60:
+                    self._draw_chip(p, cx, yc, suffix, key, opacity)
+                cx += w
+            x += period
+
+    def paintEvent(self, event):
+        super().paintEvent(event)  # rounded card background
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        accent = themeColor()
+        r = self.rect().adjusted(2, 2, -2, -2)
+
+        # Drifting file-type icons behind the prompt (clipped to the card).
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(r), 10, 10)
+        p.save()
+        p.setClipPath(path)
+        f = QFont(self.font()); f.setPointSize(11); f.setBold(True)
+        p.setFont(f)
+        fm = p.fontMetrics()
+        widths = [self._chip_width(fm, s) + self._CHIP_GAP for s, _ in _FILE_TYPES]
+        period = sum(widths) or 1
+        opacity = 0.85 if self._hot else 0.5
+        self._draw_chip_row(p, widths, period, self.height() * 0.27, 0, opacity)
+        self._draw_chip_row(p, widths, period, self.height() * 0.77, period * 0.5, opacity)
+        p.restore()
+
+        if self._hot:  # subtle accent wash while dragging over
+            fill = QColor(accent)
+            fill.setAlpha(28)
+            p.setPen(Qt.NoPen)
+            p.setBrush(fill)
+            p.drawRoundedRect(r, 10, 10)
+        pen_color = QColor(accent)
+        pen_color.setAlpha(190 if self._hot else 110)
+        pen = QPen(pen_color)
+        pen.setStyle(Qt.DashLine)
+        pen.setWidthF(1.6)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawRoundedRect(r, 10, 10)
+        p.end()
 
 
 class MetricCard(SimpleCardWidget):
     """A dashboard metric: muted label on top, big value, optional sub-text."""
 
-    def __init__(self, label, value="-", sub="", icon=None, accent="#0078d4", parent=None):
+    def __init__(self, label, value="-", sub="", icon=None, accent="#0d83d6", parent=None):
         super().__init__(parent)
         self.setMinimumSize(180, 110)
         self._accent = QColor(accent)
@@ -189,10 +350,9 @@ class RingMetricCard(SimpleCardWidget):
 
 class EntryCard(CardWidget):
     """A clickable provider/interface entry. Shows an icon, a name and an
-    optional active badge. Emits ``clicked`` when pressed and ``doubleClicked``
-    on double-click (used to open the config dialog)."""
+    optional active badge. ``clicked`` is inherited from CardWidget; we add
+    ``doubleClicked`` (used to open the config dialog)."""
 
-    clicked = Signal()
     doubleClicked = Signal()
 
     def __init__(self, name, subtitle="", icon=FluentIcon.ROBOT, active=False, parent=None):
@@ -230,7 +390,7 @@ class EntryCard(CardWidget):
             self.badge = InfoBadge.success("✓", self)
             self.layout().addWidget(self.badge)
 
-    def mouseReleaseEvent(self, event):
-        super().mouseReleaseEvent(event)
+    def mouseDoubleClickEvent(self, event):
+        super().mouseDoubleClickEvent(event)
         if event.button() == Qt.LeftButton:
-            self.clicked.emit()
+            self.doubleClicked.emit()

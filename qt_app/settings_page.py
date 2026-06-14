@@ -7,11 +7,15 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QF
 
 from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, SpinBox,
-    CardWidget, PushButton, LineEdit, FluentIcon,
+    CardWidget, PushButton, LineEdit, PasswordLineEdit, FluentIcon,
+    InfoBar, InfoBarPosition,
 )
 
-from qt_app import backend
+from core import backend
 from qt_app.i18n import tr
+from core.api_keys import load_api_key_for_model, save_api_key_for_model
+
+_GOOGLE_PROVIDER = "(Google) Live Translate"
 
 
 class SettingsPage(ScrollArea):
@@ -51,13 +55,7 @@ class SettingsPage(ScrollArea):
         form.setContentsMargins(20, 16, 20, 16)
         form.setSpacing(12)
 
-        self.lan_switch = SwitchButton()
-        self.lan_switch.setChecked(config.get("lan_mode", False))
-        self.lan_switch.checkedChanged.connect(
-            lambda v: backend.set_config("lan_mode", v))
-        self.lan_label = BodyLabel(tr("Local Network Mode (Restart to Apply)", lang))
-        form.addRow(self.lan_label, self.lan_switch)
-
+        # (LAN mode is a Web-only concept — the desktop app runs local-only.)
         self.thread_online = SpinBox()
         self.thread_online.setRange(1, 64)
         self.thread_online.setValue(config.get("default_thread_count_online", 2))
@@ -128,7 +126,31 @@ class SettingsPage(ScrollArea):
         out_form.addRow(self.output_label, out_row)
         layout.addWidget(output_card)
 
+        # --- Google API key (real-time voice translation) ---
+        self.section_google = StrongBodyLabel(tr("Google API Key", lang))
+        layout.addWidget(self.section_google)
+        google_card = CardWidget()
+        g_form = QFormLayout(google_card)
+        g_form.setContentsMargins(20, 16, 20, 16)
+        g_form.setSpacing(12)
+        self.google_key_edit = PasswordLineEdit()
+        self.google_key_edit.setText(load_api_key_for_model(_GOOGLE_PROVIDER))
+        self.google_key_edit.setPlaceholderText("AIza... / AQ...")
+        self.google_key_edit.editingFinished.connect(self._save_google_key)
+        self.google_key_label = BodyLabel(tr("Google API Key", lang))
+        g_form.addRow(self.google_key_label, self.google_key_edit)
+        self.google_hint = BodyLabel(tr("Google API Key Hint", lang))
+        g_form.addRow("", self.google_hint)
+        layout.addWidget(google_card)
+
         layout.addStretch(1)
+
+    def _save_google_key(self):
+        save_api_key_for_model(_GOOGLE_PROVIDER, self.google_key_edit.text().strip())
+        InfoBar.success(
+            tr("Settings", self._lang), tr("Google key saved", self._lang),
+            orient=1, isClosable=True, position=InfoBarPosition.TOP,
+            duration=3000, parent=self)
 
     def _pick_output_dir(self):
         current = self.output_edit.text() or os.getcwd()
@@ -141,7 +163,6 @@ class SettingsPage(ScrollArea):
     def retranslate(self, lang):
         self._lang = lang
         self.section_translation.setText(tr("Settings", lang))
-        self.lan_label.setText(tr("Local Network Mode (Restart to Apply)", lang))
         self.thread_online_label.setText(tr("Thread Count", lang) + " (online)")
         self.thread_offline_label.setText(tr("Thread Count", lang) + " (offline)")
         self.max_retries_label.setText(tr("Max Retries", lang))
@@ -151,3 +172,6 @@ class SettingsPage(ScrollArea):
         self.section_output.setText(tr("Output Folder", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))
+        self.section_google.setText(tr("Google API Key", lang))
+        self.google_key_label.setText(tr("Google API Key", lang))
+        self.google_hint.setText(tr("Google API Key Hint", lang))

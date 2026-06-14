@@ -71,7 +71,7 @@ def paragraph_texts(path):
 
 
 def translate_docx(src):
-    from pipeline.word_translation_pipeline import (
+    from core.pipelines.word_translation_pipeline import (
         extract_word_content_to_json, write_translated_content_to_word)
     src_json = extract_word_content_to_json(src, TEMP_DIR)
     dst_json = fake_translate(src_json)
@@ -274,9 +274,9 @@ def test_tab_br_roundtrip():
 def test_long_paragraph_chunk_rejoin():
     print("DOCX: >256-token paragraphs split into chunks and re-joined without glue")
     from docx import Document
-    from pipeline.word_translation_pipeline import (
+    from core.pipelines.word_translation_pipeline import (
         extract_word_content_to_json, write_translated_content_to_word)
-    from textProcessing.text_separator import (
+    from core.engine.text_separator import (
         deduplicate_translation_content, create_deduped_json_for_translation,
         split_text_by_token_limit, restore_translations_from_deduped)
 
@@ -408,7 +408,7 @@ def test_textbox_raw_xml():
     doc._body._element.append(etree.fromstring(TEXTBOX_XML.encode("utf-8")))
     doc.save(src)
 
-    from pipeline.word_translation_pipeline import extract_word_content_to_json
+    from core.pipelines.word_translation_pipeline import extract_word_content_to_json
     src_json = extract_word_content_to_json(src, TEMP_DIR)
     with open(src_json, encoding="utf-8") as f:
         values = [i["value"] for i in json.load(f)]

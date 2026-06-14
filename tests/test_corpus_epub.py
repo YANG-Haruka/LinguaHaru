@@ -67,7 +67,7 @@ def build_epub(path):
 
 def test_epub_three_chapters():
     print("EPUB: 3 chapters, cross-links, image ref, CSS byte-identical")
-    from pipeline.epub_translation_pipeline import (
+    from core.pipelines.epub_translation_pipeline import (
         extract_epub_content_to_json, write_translated_content_to_epub)
 
     src = os.path.join(WORK_DIR, "trilogy.epub")

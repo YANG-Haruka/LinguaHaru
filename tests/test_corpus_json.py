@@ -14,7 +14,7 @@ WORK_DIR, TEMP_DIR, RESULT_DIR = work_dirs("json")
 
 def test_json_deep_and_arrays():
     print("JSON: 5-level nesting, arrays of objects, empty strings, mixed types")
-    from pipeline.json_translation_pipeline import (
+    from core.pipelines.json_translation_pipeline import (
         extract_json_content_to_json, write_translated_content_to_json)
 
     src = os.path.join(WORK_DIR, "deep.json")

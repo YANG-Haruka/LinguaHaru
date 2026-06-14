@@ -84,7 +84,7 @@ def build_pptx(path):
 def test_pptx_structures():
     print("PPTX: merged table, nested groups, 2-series chart, notes, bullet levels")
     from pptx import Presentation
-    from pipeline.ppt_translation_pipeline import (
+    from core.pipelines.ppt_translation_pipeline import (
         extract_ppt_content_to_json, write_translated_content_to_ppt)
 
     src = os.path.join(WORK_DIR, "structures.pptx")

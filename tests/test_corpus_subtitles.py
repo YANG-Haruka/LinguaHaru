@@ -18,7 +18,7 @@ WORK_DIR, TEMP_DIR, RESULT_DIR = work_dirs("subtitles")
 def test_srt_long_multiline_cues():
     print("SRT: long multi-line cues survive as one cue")
     import json
-    from pipeline.subtitle_translation_pipeline import (
+    from core.pipelines.subtitle_translation_pipeline import (
         extract_srt_content_to_json, write_translated_content_to_srt)
 
     line1 = "This is the first long line of a subtitle cue that keeps going on"
@@ -49,7 +49,7 @@ def test_srt_long_multiline_cues():
 
 def test_vtt_voice_spans():
     print("VTT: <v Name> voice spans and multi-line cues")
-    from pipeline.subtitle_formats_pipeline import (
+    from core.pipelines.subtitle_formats_pipeline import (
         extract_vtt_content_to_json, write_translated_content_to_vtt)
 
     src = os.path.join(WORK_DIR, "voices.vtt")
@@ -81,7 +81,7 @@ def test_vtt_voice_spans():
 
 def test_ass_karaoke_tags():
     print("ASS: {\\k} karaoke override tags restored in place")
-    from pipeline.subtitle_formats_pipeline import (
+    from core.pipelines.subtitle_formats_pipeline import (
         extract_ass_content_to_json, write_translated_content_to_ass)
 
     src = os.path.join(WORK_DIR, "karaoke.ass")
@@ -114,7 +114,7 @@ def test_ass_karaoke_tags():
 
 def test_lrc_repeated_timestamps():
     print("LRC: repeated timestamps stay on one line")
-    from pipeline.subtitle_formats_pipeline import (
+    from core.pipelines.subtitle_formats_pipeline import (
         extract_lrc_content_to_json, write_translated_content_to_lrc)
 
     src = os.path.join(WORK_DIR, "repeat.lrc")

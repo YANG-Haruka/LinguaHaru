@@ -1,0 +1,6 @@
+# Native Qt (Fluent Design) desktop frontend for LinguaHaru.
+# Install on top of requirements/base.txt, then run: python app_qt.py
+PySide6>=6.7
+PySide6-Fluent-Widgets>=1.7
+# Real-time voice translation (Gemini Live) client
+websockets>=12

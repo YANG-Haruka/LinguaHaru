@@ -24,7 +24,7 @@ def test_xlsx_structures():
     print("XLSX: merges, cross-sheet formula, typed cells, comments, panes, CJK sheets")
     import openpyxl
     from openpyxl.comments import Comment
-    from pipeline.excel_translation_pipeline import (
+    from core.pipelines.excel_translation_pipeline import (
         extract_excel_content_to_json, write_translated_content_to_excel)
 
     src = os.path.join(WORK_DIR, "structures.xlsx")

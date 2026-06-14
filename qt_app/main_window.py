@@ -12,27 +12,53 @@ retranslate of every page + nav label."""
 
 import os
 
-from PySide6.QtGui import QIcon, QColor, QCursor
+from PySide6.QtCore import QThread, Signal, QUrl
+from PySide6.QtGui import QIcon, QColor, QCursor, QDesktopServices
 
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, FluentIcon, setTheme, setThemeColor,
-    Theme, RoundMenu, Action,
+    Theme, RoundMenu, Action, MessageBox,
 )
 
-from qt_app import backend
+
+class _UpdateCheckWorker(QThread):
+    """Background update check so startup never blocks on the network."""
+    done = Signal(dict)
+
+    def run(self):
+        try:
+            from core.updater import check_for_update
+            res = check_for_update()
+            if res:
+                self.done.emit(res)
+        except Exception:
+            pass
+
+from core import backend
 from qt_app.i18n import tr, UI_LANGS, lang_display_name
 from qt_app.translate_page import TranslatePage
+from qt_app.live_page import LivePage
 from qt_app.glossary_page import GlossaryPage
 from qt_app.proofread_page import ProofreadPage
 from qt_app.settings_page import SettingsPage
 from qt_app.history_page import HistoryPage
 from qt_app.interface_page import InterfacePage
 from qt_app.plugins_page import PluginsPage
+from qt_app.sky_background import SkyBackground
 
-ICON_PATH = os.path.join(backend.REPO_ROOT, "img", "ico.png")
-ACCENT_COLOR = "#4f6ef7"          # indigo-blue accent (matches the Web UI)
-LIGHT_BG = "#d7e6fb"             # light: clearly light-blue
-DARK_BG = "#0b1120"             # dark: deep navy-black
+ICON_PATH = os.path.join(backend.REPO_ROOT, "assets", "img", "ico.png")
+# Accent matches the redesigned Web UI's sky-blue identity (theme-aware: a
+# deeper sky in light mode, a brighter sky that glows on the dark surface).
+ACCENT_LIGHT = "#0d83d6"          # sky blue — matches Web light theme
+ACCENT_DARK = "#3f9bff"           # brighter sky — matches Web dark theme
+
+
+def _accent_for(dark):
+    return ACCENT_DARK if dark else ACCENT_LIGHT
+
+
+LIGHT_BG = "#eaf1fa"             # light: clearly light-blue
+DARK_BG = "#04070e"             # dark: deep navy-black
 
 
 class MainWindow(FluentWindow):
@@ -51,8 +77,14 @@ class MainWindow(FluentWindow):
         # Apply persisted theme + accent before building pages.
         self._theme_dark = backend.get_config("qt_theme", "light") == "dark"
         setTheme(Theme.DARK if self._theme_dark else Theme.LIGHT)
-        setThemeColor(ACCENT_COLOR)
+        setThemeColor(_accent_for(self._theme_dark))
         self._apply_custom_bg()
+
+        # Animated sky behind the (transparent) content area — the desktop twin
+        # of the Web UI's background canvas. Created before the pages so it sits
+        # at the bottom of the z-order; re-lowered after build to be safe.
+        self._sky = SkyBackground(self, mode="night" if self._theme_dark else "day")
+        self._sky.setGeometry(0, 0, self.width(), self.height())
 
         # Persisted UI language (default zh; fall back if unknown).
         self._lang = backend.get_config("qt_ui_lang", "zh")
@@ -61,14 +93,15 @@ class MainWindow(FluentWindow):
 
         self.setWindowTitle("LinguaHaru")
         self.resize(1200, 800)
-        # Minimum size large enough that the expanded nav + content fit without
-        # the right edge getting cut off.
-        self.setMinimumSize(1100, 720)
+        # Allow the window to shrink enough that the nav auto-collapses (the
+        # format row + pages scroll, so a narrow window is fine).
+        self.setMinimumSize(720, 600)
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
 
         self.interface_page = InterfacePage(self, lang=self._lang)
         self.translate_page = TranslatePage(self, lang=self._lang)
+        self.live_page = LivePage(self, lang=self._lang)
         self.settings_page = SettingsPage(self, lang=self._lang)
         self.history_page = HistoryPage(self, lang=self._lang)
         self.proofread_page = ProofreadPage(self, lang=self._lang)
@@ -79,6 +112,7 @@ class MainWindow(FluentWindow):
         self._nav_keys = {
             "InterfacePage": "Interface Management",
             "TranslatePage": "Translate",
+            "LivePage": "Real-Time Voice",
             "SettingsPage": "Settings",
             "HistoryPage": "History",
             "ProofreadPage": "Proofread",
@@ -96,6 +130,8 @@ class MainWindow(FluentWindow):
                              tr("Interface Management", self._lang))
         self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
                              tr("Translate", self._lang))
+        self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
+                             tr("Real-Time Voice", self._lang))
 
         # --- Advanced group ---
         self._add_header("hdr_advanced", "Advanced")
@@ -143,15 +179,24 @@ class MainWindow(FluentWindow):
             position=NavigationItemPosition.BOTTOM,
         )
 
-        # Keep the navigation rail expanded by default (like AiNiee) so the
-        # text labels + group headers are always visible, instead of the
-        # width-dependent auto-collapse.
+        # Navigation rail: expanded (text labels + group headers) when the
+        # window is wide, auto-collapsed to icons when it gets narrow. The
+        # initial state is set from the starting width below.
         nav_iface = self.navigationInterface
         try:
             nav_iface.setExpandWidth(250)
-            nav_iface.setMinimumExpandWidth(820)  # window is 1100 wide
-            if hasattr(nav_iface, "expand"):
-                nav_iface.expand(useAni=False)
+            nav_iface.setMinimumExpandWidth(720)
+        except Exception:
+            pass
+        self._auto_nav(animate=False)
+
+        # Let the animated sky show through the content area: keep it at the
+        # bottom of the z-order and make the page stack transparent (the nav
+        # rail stays opaque so its labels remain legible). The pages themselves
+        # already use transparent ScrollAreas, so only the cards are painted.
+        self._sky.lower()
+        try:
+            self.stackedWidget.setStyleSheet("background: transparent;")
         except Exception:
             pass
 
@@ -160,6 +205,59 @@ class MainWindow(FluentWindow):
 
         # Reload data whenever a tab becomes current.
         self.stackedWidget.currentChanged.connect(self._on_page_changed)
+
+        # Check for a newer version in the background (China-friendly mirrors).
+        self._update_worker = _UpdateCheckWorker()
+        self._update_worker.done.connect(self._on_update_checked)
+        self._update_worker.start()
+
+    # Width at/above which the nav rail expands; below it, it collapses to icons.
+    _NAV_EXPAND_THRESHOLD = 940
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        if hasattr(self, "_sky"):
+            self._sky.setGeometry(0, 0, self.width(), self.height())
+            self._sky.lower()
+        self._auto_nav(animate=True)
+
+    def _auto_nav(self, animate=True):
+        """Expand the nav rail when the window is wide, collapse it when narrow.
+
+        Tracks the *desired* state in ``self._nav_expanded`` rather than reading
+        the panel's animated displayMode, so it fires exactly once per crossing
+        and survives mid-animation resizes."""
+        # resizeEvent can fire during super().__init__(), before the nav exists.
+        nav = getattr(self, "navigationInterface", None)
+        panel = getattr(nav, "panel", None) if nav is not None else None
+        if panel is None:
+            return
+        want_expanded = self.width() >= self._NAV_EXPAND_THRESHOLD
+        if want_expanded == getattr(self, "_nav_expanded", None):
+            return
+        self._nav_expanded = want_expanded
+        try:
+            if want_expanded:
+                panel.expand(useAni=animate)
+            else:
+                panel.collapse()
+        except Exception:
+            pass
+
+    def _on_update_checked(self, info):
+        if not info or not info.get("update"):
+            return
+        title = tr("Update Available", self._lang)
+        body = tr("Update Prompt", self._lang).format(
+            version=info.get("latest", ""), current=info.get("current", ""))
+        notes = info.get("notes")
+        if notes:
+            body += "\n\n" + str(notes)
+        box = MessageBox(title, body, self)
+        box.yesButton.setText(tr("Go to Download", self._lang))
+        box.cancelButton.setText(tr("Later", self._lang))
+        if box.exec():
+            QDesktopServices.openUrl(QUrl(info.get("url") or ""))
 
     def _show_lang_menu(self):
         """Dropdown of interface languages, opened from the bottom nav item."""
@@ -194,9 +292,9 @@ class MainWindow(FluentWindow):
         self._lang = lang
         backend.set_config("qt_ui_lang", lang)
         # Re-localize each page.
-        for page in (self.interface_page, self.translate_page, self.settings_page,
-                     self.history_page, self.proofread_page, self.glossary_page,
-                     self.plugins_page):
+        for page in (self.interface_page, self.translate_page, self.live_page,
+                     self.settings_page, self.history_page, self.proofread_page,
+                     self.glossary_page, self.plugins_page):
             page.retranslate(lang)
         # Re-localize navigation labels.
         for route_key, label_key in self._nav_keys.items():
@@ -211,19 +309,25 @@ class MainWindow(FluentWindow):
             lang_item.setText(tr("Interface Language", lang))
 
     def _apply_custom_bg(self):
-        """Background follows the plain qfluentwidgets theme.
+        """Paint a deep-blue (dark) / sky-tinted (light) window surface so the
+        desktop app matches the Web UI's identity. Mica is disabled above, so
+        this colors both the nav rail and the content area consistently.
 
-        NOTE: setCustomBackgroundColor() was removed — with the Mica effect
-        disabled it forced the content area dark even in light mode (the
-        'light nav + dark content' split). Plain theming renders a consistent
-        light/dark surface; the blue identity comes from the accent color."""
-        return
+        If you ever see a 'light nav + dark content' split on your machine,
+        comment out the setCustomBackgroundColor call below to revert to
+        plain qfluentwidgets theming (the blue identity still comes from the
+        accent color)."""
+        try:
+            self.setCustomBackgroundColor(QColor(LIGHT_BG), QColor(DARK_BG))
+        except Exception:
+            pass
 
     def toggle_theme(self):
         self._theme_dark = not self._theme_dark
         setTheme(Theme.DARK if self._theme_dark else Theme.LIGHT)
-        setThemeColor(ACCENT_COLOR)
+        setThemeColor(_accent_for(self._theme_dark))
         self._apply_custom_bg()
+        self._sky.set_mode("night" if self._theme_dark else "day")
         backend.set_config("qt_theme", "dark" if self._theme_dark else "light")
         # Repaint the colorful format cards (their tint depends on theme).
         for card in getattr(self.translate_page, "_fmt_cards", []):

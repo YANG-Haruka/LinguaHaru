@@ -23,10 +23,10 @@ from qfluentwidgets import (
     LineEdit, RoundMenu, Action,
 )
 
-from qt_app import backend
+from core import backend
 from qt_app.i18n import tr
 from qt_app.widgets import EntryCard
-from config.api_keys import load_api_key_for_model, save_api_key_for_model
+from core.api_keys import load_api_key_for_model, save_api_key_for_model
 
 
 class AddInterfaceDialog(MessageBoxBase):
@@ -275,6 +275,12 @@ class InterfacePage(ScrollArea):
         menu.exec(QCursor.pos())
 
     def _set_active(self, name, online):
+        # No-op (and no toast) if it's already the active interface. This also
+        # absorbs the single-click that Qt delivers just before a double-click,
+        # so double-clicking to edit doesn't spam activation toasts.
+        if name == self._active_name() and \
+                online == backend.get_config("default_online", True):
+            return
         backend.set_active_model(name, use_online=online)
         backend.set_config("default_online", online)
         self.reload()
@@ -313,5 +319,8 @@ class InterfacePage(ScrollArea):
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
-        bar(tr("Interface Management", self._lang), text, orient=1,
-            isClosable=True, position=InfoBarPosition.TOP, duration=3000, parent=self)
+        # Top-right corner, compact and brief (was a wide centered banner that
+        # covered the active pill).
+        bar(tr("Interface Management", self._lang), text, orient=Qt.Horizontal,
+            isClosable=True, position=InfoBarPosition.TOP_RIGHT, duration=2000,
+            parent=self)

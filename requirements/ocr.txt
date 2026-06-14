@@ -1,0 +1,10 @@
+# Optional: image translation module (OCR + render back onto the image)
+#   pip install -r requirements/ocr.txt
+# Primary engine: PaddleOCR with PP-OCRv6 (Baidu PaddlePaddle, best accuracy).
+# RapidOCR (PP-OCRv5 on onnxruntime) is the lightweight fallback used
+# automatically if paddlepaddle is not installed.
+paddleocr>=3.7
+paddlepaddle>=3.3
+rapidocr>=3.0
+onnxruntime>=1.17
+opencv-python-headless>=4.8

@@ -1,5 +1,0 @@
-# Optional: PDF translation module (layout-preserving, BabelDOC engine)
-#   pip install -r requirements-pdf.txt
-# Heavy dependency (document layout model on onnxruntime); the UI enables
-# .pdf support automatically once installed.
-babeldoc>=0.6
