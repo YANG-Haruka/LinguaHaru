@@ -138,6 +138,15 @@
       </div>
     </div>
 
+    <!-- LAN admin password prompt (shown on 401 from an admin endpoint) -->
+    <div id="admin-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <h3>需要管理密码</h3>
+        <div class="field"><label>局域网管理密码</label><input id="admin-pw" type="password" autocomplete="current-password" /></div>
+        <div class="modal-actions"><span style="flex:1"></span><button id="admin-cancel">取消</button><button id="admin-ok" class="primary">确定</button></div>
+      </div>
+    </div>
+
     <!-- Translate (document; live voice is its own nav item) -->
     <section class="panel active" data-panel="translate">
       <div class="page-head">

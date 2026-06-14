@@ -67,18 +67,30 @@ async function extractAudio(file) {
   return new File([data.buffer], stem + ".wav", { type: "audio/wav" });
 }
 
+// LAN admin token: kept in memory only (never localStorage), entered via a
+// password field (never prompt(), which would render it in cleartext).
+let _adminToken = "";
+function askAdminPassword() {
+  return new Promise((resolve) => {
+    const m = $("admin-modal");
+    if (!m) { resolve(null); return; }
+    $("admin-pw").value = "";
+    m.hidden = false;
+    $("admin-pw").focus();
+    const done = (val) => { m.hidden = true; $("admin-ok").onclick = null; $("admin-cancel").onclick = null; resolve(val); };
+    $("admin-ok").onclick = () => done($("admin-pw").value);
+    $("admin-cancel").onclick = () => done(null);
+  });
+}
 async function api(path, opts) {
   opts = opts || {};
-  // Attach the LAN admin token (if the user has entered one) so admin endpoints
-  // pass when a LAN admin password is configured.
-  const tok = localStorage.getItem("lh-admin");
-  if (tok) opts.headers = Object.assign({ "X-Admin-Token": tok }, opts.headers || {});
+  if (_adminToken) opts.headers = Object.assign({ "X-Admin-Token": _adminToken }, opts.headers || {});
   let r = await fetch(path, opts);
-  // 401 from an admin endpoint -> prompt for the LAN admin password and retry.
+  // 401 from an admin endpoint -> ask for the LAN admin password and retry.
   if (r.status === 401) {
-    const pw = prompt("此操作需要局域网管理密码：");
+    const pw = await askAdminPassword();
     if (pw) {
-      localStorage.setItem("lh-admin", pw);
+      _adminToken = pw;
       opts.headers = Object.assign({ "X-Admin-Token": pw }, opts.headers || {});
       r = await fetch(path, opts);
     }
@@ -537,7 +549,7 @@ $("set-lan-admin").onchange = () => {
   const v = $("set-lan-admin").value;
   if (!v) return;                          // empty = keep the existing password
   saveConfig({ lan_admin_password: v });
-  localStorage.setItem("lh-admin", v);     // so the owner keeps admin access
+  _adminToken = v;                          // in-memory, so the owner keeps access
   $("set-lan-admin").value = "";
   $("set-lan-admin").placeholder = "已设置（留空则不修改）";
   $("settings-status").textContent = "局域网管理密码已更新。";

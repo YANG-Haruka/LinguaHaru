@@ -17,6 +17,8 @@ import uuid
 import asyncio
 import time
 import contextvars
+import hashlib
+import hmac
 
 from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
@@ -63,6 +65,12 @@ def server_mode_on():
 _admin_token = contextvars.ContextVar("admin_token", default="")
 
 
+def _hash_pw(pw):
+    """SHA-256 hex of a password. We store only the hash (never plaintext, since
+    system_config.json is git-tracked) and compare hashes in constant time."""
+    return hashlib.sha256(str(pw).encode("utf-8")).hexdigest()
+
+
 def _block_in_server_mode():
     """Guard admin-only endpoints (changing the server's model/key, RPM, modules,
     interfaces). Always blocked in public server mode. In LAN mode, if an admin
@@ -70,9 +78,11 @@ def _block_in_server_mode():
     untrusted LAN user can't change keys/models/config/modules."""
     if server_mode_on():
         raise HTTPException(403, "Disabled in server mode")
-    pw = str(backend.get_config("lan_admin_password", "") or "")
-    if pw and backend.get_config("lan_mode", False):
-        if _admin_token.get() != pw:
+    pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
+    if pw_hash and backend.get_config("lan_mode", False):
+        token = _admin_token.get()
+        # constant-time compare of hashes (avoids timing side-channel)
+        if not (token and hmac.compare_digest(_hash_pw(token), pw_hash)):
             raise HTTPException(401, "Admin password required")
 
 
@@ -162,7 +172,7 @@ def bootstrap():
             "rpm_limit": config.get("rpm_limit", _DEFAULT_RPM),
             "auto_extract_glossary": config.get("auto_extract_glossary", False),
             "lan_mode": config.get("lan_mode", False),
-            "has_lan_admin": bool(config.get("lan_admin_password")),  # never expose the value
+            "has_lan_admin": bool(config.get("lan_admin_password_hash")),  # never expose the value
             "default_thread_count_online": config.get("default_thread_count_online", 8),
             "default_thread_count_offline": config.get("default_thread_count_offline", 4),
             "thread_count": backend.thread_count_for_mode(
@@ -181,11 +191,20 @@ async def update_config(payload: dict):
                "translate_subtitles", "max_retries", "rpm_limit",
                "auto_extract_glossary", "lan_mode",
                "default_thread_count_online", "default_thread_count_offline",
-               "max_api_concurrency", "lan_admin_password"}
+               "max_api_concurrency"}
     config = backend.read_config()
     for k, v in payload.items():
+        # The LAN admin password is stored ONLY as a hash (system_config.json is
+        # git-tracked — never persist the plaintext). Empty value clears it.
+        if k == "lan_admin_password":
+            if v:
+                config["lan_admin_password_hash"] = _hash_pw(v)
+            else:
+                config.pop("lan_admin_password_hash", None)
+            continue
         if k in allowed:
             config[k] = v
+    config.pop("lan_admin_password", None)  # belt-and-suspenders: no plaintext
     backend.write_config(config)
     if "rpm_limit" in payload:  # apply the new RPM cap without a restart
         from core.llm.online_translation import reset_rpm_limit_cache
