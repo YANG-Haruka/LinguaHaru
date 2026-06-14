@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinguaHaru</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">LinguaHaru</div>
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="translate">翻译</button>
+      <button class="tab" data-tab="glossary">词汇表</button>
+      <button class="tab" data-tab="settings">设置</button>
+    </nav>
+    <button id="theme-toggle" class="icon-btn" title="主题">🌙</button>
+  </header>
+
+  <main class="container">
+    <!-- Translate -->
+    <section class="panel active" data-panel="translate">
+      <div class="card lang-card">
+        <div class="field">
+          <label>源语言</label>
+          <select id="src-lang"></select>
+        </div>
+        <button id="swap" class="icon-btn swap" title="交换">⇄</button>
+        <div class="field">
+          <label>目标语言</label>
+          <select id="dst-lang"></select>
+        </div>
+      </div>
+
+      <div class="card row-2">
+        <div class="field"><label>模型</label><select id="model"></select></div>
+        <div class="field"><label>词汇表</label><select id="glossary"></select></div>
+      </div>
+
+      <div id="apikey-warning" class="warn" hidden>⚠️ 尚未设置 API 密钥——请在“设置”中填写。</div>
+
+      <div class="card drop" id="dropzone">
+        <input type="file" id="file-input" hidden />
+        <div class="drop-inner">
+          <div class="drop-icon">⬆</div>
+          <div id="drop-text">将文件拖放到此处，或点击上传</div>
+          <div class="muted" id="accepted"></div>
+        </div>
+      </div>
+
+      <!-- Media (video/audio) STT options -->
+      <div class="card row-2" id="media-options" hidden>
+        <div class="field">
+          <label>语音转文字模型</label>
+          <select id="stt-model"></select>
+        </div>
+        <label class="check"><input type="checkbox" id="translate-subs" checked /> 翻译字幕（不勾选则仅转写）</label>
+        <div class="muted" id="media-note"></div>
+      </div>
+
+      <div class="actions">
+        <button id="translate-btn" class="primary">翻译</button>
+        <button id="stop-btn" disabled>停止</button>
+      </div>
+
+      <div class="progress-wrap" id="progress-wrap" hidden>
+        <div class="progress"><div class="bar" id="progress-bar"></div></div>
+        <div class="muted" id="progress-desc"></div>
+      </div>
+
+      <div id="result" class="result" hidden>
+        <a id="download-link" class="primary" download>下载译文</a>
+      </div>
+      <div id="status" class="muted"></div>
+    </section>
+
+    <!-- Glossary -->
+    <section class="panel" data-panel="glossary">
+      <div class="card">
+        <div class="field"><label>词汇表</label><select id="glossary-edit-select"></select></div>
+      </div>
+      <div class="card">
+        <div class="table-scroll"><table id="glossary-table"></table></div>
+        <div class="actions">
+          <button id="glossary-add-row">+ 添加行</button>
+          <button id="glossary-save" class="primary">保存词汇表</button>
+        </div>
+        <div id="glossary-status" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- Settings -->
+    <section class="panel" data-panel="settings">
+      <div class="card">
+        <label class="check"><input type="checkbox" id="set-online" /> 使用在线模型</label>
+      </div>
+      <div class="card row-2">
+        <div class="field"><label>模型（密钥所属）</label><select id="set-model"></select></div>
+        <div class="field"><label>API 密钥</label><input type="password" id="set-apikey" placeholder="在此输入您的 API 密钥" /></div>
+      </div>
+      <div class="card row-2">
+        <div class="field"><label>最大重试次数</label><input type="number" id="set-retries" min="1" max="10" /></div>
+      </div>
+      <div class="card">
+        <h3>可选模块</h3>
+        <table id="modules-table"></table>
+      </div>
+      <div id="settings-status" class="muted"></div>
+    </section>
+  </main>
+
+  <footer class="footer">Crafted with ♥ by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
