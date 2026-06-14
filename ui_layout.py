@@ -1193,9 +1193,30 @@ def get_custom_css():
 
     #model-dropdown ul,
     #model-dropdown [role="listbox"],
+    #model-dropdown .options,
     #glossary-dropdown ul,
-    #glossary-dropdown [role="listbox"] {
+    #glossary-dropdown [role="listbox"],
+    #glossary-dropdown .options {
         z-index: 2003 !important;
+        /* Force the list to open downward, anchored under the input. Gradio's
+           floating logic flips it up (sets inline `bottom`) when the row sits
+           near the vertical middle, rendering the options over the "模型" label. */
+        position: absolute !important;
+        top: 100% !important;
+        bottom: auto !important;
+        left: 0 !important;
+        width: 100% !important;
+        max-height: 320px !important;
+        overflow-y: auto !important;
+        background: var(--haru-surface-elevated) !important;
+    }
+
+    /* The absolute list above is clipped by Gradio's default overflow:hidden on
+       the .block / .form wrappers; open them up so the list can spill below. */
+    #model-glossary-row .form,
+    #model-dropdown,
+    #glossary-dropdown {
+        overflow: visible !important;
     }
 
     #model-column {

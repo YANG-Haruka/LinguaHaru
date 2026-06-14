@@ -1442,15 +1442,38 @@ def on_translate_api_key_change(api_key, use_online, session_lang="en"):
     return gr.update(value=api_key), api_key_warning_update(use_online, api_key, session_lang)
 
 
+def _upload_files_label(session_lang="en"):
+    """Reproduce set_labels()'s upload label (name + accepted-format list)."""
+    from ui_layout import get_accepted_file_types
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    base = labels.get("Upload Files") or (labels.get("Upload File", "Upload File") + "s")
+    return f"{base} ({' '.join(get_accepted_file_types())})"
+
+
+def file_upload_gate(use_online, api_key, session_lang="en"):
+    """Block uploads until an API key is set in online mode: disable the file
+    box and surface a 'configure your key first' prompt instead of the normal
+    drop-zone label."""
+    labels = LABEL_TRANSLATIONS.get(session_lang, LABEL_TRANSLATIONS["en"])
+    locked = bool(use_online) and not bool(str(api_key or "").strip())
+    if locked:
+        prompt = labels.get("Please Configure API Key First",
+                            "Please configure your API key first")
+        return gr.update(interactive=False, label="⚠️ " + prompt)
+    return gr.update(interactive=True, label=_upload_files_label(session_lang))
+
+
 def init_api_key_ui():
     """Initial value of the Settings key field + the hidden Translate mirror +
-    warning visibility on load."""
+    warning visibility + upload gating on load."""
     config = read_system_config()
     use_online = config.get("default_online", False)
     remember = config.get("remember_api_key", False) and use_online
     model = config.get("default_online_model", "")
     key = load_api_key_for_model(model) if remember else ""
-    return gr.update(value=key), gr.update(value=key), api_key_warning_update(use_online, key)
+    return (gr.update(value=key), gr.update(value=key),
+            api_key_warning_update(use_online, key),
+            file_upload_gate(use_online, key))
 
 
 def load_api_key_on_model_change(model_name, remember):
@@ -2407,6 +2430,16 @@ with gr.Blocks(
         inputs=[use_online_model, api_key_input, session_lang],
         outputs=api_key_warning
     )
+    # Gate the upload box on API-key presence (online mode). Driven by the
+    # Settings key field (the only place a key is entered now), the online
+    # toggle, and the resolved language. api_key_input isn't a trigger because
+    # programmatic value updates don't fire .change.
+    for _trigger in (settings_api_key.change, use_online_model.change, session_lang.change):
+        _trigger(
+            file_upload_gate,
+            inputs=[use_online_model, settings_api_key, session_lang],
+            outputs=file_input
+        )
 
     # Load API key when model changes (if remember is enabled)
     model_choice.change(
@@ -2972,7 +3005,7 @@ with gr.Blocks(
     demo.load(
         fn=init_api_key_ui,
         inputs=None,
-        outputs=[settings_api_key, api_key_input, api_key_warning],
+        outputs=[settings_api_key, api_key_input, api_key_warning, file_input],
     )
 
     # Separate event to update API key language after init
