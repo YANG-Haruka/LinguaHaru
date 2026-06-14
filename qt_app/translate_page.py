@@ -35,6 +35,10 @@ from qt_app.history_page import open_folder
 from qt_app.widgets import FormatCategoryCard
 from qt_app.progress_dashboard import ProgressDashboard
 from config.api_keys import load_api_key_for_model, save_api_key_for_model
+from config.languages_config import LANGUAGE_MAP
+from pipeline.video_translation_pipeline import (
+    STT_MODELS, get_selected_stt_model, get_stt_model, SENSEVOICE_SUPPORTED_CODES)
+from config.optional_modules import MEDIA_EXTENSIONS
 
 # Colorful format categories (label-key, formats, hex color, icon, module_key).
 # module_key (None = always available) gates optional plugins: pdf/image/video.
@@ -194,6 +198,32 @@ class TranslatePage(QStackedWidget):
         self.bilingual_card.setVisible(False)
         layout.addWidget(self.bilingual_card)
 
+        # --- Contextual media (video/audio) STT options ---
+        self.media_card = CardWidget()
+        media_form = QFormLayout(self.media_card)
+        media_form.setContentsMargins(20, 14, 20, 14)
+        media_form.setSpacing(10)
+        self._stt_ids = [m["id"] for m in STT_MODELS]
+        self.stt_combo = ComboBox()
+        self.stt_combo.addItems([m["label"] for m in STT_MODELS])
+        sel = get_selected_stt_model()
+        if sel in self._stt_ids:
+            self.stt_combo.setCurrentIndex(self._stt_ids.index(sel))
+        self.stt_combo.currentIndexChanged.connect(self._on_stt_changed)
+        self.stt_label = BodyLabel(tr("Speech-to-Text Model", lang))
+        media_form.addRow(self.stt_label, self.stt_combo)
+        sub_row = QHBoxLayout()
+        self.translate_subs_switch = SwitchButton()
+        self.translate_subs_switch.setChecked(config.get("translate_subtitles", True))
+        self.translate_subs_switch.checkedChanged.connect(
+            lambda v: backend.set_config("translate_subtitles", v))
+        sub_row.addWidget(self.translate_subs_switch)
+        sub_row.addStretch(1)
+        self.translate_subs_label = BodyLabel(tr("Translate Subtitles", lang))
+        media_form.addRow(self.translate_subs_label, sub_row)
+        self.media_card.setVisible(False)
+        layout.addWidget(self.media_card)
+
         # --- Action buttons ---
         action_row = QHBoxLayout()
         self.translate_btn = PrimaryPushButton(FluentIcon.SEND, tr("Translate", lang))
@@ -252,6 +282,8 @@ class TranslatePage(QStackedWidget):
         self.api_key_label.setText(tr("API Key", lang))
         self.api_key_edit.setPlaceholderText(tr("Enter your API key here", lang))
         self.glossary_label.setText(tr("Glossary", lang))
+        self.stt_label.setText(tr("Speech-to-Text Model", lang))
+        self.translate_subs_label.setText(tr("Translate Subtitles", lang))
         self.translate_btn.setText(tr("Translate", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.open_output_btn.setText(tr("Open Output Folder", lang))
@@ -334,6 +366,11 @@ class TranslatePage(QStackedWidget):
         names = ", ".join(os.path.basename(p) for p in paths)
         self.files_label.setText(names if len(names) < 80 else f"{len(paths)} files selected")
         self._rebuild_bilingual_switches()
+        # Show STT options only for media files; apply SenseVoice lang limits.
+        has_media = any(os.path.splitext(p)[1].lower() in MEDIA_EXTENSIONS for p in paths)
+        self.media_card.setVisible(has_media)
+        if has_media and 0 <= self.stt_combo.currentIndex() < len(self._stt_ids):
+            self._apply_stt_language_restriction(self._stt_ids[self.stt_combo.currentIndex()])
 
     def _rebuild_bilingual_switches(self):
         # clear existing
@@ -361,6 +398,29 @@ class TranslatePage(QStackedWidget):
             self.bilingual_layout.addWidget(container)
             self._bilingual_switches[key] = sw
         self.bilingual_card.setVisible(bool(keys))
+
+    def _on_stt_changed(self, index):
+        if not (0 <= index < len(self._stt_ids)):
+            return
+        stt_id = self._stt_ids[index]
+        backend.set_config("stt_model", stt_id)
+        self._apply_stt_language_restriction(stt_id)
+
+    def _apply_stt_language_restriction(self, stt_id):
+        """SenseVoice only handles zh/en/ja/ko/yue, so restrict the source
+        language list to its supported set; other engines restore the full list.
+        (Target is unaffected — the LLM handles translation.)"""
+        full = backend.available_languages()
+        if get_stt_model(stt_id)["engine"] == "sensevoice":
+            allowed = [n for n in full if LANGUAGE_MAP.get(n) in SENSEVOICE_SUPPORTED_CODES]
+        else:
+            allowed = full
+        cur = self.src_combo.currentText()
+        self.src_combo.blockSignals(True)
+        self.src_combo.clear()
+        self.src_combo.addItems(allowed)
+        self._set_combo(self.src_combo, cur if cur in allowed else (allowed[0] if allowed else ""))
+        self.src_combo.blockSignals(False)
 
     def on_swap(self):
         s, d = self.src_combo.currentText(), self.dst_combo.currentText()
