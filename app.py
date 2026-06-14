@@ -1279,7 +1279,10 @@ def set_labels(session_lang: str):
         settings_api_key: gr.update(
             label=labels["API Key"],
             placeholder=labels.get("Enter your API key here", "Enter your API key here")),
-        settings_model_choice: gr.update(label=labels["Models"])
+        settings_model_choice: gr.update(label=labels["Models"]),
+        stt_model_dropdown: gr.update(label=labels.get("Speech-to-Text Model", "Speech-to-Text Model")),
+        translate_subtitles_checkbox: gr.update(
+            label=labels.get("Translate Subtitles", "Translate Subtitles"))
     }
 
 #-------------------------------------------------------------------------
@@ -2136,7 +2139,8 @@ with gr.Blocks(
 
                 # Create main interface
                 (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
-                 translate_button, continue_button, stop_button) = create_main_interface(config, get_label)
+                 translate_button, continue_button, stop_button,
+                 media_options_row, stt_model_dropdown, translate_subtitles_checkbox) = create_main_interface(config, get_label)
 
         # Tab 2: glossary editor with its own glossary picker
         with gr.Tab(get_label("Glossary"), elem_id="tab-glossary") as tab_glossary:
@@ -2494,6 +2498,51 @@ with gr.Blocks(
                  html_bilingual_checkbox, continue_button, status_message]
     )
 
+    # --- Media (video/audio) STT options ---
+    def _media_options_visibility(files):
+        """Show the STT model + translate-subtitle controls only for media files."""
+        from config.optional_modules import MEDIA_EXTENSIONS
+        has_media = False
+        if files:
+            flist = files if isinstance(files, list) else [files]
+            has_media = any(os.path.splitext(getattr(f, "name", str(f)))[1].lower()
+                            in MEDIA_EXTENSIONS for f in flist)
+        return gr.update(visible=has_media)
+
+    file_input.change(_media_options_visibility, inputs=file_input, outputs=media_options_row)
+
+    def on_stt_model_change(stt_model, session_lang_val, current_src):
+        """Persist the STT model; restrict the source language to SenseVoice's
+        supported set when SenseVoice is selected, else restore the full list.
+        (Target language is unaffected — translation is handled by the LLM.)"""
+        config = read_system_config()
+        config["stt_model"] = stt_model
+        write_system_config(config)
+        from pipeline.video_translation_pipeline import get_stt_model, SENSEVOICE_SUPPORTED_CODES
+        from config.languages_config import LANGUAGE_MAP
+        labels = LABEL_TRANSLATIONS.get(session_lang_val, LABEL_TRANSLATIONS["en"])
+        custom_label = labels.get("Add Custom Language", "+ Add Custom...")
+        if get_stt_model(stt_model)["engine"] == "sensevoice":
+            names = [n for n, c in LANGUAGE_MAP.items() if c in SENSEVOICE_SUPPORTED_CODES]
+            value = current_src if current_src in names else (names[0] if names else None)
+            return gr.update(choices=names + [custom_label], value=value)
+        return gr.update(choices=get_available_languages() + [custom_label])
+
+    stt_model_dropdown.change(
+        on_stt_model_change,
+        inputs=[stt_model_dropdown, session_lang, src_lang],
+        outputs=src_lang
+    )
+
+    def on_translate_subtitles_change(value):
+        config = read_system_config()
+        config["translate_subtitles"] = bool(value)
+        write_system_config(config)
+
+    translate_subtitles_checkbox.change(
+        on_translate_subtitles_change, inputs=translate_subtitles_checkbox
+    )
+
     # Glossary event handlers (only if glossary visible)
     if initial_show_glossary:
         glossary_choice.change(
@@ -2698,7 +2747,8 @@ with gr.Blocks(
             glossary_editor_acc, glossary_load_btn, glossary_save_btn,
             tab_proofread, proofread_doc_choice, proofread_refresh_btn,
             proofread_save_btn, proofread_export_btn, proofread_file,
-            settings_api_key, settings_model_choice
+            settings_api_key, settings_model_choice,
+            stt_model_dropdown, translate_subtitles_checkbox
         ],
         js="""
         () => {

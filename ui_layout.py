@@ -2306,6 +2306,23 @@ def create_main_interface(config, get_label=None):
         file_count="multiple"
     )
 
+    # Media (video/audio) options: shown only when a media file is uploaded.
+    # Pick the speech-to-text model and whether to translate the subtitles.
+    from pipeline.video_translation_pipeline import STT_MODELS, get_selected_stt_model
+    stt_choices = [(m["label"], m["id"]) for m in STT_MODELS]
+    with gr.Row(visible=False, elem_id="media-options-row") as media_options_row:
+        stt_model_dropdown = gr.Dropdown(
+            label=get_label("Speech-to-Text Model"),
+            choices=stt_choices,
+            value=get_selected_stt_model(),
+            elem_id="stt-model-dropdown",
+        )
+        translate_subtitles_checkbox = gr.Checkbox(
+            label=get_label("Translate Subtitles"),
+            value=config.get("translate_subtitles", True),
+            elem_id="translate-subtitles-checkbox",
+        )
+
     output_file = gr.File(label=get_label("Download Translated File"), visible=False)
     status_message = gr.Textbox(label=get_label("Status Message"), interactive=False, visible=True)
 
@@ -2315,7 +2332,8 @@ def create_main_interface(config, get_label=None):
         stop_button = gr.Button(get_label("Stop Translation"), interactive=False)
 
     return (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
-            translate_button, continue_button, stop_button)
+            translate_button, continue_button, stop_button,
+            media_options_row, stt_model_dropdown, translate_subtitles_checkbox)
 
 
 def create_state_variables(config):
