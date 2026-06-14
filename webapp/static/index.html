@@ -12,6 +12,8 @@
     <nav class="tabs" id="tabs">
       <button class="tab active" data-tab="translate">翻译</button>
       <button class="tab" data-tab="glossary">词汇表</button>
+      <button class="tab" data-tab="proofread">校对</button>
+      <button class="tab" data-tab="history">历史记录</button>
       <button class="tab" data-tab="settings">设置</button>
     </nav>
     <button id="theme-toggle" class="icon-btn" title="主题">🌙</button>
@@ -86,6 +88,33 @@
           <button id="glossary-save" class="primary">保存词汇表</button>
         </div>
         <div id="glossary-status" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- Proofread -->
+    <section class="panel" data-panel="proofread">
+      <div class="card row-2">
+        <div class="field"><label>校对文档</label><select id="proofread-select"></select></div>
+        <div class="actions" style="align-items:end">
+          <button id="proofread-refresh">刷新</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-scroll"><table id="proofread-table"></table></div>
+        <div class="actions">
+          <button id="proofread-save" class="primary">保存修改</button>
+          <button id="proofread-export">重新导出</button>
+          <a id="proofread-download" class="primary" download hidden>下载</a>
+        </div>
+        <div id="proofread-status" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section class="panel" data-panel="history">
+      <div class="card">
+        <div class="actions" style="margin-bottom:10px"><button id="history-refresh">刷新</button></div>
+        <div class="table-scroll"><table id="history-table"></table></div>
       </div>
     </section>
 

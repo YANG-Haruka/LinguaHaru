@@ -4,6 +4,45 @@ let BOOT = null;
 let currentFile = null;
 let currentTask = null;
 const MEDIA_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".m4a", ".flac"];
+const VIDEO_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm"];  // extract audio client-side
+
+// ---- ffmpeg.wasm: extract the audio track in the browser so we upload a few
+// MB of audio instead of a multi-GB video. Falls back to direct upload. ----
+let _ffmpeg = null;
+function loadScript(src) {
+  return new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = src; s.crossOrigin = "anonymous";
+    s.onload = res; s.onerror = () => rej(new Error("failed to load " + src));
+    document.head.appendChild(s);
+  });
+}
+async function getFfmpeg() {
+  if (_ffmpeg) return _ffmpeg;
+  await loadScript("https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js");
+  await loadScript("https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/util.js");
+  const { FFmpeg } = window.FFmpegWASM;
+  const { toBlobURL } = window.FFmpegUtil;
+  const ff = new FFmpeg();
+  const base = "https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
+  await ff.load({
+    coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+    wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm"),
+  });
+  _ffmpeg = ff;
+  return ff;
+}
+async function extractAudio(file) {
+  const ff = await getFfmpeg();
+  const { fetchFile } = window.FFmpegUtil;
+  const inName = "in_" + file.name.replace(/[^\w.]/g, "_");
+  await ff.writeFile(inName, await fetchFile(file));
+  await ff.exec(["-i", inName, "-vn", "-ac", "1", "-ar", "16000", "out.wav"]);
+  const data = await ff.readFile("out.wav");
+  try { await ff.deleteFile(inName); await ff.deleteFile("out.wav"); } catch (e) { /* ignore */ }
+  const stem = file.name.replace(/\.[^.]+$/, "");
+  return new File([data.buffer], stem + ".wav", { type: "audio/wav" });
+}
 
 async function api(path, opts) {
   const r = await fetch(path, opts);
@@ -34,6 +73,8 @@ document.querySelectorAll(".tab").forEach((t) => {
     t.classList.add("active");
     document.querySelector(`.panel[data-panel="${t.dataset.tab}"]`).classList.add("active");
     if (t.dataset.tab === "glossary") loadGlossaryTable($("glossary-edit-select").value);
+    if (t.dataset.tab === "proofread") loadProofreadDocs();
+    if (t.dataset.tab === "history") loadHistory();
   };
 });
 
@@ -157,8 +198,25 @@ $("translate-btn").onclick = async () => {
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));
     if (!st.has_key) { setStatus("尚未设置 API 密钥，请在设置中填写。"); return; }
   }
+  // For video, extract the audio track in-browser to avoid uploading the whole
+  // file (the result is only a subtitle file anyway). Audio uploads as-is.
+  let uploadFile = currentFile;
+  const ext = "." + currentFile.name.split(".").pop().toLowerCase();
+  if (VIDEO_EXTS.includes(ext)) {
+    setBusy(true);
+    setStatus("正在浏览器内提取音轨（避免上传整段视频）…");
+    try {
+      uploadFile = await extractAudio(currentFile);
+      setStatus(`音轨已提取（${(uploadFile.size / 1048576).toFixed(1)} MB），开始处理…`);
+    } catch (e) {
+      console.warn("ffmpeg.wasm extraction failed, uploading original:", e);
+      setStatus("浏览器音轨提取不可用，改为上传原文件…");
+      uploadFile = currentFile;
+    }
+  }
+
   const fd = new FormData();
-  fd.append("file", currentFile);
+  fd.append("file", uploadFile);
   fd.append("src_lang", $("src-lang").value);
   fd.append("dst_lang", $("dst-lang").value);
   fd.append("model", $("model").value);
@@ -303,5 +361,84 @@ $("glossary-save").onclick = async () => {
     body: JSON.stringify({ name: $("glossary-edit-select").value, columns: glossaryCols, rows }) });
   $("glossary-status").textContent = `已保存 ${res.count} 条`;
 };
+
+// ----- proofread -----
+let proofreadCols = [];
+async function loadProofreadDocs() {
+  const data = await api("/api/proofread/docs");
+  fillSelect($("proofread-select"), data.docs.length ? data.docs : ["(无可校对文档)"]);
+  if (data.docs.length) loadProofreadTable(data.docs[0]);
+  else { $("proofread-table").innerHTML = ""; $("proofread-status").textContent = "完成一次翻译后即可在此校对（不支持 PDF）。"; }
+}
+$("proofread-select").onchange = () => { if ($("proofread-select").value !== "(无可校对文档)") loadProofreadTable($("proofread-select").value); };
+$("proofread-refresh").onclick = loadProofreadDocs;
+
+async function loadProofreadTable(name) {
+  const data = await api("/api/proofread?name=" + encodeURIComponent(name));
+  proofreadCols = data.columns;
+  const t = $("proofread-table");
+  t.innerHTML = "";
+  const head = document.createElement("tr");
+  for (const c of data.columns) { const th = document.createElement("th"); th.textContent = c; head.appendChild(th); }
+  t.appendChild(head);
+  for (const row of data.rows) {
+    const tr = document.createElement("tr");
+    row.forEach((val, i) => {
+      const td = document.createElement("td");
+      if (i === data.columns.length - 1) { // only translation editable
+        const inp = document.createElement("input"); inp.type = "text"; inp.value = val == null ? "" : val; td.appendChild(inp);
+      } else { td.textContent = val == null ? "" : val; }
+      tr.appendChild(td);
+    });
+    t.appendChild(tr);
+  }
+  $("proofread-status").textContent = `已加载 ${data.rows.length} 行`;
+  $("proofread-download").hidden = true;
+}
+$("proofread-save").onclick = async () => {
+  const name = $("proofread-select").value;
+  const rows = [];
+  $("proofread-table").querySelectorAll("tr").forEach((tr, i) => {
+    if (i === 0) return;
+    const cells = tr.children;
+    const cnt = cells[0].textContent;
+    const orig = cells[1].textContent;
+    const trans = cells[cells.length - 1].querySelector("input").value;
+    rows.push([cnt === "" ? null : Number(cnt), orig, trans]);
+  });
+  const res = await api("/api/proofread", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, rows }) });
+  $("proofread-status").textContent = `已保存（修改 ${res.changed} 行）`;
+};
+$("proofread-export").onclick = async () => {
+  const name = $("proofread-select").value;
+  $("proofread-status").textContent = "导出中…";
+  try {
+    await api("/api/proofread/export", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }) });
+    const dl = $("proofread-download");
+    dl.href = "/api/proofread/download?name=" + encodeURIComponent(name);
+    dl.hidden = false;
+    $("proofread-status").textContent = "导出完成，点击下载。";
+  } catch (e) { $("proofread-status").textContent = "导出失败：" + e.message; }
+};
+
+// ----- history -----
+async function loadHistory() {
+  const data = await api("/api/history");
+  const t = $("history-table");
+  t.innerHTML = "<tr><th>文件</th><th>语言</th><th>模型</th><th>状态</th><th>Tokens</th><th>时间</th></tr>";
+  for (const r of data.records) {
+    const tr = document.createElement("tr");
+    const cells = [
+      r.input_file || "", `${r.src_lang_display || r.src_lang || ""}→${r.dst_lang_display || r.dst_lang || ""}`,
+      r.model || "", r.status || "", r.total_tokens != null ? String(r.total_tokens) : "",
+      (r.start_time || "").replace("T", " ").slice(0, 19)];
+    for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.appendChild(td); }
+    t.appendChild(tr);
+  }
+  if (!data.records.length) t.innerHTML += "<tr><td colspan='6' class='muted'>暂无记录</td></tr>";
+}
+$("history-refresh").onclick = loadHistory;
 
 boot().catch((e) => { document.body.innerHTML = "<pre style='padding:24px'>启动失败: " + e.message + "</pre>"; });

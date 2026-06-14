@@ -37,6 +37,16 @@ UPLOAD_DIR = os.path.join(backend.REPO_ROOT, "web_uploads")
 
 app = FastAPI(title="LinguaHaru Web")
 
+
+@app.middleware("http")
+async def _cross_origin_isolation(request, call_next):
+    """Enable SharedArrayBuffer (needed by ffmpeg.wasm for in-browser audio
+    extraction). 'credentialless' lets us still load the CDN core files."""
+    resp = await call_next(request)
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    resp.headers["Cross-Origin-Embedder-Policy"] = "credentialless"
+    return resp
+
 # task_id -> {progress, desc, status, output, error, stop}
 TASKS = {}
 _TASKS_LOCK = threading.Lock()
@@ -286,6 +296,69 @@ def download(task_id: str):
     if not out or not os.path.exists(out):
         raise HTTPException(404, "Result not ready")
     return FileResponse(out, filename=os.path.basename(out))
+
+
+# --------------------------------------------------------------------------- #
+# History
+# --------------------------------------------------------------------------- #
+@app.get("/api/history")
+def history(limit: int = 100):
+    from config.translation_history import TranslationHistoryManager
+    _, _, log_dir = backend.get_custom_paths()
+    records = TranslationHistoryManager(log_dir=log_dir).get_all_records(limit=limit)
+    return {"records": records}
+
+
+# --------------------------------------------------------------------------- #
+# Proofread
+# --------------------------------------------------------------------------- #
+@app.get("/api/proofread/docs")
+def proofread_docs():
+    return {"docs": backend.list_proofread_docs()}
+
+
+@app.get("/api/proofread")
+def proofread_load(name: str):
+    try:
+        rows = backend.load_proofread_table(name)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    # rows: (count_src, original, translated)
+    return {"columns": ["count_src", "Original", "Translation"],
+            "rows": [list(r) for r in rows]}
+
+
+@app.post("/api/proofread")
+async def proofread_save(payload: dict):
+    name = payload.get("name")
+    rows = [tuple(r) for r in payload.get("rows", [])]
+    try:
+        changed = backend.save_proofread_table(name, rows)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, str(e))
+    return {"ok": True, "changed": changed}
+
+
+@app.post("/api/proofread/export")
+async def proofread_export(payload: dict):
+    name = payload.get("name")
+    try:
+        path = backend.export_proofread_doc(name)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, str(e))
+    EXPORTS[name] = path
+    return {"ok": True, "filename": os.path.basename(path)}
+
+
+EXPORTS = {}  # doc_name -> exported file path
+
+
+@app.get("/api/proofread/download")
+def proofread_download(name: str):
+    path = EXPORTS.get(name)
+    if not path or not os.path.exists(path):
+        raise HTTPException(404, "Export not ready")
+    return FileResponse(path, filename=os.path.basename(path))
 
 
 # --------------------------------------------------------------------------- #
