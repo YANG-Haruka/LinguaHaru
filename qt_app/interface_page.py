@@ -193,12 +193,27 @@ class InterfacePage(ScrollArea):
 
     # --- data ---
     def _active_name(self):
+        """The active interface, validated against what's actually available.
+
+        Never report a local model that isn't currently detected (that was the
+        '已激活 Ollama' ghost when no local model exists)."""
         online = backend.get_active_model(use_online=True)
         local = backend.get_active_model(use_online=False)
-        # Online takes display priority if the global default_online is set.
-        if backend.get_config("default_online", False):
-            return online or local
-        return local or online
+        try:
+            local_models = backend.scan_local_models()
+        except Exception:  # noqa: BLE001
+            local_models = []
+        online_names = [i["name"] for i in backend.list_online_interfaces()]
+
+        # Local mode only if a real, detected local model is selected.
+        if not backend.get_config("default_online", True):
+            if local and local in local_models:
+                return local
+        # Otherwise fall back to a valid online interface.
+        if online and online in online_names:
+            return online
+        return online_names[0] if online_names else (
+            local if local in local_models else "")
 
     def reload(self):
         active = self._active_name()
@@ -250,7 +265,11 @@ class InterfacePage(ScrollArea):
         self.reload()
         if callable(self.on_active_changed):
             self.on_active_changed()
-        self._info(tr("Active", self._lang) + f": {name}")
+        if not online:
+            # Local models translate noticeably worse; warn the user.
+            self._info(tr("Local Model Warning", self._lang), error=True)
+        else:
+            self._info(tr("Active", self._lang) + f": {name}")
 
     def _delete(self, name):
         if backend.delete_api_config(name):

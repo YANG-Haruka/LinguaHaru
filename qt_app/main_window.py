@@ -51,10 +51,11 @@ class MainWindow(FluentWindow):
             self._lang = "zh"
 
         self.setWindowTitle("LinguaHaru")
-        self.resize(1100, 760)
-        # Minimum size so the expanded nav + content never collapse into a
-        # cramped/overflowing layout.
-        self.setMinimumSize(1000, 680)
+        self.resize(1060, 720)
+        # Minimum size: small enough not to dominate the screen, large enough
+        # that the expanded nav + content still fit (content compresses to the
+        # viewport width because horizontal scrolling is disabled).
+        self.setMinimumSize(980, 640)
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
 
@@ -176,10 +177,19 @@ class MainWindow(FluentWindow):
 
     def _apply_custom_bg(self):
         """Light = soft light-blue, dark = deep navy-black, blue accent.
-        Uses FluentWindow's themed background API so the whole window
-        (title bar, nav rail, content) stays consistent in both modes."""
+        Uses FluentWindow's themed background API AND explicitly paints the
+        content area, so the nav rail and content never diverge (the
+        'light nav + dark content' split on theme toggle)."""
         try:
             self.setCustomBackgroundColor(QColor(LIGHT_BG), QColor(DARK_BG))
+        except Exception:
+            pass
+        # Force the content stack background to match the active theme so a
+        # runtime toggle can't leave it stuck on the previous theme's color.
+        bg = DARK_BG if self._theme_dark else LIGHT_BG
+        try:
+            self.stackedWidget.setStyleSheet(
+                f"QStackedWidget {{ background-color: {bg}; }}")
         except Exception:
             pass
 

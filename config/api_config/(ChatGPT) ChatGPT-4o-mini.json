@@ -1,8 +1,0 @@
-{
-    "base_url": "https://api.openai.com/v1",
-    "model": "gpt-4o-mini",
-    "top_p": 0.95,
-    "temperature": 0.75,
-    "presence_penalty": 0.0,
-    "frequency_penalty": 0.0
-}
