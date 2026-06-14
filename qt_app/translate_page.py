@@ -16,6 +16,7 @@ runs, a zip with a results.txt is produced). Stop cancels all in-flight files.
 import os
 import uuid
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFileDialog, QFormLayout, QStackedWidget,
 )
@@ -68,6 +69,9 @@ class TranslatePage(QStackedWidget):
         # --- controls view (scrollable) ---
         self._controls = ScrollArea()
         self._controls.setWidgetResizable(True)
+        # Never scroll horizontally: keep all rows inside the viewport width
+        # so nothing gets cut off at the right edge.
+        self._controls.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._controls.enableTransparentBackground()
         controls_host = QWidget()
         controls_host.setObjectName("translateControlsHost")
@@ -145,7 +149,7 @@ class TranslatePage(QStackedWidget):
 
         model_row = QHBoxLayout()
         self.model_combo = ComboBox()
-        self.model_combo.setMinimumWidth(240)
+        self.model_combo.setMinimumWidth(160)
         model_row.addWidget(self.model_combo, 1)
         self.refresh_models_btn = ToolButton(FluentIcon.SYNC)
         self.refresh_models_btn.clicked.connect(self.on_refresh_models)

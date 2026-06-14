@@ -12,7 +12,7 @@ retranslate of every page + nav label."""
 
 import os
 
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QColor
 
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, FluentIcon, setTheme, setThemeColor,
@@ -30,7 +30,9 @@ from qt_app.interface_page import InterfacePage
 from qt_app.plugins_page import PluginsPage
 
 ICON_PATH = os.path.join(backend.REPO_ROOT, "img", "ico.png")
-ACCENT_COLOR = "#7c5cff"  # AiNiee-ish violet accent
+ACCENT_COLOR = "#2f6fed"          # blue accent (both themes)
+LIGHT_BG = "#d7e6fb"             # light: clearly light-blue
+DARK_BG = "#0b1120"             # dark: deep navy-black
 
 
 class MainWindow(FluentWindow):
@@ -41,6 +43,7 @@ class MainWindow(FluentWindow):
         self._theme_dark = backend.get_config("qt_theme", "light") == "dark"
         setTheme(Theme.DARK if self._theme_dark else Theme.LIGHT)
         setThemeColor(ACCENT_COLOR)
+        self._apply_custom_bg()
 
         # Persisted UI language (default zh; fall back if unknown).
         self._lang = backend.get_config("qt_ui_lang", "zh")
@@ -49,6 +52,9 @@ class MainWindow(FluentWindow):
 
         self.setWindowTitle("LinguaHaru")
         self.resize(1100, 760)
+        # Minimum size so the expanded nav + content never collapse into a
+        # cramped/overflowing layout.
+        self.setMinimumSize(1000, 680)
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
 
@@ -168,10 +174,20 @@ class MainWindow(FluentWindow):
         if theme_item is not None and hasattr(theme_item, "setText"):
             theme_item.setText(tr("Theme", lang))
 
+    def _apply_custom_bg(self):
+        """Light = soft light-blue, dark = deep navy-black, blue accent.
+        Uses FluentWindow's themed background API so the whole window
+        (title bar, nav rail, content) stays consistent in both modes."""
+        try:
+            self.setCustomBackgroundColor(QColor(LIGHT_BG), QColor(DARK_BG))
+        except Exception:
+            pass
+
     def toggle_theme(self):
         self._theme_dark = not self._theme_dark
         setTheme(Theme.DARK if self._theme_dark else Theme.LIGHT)
         setThemeColor(ACCENT_COLOR)
+        self._apply_custom_bg()
         backend.set_config("qt_theme", "dark" if self._theme_dark else "light")
         # Repaint the colorful format cards (their tint depends on theme).
         for card in getattr(self.translate_page, "_fmt_cards", []):
