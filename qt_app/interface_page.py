@@ -26,6 +26,7 @@ from qfluentwidgets import (
 from qt_app import backend
 from qt_app.i18n import tr
 from qt_app.widgets import EntryCard
+from config.api_keys import load_api_key_for_model, save_api_key_for_model
 
 
 class AddInterfaceDialog(MessageBoxBase):
@@ -73,9 +74,13 @@ class AddInterfaceDialog(MessageBoxBase):
             self.name_edit.setEnabled(False)
             self.base_edit.setText(str(cfg.get("base_url", "")))
             self.model_edit.setText(str(cfg.get("model", "")))
-            self.key_edit.setText(str(cfg.get("api_key", "")))
+            # Key is stored per provider in mykeys/, not in the config JSON.
+            self.key_edit.setText(load_api_key_for_model(existing))
             self.temp_edit.setText(str(cfg.get("temperature", "")))
             self.topp_edit.setText(str(cfg.get("top_p", "")))
+
+    def api_key(self):
+        return self.key_edit.text().strip()
 
     def values(self):
         def _num(text):
@@ -83,10 +88,11 @@ class AddInterfaceDialog(MessageBoxBase):
                 return float(text)
             except (TypeError, ValueError):
                 return None
+        # The API key is intentionally NOT written into the config JSON; it is
+        # saved separately per provider in mykeys/ (see on_add).
         return self.name_edit.text().strip(), {
             "base_url": self.base_edit.text().strip(),
             "model": self.model_edit.text().strip(),
-            "api_key": self.key_edit.text().strip(),
             "temperature": _num(self.temp_edit.text().strip()),
             "top_p": _num(self.topp_edit.text().strip()),
         }
@@ -289,6 +295,8 @@ class InterfacePage(ScrollArea):
             return
         try:
             backend.write_api_config(name, data)
+            # Persist the key per provider in mykeys/ (shared with the Web app).
+            save_api_key_for_model(name, dlg.api_key())
         except Exception as e:  # noqa: BLE001
             self._info(str(e), error=True)
             return

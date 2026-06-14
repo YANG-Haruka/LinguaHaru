@@ -34,6 +34,7 @@ from qt_app.worker import TranslationWorker
 from qt_app.history_page import open_folder
 from qt_app.widgets import FormatCategoryCard
 from qt_app.progress_dashboard import ProgressDashboard
+from config.api_keys import load_api_key_for_model, save_api_key_for_model
 
 # Colorful format categories (label-key, formats, hex color, icon, module_key).
 # module_key (None = always available) gates optional plugins: pdf/image/video.
@@ -174,6 +175,10 @@ class TranslatePage(QStackedWidget):
         self.api_key_edit.setPlaceholderText(tr("Enter your API key here", lang))
         self.api_key_label = BodyLabel(tr("API Key", lang))
         model_form.addRow(self.api_key_label, self.api_key_edit)
+        # Per-provider key storage shared with the Web app: load the saved key
+        # when the model changes, save it (per provider) when edited.
+        self.model_combo.currentTextChanged.connect(self._on_model_changed)
+        self.api_key_edit.editingFinished.connect(self._on_api_key_edited)
 
         self.glossary_combo = ComboBox()
         self.glossary_combo.addItems(backend.get_glossary_files())
@@ -361,6 +366,18 @@ class TranslatePage(QStackedWidget):
         s, d = self.src_combo.currentText(), self.dst_combo.currentText()
         self._set_combo(self.src_combo, d)
         self._set_combo(self.dst_combo, s)
+
+    def _on_model_changed(self, model):
+        """Load the saved per-provider key for the newly selected online model."""
+        if self.online_switch.isChecked() and model and model != "(no models found)":
+            self.api_key_edit.setText(load_api_key_for_model(model))
+
+    def _on_api_key_edited(self):
+        """Persist the edited key for the current model's provider."""
+        if self.online_switch.isChecked():
+            model = self.model_combo.currentText()
+            if model and model != "(no models found)":
+                save_api_key_for_model(model, self.api_key_edit.text())
 
     def on_online_toggle(self, value):
         backend.set_config("default_online", value)

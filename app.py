@@ -1329,85 +1329,10 @@ def update_model_list_and_api_input(use_online, session_lang="en"):
         )
 
 
-def get_mykeys_dir():
-    """Get the mykeys directory path, create if not exists"""
-    mykeys_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mykeys")
-    os.makedirs(mykeys_dir, exist_ok=True)
-    return mykeys_dir
-
-
-def provider_of(model_name):
-    """Group API keys by provider so models from one company share a key
-    (e.g. DeepSeek Flash and Pro use the same DeepSeek key). The provider is the
-    text in the leading parentheses of the config name — "(Deepseek) ..." ->
-    "Deepseek" — otherwise the name itself (e.g. "Custom")."""
-    s = str(model_name or "").strip()
-    if not s:
-        return "default"
-    if s.startswith("(") and ")" in s:
-        return s[1:s.index(")")].strip() or "default"
-    return s
-
-
-def sanitize_model_name(model_name):
-    """Sanitize model name to create a valid filename"""
-    if not model_name:
-        return "default"
-    # Remove invalid filename characters and replace spaces
-    invalid_chars = '<>:"/\\|?*'
-    sanitized = model_name
-    for char in invalid_chars:
-        sanitized = sanitized.replace(char, '_')
-    # Replace parentheses and spaces
-    sanitized = sanitized.replace('(', '').replace(')', '').replace(' ', '_')
-    return sanitized.strip('_') or "default"
-
-
-def load_api_key_for_model(model_name):
-    """Load the API key for a model's provider (models from one company share a key)"""
-    mykeys_dir = get_mykeys_dir()
-    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(provider_of(model_name))}.json")
-
-    try:
-        if os.path.exists(key_file):
-            with open(key_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data.get("api_key", "")
-    except (json.JSONDecodeError, IOError) as e:
-        app_logger.warning(f"Failed to load API key for {model_name}: {e}")
-
-    return ""
-
-
-def save_api_key_for_model(model_name, api_key):
-    """Save the API key for a model's provider (shared across that provider's models)"""
-    mykeys_dir = get_mykeys_dir()
-    provider = provider_of(model_name)
-    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(provider)}.json")
-
-    try:
-        data = {
-            "provider": provider,
-            "api_key": api_key
-        }
-        with open(key_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        app_logger.info(f"API key saved for model: {model_name}")
-    except IOError as e:
-        app_logger.error(f"Failed to save API key for {model_name}: {e}")
-
-
-def delete_api_key_for_model(model_name):
-    """Delete the API key file for a model's provider"""
-    mykeys_dir = get_mykeys_dir()
-    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(provider_of(model_name))}.json")
-
-    try:
-        if os.path.exists(key_file):
-            os.remove(key_file)
-            app_logger.info(f"API key deleted for model: {model_name}")
-    except IOError as e:
-        app_logger.error(f"Failed to delete API key for {model_name}: {e}")
+# Per-provider API-key storage is shared with the Qt app (config/api_keys.py).
+from config.api_keys import (  # noqa: E402
+    get_mykeys_dir, provider_of, sanitize_model_name,
+    load_api_key_for_model, save_api_key_for_model, delete_api_key_for_model)
 
 
 def update_remember_api_key(remember, api_key, model_name, lan_mode):
