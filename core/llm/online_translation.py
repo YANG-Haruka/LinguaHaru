@@ -123,6 +123,66 @@ def reset_rpm_limit_cache():
     """Drop the cached global RPM so the next request re-reads system_config —
     lets a Settings change to rpm_limit take effect without a process restart."""
     _rpm_limiter.limit = _RpmLimiter._UNSET
+    global _api_sem, _api_sem_n
+    _api_sem = None  # also re-read the concurrency cap
+
+
+# --- global API concurrency cap -------------------------------------------- #
+# Without this, the Web layer (up to 6 tasks) x per-model threads (Flash=16)
+# could fire ~96 simultaneous requests at the provider. This bounds the TOTAL
+# in-flight LLM requests across the whole process, complementing the per-minute
+# RPM window. Configurable via "max_api_concurrency" (default 32).
+_DEFAULT_API_CONCURRENCY = 32
+_api_sem = None
+_api_sem_n = 0
+_api_sem_lock = threading.Lock()
+
+
+def _get_api_semaphore():
+    global _api_sem, _api_sem_n
+    with _api_sem_lock:
+        if _api_sem is None:
+            try:
+                with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+                    n = int(json.load(f).get("max_api_concurrency", _DEFAULT_API_CONCURRENCY))
+            except Exception:
+                n = _DEFAULT_API_CONCURRENCY
+            _api_sem_n = max(1, n)
+            _api_sem = threading.BoundedSemaphore(_api_sem_n)
+        return _api_sem
+
+
+# --- adaptive backoff on HTTP 429 (per model) ------------------------------ #
+# When a provider returns 429, honor its Retry-After (or a default) by parking
+# new requests for that model until the cooldown elapses — i.e. the limiter
+# learns the real limit instead of hammering on.
+_cooldowns = {}          # model -> epoch until which to back off
+_cooldown_lock = threading.Lock()
+
+
+def _cooldown_wait(model):
+    with _cooldown_lock:
+        until = _cooldowns.get(model, 0)
+    remaining = until - time.time()
+    if remaining > 0:
+        time.sleep(min(remaining, 30))
+
+
+def _set_cooldown(model, seconds):
+    with _cooldown_lock:
+        _cooldowns[model] = max(_cooldowns.get(model, 0), time.time() + max(1, seconds))
+
+
+def _parse_retry_after(exc, default=10):
+    """Pull Retry-After (seconds) from an OpenAI/HTTP exception, else default."""
+    try:
+        hdrs = getattr(getattr(exc, "response", None), "headers", None) or {}
+        val = hdrs.get("retry-after") or hdrs.get("Retry-After")
+        if val:
+            return int(float(val))
+    except Exception:
+        pass
+    return default
 
 # Error substrings that mean "retrying with the same key cannot succeed"
 _HARD_ERROR_MARKERS = ("unauthorized", "401", "invalid api key", "invalid_api_key",
@@ -299,13 +359,18 @@ def translate_online(api_key, messages, model):
 
     used_key = _pick_api_key(api_key)
 
+    # Back off if this model is cooling down from a recent 429, then honor the
+    # per-minute RPM window before consuming a global-concurrency slot.
+    _cooldown_wait(model)
+    model_rpm = model_config.get("rpm")
+    if model_rpm:
+        _rpm_limiter.wait(key=model, limit_override=int(model_rpm))
+    else:
+        _rpm_limiter.wait()
+    _sem = _get_api_semaphore()
+    _sem.acquire()
+
     try:
-        # Per-model rpm from the model config overrides the global limit
-        model_rpm = model_config.get("rpm")
-        if model_rpm:
-            _rpm_limiter.wait(key=model, limit_override=int(model_rpm))
-        else:
-            _rpm_limiter.wait()
         # Initialize API client
         client = OpenAI(api_key=used_key, base_url=base_url)
 
@@ -343,7 +408,7 @@ def translate_online(api_key, messages, model):
 
         # Send request
         response = client.chat.completions.create(**params)
-        
+
     except HardApiError:
         raise
     except Exception as e:
@@ -362,9 +427,14 @@ def translate_online(api_key, messages, model):
         if "connection" in error_msg or "network" in error_msg:
             return f"Network error: {str(e)}", False, None
         elif "rate limit" in error_msg or "429" in error_msg:
-            return "Rate limit exceeded", False, None
+            # Learn the provider's real limit: park this model until Retry-After.
+            cooldown = _parse_retry_after(e)
+            _set_cooldown(model, cooldown)
+            return f"Rate limit exceeded; backing off {cooldown}s", False, None
         else:
             return f"API request failed: {str(e)}", False, None
+    finally:
+        _sem.release()
 
     try:
         # Extract token usage from response

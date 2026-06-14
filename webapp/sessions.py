@@ -122,7 +122,8 @@ def proofread_doc_dir(doc_name, session_id):
 
 def list_proofread_docs(session_id):
     """Finished, proofreadable docs the caller may see: only their own session
-    subtree (``temp/<sid>/<doc>``). PDF is excluded (handled by
+    subtree (``temp/<sid>/<task>/<doc>``). Each translation runs in a per-task
+    subdir, so we scan two levels deep. PDF is excluded (handled by
     ``backend._is_finished_doc``)."""
     docs = []
     if not valid_session_id(session_id):
@@ -131,10 +132,19 @@ def list_proofread_docs(session_id):
     sess_dir = os.path.join(temp_dir, session_id)
     try:
         if os.path.isdir(sess_dir):
-            for sub in sorted(os.listdir(sess_dir)):
-                folder = os.path.join(sess_dir, sub)
-                if os.path.isdir(folder) and backend._is_finished_doc(folder):
-                    docs.append(f"{session_id}/{sub}")
+            for entry in sorted(os.listdir(sess_dir)):
+                edir = os.path.join(sess_dir, entry)
+                if not os.path.isdir(edir):
+                    continue
+                # Legacy 1-level layout: temp/<sid>/<doc>
+                if backend._is_finished_doc(edir):
+                    docs.append(f"{session_id}/{entry}")
+                    continue
+                # Task-isolated layout: temp/<sid>/<task>/<doc>
+                for sub in sorted(os.listdir(edir)):
+                    folder = os.path.join(edir, sub)
+                    if os.path.isdir(folder) and backend._is_finished_doc(folder):
+                        docs.append(f"{session_id}/{entry}/{sub}")
     except OSError:
         pass
     return docs

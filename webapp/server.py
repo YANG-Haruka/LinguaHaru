@@ -15,6 +15,7 @@ import shutil
 import threading
 import uuid
 import asyncio
+import time
 
 from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
@@ -92,6 +93,19 @@ MAX_ACTIVE_TASKS = 6              # global across all sessions
 MAX_ACTIVE_TASKS_PER_SESSION = 2  # per browser/session
 
 
+def _prune_tasks(ttl=1800):
+    """Drop finished tasks older than ttl (30 min) so the in-memory TASKS dict
+    doesn't grow without bound over a long LAN session. The window is long
+    enough that the user can still download the result."""
+    now = time.time()
+    with _TASKS_LOCK:
+        dead = [tid for tid, s in TASKS.items()
+                if s.get("status") in ("done", "error", "stopped")
+                and now - s.get("ended_at", now) > ttl]
+        for tid in dead:
+            TASKS.pop(tid, None)
+
+
 # --------------------------------------------------------------------------- #
 # Static frontend
 # --------------------------------------------------------------------------- #
@@ -109,6 +123,7 @@ def bootstrap():
     """Everything the frontend needs on load."""
     config = backend.read_config()
     online = config.get("default_online", False)
+    from core.llm.online_translation import _DEFAULT_RPM
     return {
         "languages": backend.available_languages(),
         "online_models": backend.scan_online_models(),
@@ -129,9 +144,13 @@ def bootstrap():
             "stt_model": get_selected_stt_model(),
             "translate_subtitles": config.get("translate_subtitles", True),
             "max_retries": config.get("max_retries", 4),
-            "rpm_limit": config.get("rpm_limit", 0),
+            # Show the RPM that's actually in effect: an explicit user value, or
+            # the safety-net default when unset (so the UI isn't misleading).
+            "rpm_limit": config.get("rpm_limit", _DEFAULT_RPM),
             "auto_extract_glossary": config.get("auto_extract_glossary", False),
             "lan_mode": config.get("lan_mode", False),
+            "default_thread_count_online": config.get("default_thread_count_online", 8),
+            "default_thread_count_offline": config.get("default_thread_count_offline", 4),
             "thread_count": backend.thread_count_for_mode(
                 online, config.get("default_online_model")),
         },
@@ -147,7 +166,8 @@ async def update_config(payload: dict):
                "default_dst_lang", "default_glossary", "stt_model",
                "translate_subtitles", "max_retries", "rpm_limit",
                "auto_extract_glossary", "lan_mode",
-               "default_thread_count_online", "default_thread_count_offline"}
+               "default_thread_count_online", "default_thread_count_offline",
+               "max_api_concurrency"}
     config = backend.read_config()
     for k, v in payload.items():
         if k in allowed:
@@ -317,6 +337,14 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     dst_code = backend.language_code(dst_lang)
     gpath = backend.glossary_path(glossary_name) if glossary_name else None
     temp_dir, result_dir, log_dir = sessions.session_paths(session_id)
+    # Per-task subdir so two same-named files in ONE session don't collide
+    # (DocumentTranslator.file_dir is derived from basename). Cross-session was
+    # already isolated; this closes the same-session same-name case.
+    temp_dir = os.path.join(temp_dir, task_id)
+    result_dir = os.path.join(result_dir, task_id)
+    log_dir = os.path.join(log_dir, task_id)
+    for _d in (temp_dir, result_dir, log_dir):
+        os.makedirs(_d, exist_ok=True)
     config = backend.read_config()
 
     from core.log_config import file_logger
@@ -348,6 +376,8 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
     def set_state(**kw):
         with _TASKS_LOCK:
             TASKS[task_id].update(kw)
+            if kw.get("status") in ("done", "error", "stopped"):
+                TASKS[task_id]["ended_at"] = time.time()
 
     total = len(file_paths)
     outputs, file_results = [], []
@@ -403,6 +433,7 @@ async def translate(
     bilingual: bool = Form(False),
 ):
     session_id = request.state.session_id
+    _prune_tasks()  # drop stale finished tasks before accounting
     # Cap concurrent background translations (global + per-session) so repeated
     # clicks or many LAN users can't pile up unbounded worker threads.
     with _TASKS_LOCK:
