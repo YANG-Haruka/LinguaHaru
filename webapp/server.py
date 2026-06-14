@@ -438,6 +438,16 @@ GEMINI_LIVE_MODEL = "models/gemini-3.5-live-translate-preview"
 
 @app.websocket("/ws/live-translate")
 async def live_translate(ws: WebSocket):
+    # Reject cross-origin browser connections (CSWSH): this endpoint spends the
+    # server-side Google key, so only same-origin pages may open it. Non-browser
+    # clients send no Origin and aren't subject to CSRF.
+    origin = ws.headers.get("origin")
+    host = ws.headers.get("host", "")
+    allowed = {f"http://{host}", f"https://{host}",
+               "http://localhost", "http://127.0.0.1"}
+    if origin is not None and origin not in allowed:
+        await ws.close(code=1008)
+        return
     await ws.accept()
     target = ws.query_params.get("target", "zh")
     key = load_api_key_for_model("(Google) Live Translate")  # provider "Google"
