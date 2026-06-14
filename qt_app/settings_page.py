@@ -25,6 +25,9 @@ class SettingsPage(ScrollArea):
         # Set by MainWindow so the language selector can drive a global retranslate.
         self.on_ui_lang_changed = None
         self.setWidgetResizable(True)
+        # Without this, the scroll viewport paints the system palette (dark on a
+        # Windows dark desktop) even in light mode -> "light nav, dark settings".
+        self.enableTransparentBackground()
 
         container = QWidget()
         container.setObjectName("settingsScrollContainer")
@@ -90,20 +93,28 @@ class SettingsPage(ScrollArea):
         layout.addWidget(general)
 
         # --- Translation options (not model-related): AI glossary + output dir ---
+        # AI glossary extraction — its own card.
         self.section_options = StrongBodyLabel(tr("Translation Options", lang))
         layout.addWidget(self.section_options)
-        options_card = CardWidget()
-        opt_form = QFormLayout(options_card)
-        opt_form.setContentsMargins(20, 16, 20, 16)
-        opt_form.setSpacing(12)
-
+        glossary_card = CardWidget()
+        gl_form = QFormLayout(glossary_card)
+        gl_form.setContentsMargins(20, 16, 20, 16)
+        gl_form.setSpacing(12)
         self.auto_glossary = SwitchButton()
         self.auto_glossary.setChecked(config.get("auto_extract_glossary", False))
         self.auto_glossary.checkedChanged.connect(
             lambda v: backend.set_config("auto_extract_glossary", v))
         self.auto_glossary_label = BodyLabel(tr("AI Glossary Extraction", lang))
-        opt_form.addRow(self.auto_glossary_label, self.auto_glossary)
+        gl_form.addRow(self.auto_glossary_label, self.auto_glossary)
+        layout.addWidget(glossary_card)
 
+        # Output folder — separate card/section.
+        self.section_output = StrongBodyLabel(tr("Output Folder", lang))
+        layout.addWidget(self.section_output)
+        output_card = CardWidget()
+        out_form = QFormLayout(output_card)
+        out_form.setContentsMargins(20, 16, 20, 16)
+        out_form.setSpacing(12)
         out_row = QHBoxLayout()
         out_row.setSpacing(8)
         self.output_edit = LineEdit()
@@ -114,9 +125,8 @@ class SettingsPage(ScrollArea):
         out_row.addWidget(self.output_edit, 1)
         out_row.addWidget(self.output_browse)
         self.output_label = BodyLabel(tr("Output Folder", lang))
-        opt_form.addRow(self.output_label, out_row)
-
-        layout.addWidget(options_card)
+        out_form.addRow(self.output_label, out_row)
+        layout.addWidget(output_card)
 
         layout.addStretch(1)
 
@@ -138,5 +148,6 @@ class SettingsPage(ScrollArea):
         self.rpm_label.setText(tr("RPM Limit (0 = unlimited, restart to apply)", lang))
         self.section_options.setText(tr("Translation Options", lang))
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
+        self.section_output.setText(tr("Output Folder", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))

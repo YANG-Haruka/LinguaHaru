@@ -32,6 +32,10 @@ class ProofreadPage(QWidget):
         self._lang = lang
         self._doc_name = None
         self._last_output_dir = None
+        self._all_rows = []        # full document model: [(count, original, translated)]
+        self._page = 0
+        self._capturing = False    # guard so populating the table isn't seen as edits
+        self.PAGE = 100
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 20)
@@ -58,7 +62,22 @@ class ProofreadPage(QWidget):
         self.table.setBorderVisible(True)
         self.table.setBorderRadius(8)
         self.table.setWordWrap(True)
+        self.table.cellChanged.connect(self._on_cell_changed)
         layout.addWidget(self.table, 1)
+
+        # Pager: a big document is rendered 100 rows at a time.
+        pager = QHBoxLayout()
+        self.prev_btn = PushButton(FluentIcon.LEFT_ARROW, tr("Previous", lang))
+        self.prev_btn.clicked.connect(lambda: self._goto(self._page - 1))
+        self.next_btn = PushButton(FluentIcon.RIGHT_ARROW, tr("Next", lang))
+        self.next_btn.clicked.connect(lambda: self._goto(self._page + 1))
+        self.page_label = BodyLabel("")
+        pager.addWidget(self.prev_btn)
+        pager.addWidget(self.next_btn)
+        pager.addWidget(self.page_label)
+        pager.addStretch(1)
+        self._pager_row = pager
+        layout.addLayout(pager)
 
         action_row = QHBoxLayout()
         self.save_btn = PrimaryPushButton(FluentIcon.SAVE, tr("Save Edits", lang))
@@ -88,6 +107,8 @@ class ProofreadPage(QWidget):
         self.save_btn.setText(tr("Save Edits", lang))
         self.export_btn.setText(tr("Re-export", lang))
         self.open_output_btn.setText(tr("Open Output Folder", lang))
+        self.prev_btn.setText(tr("Previous", lang))
+        self.next_btn.setText(tr("Next", lang))
         self._relabel_table_headers()
 
     def _relabel_table_headers(self):
@@ -118,43 +139,68 @@ class ProofreadPage(QWidget):
             self._info(f"{e}", error=True)
             return
         self._doc_name = name
+        self._all_rows = [list(r) for r in rows]   # mutable: capture edits here
+        self._page = 0
         self.table.setColumnCount(3)
         self._relabel_table_headers()
-        self.table.setRowCount(len(rows))
-        for r, (count_src, original, translated) in enumerate(rows):
+        self._render_page()
+        self.status_label.setText(
+            tr("Loaded entries", self._lang).format(count=len(rows), name=name))
+
+    def _render_page(self):
+        """Populate the table with the current 100-row slice."""
+        self._capturing = True
+        start = self._page * self.PAGE
+        end = min(start + self.PAGE, len(self._all_rows))
+        self.table.setRowCount(end - start)
+        for i, idx in enumerate(range(start, end)):
+            count_src, original, translated = self._all_rows[idx]
             count_item = QTableWidgetItem("" if count_src is None else str(count_src))
             count_item.setFlags(count_item.flags() & ~Qt.ItemIsEditable)
             orig_item = QTableWidgetItem(original)
             orig_item.setFlags(orig_item.flags() & ~Qt.ItemIsEditable)
-            self.table.setItem(r, 0, count_item)
-            self.table.setItem(r, 1, orig_item)
-            self.table.setItem(r, 2, QTableWidgetItem(translated))
+            self.table.setItem(i, 0, count_item)
+            self.table.setItem(i, 1, orig_item)
+            self.table.setItem(i, 2, QTableWidgetItem(translated))
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
         header.setSectionResizeMode(2, QHeaderView.Stretch)
-        self.status_label.setText(
-            tr("Loaded entries", self._lang).format(count=len(rows), name=name))
+        self._capturing = False
+        self._update_pager(start, end)
 
-    def _table_rows(self):
-        rows = []
-        for r in range(self.table.rowCount()):
-            count_item = self.table.item(r, 0)
-            trans_item = self.table.item(r, 2)
-            count = count_item.text() if count_item else ""
-            try:
-                count = int(count)
-            except (TypeError, ValueError):
-                pass
-            rows.append((count, "", trans_item.text() if trans_item else ""))
-        return rows
+    def _on_cell_changed(self, row, col):
+        if self._capturing or col != 2:
+            return
+        idx = self._page * self.PAGE + row
+        if 0 <= idx < len(self._all_rows):
+            item = self.table.item(row, 2)
+            self._all_rows[idx][2] = item.text() if item else ""
+
+    def _goto(self, page):
+        pages = max(1, (len(self._all_rows) + self.PAGE - 1) // self.PAGE)
+        page = max(0, min(page, pages - 1))
+        if page != self._page:
+            self._page = page
+            self._render_page()
+
+    def _update_pager(self, start, end):
+        total = len(self._all_rows)
+        pages = max(1, (total + self.PAGE - 1) // self.PAGE)
+        multi = total > self.PAGE
+        for w in (self.prev_btn, self.next_btn, self.page_label):
+            w.setVisible(multi)
+        self.prev_btn.setEnabled(self._page > 0)
+        self.next_btn.setEnabled(self._page < pages - 1)
+        self.page_label.setText(f"{self._page + 1}/{pages}  ({start + 1}-{end} / {total})")
 
     def on_save(self):
         if not self._doc_name:
             self._info(tr("No proofread documents", self._lang), error=True)
             return
         try:
-            changed = backend.save_proofread_table(self._doc_name, self._table_rows())
+            changed = backend.save_proofread_table(
+                self._doc_name, [(c, o, t) for c, o, t in self._all_rows])
         except Exception as e:  # noqa: BLE001
             self._info(str(e), error=True)
             return
