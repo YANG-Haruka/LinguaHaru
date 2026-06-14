@@ -2090,10 +2090,7 @@ with gr.Blocks(
     
     # Create header
     create_header(app_title, encoded_image, mime_type, img_height)
-    
-    # Create footer
-    create_footer()
-    
+
     # Create state variables
     states = create_state_variables(config)
     session_lang = states['session_lang']
@@ -2169,6 +2166,9 @@ with gr.Blocks(
             (proofread_doc_choice, proofread_refresh_btn, proofread_table,
              proofread_save_btn, proofread_export_btn, proofread_status,
              proofread_file) = create_proofread_tab_section(get_label, list_proofread_docs)
+
+    # Create footer (placed after tabs so it flows at the bottom of the page)
+    create_footer()
 
     # Hidden components for folder opening functionality
     folder_path_input = gr.Textbox(visible=False, elem_id="folder-path-input")

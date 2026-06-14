@@ -40,8 +40,11 @@ def get_custom_css():
     :root {
         --haru-primary: #e8b4b8;
         --haru-primary-deep: #d4919a;
-        --haru-accent: #7eb8da;
-        --haru-accent-deep: #5a9fc7;
+        --haru-accent: #5b9bd5;
+        --haru-accent-deep: #3b7dc4;
+        --haru-blue: #3b82f6;
+        --haru-blue-deep: #2563eb;
+        --haru-blue-soft: rgba(59, 130, 246, 0.12);
         --haru-warm: #f5e6d3;
         --haru-text: #2d3748;
         --haru-text-soft: #4a5568;
@@ -68,8 +71,11 @@ def get_custom_css():
     .dark {
         --haru-primary: #d4919a;
         --haru-primary-deep: #c77a85;
-        --haru-accent: #7eb8da;
+        --haru-accent: #6aa9e0;
         --haru-accent-deep: #9ecae8;
+        --haru-blue: #60a5fa;
+        --haru-blue-deep: #3b82f6;
+        --haru-blue-soft: rgba(96, 165, 250, 0.16);
         --haru-warm: #3d3530;
         --haru-text: #f7fafc;
         --haru-text-soft: #cbd5e0;
@@ -128,6 +134,49 @@ def get_custom_css():
 
     /* Hide default footer */
     footer { visibility: hidden !important; }
+
+    /* ═══════════════════════════════════════════════════════════════
+       GRADIO THEME VARIABLE OVERRIDES (blue accent for primary actions)
+       Gradio 5 prefers these custom-property hooks over class overrides,
+       which its CSS post-processor may drop. This is what actually recolors
+       the primary buttons from the default orange to a cohesive blue.
+    ═══════════════════════════════════════════════════════════════ */
+    :root, .gradio-container, .dark {
+        --button-primary-background-fill: linear-gradient(135deg, var(--haru-blue) 0%, var(--haru-blue-deep) 100%) !important;
+        --button-primary-background-fill-hover: linear-gradient(135deg, var(--haru-blue-deep) 0%, var(--haru-blue) 100%) !important;
+        --button-primary-text-color: #ffffff !important;
+        --button-primary-text-color-hover: #ffffff !important;
+        --button-primary-border-color: transparent !important;
+        --button-primary-border-color-hover: transparent !important;
+        --color-accent: var(--haru-blue) !important;
+        --color-accent-soft: var(--haru-blue-soft) !important;
+        --slider-color: var(--haru-blue) !important;
+        --checkbox-background-color-selected: var(--haru-blue) !important;
+        --checkbox-border-color-focus: var(--haru-blue) !important;
+    }
+
+    /* Limit overall content width and centre it for a tidy, modern column */
+    .gradio-container > .main,
+    .gradio-container .wrap.contain,
+    #main-tabs {
+        max-width: 1200px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+    }
+
+    /* Primary buttons: blue gradient + comfortable shape (theme-var driven) */
+    button.primary, .gr-button-primary {
+        border: none !important;
+        color: #fff !important;
+        box-shadow: 0 4px 16px rgba(59, 130, 246, 0.30) !important;
+    }
+    button.primary:hover, .gr-button-primary:hover {
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 24px rgba(59, 130, 246, 0.40) !important;
+    }
+    button.primary:active, .gr-button-primary:active {
+        transform: translateY(0) !important;
+    }
 
     /* ═══════════════════════════════════════════════════════════════
        TYPOGRAPHY
@@ -1596,22 +1645,118 @@ def get_custom_css():
         color: var(--haru-text-soft) !important;
         font-style: italic !important;
     }
+
+    /* ═══════════════════════════════════════════════════════════════
+       TAB NAVIGATION (clean pill bar with blue accent)
+    ═══════════════════════════════════════════════════════════════ */
+
+    #main-tabs {
+        margin-top: 0 !important;
+    }
+
+    #main-tabs .tab-nav,
+    #main-tabs [role="tablist"] {
+        display: flex !important;
+        gap: 6px !important;
+        justify-content: center !important;
+        flex-wrap: wrap !important;
+        border: none !important;
+        background: var(--haru-surface) !important;
+        backdrop-filter: blur(16px) !important;
+        -webkit-backdrop-filter: blur(16px) !important;
+        border: 1px solid var(--haru-border) !important;
+        border-radius: var(--radius-xl) !important;
+        padding: 6px !important;
+        margin: 0 auto 24px !important;
+        width: fit-content !important;
+        max-width: 100% !important;
+        box-shadow: 0 4px 24px var(--haru-shadow) !important;
+    }
+
+    #main-tabs .tab-nav button,
+    #main-tabs [role="tab"] {
+        border: none !important;
+        background: transparent !important;
+        color: var(--haru-text-soft) !important;
+        font-family: var(--font-display) !important;
+        font-weight: 600 !important;
+        font-size: 0.92rem !important;
+        padding: 10px 22px !important;
+        border-radius: var(--radius-lg) !important;
+        transition: var(--transition-fast) !important;
+        margin: 0 !important;
+    }
+
+    #main-tabs .tab-nav button:hover,
+    #main-tabs [role="tab"]:hover {
+        color: var(--haru-blue) !important;
+        background: var(--haru-blue-soft) !important;
+    }
+
+    #main-tabs .tab-nav button.selected,
+    #main-tabs [role="tab"].selected,
+    #main-tabs [role="tab"][aria-selected="true"] {
+        color: #fff !important;
+        background: linear-gradient(135deg, var(--haru-blue) 0%, var(--haru-blue-deep) 100%) !important;
+        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.32) !important;
+    }
+
+    /* Tab content panel: a touch of breathing room, no hard top border */
+    #main-tabs .tabitem,
+    #main-tabs [role="tabpanel"] {
+        border: none !important;
+        padding-top: 4px !important;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       FOOTER (in normal document flow at page end — never overlaps)
+    ═══════════════════════════════════════════════════════════════ */
+
+    .app-footer {
+        text-align: center !important;
+        padding: 28px 16px 24px !important;
+        margin-top: 32px !important;
+        font-family: var(--font-body) !important;
+        font-size: 0.85rem !important;
+        color: var(--haru-text-soft) !important;
+        border-top: 1px solid var(--haru-border) !important;
+    }
+
+    .app-footer-link {
+        color: var(--haru-blue) !important;
+        text-decoration: none !important;
+        font-weight: 600 !important;
+        transition: var(--transition-fast) !important;
+    }
+    .app-footer-link:hover {
+        color: var(--haru-blue-deep) !important;
+    }
+
+    .app-footer-sponsor {
+        color: var(--haru-primary-deep) !important;
+        font-weight: 600 !important;
+        cursor: pointer !important;
+        transition: var(--transition-fast) !important;
+    }
+    .app-footer-sponsor:hover {
+        color: var(--haru-blue) !important;
+    }
     """
 
 
 def create_header(app_title, encoded_image, mime_type, img_height):
     """Create app header with elegant styling"""
     return gr.HTML(f"""
-    <div style="text-align: center; padding: 20px 0 30px; animation: fadeInUp 0.8s ease-out;">
+    <div style="text-align: center; padding: 12px 0 8px; animation: fadeInUp 0.8s ease-out;">
         <h1 style="
             font-family: 'Outfit', sans-serif;
             font-size: 2.5rem;
             font-weight: 700;
-            background: linear-gradient(135deg, #e8b4b8 0%, #7eb8da 100%);
+            background: linear-gradient(135deg, #5b9bd5 0%, #2563eb 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            margin-bottom: 16px;
+            margin-bottom: 10px;
             letter-spacing: -0.02em;
         ">{app_title}</h1>
         <img src="data:{mime_type};base64,{encoded_image}" alt="{app_title} Logo"
@@ -1639,48 +1784,19 @@ def create_footer():
     sponsor_src = f"data:image/jpeg;base64,{sponsor_base64}" if sponsor_base64 else ""
 
     return gr.HTML(f"""
-    <div style="
-        position: fixed;
-        bottom: 0;
-        left: 0;
-        width: 100%;
-        text-align: center;
-        padding: 16px 0;
-        background: linear-gradient(to top, rgba(253, 242, 244, 0.95) 0%, transparent 100%);
-        backdrop-filter: blur(10px);
-        font-family: 'Outfit', sans-serif;
-        font-size: 0.85rem;
-        color: #4a5568;
-        z-index: 100;
-    ">
+    <div class="app-footer">
         <span style="opacity: 0.8;">Crafted with </span>
-        <span style="color: #e8b4b8;">♥</span>
+        <span style="color: var(--haru-primary);">♥</span>
         <span style="opacity: 0.8;"> by </span>
-        <span style="font-weight: 600; background: linear-gradient(135deg, #e8b4b8, #7eb8da); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Haruka-YANG</span>
+        <span style="font-weight: 600; background: linear-gradient(135deg, var(--haru-accent-deep), var(--haru-primary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Haruka-YANG</span>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
         <span style="opacity: 0.8;">Version 5.0</span>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
-        <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank"
-           style="
-               color: #7eb8da;
-               text-decoration: none;
-               font-weight: 500;
-               transition: color 0.2s ease;
-           "
-           onmouseover="this.style.color='#e8b4b8'"
-           onmouseout="this.style.color='#7eb8da'">
+        <a href="https://github.com/YANG-Haruka/LinguaHaru" target="_blank" class="app-footer-link">
             GitHub →
         </a>
         <span style="opacity: 0.5; margin: 0 8px;">|</span>
-        <span onclick="document.getElementById('sponsorModal').style.display='flex'"
-           style="
-               color: #e8b4b8;
-               font-weight: 500;
-               cursor: pointer;
-               transition: color 0.2s ease;
-           "
-           onmouseover="this.style.color='#7eb8da'"
-           onmouseout="this.style.color='#e8b4b8'">
+        <span onclick="document.getElementById('sponsorModal').style.display='flex'" class="app-footer-sponsor">
             赞助
         </span>
     </div>
@@ -1719,12 +1835,6 @@ def create_footer():
             <img src="{sponsor_src}" style="max-width: 100%; max-height: 85vh; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
         </div>
     </div>
-    <style>
-        .dark div[style*="position: fixed"][style*="bottom: 0"] {{
-            background: linear-gradient(to top, rgba(26, 32, 44, 0.95) 0%, transparent 100%) !important;
-            color: #cbd5e0 !important;
-        }}
-    </style>
     """)
 
 
