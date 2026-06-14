@@ -32,15 +32,23 @@ class InstallWorker(QThread):
     line = Signal(str)
     finished_ok = Signal(bool, str)
 
-    def __init__(self, module_name, parent=None):
+    def __init__(self, module_name, action="install", parent=None):
         super().__init__(parent)
         self.module_name = module_name
+        self.action = action
 
     def run(self):
-        cmd = backend.install_command_for(self.module_name)
-        if not cmd:
+        import sys
+        from config.module_manager import MODULE_SPECS
+        spec = MODULE_SPECS.get(self.module_name)
+        if not spec:
             self.finished_ok.emit(False, f"Unknown module: {self.module_name}")
             return
+        reqfile, packages = spec
+        if self.action == "uninstall":
+            cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *packages]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", "-r", reqfile]
         self.line.emit("$ " + " ".join(cmd))
         try:
             proc = subprocess.Popen(

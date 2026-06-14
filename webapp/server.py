@@ -288,6 +288,43 @@ def download(task_id: str):
     return FileResponse(out, filename=os.path.basename(out))
 
 
+# --------------------------------------------------------------------------- #
+# Optional module install / uninstall (runs pip in the background)
+# --------------------------------------------------------------------------- #
+MODULE_JOBS = {}  # name -> {"status": running|done|error, "output": str}
+
+
+def _run_module_job(name, action):
+    from config.module_manager import install_module, uninstall_module
+    ok, out = (install_module if action == "install" else uninstall_module)(name)
+    with _TASKS_LOCK:
+        MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": out}
+
+
+@app.post("/api/modules/{action}")
+async def module_action(action: str, payload: dict):
+    if action not in ("install", "uninstall"):
+        raise HTTPException(400, "action must be install|uninstall")
+    name = payload.get("name")
+    from config.module_manager import MODULE_SPECS
+    if name not in MODULE_SPECS:
+        raise HTTPException(404, f"Unknown module: {name}")
+    with _TASKS_LOCK:
+        MODULE_JOBS[name] = {"status": "running", "output": ""}
+    threading.Thread(target=_run_module_job, args=(name, action), daemon=True).start()
+    return {"started": True}
+
+
+@app.get("/api/modules/status")
+def module_status_endpoint(name: str):
+    with _TASKS_LOCK:
+        job = dict(MODULE_JOBS.get(name, {"status": "idle", "output": ""}))
+    # current availability (changes after a restart, but report live anyway)
+    avail = {m["name"]: m["available"] for m in module_status()}
+    job["available"] = avail.get(name, False)
+    return job
+
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 

@@ -228,13 +228,43 @@ $("set-apikey").onchange = async () => {
 
 function renderModules() {
   const t = $("modules-table");
-  t.innerHTML = "<tr><th>模块</th><th>状态</th><th>引擎</th><th>安装</th></tr>";
+  t.innerHTML = "";
+  const head = document.createElement("tr");
+  head.innerHTML = "<th>模块</th><th>状态</th><th>引擎</th><th>操作</th>";
+  t.appendChild(head);
   for (const m of BOOT.modules) {
     const tr = document.createElement("tr");
-    tr.innerHTML = `<td>${m.name}</td><td>${m.available ? "✅" : "❌"}</td>` +
-      `<td>${m.detail}</td><td><code>${m.available ? "—" : m.install}</code></td>`;
+    const nameTd = document.createElement("td"); nameTd.textContent = m.name;
+    const statTd = document.createElement("td"); statTd.textContent = m.available ? "✅" : "❌";
+    const engTd = document.createElement("td"); engTd.textContent = m.detail;
+    const actTd = document.createElement("td");
+    const btn = document.createElement("button");
+    btn.textContent = m.available ? "卸载" : "安装";
+    btn.onclick = () => moduleAction(m.name, m.available ? "uninstall" : "install", btn, statTd);
+    actTd.appendChild(btn);
+    tr.append(nameTd, statTd, engTd, actTd);
     t.appendChild(tr);
   }
+}
+
+async function moduleAction(name, action, btn, statTd) {
+  btn.disabled = true;
+  statTd.textContent = action === "install" ? "安装中…" : "卸载中…";
+  await api("/api/modules/" + action, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }) });
+  const poll = setInterval(async () => {
+    const s = await api("/api/modules/status?name=" + encodeURIComponent(name));
+    if (s.status === "running") return;
+    clearInterval(poll);
+    btn.disabled = false;
+    if (s.status === "done") {
+      statTd.textContent = "✅ 完成";
+      $("settings-status").textContent = `${name} ${action === "install" ? "安装" : "卸载"}完成 —— 请重启程序以生效。`;
+    } else {
+      statTd.textContent = "❌ 失败";
+      $("settings-status").textContent = `${name} 操作失败：` + (s.output || "").slice(-300);
+    }
+  }, 1500);
 }
 
 // ----- glossary editor -----

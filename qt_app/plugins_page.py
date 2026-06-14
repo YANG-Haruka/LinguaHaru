@@ -112,20 +112,22 @@ class OptionalPluginCard(CardWidget):
 
     def _clicked(self):
         if callable(self._on_install):
-            self._on_install(self)
+            action = "uninstall" if self._mod["available"] else "install"
+            self._on_install(self, action)
 
-    def set_state(self, available, installing=False):
+    def set_state(self, available, busy=False):
         if self.badge is not None:
             self.badge.deleteLater()
             self.badge = None
+        if busy:
+            self.install_btn.setEnabled(False)
+            self.install_btn.setText(tr("Working", self._lang) + "…")
+            return
         if available:
             self.badge = InfoBadge.success(tr("Installed", self._lang), self)
             self.layout().itemAt(0).layout().addWidget(self.badge)
-            self.install_btn.setEnabled(False)
-            self.install_btn.setText(tr("Installed", self._lang))
-        elif installing:
-            self.install_btn.setEnabled(False)
-            self.install_btn.setText(tr("Installing", self._lang))
+            self.install_btn.setEnabled(True)
+            self.install_btn.setText(tr("Uninstall", self._lang))
         else:
             self.install_btn.setEnabled(True)
             self.install_btn.setText(tr("Install", self._lang))
@@ -200,13 +202,13 @@ class PluginsPage(ScrollArea):
             card._lang = lang
             card.set_state(card._mod["available"])
 
-    def _start_install(self, card):
+    def _start_install(self, card, action="install"):
         if self._worker is not None and self._worker.isRunning():
             return
-        card.set_state(False, installing=True)
-        self._info(card._mod["name"],
-                   tr("Installing", self._lang) + " " + card._mod["name"])
-        worker = InstallWorker(card._mod["name"])
+        card.set_state(card._mod["available"], busy=True)
+        verb = tr("Uninstalling", self._lang) if action == "uninstall" else tr("Installing", self._lang)
+        self._info(card._mod["name"], verb + " " + card._mod["name"])
+        worker = InstallWorker(card._mod["name"], action=action)
         self._worker = worker
         worker.line.connect(lambda text: card.cmd_label.setText(text[-90:]))
         worker.finished_ok.connect(lambda ok, msg, c=card: self._install_done(c, ok, msg))
