@@ -1,7 +1,7 @@
 // LinguaHaru Web frontend — talks to the FastAPI backend.
 const $ = (id) => document.getElementById(id);
 let BOOT = null;
-let currentFile = null;
+let currentFiles = [];
 let currentTask = null;
 const MEDIA_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".m4a", ".flac"];
 const VIDEO_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm"];  // extract audio client-side
@@ -178,53 +178,51 @@ const dz = $("dropzone");
 dz.onclick = () => $("file-input").click();
 dz.ondragover = (e) => { e.preventDefault(); dz.classList.add("dragover"); };
 dz.ondragleave = () => dz.classList.remove("dragover");
-dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove("dragover"); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
-$("file-input").onchange = (e) => { if (e.target.files[0]) setFile(e.target.files[0]); };
+dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove("dragover"); if (e.dataTransfer.files.length) setFiles([...e.dataTransfer.files]); };
+$("file-input").onchange = (e) => { if (e.target.files.length) setFiles([...e.target.files]); };
 
-function setFile(f) {
-  currentFile = f;
-  $("drop-text").textContent = f.name + "  (" + (f.size / 1048576).toFixed(1) + " MB)";
-  const ext = "." + f.name.split(".").pop().toLowerCase();
-  const isMedia = MEDIA_EXTS.includes(ext);
-  $("media-options").hidden = !isMedia;
-  if (isMedia) applySenseVoiceRestriction();
+function setFiles(list) {
+  currentFiles = list;
+  if (list.length === 1) {
+    $("drop-text").textContent = list[0].name + "  (" + (list[0].size / 1048576).toFixed(1) + " MB)";
+  } else {
+    $("drop-text").textContent = `${list.length} 个文件：` + list.map((f) => f.name).join("、").slice(0, 80);
+  }
+  const anyMedia = list.some((f) => MEDIA_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
+  $("media-options").hidden = !anyMedia;
+  if (anyMedia) applySenseVoiceRestriction();
 }
 
 // ----- translate -----
 $("translate-btn").onclick = async () => {
-  if (!currentFile) { setStatus("请先选择文件。"); return; }
+  if (!currentFiles.length) { setStatus("请先选择文件。"); return; }
   const online = $("set-online").checked;
   if (online) {
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));
     if (!st.has_key) { setStatus("尚未设置 API 密钥，请在设置中填写。"); return; }
   }
-  // For video, extract the audio track in-browser to avoid uploading the whole
-  // file (the result is only a subtitle file anyway). Audio uploads as-is.
-  let uploadFile = currentFile;
-  const ext = "." + currentFile.name.split(".").pop().toLowerCase();
-  if (VIDEO_EXTS.includes(ext)) {
-    setBusy(true);
-    setStatus("正在浏览器内提取音轨（避免上传整段视频）…");
-    try {
-      uploadFile = await extractAudio(currentFile);
-      setStatus(`音轨已提取（${(uploadFile.size / 1048576).toFixed(1)} MB），开始处理…`);
-    } catch (e) {
-      console.warn("ffmpeg.wasm extraction failed, uploading original:", e);
-      setStatus("浏览器音轨提取不可用，改为上传原文件…");
-      uploadFile = currentFile;
-    }
-  }
+  setBusy(true);
+  $("result").hidden = true; setStatus("");
 
+  // For each video, extract the audio track in-browser to avoid uploading the
+  // whole file (the result is only a subtitle file anyway).
   const fd = new FormData();
-  fd.append("file", uploadFile);
+  for (const f of currentFiles) {
+    let uploadFile = f;
+    const ext = "." + f.name.split(".").pop().toLowerCase();
+    if (VIDEO_EXTS.includes(ext)) {
+      setStatus(`正在浏览器内提取音轨：${f.name}（避免上传整段视频）…`);
+      try { uploadFile = await extractAudio(f); }
+      catch (e) { console.warn("ffmpeg.wasm failed, uploading original:", e); uploadFile = f; }
+    }
+    fd.append("files", uploadFile);
+  }
   fd.append("src_lang", $("src-lang").value);
   fd.append("dst_lang", $("dst-lang").value);
   fd.append("model", $("model").value);
   fd.append("use_online", online);
   fd.append("glossary", $("glossary").value);
 
-  setBusy(true);
-  $("result").hidden = true; setStatus("");
   try {
     const { task_id } = await api("/api/translate", { method: "POST", body: fd });
     currentTask = task_id;

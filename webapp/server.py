@@ -165,70 +165,97 @@ async def save_glossary(payload: dict):
 # --------------------------------------------------------------------------- #
 # Translation
 # --------------------------------------------------------------------------- #
-def _run_translation(task_id, file_path, model, use_online, src_lang, dst_lang,
+def _translate_one(task_id, file_path, model, use_online, src_lang, dst_lang,
+                   glossary_name, bilingual_flags, on_progress):
+    """Translate a single file; returns its output path. Raises on failure."""
+    ext = os.path.splitext(file_path)[1]
+    stem = os.path.splitext(file_path)[0]
+    translator_class = backend.get_translator_class(ext, **bilingual_flags)
+    if translator_class is None:
+        raise ValueError(f"Unsupported file type '{ext}'.")
+
+    api_key = load_api_key_for_model(model) if use_online else ""
+    src_code = backend.language_code(src_lang)
+    dst_code = backend.language_code(dst_lang)
+    gpath = backend.glossary_path(glossary_name) if glossary_name else None
+    temp_dir, result_dir, log_dir = backend.get_custom_paths()
+    config = backend.read_config()
+
+    from config.log_config import file_logger
+    file_logger.create_file_log(os.path.basename(file_path), log_dir=log_dir)
+
+    translator = translator_class(
+        file_path, model, use_online, api_key, src_code, dst_code, False,
+        max_token=config.get("max_token", 768),
+        max_retries=config.get("max_retries", 4),
+        thread_count=config.get("default_thread_count_online", 8) if use_online
+        else config.get("default_thread_count_offline", 4),
+        glossary_path=gpath, temp_dir=temp_dir, result_dir=result_dir,
+        session_lang="en", log_dir=log_dir,
+    )
+
+    def check_stop():
+        with _TASKS_LOCK:
+            if TASKS[task_id].get("stop"):
+                raise RuntimeError("__stopped__")
+    translator.check_stop_requested = check_stop
+    output_path, _missing = translator.process(
+        stem, ext, progress_callback=lambda v, desc=None: (check_stop(), on_progress(v, desc)))
+    return output_path
+
+
+def _run_translation(task_id, file_paths, model, use_online, src_lang, dst_lang,
                      glossary_name, bilingual_flags):
-    """Background worker: mirrors qt_app.worker._translate, pushing progress
-    into TASKS[task_id]."""
+    """Background worker: translate one or more files; zip when more than one."""
     def set_state(**kw):
         with _TASKS_LOCK:
             TASKS[task_id].update(kw)
 
+    total = len(file_paths)
+    outputs, file_results = [], []
     try:
-        ext = os.path.splitext(file_path)[1]
-        stem = os.path.splitext(file_path)[0]
-        translator_class = backend.get_translator_class(ext, **bilingual_flags)
-        if translator_class is None:
-            set_state(status="error", error=f"Unsupported file type '{ext}'.")
-            return
+        for idx, fp in enumerate(file_paths):
+            name = os.path.basename(fp)
 
-        api_key = load_api_key_for_model(model) if use_online else ""
-        src_code = backend.language_code(src_lang)
-        dst_code = backend.language_code(dst_lang)
-        gpath = backend.glossary_path(glossary_name) if glossary_name else None
-        temp_dir, result_dir, log_dir = backend.get_custom_paths()
-        config = backend.read_config()
+            def on_progress(v, desc=None, _idx=idx, _name=name):
+                overall = (_idx + float(v)) / total
+                set_state(progress=overall, desc=(f"[{_idx+1}/{total}] {_name}: " + (desc or "")))
 
-        from config.log_config import file_logger
-        file_logger.create_file_log(os.path.basename(file_path), log_dir=log_dir)
+            on_progress(0.0, "Extracting text...")
+            try:
+                outputs.append(_translate_one(
+                    task_id, fp, model, use_online, src_lang, dst_lang,
+                    glossary_name, bilingual_flags, on_progress))
+                file_results.append((name, "success", ""))
+            except RuntimeError as e:
+                if "__stopped__" in str(e):
+                    raise
+                file_results.append((name, "failed", str(e)))
+            except Exception as e:  # noqa: BLE001
+                app_logger.exception(f"Web translation error for {name}")
+                file_results.append((name, "failed", str(e)))
 
-        translator = translator_class(
-            file_path, model, use_online, api_key, src_code, dst_code, False,
-            max_token=config.get("max_token", 768),
-            max_retries=config.get("max_retries", 4),
-            thread_count=config.get("default_thread_count_online", 8) if use_online
-            else config.get("default_thread_count_offline", 4),
-            glossary_path=gpath, temp_dir=temp_dir, result_dir=result_dir,
-            session_lang="en", log_dir=log_dir,
-        )
-
-        def check_stop():
-            with _TASKS_LOCK:
-                if TASKS[task_id].get("stop"):
-                    raise RuntimeError("__stopped__")
-        translator.check_stop_requested = check_stop
-
-        def progress_callback(value, desc=None):
-            check_stop()
-            set_state(progress=float(value), desc=desc or "")
-
-        progress_callback(0.0, "Extracting text...")
-        output_path, _missing = translator.process(stem, ext, progress_callback=progress_callback)
-        set_state(status="done", progress=1.0, desc="Translation completed",
-                  output=output_path)
+        if not outputs:
+            set_state(status="error", error="All files failed. See log.")
+        elif total == 1:
+            set_state(status="done", progress=1.0, desc="Translation completed",
+                      output=outputs[0])
+        else:
+            zip_path = backend.zip_results(outputs, file_results)
+            ok = sum(1 for _, s, _ in file_results if s == "success")
+            set_state(status="done", progress=1.0,
+                      desc=f"Translation completed ({ok}/{total})", output=zip_path)
     except RuntimeError as e:
         if "__stopped__" in str(e):
             set_state(status="stopped", desc="Stopped")
         else:
             app_logger.exception("Web translation error")
             set_state(status="error", error=str(e))
-    except Exception as e:  # noqa: BLE001
-        app_logger.exception("Web translation error")
-        set_state(status="error", error=str(e))
 
 
 @app.post("/api/translate")
 async def translate(
-    file: UploadFile,
+    files: list[UploadFile],
     src_lang: str = Form(...),
     dst_lang: str = Form(...),
     model: str = Form(...),
@@ -237,23 +264,24 @@ async def translate(
     bilingual: bool = Form(False),
 ):
     os.makedirs(UPLOAD_DIR, exist_ok=True)
-    safe_name = os.path.basename(file.filename or "upload")
-    dest = os.path.join(UPLOAD_DIR, safe_name)
-    with open(dest, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+    dests = []
+    for f in files:
+        dest = os.path.join(UPLOAD_DIR, os.path.basename(f.filename or "upload"))
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(f.file, out)
+        dests.append(dest)
 
     task_id = uuid.uuid4().hex[:12]
     with _TASKS_LOCK:
         TASKS[task_id] = {"progress": 0.0, "desc": "Queued...",
                           "status": "running", "output": None, "error": None,
                           "stop": False}
-    # The same bilingual flag drives every per-format mode (matches the UI).
     flags = {k: bilingual for k in (
         "excel_bilingual_mode", "word_bilingual_mode", "pdf_bilingual_mode",
         "subtitle_bilingual_mode", "txt_bilingual_mode", "md_bilingual_mode",
         "epub_bilingual_mode", "html_bilingual_mode")}
     threading.Thread(target=_run_translation, args=(
-        task_id, dest, model, use_online, src_lang, dst_lang, glossary, flags),
+        task_id, dests, model, use_online, src_lang, dst_lang, glossary, flags),
         daemon=True).start()
     return {"task_id": task_id}
 
