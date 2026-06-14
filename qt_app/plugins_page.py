@@ -141,6 +141,9 @@ class PluginsPage(ScrollArea):
         self.enableTransparentBackground()
 
         container = QWidget()
+        container.setObjectName("pluginsScrollContainer")
+        container.setStyleSheet(
+            "#pluginsScrollContainer { background-color: transparent; }")
         self.setWidget(container)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(30, 22, 30, 22)

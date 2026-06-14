@@ -142,6 +142,9 @@ class InterfacePage(ScrollArea):
 
         self.enableTransparentBackground()
         container = QWidget()
+        container.setObjectName("interfaceScrollContainer")
+        container.setStyleSheet(
+            "#interfaceScrollContainer { background-color: transparent; }")
         self.setWidget(container)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(30, 22, 30, 22)

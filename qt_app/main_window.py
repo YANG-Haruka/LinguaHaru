@@ -39,6 +39,15 @@ class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
 
+        # Disable the Windows Mica/acrylic backdrop: with it on, the content
+        # area shows the system backdrop (dark when Windows is in dark mode)
+        # even while our app theme is light -> the "light nav + dark content"
+        # split. A solid themed background is consistent in both modes.
+        try:
+            self.setMicaEffectEnabled(False)
+        except Exception:
+            pass
+
         # Apply persisted theme + accent before building pages.
         self._theme_dark = backend.get_config("qt_theme", "light") == "dark"
         setTheme(Theme.DARK if self._theme_dark else Theme.LIGHT)
@@ -176,22 +185,13 @@ class MainWindow(FluentWindow):
             theme_item.setText(tr("Theme", lang))
 
     def _apply_custom_bg(self):
-        """Light = soft light-blue, dark = deep navy-black, blue accent.
-        Uses FluentWindow's themed background API AND explicitly paints the
-        content area, so the nav rail and content never diverge (the
-        'light nav + dark content' split on theme toggle)."""
-        try:
-            self.setCustomBackgroundColor(QColor(LIGHT_BG), QColor(DARK_BG))
-        except Exception:
-            pass
-        # Force the content stack background to match the active theme so a
-        # runtime toggle can't leave it stuck on the previous theme's color.
-        bg = DARK_BG if self._theme_dark else LIGHT_BG
-        try:
-            self.stackedWidget.setStyleSheet(
-                f"QStackedWidget {{ background-color: {bg}; }}")
-        except Exception:
-            pass
+        """Background follows the plain qfluentwidgets theme.
+
+        NOTE: setCustomBackgroundColor() was removed — with the Mica effect
+        disabled it forced the content area dark even in light mode (the
+        'light nav + dark content' split). Plain theming renders a consistent
+        light/dark surface; the blue identity comes from the accent color."""
+        return
 
     def toggle_theme(self):
         self._theme_dark = not self._theme_dark

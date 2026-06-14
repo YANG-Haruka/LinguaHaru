@@ -75,6 +75,10 @@ class TranslatePage(QStackedWidget):
         self._controls.enableTransparentBackground()
         controls_host = QWidget()
         controls_host.setObjectName("translateControlsHost")
+        # The scroll viewport is transparent, but its inner widget paints with
+        # the default (system) palette -> dark on a Windows dark desktop. Make
+        # it transparent too so the themed window surface shows through.
+        controls_host.setStyleSheet("#translateControlsHost { background-color: transparent; }")
         self._controls.setWidget(controls_host)
         layout = QVBoxLayout(controls_host)
         layout.setContentsMargins(30, 20, 30, 20)

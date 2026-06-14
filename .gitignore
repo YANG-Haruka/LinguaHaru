@@ -28,3 +28,5 @@ tests/fixtures/
 config/text_rules.json
 .playwright-mcp/
 linguaharu-ui-tabs.png
+tests/_selfshot.py
+tests/_diag.py
