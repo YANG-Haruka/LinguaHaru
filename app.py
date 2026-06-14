@@ -2230,6 +2230,10 @@ with gr.Blocks(
     # Auto-load on selection so the editor never shows a stale/empty table
     glossary_editor_choice.change(load_glossary_table, inputs=[glossary_editor_choice],
                                   outputs=[glossary_table, glossary_editor_status])
+    # Populate the editor with the default glossary on page load (otherwise it
+    # renders an empty 1/2/3 table even when the CSV has entries).
+    demo.load(fn=lambda: load_glossary_table(get_default_glossary()),
+              inputs=None, outputs=[glossary_table, glossary_editor_status])
 
     # Proofread tab handlers
     tab_proofread.select(refresh_proofread_docs, inputs=[proofread_doc_choice, session_lang],
