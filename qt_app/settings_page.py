@@ -7,13 +7,11 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QF
 
 from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, SpinBox,
-    CardWidget, CaptionLabel, IndicatorPosition, ComboBox, PushButton,
-    LineEdit, FluentIcon,
+    CardWidget, ComboBox, PushButton, LineEdit, FluentIcon,
 )
 
 from qt_app import backend
 from qt_app.i18n import tr, UI_LANGS, lang_display_name, lang_from_display_name
-from config.optional_modules import module_status
 
 
 class SettingsPage(ScrollArea):
@@ -55,17 +53,11 @@ class SettingsPage(ScrollArea):
         lang_form.addRow(self.ui_lang_label, self.ui_lang_combo)
         layout.addWidget(lang_card)
 
+        # Model-related parameters (thread counts, retries, RPM, LAN mode).
         general = CardWidget()
         form = QFormLayout(general)
         form.setContentsMargins(20, 16, 20, 16)
         form.setSpacing(12)
-
-        self.online_switch = SwitchButton()
-        self.online_switch.setChecked(config.get("default_online", False))
-        self.online_switch.checkedChanged.connect(
-            lambda v: backend.set_config("default_online", v))
-        self.online_label = BodyLabel(tr("Use Online Model", lang))
-        form.addRow(self.online_label, self.online_switch)
 
         self.lan_switch = SwitchButton()
         self.lan_switch.setChecked(config.get("lan_mode", False))
@@ -106,14 +98,23 @@ class SettingsPage(ScrollArea):
         self.rpm_label = BodyLabel(tr("RPM Limit (0 = unlimited, restart to apply)", lang))
         form.addRow(self.rpm_label, self.rpm_limit)
 
+        layout.addWidget(general)
+
+        # --- Translation options (not model-related): AI glossary + output dir ---
+        self.section_options = StrongBodyLabel(tr("Translation Options", lang))
+        layout.addWidget(self.section_options)
+        options_card = CardWidget()
+        opt_form = QFormLayout(options_card)
+        opt_form.setContentsMargins(20, 16, 20, 16)
+        opt_form.setSpacing(12)
+
         self.auto_glossary = SwitchButton()
         self.auto_glossary.setChecked(config.get("auto_extract_glossary", False))
         self.auto_glossary.checkedChanged.connect(
             lambda v: backend.set_config("auto_extract_glossary", v))
         self.auto_glossary_label = BodyLabel(tr("AI Glossary Extraction", lang))
-        form.addRow(self.auto_glossary_label, self.auto_glossary)
+        opt_form.addRow(self.auto_glossary_label, self.auto_glossary)
 
-        # --- Output folder (where translated files are saved) ---
         out_row = QHBoxLayout()
         out_row.setSpacing(8)
         self.output_edit = LineEdit()
@@ -124,27 +125,9 @@ class SettingsPage(ScrollArea):
         out_row.addWidget(self.output_edit, 1)
         out_row.addWidget(self.output_browse)
         self.output_label = BodyLabel(tr("Output Folder", lang))
-        form.addRow(self.output_label, out_row)
+        opt_form.addRow(self.output_label, out_row)
 
-        layout.addWidget(general)
-
-        # --- Optional Modules status ---
-        self.section_modules = StrongBodyLabel(tr("Optional Modules", lang))
-        layout.addWidget(self.section_modules)
-        modules_card = CardWidget()
-        mod_layout = QVBoxLayout(modules_card)
-        mod_layout.setContentsMargins(20, 16, 20, 16)
-        mod_layout.setSpacing(10)
-        for mod in module_status():
-            row = QHBoxLayout()
-            mark = "[OK]" if mod["available"] else "[--]"
-            name = BodyLabel(f"{mark} {mod['name']} ({mod['detail']})")
-            row.addWidget(name)
-            row.addStretch(1)
-            if not mod["available"]:
-                row.addWidget(CaptionLabel(mod["install"]))
-            mod_layout.addLayout(row)
-        layout.addWidget(modules_card)
+        layout.addWidget(options_card)
 
         layout.addStretch(1)
 
@@ -169,13 +152,12 @@ class SettingsPage(ScrollArea):
         self.ui_lang_combo.blockSignals(False)
         self.ui_lang_label.setText(tr("Interface Language", lang))
         self.section_translation.setText(tr("Settings", lang))
-        self.online_label.setText(tr("Use Online Model", lang))
         self.lan_label.setText(tr("Local Network Mode (Restart to Apply)", lang))
         self.thread_online_label.setText(tr("Thread Count", lang) + " (online)")
         self.thread_offline_label.setText(tr("Thread Count", lang) + " (offline)")
         self.max_retries_label.setText(tr("Max Retries", lang))
         self.rpm_label.setText(tr("RPM Limit (0 = unlimited, restart to apply)", lang))
+        self.section_options.setText(tr("Translation Options", lang))
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))
-        self.section_modules.setText(tr("Optional Modules", lang))
