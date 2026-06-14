@@ -2,7 +2,6 @@
 
 import os
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog
 
 from qfluentwidgets import (

@@ -8,7 +8,7 @@ _SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_networ
 from zipfile import ZipFile
 from .skip_pipeline import should_translate
 from core.log_config import app_logger
-from typing import Dict, List, Any, Optional
+from typing import Dict, List
 import re
 
 def extract_ppt_content_to_json(file_path, temp_dir):
@@ -910,7 +910,7 @@ def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, n
     
     # If we don't have the original structure, fallback to simple distribution
     if not original_run_texts or len(original_run_texts) != len(text_runs):
-        app_logger.warning(f"Mismatch in run structure, using simple distribution")
+        app_logger.warning("Mismatch in run structure, using simple distribution")
         _simple_text_distribution(text_runs, translated_text, namespaces)
         return
     

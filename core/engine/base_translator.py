@@ -288,7 +288,7 @@ class DocumentTranslator:
                     self.update_ui_safely(
                         progress_callback, 
                         completed_ratio, 
-                        f"Continuing translation..."
+                        "Continuing translation..."
                     )
                 
             except Exception as e:
@@ -573,7 +573,7 @@ class DocumentTranslator:
                         remaining_time = max_retry_time - elapsed_time
 
                         if remaining_time <= 0:
-                            app_logger.error(f"Failed segment translation failed after 1 hour")
+                            app_logger.error("Failed segment translation failed after 1 hour")
                             self._mark_segment_as_failed(segment)
                             return None
 
@@ -585,11 +585,11 @@ class DocumentTranslator:
                     if not translated_text:
                         empty_result_count += 1
                         if empty_result_count > max_empty_retries:
-                            app_logger.error(f"Failed segment returned empty result")
+                            app_logger.error("Failed segment returned empty result")
                             self._mark_segment_as_failed(segment)
                             return None
                         
-                        app_logger.warning(f"Failed segment returned empty result")
+                        app_logger.warning("Failed segment returned empty result")
                         interruptible_sleep(1, self.check_for_stop)
                         continue
                     
@@ -606,14 +606,14 @@ class DocumentTranslator:
                             self.previous_content = self._update_previous_content(
                                 translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
                             )
-                            app_logger.debug(f"Successfully processed segment")
+                            app_logger.debug("Successfully processed segment")
                             return translation_results
                         else:
                             empty_result_count += 1
-                            app_logger.warning(f"Failed to process translation results")
+                            app_logger.warning("Failed to process translation results")
                             
                             if empty_result_count > max_empty_retries:
-                                app_logger.warning(f"Failed to process results")
+                                app_logger.warning("Failed to process results")
                                 self._mark_segment_as_failed(segment)
                                 return None
                             
@@ -654,7 +654,7 @@ class DocumentTranslator:
                     ok = result is not None
                     if not ok:
                         failed_count += 1
-                        app_logger.debug(f"Segment processing failed")
+                        app_logger.debug("Segment processing failed")
                 except HardApiError:
                     for pending in futures:
                         pending.cancel()
@@ -722,7 +722,7 @@ class DocumentTranslator:
                 
                 if current_tokens + v_tokens > max_tokens:
                     if not final_items:
-                        app_logger.info(f"Cannot fit any paragraph within token limit")
+                        app_logger.info("Cannot fit any paragraph within token limit")
                         return previous_content
                     break
                 
@@ -891,7 +891,7 @@ class DocumentTranslator:
     def _mark_segment_as_failed(self, segment):
         """Mark segment as failed. Thread-safe: self.lock is an RLock, so this
         is safe to call both inside and outside `with self.lock:` blocks."""
-        app_logger.debug(f"Marking segment as failed")
+        app_logger.debug("Marking segment as failed")
 
         with self.lock:
             self._mark_segment_as_failed_locked(segment)
@@ -902,7 +902,7 @@ class DocumentTranslator:
             try:
                 with open(self.failed_json_path, "w", encoding="utf-8") as f:
                     json.dump([], f)
-                app_logger.debug(f"Created failed segments file")
+                app_logger.debug("Created failed segments file")
             except Exception as e:
                 app_logger.error(f"Error creating failed segments file: {e}")
                 return

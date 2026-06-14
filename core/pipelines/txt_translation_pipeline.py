@@ -20,7 +20,7 @@ def detect_file_encoding(file_path):
             
             # If confidence is too low, try common encodings
             if confidence < 0.7:
-                app_logger.warning(f"Low confidence in detected encoding, will try fallback options")
+                app_logger.warning("Low confidence in detected encoding, will try fallback options")
                 return None
             
             return encoding

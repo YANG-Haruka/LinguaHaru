@@ -74,7 +74,7 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             
             # Check remaining time
             if remaining_time <= 0:
-                app_logger.error(f"Failed to construct prompt after 1 hour of retries.")
+                app_logger.error("Failed to construct prompt after 1 hour of retries.")
                 return None, False, None
 
             app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")

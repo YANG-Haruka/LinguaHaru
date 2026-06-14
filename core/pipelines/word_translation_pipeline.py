@@ -3,7 +3,6 @@
 import json
 import os
 import re
-import datetime
 from lxml import etree
 
 # User-supplied XML: disable entity resolution / DTD / network access (XXE)
@@ -18,13 +17,7 @@ import tempfile
 # Import bilingual helpers from separate module
 from .word.bilingual import (
     set_current_target_language,
-    DateConversionConfig,
-    clean_translation_brackets,
-    detect_and_convert_untranslated_dates,
-    find_dates_in_text,
-    convert_date_to_target_format,
-    create_bilingual_text,
-    apply_latin_font_to_run
+    create_bilingual_text
 )
 
 
@@ -2975,7 +2968,7 @@ def distribute_smartart_text_to_runs(paragraph, translated_text, item, namespace
     
     # If we don't have the original structure, fallback to simple distribution
     if not original_run_texts or len(original_run_texts) != len(text_runs):
-        app_logger.warning(f"Mismatch in SmartArt run structure, using simple distribution")
+        app_logger.warning("Mismatch in SmartArt run structure, using simple distribution")
         simple_smartart_text_distribution(text_runs, translated_text, namespaces)
         return
     

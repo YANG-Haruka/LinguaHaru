@@ -25,7 +25,7 @@ from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
     Request)
 from fastapi.responses import (
-    FileResponse, StreamingResponse, JSONResponse, HTMLResponse)
+    FileResponse, StreamingResponse, HTMLResponse)
 from fastapi.staticfiles import StaticFiles
 
 from core import backend
@@ -34,9 +34,9 @@ from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)
 from core.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
 from core.optional_modules import (
-    module_status, MEDIA_EXTENSIONS, video_translation_available)
+    module_status, video_translation_available)
 from core.pipelines.video_translation_pipeline import (
-    STT_MODELS, get_selected_stt_model, get_stt_model, SENSEVOICE_SUPPORTED_CODES)
+    STT_MODELS, get_selected_stt_model, SENSEVOICE_SUPPORTED_CODES)
 from core.log_config import app_logger
 
 # In a PyInstaller one-file bundle the script runs from sys._MEIPASS (where the

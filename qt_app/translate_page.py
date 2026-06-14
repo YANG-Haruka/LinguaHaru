@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from qfluentwidgets import (
     ComboBox, PushButton, PrimaryPushButton, ProgressBar, SwitchButton,
-    BodyLabel, CaptionLabel, CardWidget, TitleLabel,
+    BodyLabel, CardWidget, TitleLabel,
     InfoBar, InfoBarPosition, FluentIcon, ToolButton,
     ScrollArea,
 )

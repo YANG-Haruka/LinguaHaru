@@ -3,7 +3,6 @@
 Token calculation module using tiktoken.
 Uses local encoding file for PyInstaller compatibility.
 """
-import os
 import sys
 import base64
 from pathlib import Path

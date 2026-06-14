@@ -3,7 +3,6 @@
 Save refuses to overwrite a non-empty file with an empty table (web guard,
 enforced in backend.save_glossary)."""
 
-import os
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (

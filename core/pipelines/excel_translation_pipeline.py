@@ -3,7 +3,6 @@
 import os
 import json
 import re
-import tempfile
 import shutil
 from datetime import datetime
 from zipfile import ZipFile
@@ -11,7 +10,7 @@ from lxml import etree
 
 # User-supplied XML: disable entity resolution / DTD / network access (XXE)
 _SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
-from typing import Dict, List, Any, Tuple, Set
+from typing import Dict, List
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
 from openpyxl.utils import range_boundaries
@@ -1766,7 +1765,7 @@ def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: Lis
                                 app_logger.error(f"Failed to copy original drawing file as fallback: {fallback_e}")
 
         shutil.move(temp_excel_path, file_path)
-        app_logger.info(f"Excel drawing translations applied successfully")
+        app_logger.info("Excel drawing translations applied successfully")
         return file_path
 
     except Exception as e:
@@ -1821,7 +1820,7 @@ def _distribute_drawing_text_to_runs(parent_element, translated_text: str, item:
     original_run_lengths = item.get('run_lengths', [])
 
     if not original_run_texts or len(original_run_texts) != len(text_runs):
-        app_logger.warning(f"Mismatch in Excel drawing run structure, using simple distribution")
+        app_logger.warning("Mismatch in Excel drawing run structure, using simple distribution")
         _simple_drawing_text_distribution(text_runs, translated_text, namespaces)
         return
 
@@ -2036,7 +2035,7 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                                 app_logger.error(f"Failed to copy original data file as fallback: {fallback_e}")
 
         shutil.move(temp_excel_path, file_path)
-        app_logger.info(f"Excel SmartArt translations applied successfully")
+        app_logger.info("Excel SmartArt translations applied successfully")
         return file_path
 
     except Exception as e:
@@ -2060,7 +2059,7 @@ def _distribute_excel_smartart_text_to_runs(parent_element, translated_text: str
     original_run_lengths = item.get('run_lengths', [])
 
     if not original_run_texts or len(original_run_texts) != len(text_runs):
-        app_logger.warning(f"Mismatch in Excel SmartArt run structure, using simple distribution")
+        app_logger.warning("Mismatch in Excel SmartArt run structure, using simple distribution")
         _simple_excel_smartart_text_distribution(text_runs, translated_text, namespaces)
         return
 
@@ -2244,7 +2243,7 @@ def _apply_excel_drawing_bilingual_translations_to_file(file_path: str, drawing_
                                 app_logger.error(f"Failed to copy original drawing file as fallback: {fallback_e}")
 
         shutil.move(temp_excel_path, file_path)
-        app_logger.info(f"Excel bilingual drawing translations applied successfully")
+        app_logger.info("Excel bilingual drawing translations applied successfully")
         return file_path
 
     except Exception as e:
@@ -2395,7 +2394,7 @@ def _apply_excel_smartart_bilingual_translations_to_file(file_path: str, smartar
                                 app_logger.error(f"Failed to copy original data file as fallback: {fallback_e}")
 
         shutil.move(temp_excel_path, file_path)
-        app_logger.info(f"Excel bilingual SmartArt translations applied successfully")
+        app_logger.info("Excel bilingual SmartArt translations applied successfully")
         return file_path
 
     except Exception as e:

@@ -18,7 +18,7 @@ from importlib import import_module
 
 from core.optional_modules import IMAGE_EXTENSIONS, MEDIA_EXTENSIONS
 from core.languages_config import (
-    get_language_code, get_available_languages, LANGUAGE_MAP, LABEL_TRANSLATIONS,
+    get_language_code, get_available_languages, LABEL_TRANSLATIONS,
 )
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
