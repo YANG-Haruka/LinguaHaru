@@ -170,6 +170,9 @@ class InterfacePage(ScrollArea):
         header.addWidget(self.add_btn)
         layout.addLayout(header)
 
+        self.hint = CaptionLabel(tr("Interface hint", lang))
+        layout.addWidget(self.hint)
+
         # --- Three group cards ---
         self.local_group = _GroupCard(
             tr("Local Interfaces", lang), tr("Local Interfaces Subtitle", lang),
@@ -192,6 +195,7 @@ class InterfacePage(ScrollArea):
         self._lang = lang
         self.title.setText(tr("Interface Management", lang))
         self.add_btn.setText(tr("Add Interface", lang))
+        self.hint.setText(tr("Interface hint", lang))
         self.local_group.title.setText(tr("Local Interfaces", lang))
         self.local_group.subtitle.setText(tr("Local Interfaces Subtitle", lang))
         self.official_group.title.setText(tr("Official Interfaces", lang))
@@ -250,6 +254,8 @@ class InterfacePage(ScrollArea):
             card = EntryCard(name, itf.get("model", ""), FluentIcon.CLOUD,
                              active=(name == active))
             card.clicked.connect(lambda n=name: self._set_active(n, online=True))
+            # Double-click opens the config dialog (API key, temperature, ...).
+            card.doubleClicked.connect(lambda n=name: self.on_add(existing=n))
             card.setContextMenuPolicy(Qt.CustomContextMenu)
             card.customContextMenuRequested.connect(
                 lambda _pos, n=name: self._entry_menu(n))

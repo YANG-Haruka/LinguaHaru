@@ -103,6 +103,11 @@ class FormatCategoryCard(SimpleCardWidget):
         if event.button() == Qt.LeftButton:
             self.clicked.emit()
 
+    def mouseDoubleClickEvent(self, event):
+        super().mouseDoubleClickEvent(event)
+        if event.button() == Qt.LeftButton:
+            self.doubleClicked.emit()
+
 
 class MetricCard(SimpleCardWidget):
     """A dashboard metric: muted label on top, big value, optional sub-text."""
@@ -184,9 +189,11 @@ class RingMetricCard(SimpleCardWidget):
 
 class EntryCard(CardWidget):
     """A clickable provider/interface entry. Shows an icon, a name and an
-    optional active badge. Emits ``clicked`` when pressed."""
+    optional active badge. Emits ``clicked`` when pressed and ``doubleClicked``
+    on double-click (used to open the config dialog)."""
 
     clicked = Signal()
+    doubleClicked = Signal()
 
     def __init__(self, name, subtitle="", icon=FluentIcon.ROBOT, active=False, parent=None):
         super().__init__(parent)
