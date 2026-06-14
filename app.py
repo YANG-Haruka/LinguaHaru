@@ -1278,7 +1278,8 @@ def set_labels(session_lang: str):
         proofread_file: gr.update(label=labels.get("Download Translated File", "Download Translated File")),
         settings_api_key: gr.update(
             label=labels["API Key"],
-            placeholder=labels.get("Enter your API key here", "Enter your API key here"))
+            placeholder=labels.get("Enter your API key here", "Enter your API key here")),
+        settings_model_choice: gr.update(label=labels["Models"])
     }
 
 #-------------------------------------------------------------------------
@@ -1310,7 +1311,8 @@ def update_model_list_and_api_input(use_online, session_lang="en"):
             gr.update(choices=online_models, value=default_online_value),
             gr.update(visible=False),  # key card lives on Settings tab; keep hidden here
             gr.update(value=saved_api_key),
-            gr.update(value=thread_count)
+            gr.update(value=thread_count),
+            file_upload_gate(True, saved_api_key, session_lang)
         )
     else:
         choices = local_model_choices(session_lang)
@@ -1322,7 +1324,8 @@ def update_model_list_and_api_input(use_online, session_lang="en"):
             gr.update(choices=choices, value=default_local_value),
             gr.update(visible=False),
             gr.update(value=""),
-            gr.update(value=thread_count)
+            gr.update(value=thread_count),
+            file_upload_gate(False, "", session_lang)  # offline: never gated
         )
 
 
@@ -1331,6 +1334,19 @@ def get_mykeys_dir():
     mykeys_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mykeys")
     os.makedirs(mykeys_dir, exist_ok=True)
     return mykeys_dir
+
+
+def provider_of(model_name):
+    """Group API keys by provider so models from one company share a key
+    (e.g. DeepSeek Flash and Pro use the same DeepSeek key). The provider is the
+    text in the leading parentheses of the config name — "(Deepseek) ..." ->
+    "Deepseek" — otherwise the name itself (e.g. "Custom")."""
+    s = str(model_name or "").strip()
+    if not s:
+        return "default"
+    if s.startswith("(") and ")" in s:
+        return s[1:s.index(")")].strip() or "default"
+    return s
 
 
 def sanitize_model_name(model_name):
@@ -1348,9 +1364,9 @@ def sanitize_model_name(model_name):
 
 
 def load_api_key_for_model(model_name):
-    """Load API key for a specific model from mykeys folder"""
+    """Load the API key for a model's provider (models from one company share a key)"""
     mykeys_dir = get_mykeys_dir()
-    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(model_name)}.json")
+    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(provider_of(model_name))}.json")
 
     try:
         if os.path.exists(key_file):
@@ -1364,13 +1380,14 @@ def load_api_key_for_model(model_name):
 
 
 def save_api_key_for_model(model_name, api_key):
-    """Save API key for a specific model to mykeys folder"""
+    """Save the API key for a model's provider (shared across that provider's models)"""
     mykeys_dir = get_mykeys_dir()
-    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(model_name)}.json")
+    provider = provider_of(model_name)
+    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(provider)}.json")
 
     try:
         data = {
-            "model": model_name,
+            "provider": provider,
             "api_key": api_key
         }
         with open(key_file, 'w', encoding='utf-8') as f:
@@ -1381,9 +1398,9 @@ def save_api_key_for_model(model_name, api_key):
 
 
 def delete_api_key_for_model(model_name):
-    """Delete API key file for a specific model"""
+    """Delete the API key file for a model's provider"""
     mykeys_dir = get_mykeys_dir()
-    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(model_name)}.json")
+    key_file = os.path.join(mykeys_dir, f"{sanitize_model_name(provider_of(model_name))}.json")
 
     try:
         if os.path.exists(key_file):
@@ -1417,15 +1434,23 @@ def save_api_key_on_change(api_key, remember, model_name):
         save_api_key_for_model(model_name, api_key)
 
 
-def on_settings_api_key_change(api_key, model_name):
-    """API key edited on the Settings tab: persist it for the active model and
-    mirror it into the Translate tab's hidden field (read by the pipeline)."""
+def on_settings_model_change(settings_model):
+    """Settings: picking a model in the key editor loads that provider's key."""
+    return gr.update(value=load_api_key_for_model(settings_model))
+
+
+def on_settings_api_key_change(api_key, settings_model, active_model, use_online, session_lang="en"):
+    """API key edited on the Settings tab: persist it for the selected model's
+    provider. If the active translation model shares that provider, refresh the
+    hidden pipeline field + the upload gate so they pick up the new key."""
     config = read_system_config()
     config["remember_api_key"] = True
     write_system_config(config)
-    if model_name and api_key:
-        save_api_key_for_model(model_name, api_key)
-    return gr.update(value=api_key)
+    save_api_key_for_model(settings_model, api_key)
+    # The pipeline uses the ACTIVE model's provider key; recompute it.
+    active_key = api_key if provider_of(settings_model) == provider_of(active_model) \
+        else load_api_key_for_model(active_model)
+    return gr.update(value=active_key), file_upload_gate(use_online, active_key, session_lang)
 
 
 def _upload_files_label(session_lang="en"):
@@ -1461,12 +1486,11 @@ def init_api_key_ui():
             file_upload_gate(use_online, key))
 
 
-def load_api_key_on_model_change(model_name, remember):
-    """Load API key when model changes"""
-    if remember and model_name:
-        saved_key = load_api_key_for_model(model_name)
-        return gr.update(value=saved_key)
-    return gr.update(value="")
+def load_api_key_on_model_change(model_name, remember, use_online, session_lang="en"):
+    """Active model changed: load that provider's key into the hidden pipeline
+    field and re-gate the upload box."""
+    saved_key = load_api_key_for_model(model_name) if (remember and model_name) else ""
+    return gr.update(value=saved_key), file_upload_gate(use_online, saved_key, session_lang)
 
 def scan_online_models():
     """List online models from the api_config directory (filename = dropdown entry)"""
@@ -2200,7 +2224,8 @@ with gr.Blocks(
         with gr.Tab(get_label("Settings"), elem_id="tab-settings") as tab_settings:
             (use_online_model, lan_mode_checkbox, max_retries_slider,
              thread_count_slider, auto_glossary_checkbox, rpm_limit_number,
-             settings_api_key, optional_modules_acc) = create_settings_section(config, get_label)
+             settings_model_choice, settings_api_key, optional_modules_acc) = create_settings_section(
+                config, get_label, online_models)
 
         # Tab 4: translation history
         with gr.Tab(get_label("History"), elem_id="tab-history") as tab_history:
@@ -2313,7 +2338,7 @@ with gr.Blocks(
     use_online_model.change(
         update_model_list_and_api_input,
         inputs=[use_online_model, session_lang],
-        outputs=[model_choice, api_key_row, api_key_input, thread_count_slider]
+        outputs=[model_choice, api_key_row, api_key_input, thread_count_slider, file_input]
     ).then(
         fn=None,
         inputs=None,
@@ -2388,29 +2413,33 @@ with gr.Blocks(
         inputs=[api_key_input, remember_key_checkbox, model_choice],
         outputs=None
     )
-    # API key edited on the Settings tab: persist + mirror into the hidden
-    # Translate field that the pipeline reads.
+    # Settings key editor: pick a model -> load that provider's saved key.
+    settings_model_choice.change(
+        on_settings_model_change,
+        inputs=[settings_model_choice],
+        outputs=[settings_api_key]
+    )
+    # API key edited on the Settings tab: persist for the selected provider and,
+    # if it's the active model's provider, refresh the hidden pipeline field +
+    # upload gate.
     settings_api_key.change(
         on_settings_api_key_change,
-        inputs=[settings_api_key, model_choice],
-        outputs=[api_key_input]
+        inputs=[settings_api_key, settings_model_choice, model_choice, use_online_model, session_lang],
+        outputs=[api_key_input, file_input]
     )
-    # Gate the upload box on API-key presence (online mode). Driven by the
-    # Settings key field (the only place a key is entered now), the online
-    # toggle, and the resolved language. api_key_input isn't a trigger because
-    # programmatic value updates don't fire .change.
-    for _trigger in (settings_api_key.change, use_online_model.change, session_lang.change):
-        _trigger(
-            file_upload_gate,
-            inputs=[use_online_model, settings_api_key, session_lang],
-            outputs=file_input
-        )
+    # Re-gate the upload box once the browser language resolves (init runs before
+    # session_lang is known). Uses the active model's key (api_key_input).
+    session_lang.change(
+        file_upload_gate,
+        inputs=[use_online_model, api_key_input, session_lang],
+        outputs=file_input
+    )
 
-    # Load API key when model changes (if remember is enabled)
+    # Active model changed: load that provider's key + re-gate the upload box.
     model_choice.change(
         load_api_key_on_model_change,
-        inputs=[model_choice, remember_key_checkbox],
-        outputs=api_key_input
+        inputs=[model_choice, remember_key_checkbox, use_online_model, session_lang],
+        outputs=[api_key_input, file_input]
     )
 
     # Model refresh button: also fetches the online model list from the
@@ -2744,7 +2773,7 @@ with gr.Blocks(
             glossary_editor_acc, glossary_load_btn, glossary_save_btn,
             tab_proofread, proofread_doc_choice, proofread_refresh_btn,
             proofread_save_btn, proofread_export_btn, proofread_file,
-            settings_api_key
+            settings_api_key, settings_model_choice
         ],
         js="""
         () => {

@@ -1197,7 +1197,9 @@ def get_custom_css():
     #model-dropdown ul.options,
     #model-dropdown .options,
     #glossary-dropdown ul.options,
-    #glossary-dropdown .options {
+    #glossary-dropdown .options,
+    #settings-model-choice ul.options,
+    #settings-model-choice .options {
         z-index: 2003 !important;
         /* Force the list to open downward, anchored under the input. Gradio's
            floating logic flips it up (sets inline `bottom`) when the row sits
@@ -1216,7 +1218,8 @@ def get_custom_css():
        the .block / .form wrappers; open them up so the list can spill below. */
     #model-glossary-row .form,
     #model-dropdown,
-    #glossary-dropdown {
+    #glossary-dropdown,
+    #settings-model-choice {
         overflow: visible !important;
     }
 
@@ -1929,10 +1932,11 @@ def get_accepted_file_types():
     return accepted + available_optional_extensions()
 
 
-def create_settings_section(config, get_label=None):
+def create_settings_section(config, get_label=None, online_models=None):
     """Create settings section"""
     if get_label is None:
         get_label = lambda key: key
+    online_models = online_models or []
 
     initial_lan_mode = config.get("lan_mode", False)
     initial_default_online = config.get("default_online", False)
@@ -1996,7 +2000,20 @@ def create_settings_section(config, get_label=None):
                 minimum=0
             )
 
-    # API key (also settable here; mirrors the Translate tab's field)
+    # API key editor: pick a model, then edit its key. Keys are stored per
+    # provider, so models from the same company (e.g. DeepSeek Flash & Pro)
+    # share one key.
+    default_online_model = config.get("default_online_model", "")
+    settings_model_default = default_online_model if default_online_model in online_models else (
+        online_models[0] if online_models else None)
+    with gr.Row():
+        settings_model_choice = gr.Dropdown(
+            label=get_label("Models"),
+            choices=online_models,
+            value=settings_model_default,
+            allow_custom_value=True,
+            elem_id="settings-model-choice",
+        )
     with gr.Row():
         settings_api_key = gr.Textbox(
             label=get_label("API Key"),
@@ -2018,7 +2035,7 @@ def create_settings_section(config, get_label=None):
 
     return (use_online_model, lan_mode_checkbox, max_retries_slider,
             thread_count_slider, auto_glossary_checkbox, rpm_limit_number,
-            settings_api_key, optional_modules_acc)
+            settings_model_choice, settings_api_key, optional_modules_acc)
 
 
 def create_file_mode_checkboxes(config):
