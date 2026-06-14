@@ -26,6 +26,7 @@
   <main class="content">
     <!-- Translate -->
     <section class="panel active" data-panel="translate">
+      <div class="page-head"><h2>翻译</h2><p>上传文档、字幕、表格或媒体，选择语言即可一键翻译。</p></div>
       <div class="card lang-card">
         <div class="field">
           <label>源语言</label>
@@ -82,6 +83,7 @@
 
     <!-- Glossary -->
     <section class="panel" data-panel="glossary">
+      <div class="page-head"><h2>词汇表</h2><p>维护术语对照表，翻译时自动套用，保证专有名词一致。</p></div>
       <div class="card">
         <div class="field"><label>词汇表</label><select id="glossary-edit-select"></select></div>
       </div>
@@ -97,6 +99,7 @@
 
     <!-- Proofread -->
     <section class="panel" data-panel="proofread">
+      <div class="page-head"><h2>校对</h2><p>逐段查看原文与译文，手动修正后可重新导出。</p></div>
       <div class="card row-2">
         <div class="field"><label>校对文档</label><select id="proofread-select"></select></div>
         <div class="actions" style="align-items:end">
@@ -116,6 +119,7 @@
 
     <!-- Live voice translation (Gemini 3.5 Live Translate) -->
     <section class="panel" data-panel="live">
+      <div class="page-head"><h2>实时语音</h2><p>对着麦克风说话，实时识别并翻译（Gemini 3.5 Live Translate）。</p></div>
       <div class="card row-2">
         <div class="field">
           <label>翻译到（目标语言）</label>
@@ -139,6 +143,7 @@
 
     <!-- History -->
     <section class="panel" data-panel="history">
+      <div class="page-head"><h2>历史记录</h2><p>查看过往翻译任务的文件、语言、模型与用量。</p></div>
       <div class="card">
         <div class="actions" style="margin-bottom:10px"><button id="history-refresh">刷新</button></div>
         <div class="table-scroll"><table id="history-table"></table></div>
@@ -147,6 +152,7 @@
 
     <!-- Settings -->
     <section class="panel" data-panel="settings">
+      <div class="page-head"><h2>设置</h2><p>模型密钥、重试与可选模块。</p></div>
       <div class="card">
         <label class="check"><input type="checkbox" id="set-online" /> 使用在线模型</label>
       </div>
