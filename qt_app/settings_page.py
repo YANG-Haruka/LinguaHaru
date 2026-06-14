@@ -1,11 +1,14 @@
 """Settings page: every change is persisted to system_config.json immediately."""
 
+import os
+
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog
 
 from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, SpinBox,
-    CardWidget, CaptionLabel, IndicatorPosition, ComboBox,
+    CardWidget, CaptionLabel, IndicatorPosition, ComboBox, PushButton,
+    LineEdit, FluentIcon,
 )
 
 from qt_app import backend
@@ -26,6 +29,9 @@ class SettingsPage(ScrollArea):
         self.setWidgetResizable(True)
 
         container = QWidget()
+        container.setObjectName("settingsScrollContainer")
+        container.setStyleSheet(
+            "#settingsScrollContainer { background-color: transparent; }")
         self.setWidget(container)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(30, 20, 30, 20)
@@ -107,6 +113,19 @@ class SettingsPage(ScrollArea):
         self.auto_glossary_label = BodyLabel(tr("AI Glossary Extraction", lang))
         form.addRow(self.auto_glossary_label, self.auto_glossary)
 
+        # --- Output folder (where translated files are saved) ---
+        out_row = QHBoxLayout()
+        out_row.setSpacing(8)
+        self.output_edit = LineEdit()
+        self.output_edit.setReadOnly(True)
+        self.output_edit.setText(config.get("result_dir", "result"))
+        self.output_browse = PushButton(FluentIcon.FOLDER, tr("Browse", lang))
+        self.output_browse.clicked.connect(self._pick_output_dir)
+        out_row.addWidget(self.output_edit, 1)
+        out_row.addWidget(self.output_browse)
+        self.output_label = BodyLabel(tr("Output Folder", lang))
+        form.addRow(self.output_label, out_row)
+
         layout.addWidget(general)
 
         # --- Optional Modules status ---
@@ -129,6 +148,14 @@ class SettingsPage(ScrollArea):
 
         layout.addStretch(1)
 
+    def _pick_output_dir(self):
+        current = self.output_edit.text() or os.getcwd()
+        path = QFileDialog.getExistingDirectory(
+            self, tr("Output Folder", self._lang), current)
+        if path:
+            self.output_edit.setText(path)
+            backend.set_config("result_dir", path)
+
     def _on_lang_combo(self, display):
         lang = lang_from_display_name(display)
         if callable(self.on_ui_lang_changed):
@@ -149,4 +176,6 @@ class SettingsPage(ScrollArea):
         self.max_retries_label.setText(tr("Max Retries", lang))
         self.rpm_label.setText(tr("RPM Limit (0 = unlimited, restart to apply)", lang))
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
+        self.output_label.setText(tr("Output Folder", lang))
+        self.output_browse.setText(tr("Browse", lang))
         self.section_modules.setText(tr("Optional Modules", lang))

@@ -176,23 +176,9 @@ def test_glossary_parser():
           _parse_terms('[{"src": "ACME", "dst": "アクメ"}]') == [("ACME", "アクメ")])
 
 
-def test_desktop_server():
-    print("Desktop shell: embedded server starts and serves the UI")
-    import urllib.request
-    from app_desktop import start_server
-
-    app_module, port = start_server()
-    try:
-        html = urllib.request.urlopen(f"http://127.0.0.1:{port}", timeout=10).read()
-        check("Gradio responds through the embedded server", b"gradio" in html.lower(),
-              html[:120])
-    finally:
-        app_module.demo.close()
-
-
 def main():
     for fn in (test_error_classification, test_rpm_limiter, test_text_rules,
-               test_glossary_parser, test_desktop_server):
+               test_glossary_parser):
         try:
             fn()
         except Exception:

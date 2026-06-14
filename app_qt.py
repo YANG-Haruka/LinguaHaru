@@ -1,8 +1,7 @@
 """LinguaHaru native desktop app (Qt + Fluent Design).
 
-This is the RECOMMENDED native desktop experience (replacing the pywebview
-shell in app_desktop.py). It reuses LinguaHaru's translation backend directly
-and never imports the Gradio web app.
+The native desktop experience: reuses LinguaHaru's translation backend
+directly and never imports the Gradio web app.
 
     pip install -r requirements-qt.txt
     python app_qt.py
@@ -44,6 +43,23 @@ _patch_tiktoken()
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _install_qt_log_filter():
+    """Silence the benign 'QFont::setPointSize: Point size <= 0 (-1)' spam.
+
+    It originates inside qfluentwidgets (a font built with setPixelSize has
+    pointSize()==-1, which is then fed back into setPointSize); it is harmless
+    and not from our code. Filter just that line; pass everything else through.
+    """
+    from PySide6.QtCore import qInstallMessageHandler
+
+    def handler(mode, context, message):
+        if "setPointSize" in message and "Point size" in message:
+            return
+        sys.stderr.write(message + "\n")
+
+    qInstallMessageHandler(handler)
+
+
 def main():
     import multiprocessing
     multiprocessing.freeze_support()
@@ -51,6 +67,7 @@ def main():
     from PySide6.QtWidgets import QApplication
     from qt_app.main_window import MainWindow
 
+    _install_qt_log_filter()
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
