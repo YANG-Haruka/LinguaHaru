@@ -1275,7 +1275,10 @@ def set_labels(session_lang: str):
         proofread_refresh_btn: gr.update(value=f"🔄 {labels.get('Refresh List', 'Refresh List')}"),
         proofread_save_btn: gr.update(value=labels.get("Save Edits", "Save Edits")),
         proofread_export_btn: gr.update(value=labels.get("Re-export", "Re-export")),
-        proofread_file: gr.update(label=labels.get("Download Translated File", "Download Translated File"))
+        proofread_file: gr.update(label=labels.get("Download Translated File", "Download Translated File")),
+        settings_api_key: gr.update(
+            label=labels["API Key"],
+            placeholder=labels.get("Enter your API key here", "Enter your API key here"))
     }
 
 #-------------------------------------------------------------------------
@@ -1305,7 +1308,7 @@ def update_model_list_and_api_input(use_online, session_lang="en"):
 
         return (
             gr.update(choices=online_models, value=default_online_value),
-            gr.update(visible=True),
+            gr.update(visible=False),  # key card lives on Settings tab; keep hidden here
             gr.update(value=saved_api_key),
             gr.update(value=thread_count)
         )
@@ -1440,13 +1443,14 @@ def on_translate_api_key_change(api_key, use_online, session_lang="en"):
 
 
 def init_api_key_ui():
-    """Initial value of the Settings key field + warning visibility on load."""
+    """Initial value of the Settings key field + the hidden Translate mirror +
+    warning visibility on load."""
     config = read_system_config()
     use_online = config.get("default_online", False)
     remember = config.get("remember_api_key", False) and use_online
     model = config.get("default_online_model", "")
     key = load_api_key_for_model(model) if remember else ""
-    return gr.update(value=key), api_key_warning_update(use_online, key)
+    return gr.update(value=key), gr.update(value=key), api_key_warning_update(use_online, key)
 
 
 def load_api_key_on_model_change(model_name, remember):
@@ -2741,7 +2745,8 @@ with gr.Blocks(
             auto_glossary_checkbox, rpm_limit_number, optional_modules_acc,
             glossary_editor_acc, glossary_load_btn, glossary_save_btn,
             tab_proofread, proofread_doc_choice, proofread_refresh_btn,
-            proofread_save_btn, proofread_export_btn, proofread_file
+            proofread_save_btn, proofread_export_btn, proofread_file,
+            settings_api_key
         ],
         js="""
         () => {
@@ -2967,7 +2972,7 @@ with gr.Blocks(
     demo.load(
         fn=init_api_key_ui,
         inputs=None,
-        outputs=[settings_api_key, api_key_warning],
+        outputs=[settings_api_key, api_key_input, api_key_warning],
     )
 
     # Separate event to update API key language after init

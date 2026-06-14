@@ -2201,8 +2201,10 @@ def create_main_interface(config, get_label=None):
     initial_lan_mode = config.get("lan_mode", False)
     remember_api_key = config.get("remember_api_key", False) if not initial_lan_mode else False
 
-    # API Key section: [API Key] [Input Field] [记住密钥 ?]
-    with gr.Row(visible=initial_default_online, elem_id="api-key-section") as api_key_row:
+    # API Key is now set only on the Settings tab. Keep this Row hidden so the
+    # Translate tab shows no key-entry UI, while api_key_input survives as a
+    # hidden mirror that the translation pipeline still reads.
+    with gr.Row(visible=False, elem_id="api-key-section") as api_key_row:
         # [API Key] 标签 - 尽可能短
         gr.HTML("""
             <div class="api-key-label-group">
