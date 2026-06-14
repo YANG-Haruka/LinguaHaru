@@ -69,9 +69,10 @@ class OptionalPluginCard(CardWidget):
         self._mod = mod
         self._lang = lang
         self._on_install = on_install
-        # Narrow enough that three cards fit on one row (FlowLayout).
-        self.setMinimumWidth(252)
-        self.setFixedHeight(156)
+        # Fixed width so exactly three cards fit per row (FlowLayout sizes to
+        # content otherwise, which only fit two).
+        self.setFixedWidth(258)
+        self.setFixedHeight(166)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 14, 18, 14)
