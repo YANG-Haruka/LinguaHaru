@@ -397,7 +397,8 @@
         <h3>运行模式</h3>
         <label class="check"><input type="checkbox" id="set-online" /> 使用在线模型</label>
         <label class="check"><input type="checkbox" id="set-lan" /> 局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</label>
-        <label class="check"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
+        <div class="field" style="margin-top:10px"><label>局域网管理密码（可选；设置后，局域网用户需输入密码才能修改配置 / 密钥 / 安装插件）</label><input type="password" id="set-lan-admin" placeholder="留空则不启用" /></div>
+        <label class="check" style="margin-top:10px"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
       </div>
       <div class="card">
         <h3>模型密钥</h3>

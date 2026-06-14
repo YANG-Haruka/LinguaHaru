@@ -16,6 +16,7 @@ import threading
 import uuid
 import asyncio
 import time
+import contextvars
 
 from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
@@ -57,11 +58,22 @@ def server_mode_on():
     return bool(backend.get_config("server_mode", False)) or bool(os.environ.get("RENDER"))
 
 
+# Carries the per-request admin token (set by the middleware) so the sync admin
+# endpoints can check it without each taking a `request` parameter.
+_admin_token = contextvars.ContextVar("admin_token", default="")
+
+
 def _block_in_server_mode():
-    """Admin-only endpoints (changing the server's model/key, installing
-    modules) are forbidden for public users."""
+    """Guard admin-only endpoints (changing the server's model/key, RPM, modules,
+    interfaces). Always blocked in public server mode. In LAN mode, if an admin
+    password is configured, callers must supply it (X-Admin-Token header) — so an
+    untrusted LAN user can't change keys/models/config/modules."""
     if server_mode_on():
         raise HTTPException(403, "Disabled in server mode")
+    pw = str(backend.get_config("lan_admin_password", "") or "")
+    if pw and backend.get_config("lan_mode", False):
+        if _admin_token.get() != pw:
+            raise HTTPException(401, "Admin password required")
 
 
 @app.middleware("http")
@@ -75,6 +87,7 @@ async def _session_and_isolation(request, call_next):
     if issue:
         sid = sessions.new_session_id()
     request.state.session_id = sid
+    _admin_token.set(request.headers.get("X-Admin-Token", ""))
     resp = await call_next(request)
     if issue:
         resp.set_cookie(sessions.SESSION_COOKIE, sid, httponly=True,
@@ -149,6 +162,7 @@ def bootstrap():
             "rpm_limit": config.get("rpm_limit", _DEFAULT_RPM),
             "auto_extract_glossary": config.get("auto_extract_glossary", False),
             "lan_mode": config.get("lan_mode", False),
+            "has_lan_admin": bool(config.get("lan_admin_password")),  # never expose the value
             "default_thread_count_online": config.get("default_thread_count_online", 8),
             "default_thread_count_offline": config.get("default_thread_count_offline", 4),
             "thread_count": backend.thread_count_for_mode(
@@ -167,7 +181,7 @@ async def update_config(payload: dict):
                "translate_subtitles", "max_retries", "rpm_limit",
                "auto_extract_glossary", "lan_mode",
                "default_thread_count_online", "default_thread_count_offline",
-               "max_api_concurrency"}
+               "max_api_concurrency", "lan_admin_password"}
     config = backend.read_config()
     for k, v in payload.items():
         if k in allowed:

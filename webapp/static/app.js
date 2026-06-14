@@ -68,7 +68,21 @@ async function extractAudio(file) {
 }
 
 async function api(path, opts) {
-  const r = await fetch(path, opts);
+  opts = opts || {};
+  // Attach the LAN admin token (if the user has entered one) so admin endpoints
+  // pass when a LAN admin password is configured.
+  const tok = localStorage.getItem("lh-admin");
+  if (tok) opts.headers = Object.assign({ "X-Admin-Token": tok }, opts.headers || {});
+  let r = await fetch(path, opts);
+  // 401 from an admin endpoint -> prompt for the LAN admin password and retry.
+  if (r.status === 401) {
+    const pw = prompt("此操作需要局域网管理密码：");
+    if (pw) {
+      localStorage.setItem("lh-admin", pw);
+      opts.headers = Object.assign({ "X-Admin-Token": pw }, opts.headers || {});
+      r = await fetch(path, opts);
+    }
+  }
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r.json();
 }
@@ -269,6 +283,7 @@ async function boot() {
   // settings
   $("set-online").checked = c.default_online;
   $("set-lan").checked = !!c.lan_mode;
+  $("set-lan-admin").placeholder = c.has_lan_admin ? "已设置（留空则不修改）" : "留空则不启用";
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
   fillSelect($("set-model"), BOOT.online_models, c.default_online_model);
   $("set-retries").value = c.max_retries;
@@ -517,6 +532,15 @@ $("set-online").onchange = () => {
 $("set-lan").onchange = () => {
   saveConfig({ lan_mode: $("set-lan").checked });
   $("settings-status").textContent = "局域网模式已更新 —— 重启程序后生效。";
+};
+$("set-lan-admin").onchange = () => {
+  const v = $("set-lan-admin").value;
+  if (!v) return;                          // empty = keep the existing password
+  saveConfig({ lan_admin_password: v });
+  localStorage.setItem("lh-admin", v);     // so the owner keeps admin access
+  $("set-lan-admin").value = "";
+  $("set-lan-admin").placeholder = "已设置（留空则不修改）";
+  $("settings-status").textContent = "局域网管理密码已更新。";
 };
 $("set-retries").onchange = () => saveConfig({ max_retries: parseInt($("set-retries").value || "4", 10) });
 $("set-rpm").onchange = () => {
