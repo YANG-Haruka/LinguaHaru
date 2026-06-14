@@ -12,15 +12,15 @@ retranslate of every page + nav label."""
 
 import os
 
-from PySide6.QtGui import QIcon, QColor
+from PySide6.QtGui import QIcon, QColor, QCursor
 
 from qfluentwidgets import (
     FluentWindow, NavigationItemPosition, FluentIcon, setTheme, setThemeColor,
-    Theme,
+    Theme, RoundMenu, Action,
 )
 
 from qt_app import backend
-from qt_app.i18n import tr, UI_LANGS
+from qt_app.i18n import tr, UI_LANGS, lang_display_name
 from qt_app.translate_page import TranslatePage
 from qt_app.glossary_page import GlossaryPage
 from qt_app.proofread_page import ProofreadPage
@@ -122,7 +122,16 @@ class MainWindow(FluentWindow):
         # Clicking an unavailable format card jumps to the Plugins page.
         self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
 
-        # Theme toggle pinned at the bottom of the navigation rail.
+        # Interface-language picker + theme toggle pinned at the bottom of the
+        # navigation rail (language above theme).
+        nav.addItem(
+            routeKey="ui-lang",
+            icon=FluentIcon.GLOBE,
+            text=tr("Interface Language", self._lang),
+            onClick=self._show_lang_menu,
+            selectable=False,
+            position=NavigationItemPosition.BOTTOM,
+        )
         nav.addItem(
             routeKey="theme-toggle",
             icon=FluentIcon.CONSTRACT,
@@ -149,6 +158,15 @@ class MainWindow(FluentWindow):
 
         # Reload data whenever a tab becomes current.
         self.stackedWidget.currentChanged.connect(self._on_page_changed)
+
+    def _show_lang_menu(self):
+        """Dropdown of interface languages, opened from the bottom nav item."""
+        menu = RoundMenu(parent=self)
+        for lang in UI_LANGS:
+            act = Action(lang_display_name(lang))
+            act.triggered.connect(lambda _checked=False, l=lang: self.on_lang_changed(l))
+            menu.addAction(act)
+        menu.exec(QCursor.pos())
 
     def _add_header(self, route_key, label_key):
         """Add a gray, non-clickable section header to the nav rail."""
@@ -186,6 +204,9 @@ class MainWindow(FluentWindow):
         theme_item = self.navigationInterface.widget("theme-toggle")
         if theme_item is not None and hasattr(theme_item, "setText"):
             theme_item.setText(tr("Theme", lang))
+        lang_item = self.navigationInterface.widget("ui-lang")
+        if lang_item is not None and hasattr(lang_item, "setText"):
+            lang_item.setText(tr("Interface Language", lang))
 
     def _apply_custom_bg(self):
         """Background follows the plain qfluentwidgets theme.

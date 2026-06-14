@@ -5,6 +5,7 @@ enforced in backend.save_glossary)."""
 
 import os
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView,
 )
@@ -50,6 +51,9 @@ class GlossaryPage(QWidget):
         self.table.setBorderVisible(True)
         self.table.setBorderRadius(8)
         self.table.setWordWrap(False)
+        # Show full cell content with a horizontal scrollbar rather than
+        # squeezing every column to fit (which truncated the text).
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         layout.addWidget(self.table, 1)
 
         self._header = []
@@ -89,7 +93,11 @@ class GlossaryPage(QWidget):
             for c in range(len(self._header)):
                 val = row[c] if c < len(row) else ""
                 self.table.setItem(r, c, QTableWidgetItem(val))
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # Size columns to their content (with a sensible minimum) so long terms
+        # stay fully visible; the table scrolls horizontally when they overflow.
+        header = self.table.horizontalHeader()
+        header.setMinimumSectionSize(90)
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
         self._info(f"Loaded {len(rows)} entries from {name}.csv")
 
     def _table_rows(self):

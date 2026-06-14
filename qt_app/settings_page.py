@@ -7,11 +7,11 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QF
 
 from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, SpinBox,
-    CardWidget, ComboBox, PushButton, LineEdit, FluentIcon,
+    CardWidget, PushButton, LineEdit, FluentIcon,
 )
 
 from qt_app import backend
-from qt_app.i18n import tr, UI_LANGS, lang_display_name, lang_from_display_name
+from qt_app.i18n import tr
 
 
 class SettingsPage(ScrollArea):
@@ -40,18 +40,7 @@ class SettingsPage(ScrollArea):
         self.section_translation = StrongBodyLabel(tr("Settings", lang))
         layout.addWidget(self.section_translation)
 
-        # --- UI language selector ---
-        lang_card = CardWidget()
-        lang_form = QFormLayout(lang_card)
-        lang_form.setContentsMargins(20, 16, 20, 16)
-        lang_form.setSpacing(12)
-        self.ui_lang_combo = ComboBox()
-        self.ui_lang_combo.addItems([lang_display_name(l) for l in UI_LANGS])
-        self.ui_lang_combo.setCurrentText(lang_display_name(lang))
-        self.ui_lang_combo.currentTextChanged.connect(self._on_lang_combo)
-        self.ui_lang_label = BodyLabel(tr("Interface Language", lang))
-        lang_form.addRow(self.ui_lang_label, self.ui_lang_combo)
-        layout.addWidget(lang_card)
+        # (Interface language now lives at the bottom of the nav rail.)
 
         # Model-related parameters (thread counts, retries, RPM, LAN mode).
         general = CardWidget()
@@ -139,18 +128,8 @@ class SettingsPage(ScrollArea):
             self.output_edit.setText(path)
             backend.set_config("result_dir", path)
 
-    def _on_lang_combo(self, display):
-        lang = lang_from_display_name(display)
-        if callable(self.on_ui_lang_changed):
-            self.on_ui_lang_changed(lang)
-
     def retranslate(self, lang):
         self._lang = lang
-        # keep the selector in sync without re-triggering the callback
-        self.ui_lang_combo.blockSignals(True)
-        self.ui_lang_combo.setCurrentText(lang_display_name(lang))
-        self.ui_lang_combo.blockSignals(False)
-        self.ui_lang_label.setText(tr("Interface Language", lang))
         self.section_translation.setText(tr("Settings", lang))
         self.lan_label.setText(tr("Local Network Mode (Restart to Apply)", lang))
         self.thread_online_label.setText(tr("Thread Count", lang) + " (online)")
