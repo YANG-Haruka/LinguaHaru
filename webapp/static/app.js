@@ -107,6 +107,7 @@ async function boot() {
   $("set-retries").value = c.max_retries;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   renderModules();
+  fillLiveTarget();
   refreshApiKeyState();
   refreshMediaNote();
 }
@@ -419,6 +420,105 @@ $("proofread-export").onclick = async () => {
     dl.hidden = false;
     $("proofread-status").textContent = "导出完成，点击下载。";
   } catch (e) { $("proofread-status").textContent = "导出失败：" + e.message; }
+};
+
+// ----- live voice translation (Gemini 3.5 Live Translate) -----
+let liveWS = null, liveCtx = null, liveSrc = null, liveProc = null, liveStream = null;
+let playCtx = null, playTime = 0;
+
+function fillLiveTarget() {
+  const sel = $("live-target");
+  sel.innerHTML = "";
+  for (const name of BOOT.languages) {
+    const code = BOOT.language_map[name];
+    if (!code) continue;
+    const o = document.createElement("option");
+    o.value = code; o.textContent = name; sel.appendChild(o);
+  }
+  sel.value = BOOT.language_map[BOOT.config.default_dst_lang] || "zh";
+}
+function setLiveStatus(t) { $("live-status").textContent = t; }
+function setLiveBusy(b) { $("live-start").disabled = b; $("live-stop").disabled = !b; }
+
+$("live-start").onclick = async () => {
+  try {
+    liveStream = await navigator.mediaDevices.getUserMedia(
+      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (e) { setLiveStatus("无法访问麦克风：" + e.message); return; }
+  $("live-input").textContent = ""; $("live-output").textContent = "";
+  liveCtx = new AudioContext();
+  const srcRate = liveCtx.sampleRate;
+  liveSrc = liveCtx.createMediaStreamSource(liveStream);
+  liveProc = liveCtx.createScriptProcessor(4096, 1, 1);
+  playCtx = new AudioContext({ sampleRate: 24000 }); playTime = 0;
+
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  liveWS = new WebSocket(`${proto}//${location.host}/ws/live-translate?target=${encodeURIComponent($("live-target").value)}`);
+  liveWS.onopen = () => setLiveStatus("正在聆听…（对着麦克风说话）");
+  liveWS.onmessage = onLiveMessage;
+  liveWS.onclose = () => setLiveStatus("连接已关闭");
+  liveWS.onerror = () => setLiveStatus("连接错误");
+
+  liveProc.onaudioprocess = (e) => {
+    if (!liveWS || liveWS.readyState !== 1) return;
+    liveWS.send(JSON.stringify({ audio: int16ToB64(downsamplePCM16(e.inputBuffer.getChannelData(0), srcRate)) }));
+  };
+  liveSrc.connect(liveProc); liveProc.connect(liveCtx.destination);
+  setLiveBusy(true);
+};
+
+$("live-stop").onclick = () => {
+  try { if (liveProc) liveProc.disconnect(); if (liveSrc) liveSrc.disconnect(); } catch (e) { /* */ }
+  if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
+  if (liveWS && liveWS.readyState === 1) { try { liveWS.send(JSON.stringify({ end: true })); } catch (e) {} liveWS.close(); }
+  if (liveCtx) liveCtx.close();
+  setLiveBusy(false); setLiveStatus("已停止");
+};
+
+function downsamplePCM16(input, srcRate) {
+  const ratio = srcRate / 16000, outLen = Math.floor(input.length / ratio);
+  const out = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i++) {
+    const s = Math.max(-1, Math.min(1, input[Math.floor(i * ratio)] || 0));
+    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  return out;
+}
+function int16ToB64(int16) {
+  const bytes = new Uint8Array(int16.buffer);
+  let bin = ""; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+function onLiveMessage(ev) {
+  let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
+  if (d.type === "error") { setLiveStatus("错误：" + d.message); return; }
+  const sc = d.serverContent;
+  if (!sc) return;
+  if (sc.inputTranscription && sc.inputTranscription.text) appendLive("live-input", sc.inputTranscription.text);
+  if (sc.outputTranscription && sc.outputTranscription.text) appendLive("live-output", sc.outputTranscription.text);
+  if (sc.modelTurn && sc.modelTurn.parts) {
+    for (const p of sc.modelTurn.parts) if (p.inlineData && p.inlineData.data) playPCM24k(p.inlineData.data);
+  }
+}
+function appendLive(id, text) { const el = $(id); el.textContent += text; el.scrollTop = el.scrollHeight; }
+function playPCM24k(b64) {
+  const bin = atob(b64), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const int16 = new Int16Array(bytes.buffer), f32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768;
+  const buf = playCtx.createBuffer(1, f32.length, 24000);
+  buf.getChannelData(0).set(f32);
+  const node = playCtx.createBufferSource(); node.buffer = buf; node.connect(playCtx.destination);
+  if (playTime < playCtx.currentTime) playTime = playCtx.currentTime;
+  node.start(playTime); playTime += buf.duration;
+}
+
+$("set-google-key").onchange = async () => {
+  const key = $("set-google-key").value;
+  if (!key) return;
+  await api("/api/apikey", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: "(Google) Live Translate", api_key: key }) });
+  $("settings-status").textContent = "Google 密钥已保存。";
 };
 
 // ----- history -----

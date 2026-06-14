@@ -13,6 +13,7 @@
       <button class="tab active" data-tab="translate">翻译</button>
       <button class="tab" data-tab="glossary">词汇表</button>
       <button class="tab" data-tab="proofread">校对</button>
+      <button class="tab" data-tab="live">实时语音</button>
       <button class="tab" data-tab="history">历史记录</button>
       <button class="tab" data-tab="settings">设置</button>
     </nav>
@@ -110,6 +111,29 @@
       </div>
     </section>
 
+    <!-- Live voice translation (Gemini 3.5 Live Translate) -->
+    <section class="panel" data-panel="live">
+      <div class="card row-2">
+        <div class="field">
+          <label>翻译到（目标语言）</label>
+          <select id="live-target"></select>
+        </div>
+        <div class="actions" style="align-items:end">
+          <button id="live-start" class="primary">🎙 开始</button>
+          <button id="live-stop" disabled>停止</button>
+        </div>
+      </div>
+      <div class="muted" id="live-status" style="margin-bottom:12px"></div>
+      <div class="card">
+        <h3>识别原文</h3>
+        <div id="live-input" class="live-text"></div>
+      </div>
+      <div class="card">
+        <h3>翻译结果</h3>
+        <div id="live-output" class="live-text"></div>
+      </div>
+    </section>
+
     <!-- History -->
     <section class="panel" data-panel="history">
       <div class="card">
@@ -126,6 +150,10 @@
       <div class="card row-2">
         <div class="field"><label>模型（密钥所属）</label><select id="set-model"></select></div>
         <div class="field"><label>API 密钥</label><input type="password" id="set-apikey" placeholder="在此输入您的 API 密钥" /></div>
+      </div>
+      <div class="card row-2">
+        <div class="field"><label>Google 密钥（实时语音翻译 · Gemini Live）</label><input type="password" id="set-google-key" placeholder="AQ... / AIza..." /></div>
+        <div class="muted" style="align-self:end">用于"实时语音"页的 Gemini 3.5 Live Translate。</div>
       </div>
       <div class="card row-2">
         <div class="field"><label>最大重试次数</label><input type="number" id="set-retries" min="1" max="10" /></div>

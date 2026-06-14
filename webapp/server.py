@@ -13,9 +13,9 @@ import json
 import shutil
 import threading
 import uuid
-import queue
+import asyncio
 
-from fastapi import FastAPI, UploadFile, Form, HTTPException
+from fastapi import FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import (
     FileResponse, StreamingResponse, JSONResponse, HTMLResponse)
 from fastapi.staticfiles import StaticFiles
@@ -424,6 +424,73 @@ def module_status_endpoint(name: str):
     avail = {m["name"]: m["available"] for m in module_status()}
     job["available"] = avail.get(name, False)
     return job
+
+
+# --------------------------------------------------------------------------- #
+# Real-time voice translation (Gemini 3.5 Live Translate, proxied so the
+# Google key stays server-side). Browser streams 16k PCM, gets back 24k PCM
+# audio + input/output transcripts.
+# --------------------------------------------------------------------------- #
+GEMINI_LIVE_URL = ("wss://generativelanguage.googleapis.com/ws/"
+                   "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
+GEMINI_LIVE_MODEL = "models/gemini-3.5-live-translate-preview"
+
+
+@app.websocket("/ws/live-translate")
+async def live_translate(ws: WebSocket):
+    await ws.accept()
+    target = ws.query_params.get("target", "zh")
+    key = load_api_key_for_model("(Google) Live Translate")  # provider "Google"
+    if not key:
+        await ws.send_json({"type": "error", "message": "Google API key not set (Settings)."})
+        await ws.close()
+        return
+    try:
+        import websockets
+    except Exception:
+        await ws.send_json({"type": "error", "message": "websockets package missing."})
+        await ws.close()
+        return
+
+    try:
+        async with websockets.connect(f"{GEMINI_LIVE_URL}?key={key}", max_size=None) as gws:
+            await gws.send(json.dumps({"setup": {
+                "model": GEMINI_LIVE_MODEL,
+                "generationConfig": {
+                    "responseModalities": ["AUDIO"],
+                    "translationConfig": {"targetLanguageCode": target, "echoTargetLanguage": True},
+                },
+                "inputAudioTranscription": {},
+                "outputAudioTranscription": {},
+            }}))
+
+            async def client_to_gemini():
+                try:
+                    while True:
+                        d = json.loads(await ws.receive_text())
+                        if "audio" in d:
+                            await gws.send(json.dumps({"realtimeInput": {
+                                "audio": {"data": d["audio"], "mimeType": "audio/pcm;rate=16000"}}}))
+                        elif d.get("end"):
+                            await gws.send(json.dumps({"realtimeInput": {"audioStreamEnd": True}}))
+                except (WebSocketDisconnect, RuntimeError):
+                    pass
+
+            async def gemini_to_client():
+                async for raw in gws:
+                    await ws.send_text(raw if isinstance(raw, str) else raw.decode("utf-8", "replace"))
+
+            await asyncio.gather(client_to_gemini(), gemini_to_client())
+    except Exception as e:  # noqa: BLE001
+        try:
+            await ws.send_json({"type": "error", "message": str(e)[:300]})
+        except Exception:
+            pass
+    finally:
+        try:
+            await ws.close()
+        except Exception:
+            pass
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
