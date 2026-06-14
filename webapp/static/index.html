@@ -37,10 +37,19 @@
     </div>
 
     <nav class="nav" id="tabs">
-      <div class="nav-group nav-hero">
+      <div class="nav-group">
+        <div class="nav-label"><b>快速开始</b><span>Start</span></div>
+        <button class="tab" data-tab="interface" title="接口管理">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><path d="M8 12h8"/></svg></span>
+          <span data-i18n="Interface Management">接口管理</span>
+        </button>
         <button class="tab active" data-tab="translate" title="翻译">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18"/><path d="M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg></span>
-          <span>翻译</span>
+          <span data-i18n="Translate">翻译</span>
+        </button>
+        <button class="tab" data-tab="live" title="实时语音">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></span>
+          <span data-i18n="Real-Time Voice">实时语音</span>
         </button>
       </div>
 
@@ -74,8 +83,14 @@
     </nav>
 
     <div class="sidebar-bottom">
-      <span class="bottom-label mono">主题 / Theme</span>
-      <button id="theme-toggle" class="icon-btn" title="切换主题"></button>
+      <div class="bottom-row">
+        <span class="bottom-label mono" data-i18n="Interface Language">界面语言</span>
+        <select id="ui-lang" class="ui-lang-select" title="界面语言"></select>
+      </div>
+      <div class="bottom-row">
+        <span class="bottom-label mono">主题 / Theme</span>
+        <button id="theme-toggle" class="icon-btn" title="切换主题"></button>
+      </div>
     </div>
   </aside>
 
@@ -86,7 +101,44 @@
       <a id="update-link" target="_blank" rel="noopener noreferrer">前往下载</a>
       <button id="update-dismiss" title="关闭" aria-label="关闭">×</button>
     </div>
-    <!-- Translate (document + live, switched in-page) -->
+    <!-- Interface management: provider cards, click to activate, double-click to configure -->
+    <section class="panel" data-panel="interface">
+      <div class="page-head">
+        <div class="kicker mono">Interfaces</div>
+        <h2 data-i18n="Interface Management">接口管理</h2>
+        <p data-i18n="Interface hint">单击卡片设为活动接口，双击配置参数（密钥、温度等）。</p>
+      </div>
+      <div class="actions" style="margin-bottom:14px">
+        <button id="add-interface" class="primary">+ <span data-i18n="Add Interface">添加接口</span></button>
+        <span id="iface-active" class="muted"></span>
+      </div>
+      <div class="iface-group"><h3 data-i18n="Local Interfaces">本地接口</h3><div class="iface-cards" id="iface-local"></div></div>
+      <div class="iface-group"><h3 data-i18n="Official Interfaces">官方接口</h3><div class="iface-cards" id="iface-official"></div></div>
+      <div class="iface-group"><h3 data-i18n="Custom Interfaces">自定义接口</h3><div class="iface-cards" id="iface-custom"></div></div>
+    </section>
+
+    <!-- Interface config dialog -->
+    <div id="iface-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <h3 id="iface-modal-title" data-i18n="Add Interface">添加接口</h3>
+        <div class="field"><label data-i18n="Interface Name">接口名称</label><input id="if-name" placeholder="My Provider" /></div>
+        <div class="field"><label data-i18n="Base URL">Base URL</label><input id="if-base" placeholder="https://api.example.com/v1" /></div>
+        <div class="field"><label data-i18n="Model ID">模型 ID</label><input id="if-model" placeholder="gpt-4o" /></div>
+        <div class="field"><label data-i18n="API Key">API 密钥</label><input id="if-key" type="password" placeholder="留空则不修改" /></div>
+        <div class="row-2">
+          <div class="field"><label data-i18n="Temperature">Temperature</label><input id="if-temp" placeholder="1.3" /></div>
+          <div class="field"><label data-i18n="Top P">Top P</label><input id="if-topp" placeholder="0.95" /></div>
+        </div>
+        <div class="modal-actions">
+          <button id="if-delete" class="danger" hidden data-i18n="Delete">删除</button>
+          <span style="flex:1"></span>
+          <button id="if-cancel" data-i18n="Cancel">取消</button>
+          <button id="if-save" class="primary" data-i18n="Save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Translate (document; live voice is its own nav item) -->
     <section class="panel active" data-panel="translate">
       <div class="page-head">
         <div class="kicker mono">Translate</div>

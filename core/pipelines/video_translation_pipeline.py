@@ -147,12 +147,49 @@ def _sensevoice_lang(src_lang):
     return code if code in {"zh", "en", "ja", "ko", "yue"} else "auto"
 
 
+# SenseVoice on the HF mirror, downloaded file-by-file. modelscope's link
+# stalls on the 893MB model.pt (not a bandwidth issue — the connection hangs);
+# the HF mirror is fast and reliable per file. Falls back to modelscope id.
+_SENSEVOICE_HF_REPO = "FunAudioLLM/SenseVoiceSmall"
+_SENSEVOICE_FILES = ["model.pt", "config.yaml", "configuration.json", "am.mvn",
+                     "chn_jpn_yue_eng_ko_spectok.bpe.model"]
+
+
+def _sensevoice_local_dir():
+    """Fetch SenseVoice from the HF mirror (per-file) and return its local dir,
+    or None if the mirror is unreachable (caller falls back to modelscope)."""
+    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    try:
+        from huggingface_hub import hf_hub_download
+    except ImportError:
+        return None
+    root = None
+    for fname in _SENSEVOICE_FILES:
+        last = None
+        for _ in range(4):
+            try:
+                last = hf_hub_download(_SENSEVOICE_HF_REPO, fname)
+                break
+            except Exception:  # noqa: BLE001 - transient mirror hiccup, retry
+                last = None
+        if not last:
+            return None
+        root = os.path.dirname(last)
+    return root
+
+
 def _get_sensevoice(model_name):
     global _sensevoice
     if _sensevoice is None:
         from funasr import AutoModel
-        app_logger.info(f"Loading SenseVoice '{model_name}' + fsmn-vad (downloads on first use)...")
-        asr = AutoModel(model=model_name, disable_update=True)
+        app_logger.info("Loading SenseVoice + fsmn-vad (downloads on first use)...")
+        local = _sensevoice_local_dir()
+        if local:
+            app_logger.info(f"SenseVoice from HF mirror: {local}")
+            asr = AutoModel(model=local, disable_update=True)
+        else:  # mirror unreachable -> modelscope (may be slow)
+            app_logger.warning("HF mirror unavailable; loading SenseVoice via modelscope.")
+            asr = AutoModel(model=model_name, disable_update=True)
         vad = AutoModel(model="fsmn-vad", disable_update=True,
                         vad_kwargs={"max_single_segment_time": 30000})
         _sensevoice = (asr, vad)

@@ -63,8 +63,8 @@ def use_sandbox():
 def test_session_id_validity():
     print("session id validity (safe as a path component)")
     sid = sessions.new_session_id()
-    check("new id is 12-char hex",
-          len(sid) == 12 and all(c in "0123456789abcdef" for c in sid), sid)
+    check("new id is 32-char hex (128-bit, path-safe)",
+          len(sid) == 32 and all(c in "0123456789abcdef" for c in sid), sid)
     check("accepts a hex token", sessions.valid_session_id("abcdef123456"))
     check("rejects empty", not sessions.valid_session_id(""))
     check("rejects path separator", not sessions.valid_session_id("a/b"))

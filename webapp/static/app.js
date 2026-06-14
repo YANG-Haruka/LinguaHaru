@@ -91,16 +91,128 @@ function modelsForMode(online) {
 // ----- tabs -----
 document.querySelectorAll(".tab").forEach((t) => {
   t.onclick = () => {
+    const tab = t.dataset.tab;
     document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
     document.querySelectorAll(".panel").forEach((x) => x.classList.remove("active"));
     t.classList.add("active");
-    document.querySelector(`.panel[data-panel="${t.dataset.tab}"]`).classList.add("active");
-    if (t.dataset.tab === "glossary") loadGlossaryTable($("glossary-edit-select").value);
-    if (t.dataset.tab === "proofread") loadProofreadDocs();
-    if (t.dataset.tab === "history") loadHistory();
+    // "Live voice" is its own nav item but reuses the translate panel's live
+    // subpane (so it shows as a separate page like the Qt app, without moving
+    // the markup).
+    const panelName = tab === "live" ? "translate" : tab;
+    document.querySelector(`.panel[data-panel="${panelName}"]`).classList.add("active");
+    if (tab === "live") showTranslateSub("live");
+    else if (tab === "translate") showTranslateSub("doc");
+    if (tab === "interface") loadInterfaces();
+    if (tab === "glossary") loadGlossaryTable($("glossary-edit-select").value);
+    if (tab === "proofread") loadProofreadDocs();
+    if (tab === "history") loadHistory();
     document.body.classList.remove("nav-open");
   };
 });
+
+function showTranslateSub(sub) {
+  document.querySelectorAll('.panel[data-panel="translate"] .subpane').forEach((x) => x.classList.remove("active"));
+  const el = document.querySelector(`.panel[data-panel="translate"] .subpane[data-sub="${sub}"]`);
+  if (el) el.classList.add("active");
+}
+
+// ----- interface management (mirrors the Qt Interface page) -----
+let _ifaceActive = "";
+async function loadInterfaces() {
+  let d;
+  try { d = await api("/api/interfaces"); } catch { return; }
+  _ifaceActive = d.active || "";
+  $("iface-active").textContent = d.active ? "✓ " + d.active : "";
+  renderIfaceGroup("iface-local", (d.local || []).map((n) => ({ name: n, sub: "Ollama / LM Studio", online: false })));
+  renderIfaceGroup("iface-official", (d.online || []).filter((i) => i.official).map((i) => ({ name: i.name, sub: i.model, online: true })));
+  renderIfaceGroup("iface-custom", (d.online || []).filter((i) => !i.official).map((i) => ({ name: i.name, sub: i.model, online: true })));
+}
+function renderIfaceGroup(id, items) {
+  const box = $(id);
+  if (!box) return;
+  box.innerHTML = "";
+  if (!items.length) { box.innerHTML = '<div class="muted">—</div>'; return; }
+  for (const it of items) {
+    const card = document.createElement("div");
+    card.className = "iface-card" + (it.name === _ifaceActive ? " active" : "");
+    card.innerHTML = `<div class="if-name">${it.name}</div><div class="if-sub mono">${it.sub || ""}</div>` +
+      (it.name === _ifaceActive ? '<span class="if-badge">✓</span>' : "");
+    card.onclick = () => activateIface(it.name, it.online);
+    if (it.online) card.ondblclick = () => openIfaceConfig(it.name);
+    box.appendChild(card);
+  }
+}
+async function activateIface(name, online) {
+  try {
+    await api("/api/interface/activate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, online }) });
+  } catch { return; }
+  BOOT.config.default_online = online;            // sync the translate dropdown
+  if (online) BOOT.config.default_online_model = name;
+  fillSelect($("model"), modelsForMode(online), online ? name : null);
+  if ($("set-online")) $("set-online").checked = online;
+  loadInterfaces();
+}
+let _ifaceEditing = null;
+async function openIfaceConfig(name) {
+  _ifaceEditing = name;
+  $("iface-modal-title").textContent = name || "添加接口";
+  $("if-name").value = name || ""; $("if-name").disabled = !!name;
+  $("if-delete").hidden = !name;
+  $("if-base").value = ""; $("if-model").value = ""; $("if-key").value = "";
+  $("if-temp").value = ""; $("if-topp").value = ""; $("if-key").placeholder = "在此输入 API 密钥";
+  if (name) {
+    try {
+      const c = await api("/api/interface/config?name=" + encodeURIComponent(name));
+      $("if-base").value = c.base_url || ""; $("if-model").value = c.model || "";
+      $("if-temp").value = c.temperature ?? ""; $("if-topp").value = c.top_p ?? "";
+      $("if-key").placeholder = c.has_key ? "已设置（留空则不修改）" : "在此输入 API 密钥";
+    } catch {}
+  }
+  $("iface-modal").hidden = false;
+}
+function closeIfaceConfig() { $("iface-modal").hidden = true; }
+async function saveIfaceConfig() {
+  const name = $("if-name").value.trim();
+  if (!name) return;
+  await api("/api/interface/save", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, base_url: $("if-base").value.trim(), model: $("if-model").value.trim(),
+      temperature: $("if-temp").value.trim(), top_p: $("if-topp").value.trim(), api_key: $("if-key").value }) });
+  closeIfaceConfig(); loadInterfaces();
+}
+async function deleteIface() {
+  if (!_ifaceEditing) return;
+  await api("/api/interface/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: _ifaceEditing }) });
+  closeIfaceConfig(); loadInterfaces();
+}
+if ($("add-interface")) $("add-interface").onclick = () => openIfaceConfig(null);
+if ($("if-cancel")) $("if-cancel").onclick = closeIfaceConfig;
+if ($("if-save")) $("if-save").onclick = saveIfaceConfig;
+if ($("if-delete")) $("if-delete").onclick = deleteIface;
+if ($("iface-modal")) $("iface-modal").onclick = (e) => { if (e.target.id === "iface-modal") closeIfaceConfig(); };
+
+// ----- interface language (i18n) -----
+const _UI_LANGS = [["en", "English"], ["zh", "简体中文"], ["zh-Hant", "繁體中文"], ["ja", "日本語"]];
+function applyI18n(lang) {
+  const L = (BOOT.labels && BOOT.labels[lang]) || {};
+  const EN = (BOOT.labels && BOOT.labels.en) || {};
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    const k = el.dataset.i18n;
+    el.textContent = L[k] || EN[k] || el.textContent;
+  });
+  localStorage.setItem("lh-lang", lang);
+}
+function initUiLang() {
+  const sel = $("ui-lang");
+  if (!sel) return;
+  sel.innerHTML = "";
+  for (const [code, label] of _UI_LANGS) {
+    const o = document.createElement("option"); o.value = code; o.textContent = label; sel.appendChild(o);
+  }
+  const saved = localStorage.getItem("lh-lang") || "zh";
+  sel.value = saved;
+  applyI18n(saved);
+  sel.onchange = () => applyI18n(sel.value);
+}
 
 // ----- theme -----
 function applyTheme(theme) {
@@ -170,6 +282,7 @@ async function boot() {
   refreshSettingsApiKeyPlaceholder();
   refreshMediaNote();
   renderDropBg();
+  initUiLang();
   checkUpdate();
 }
 
@@ -191,7 +304,7 @@ $("update-dismiss").onclick = () => { $("update-banner").hidden = true; };
 // beats the .tab/.field stylesheet rules (HTML [hidden] would be overridden).
 function applyServerMode() {
   document.body.classList.add("server-mode");
-  for (const t of ["settings", "history", "modules"]) {
+  for (const t of ["settings", "history", "modules", "interface"]) {
     const btn = document.querySelector(`.tab[data-tab="${t}"]`);
     if (btn) btn.style.display = "none";
   }

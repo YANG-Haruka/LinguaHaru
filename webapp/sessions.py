@@ -15,13 +15,14 @@ lowercase-hex tokens — no separators, no ``..``.
 
 import os
 import re
+import secrets
 import threading
-import uuid
 
 from core import backend
 
 SESSION_COOKIE = "lh_session"
-_SID_RE = re.compile(r"\A[0-9a-f]{6,32}\Z")
+# Accept legacy 12-hex ids and the current 32-hex (128-bit) ids; nothing shorter.
+_SID_RE = re.compile(r"\A[0-9a-f]{12,32}\Z")
 
 # session_id -> True when a stop was requested. In-memory only.
 _stop_flags = {}
@@ -33,8 +34,8 @@ class StopTranslationException(Exception):
 
 
 def new_session_id():
-    """A fresh opaque session id (safe to use as a path component)."""
-    return uuid.uuid4().hex[:12]
+    """A fresh opaque session id (128 bits, safe to use as a path component)."""
+    return secrets.token_hex(16)
 
 
 def valid_session_id(sid):
@@ -103,13 +104,18 @@ def proofread_doc_dir(doc_name, session_id):
     if not doc_name or not valid_session_id(session_id):
         return None
     norm = doc_name.replace("\\", "/")
+    if ".." in norm.split("/"):           # reject any traversal component outright
+        return None
     owner = norm.split("/", 1)[0] if "/" in norm else None
     if owner != session_id:
         return None
     temp_dir, _, _ = backend.get_custom_paths()
-    base = os.path.realpath(temp_dir)
-    candidate = os.path.realpath(os.path.join(base, doc_name))
-    if not candidate.startswith(base + os.sep):
+    # Resolve against — and confine to — the CALLER'S OWN session dir, not the
+    # shared temp root. (Confining to the root let "<myid>/../<otherid>/doc"
+    # escape into another user's subtree, an IDOR.)
+    sess_base = os.path.realpath(os.path.join(temp_dir, session_id))
+    candidate = os.path.realpath(os.path.join(temp_dir, doc_name))
+    if candidate != sess_base and not candidate.startswith(sess_base + os.sep):
         return None
     return candidate
 

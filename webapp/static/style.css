@@ -340,6 +340,36 @@ select:focus, input:focus {
 .ft i { font-style: normal; font-size: 13px; font-weight: 700; color: var(--muted); }
 @keyframes ft-scroll { to { transform: translateX(-50%); } }
 @media (prefers-reduced-motion: reduce) { .ft-track { animation: none; } }
+
+/* Live voice is its own nav item now → hide the in-page doc/live switch. */
+#translate-mode { display: none; }
+
+/* ----- interface management ----- */
+.iface-group { margin-bottom: 18px; }
+.iface-group h3 { font-size: .92rem; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+.iface-cards { display: flex; flex-wrap: wrap; gap: 12px; }
+.iface-card {
+  position: relative; min-width: 200px; padding: 14px 16px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: var(--r); background: var(--surface);
+  transition: border-color .15s, transform .15s, box-shadow .15s;
+}
+.iface-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,.10); }
+.iface-card.active { border-color: var(--accent); background: var(--accent-soft); }
+.iface-card .if-name { font-weight: 600; color: var(--text); }
+.iface-card .if-sub { font-size: .8rem; color: var(--muted); margin-top: 2px; }
+.iface-card .if-badge { position: absolute; top: 10px; right: 12px; color: var(--accent); font-weight: 700; }
+
+/* ----- modal dialog ----- */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.modal { width: min(460px, 92vw); max-height: 88vh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+.modal h3 { margin: 0 0 16px; }
+.modal .field { margin-bottom: 12px; }
+.modal-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+button.danger { color: #fff; background: #ef4444; border: none; }
+
+/* ----- interface language selector (sidebar bottom) ----- */
+.bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.ui-lang-select { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: .85rem; }
 .muted { color: var(--muted); font-size: 0.84rem; }
 #accepted { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.3px; color: var(--faint); }
 
