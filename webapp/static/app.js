@@ -366,47 +366,90 @@ let proofreadCols = [];
 async function loadProofreadDocs() {
   const data = await api("/api/proofread/docs");
   fillSelect($("proofread-select"), data.docs.length ? data.docs : ["(无可校对文档)"]);
-  if (data.docs.length) loadProofreadTable(data.docs[0]);
-  else { $("proofread-table").innerHTML = ""; $("proofread-status").textContent = "完成一次翻译后即可在此校对（不支持 PDF）。"; }
+  if (!data.docs.length) {
+    $("proofread-table").replaceChildren();
+    $("proofread-status").textContent = "完成一次翻译后即可在此校对（不支持 PDF）。";
+    return;
+  }
+  // Only build the (potentially large) table the first time — re-clicking the
+  // tab just refreshes the doc list, so opening 校对 stays instant.
+  if ($("proofread-table").querySelectorAll("tr").length === 0) {
+    loadProofreadTable(data.docs[0]);
+  }
 }
 $("proofread-select").onchange = () => { if ($("proofread-select").value !== "(无可校对文档)") loadProofreadTable($("proofread-select").value); };
 $("proofread-refresh").onclick = loadProofreadDocs;
 
+// Paginated: only render PAGE rows at a time (a doc can have thousands of
+// segments — rendering all at once froze the tab). Edits are written back into
+// proofreadRows immediately so they survive paging and are saved in full.
+let proofreadRows = [], proofreadPage = 0;
+const PROOFREAD_PAGE = 100;
+
 async function loadProofreadTable(name) {
+  $("proofread-status").textContent = "加载中…";
   const data = await api("/api/proofread?name=" + encodeURIComponent(name));
   proofreadCols = data.columns;
-  const t = $("proofread-table");
-  t.innerHTML = "";
-  const head = document.createElement("tr");
-  for (const c of data.columns) { const th = document.createElement("th"); th.textContent = c; head.appendChild(th); }
-  t.appendChild(head);
-  for (const row of data.rows) {
-    const tr = document.createElement("tr");
-    row.forEach((val, i) => {
-      const td = document.createElement("td");
-      if (i === data.columns.length - 1) { // only translation editable
-        const inp = document.createElement("input"); inp.type = "text"; inp.value = val == null ? "" : val; td.appendChild(inp);
-      } else { td.textContent = val == null ? "" : val; }
-      tr.appendChild(td);
-    });
-    t.appendChild(tr);
-  }
-  $("proofread-status").textContent = `已加载 ${data.rows.length} 行`;
+  proofreadRows = data.rows;
+  proofreadPage = 0;
+  renderProofreadPage();
   $("proofread-download").hidden = true;
+}
+
+function renderProofreadPage() {
+  const t = $("proofread-table");
+  t.replaceChildren();
+  const frag = document.createDocumentFragment();
+  const last = proofreadCols.length - 1;
+  const head = document.createElement("tr");
+  for (const c of proofreadCols) { const th = document.createElement("th"); th.textContent = c; head.appendChild(th); }
+  frag.appendChild(head);
+  const start = proofreadPage * PROOFREAD_PAGE;
+  const end = Math.min(start + PROOFREAD_PAGE, proofreadRows.length);
+  for (let r = start; r < end; r++) {
+    const row = proofreadRows[r];
+    const tr = document.createElement("tr");
+    for (let i = 0; i < proofreadCols.length; i++) {
+      const td = document.createElement("td");
+      const val = row[i] == null ? "" : row[i];
+      if (i === last) {
+        const inp = document.createElement("input");
+        inp.type = "text"; inp.value = val;
+        inp.oninput = (e) => { proofreadRows[r][last] = e.target.value; };
+        td.appendChild(inp);
+      } else { td.textContent = val; }
+      tr.appendChild(td);
+    }
+    frag.appendChild(tr);
+  }
+  t.appendChild(frag);
+  renderProofreadPager(start, end);
+}
+
+function renderProofreadPager(start, end) {
+  const total = proofreadRows.length;
+  const pages = Math.max(1, Math.ceil(total / PROOFREAD_PAGE));
+  const pg = $("proofread-pager");
+  pg.replaceChildren();
+  $("proofread-status").textContent = "";
+  if (total <= PROOFREAD_PAGE) { $("proofread-status").textContent = `共 ${total} 行`; return; }
+  const mk = (label, disabled, fn) => {
+    const b = document.createElement("button");
+    b.textContent = label; b.disabled = disabled; if (!disabled) b.onclick = fn;
+    return b;
+  };
+  pg.appendChild(mk("‹ 上一页", proofreadPage === 0, () => { proofreadPage--; renderProofreadPage(); }));
+  const info = document.createElement("span");
+  info.className = "pager-info";
+  info.textContent = `第 ${proofreadPage + 1}/${pages} 页 · 显示 ${start + 1}–${end} / 共 ${total} 行`;
+  pg.appendChild(info);
+  pg.appendChild(mk("下一页 ›", proofreadPage >= pages - 1, () => { proofreadPage++; renderProofreadPage(); }));
 }
 $("proofread-save").onclick = async () => {
   const name = $("proofread-select").value;
-  const rows = [];
-  $("proofread-table").querySelectorAll("tr").forEach((tr, i) => {
-    if (i === 0) return;
-    const cells = tr.children;
-    const cnt = cells[0].textContent;
-    const orig = cells[1].textContent;
-    const trans = cells[cells.length - 1].querySelector("input").value;
-    rows.push([cnt === "" ? null : Number(cnt), orig, trans]);
-  });
+  // proofreadRows holds the full document with edits applied across all pages.
   const res = await api("/api/proofread", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, rows }) });
+    body: JSON.stringify({ name, rows: proofreadRows }) });
   $("proofread-status").textContent = `已保存（修改 ${res.changed} 行）`;
 };
 $("proofread-export").onclick = async () => {

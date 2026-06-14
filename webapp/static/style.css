@@ -248,6 +248,23 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
 #proofread-table th, #proofread-table td { white-space: normal; word-break: break-word; vertical-align: top; }
 #proofread-table th:first-child, #proofread-table td:first-child { width: 64px; color: var(--muted); }
 
+/* Bound large tables to a scroll area so a long document doesn't grow the page
+   to thousands of px (which makes the panel transition + paint expensive). */
+.panel[data-panel="proofread"] .table-scroll,
+.panel[data-panel="history"] .table-scroll { max-height: 64vh; overflow-y: auto; }
+/* Don't run the rise animation on proofread — it may hold a huge table. */
+.panel[data-panel="proofread"].active { animation: none; }
+
+.pager { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.pager button {
+  background: var(--surface-2); color: var(--text-2);
+  border: 1px solid var(--border-2); padding: 0 16px; height: 38px; border-radius: var(--r-sm);
+  font-weight: 600; cursor: pointer; transition: background .15s, border-color .15s;
+}
+.pager button:hover:not(:disabled) { background: var(--hover); border-color: var(--accent); color: var(--text); }
+.pager button:disabled { opacity: .4; cursor: not-allowed; }
+.pager-info { color: var(--muted); font-size: .85rem; }
+
 .live-text {
   min-height: 130px; max-height: 340px; overflow-y: auto;
   font-size: 1.06rem; line-height: 1.75; color: var(--text);
