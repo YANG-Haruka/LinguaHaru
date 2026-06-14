@@ -1191,11 +1191,12 @@ def get_custom_css():
         z-index: 2200 !important;
     }
 
-    #model-dropdown ul,
-    #model-dropdown [role="listbox"],
+    /* Target ONLY the popup list (ul.options). NOTE: Gradio's dropdown <input>
+       itself carries role="listbox", so a [role="listbox"] selector would also
+       hit the input and displace the selected-value text — do not use it here. */
+    #model-dropdown ul.options,
     #model-dropdown .options,
-    #glossary-dropdown ul,
-    #glossary-dropdown [role="listbox"],
+    #glossary-dropdown ul.options,
     #glossary-dropdown .options {
         z-index: 2003 !important;
         /* Force the list to open downward, anchored under the input. Gradio's
@@ -2280,13 +2281,6 @@ def create_main_interface(config, get_label=None):
             </script>
         """, elem_id="api-help-container")
 
-    # Shown on the translate tab when online mode is on but no API key is set.
-    api_key_warning = gr.Markdown(
-        f"⚠️ {get_label('API Key Not Set')}",
-        visible=False,
-        elem_id="api-key-warning",
-    )
-
     accepted_types = get_accepted_file_types()
 
     file_input = gr.File(
@@ -2303,7 +2297,7 @@ def create_main_interface(config, get_label=None):
         continue_button = gr.Button(get_label("Continue Translation"), interactive=False)
         stop_button = gr.Button(get_label("Stop Translation"), interactive=False)
 
-    return (api_key_input, api_key_row, remember_key_checkbox, api_key_warning, file_input, output_file, status_message,
+    return (api_key_input, api_key_row, remember_key_checkbox, file_input, output_file, status_message,
             translate_button, continue_button, stop_button)
 
 
