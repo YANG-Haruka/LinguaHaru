@@ -22,8 +22,10 @@ def image_translation_available():
 
 
 def video_translation_available():
-    return (importlib.util.find_spec("faster_whisper") is not None
-            and shutil.which("ffmpeg") is not None)
+    # Either STT engine works: faster-whisper or SenseVoice (funasr).
+    has_stt = (importlib.util.find_spec("faster_whisper") is not None
+               or importlib.util.find_spec("funasr") is not None)
+    return has_stt and shutil.which("ffmpeg") is not None
 
 
 def available_optional_extensions():
@@ -48,5 +50,6 @@ def module_status():
         {"name": "Image OCR", "available": image_translation_available(),
          "detail": ocr_engine, "install": "pip install -r requirements-ocr.txt"},
         {"name": "Video/Audio", "available": video_translation_available(),
-         "detail": "faster-whisper + ffmpeg", "install": "pip install -r requirements-video.txt (+ ffmpeg)"},
+         "detail": "faster-whisper / SenseVoice + ffmpeg",
+         "install": "pip install -r requirements-video.txt (+ ffmpeg)"},
     ]
