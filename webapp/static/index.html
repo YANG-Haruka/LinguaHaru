@@ -7,20 +7,23 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <header class="topbar">
+ <div class="app">
+  <aside class="sidebar">
     <div class="brand">LinguaHaru</div>
     <nav class="tabs" id="tabs">
-      <button class="tab active" data-tab="translate">翻译</button>
-      <button class="tab" data-tab="glossary">词汇表</button>
-      <button class="tab" data-tab="proofread">校对</button>
-      <button class="tab" data-tab="live">实时语音</button>
-      <button class="tab" data-tab="history">历史记录</button>
-      <button class="tab" data-tab="settings">设置</button>
+      <button class="tab active" data-tab="translate"><span class="ti">🌐</span>翻译</button>
+      <button class="tab" data-tab="glossary"><span class="ti">📚</span>词汇表</button>
+      <button class="tab" data-tab="proofread"><span class="ti">📝</span>校对</button>
+      <button class="tab" data-tab="live"><span class="ti">🎙</span>实时语音</button>
+      <button class="tab" data-tab="history"><span class="ti">🕘</span>历史记录</button>
+      <button class="tab" data-tab="settings"><span class="ti">⚙</span>设置</button>
     </nav>
-    <button id="theme-toggle" class="icon-btn" title="主题">🌙</button>
-  </header>
+    <div class="sidebar-bottom">
+      <button id="theme-toggle" class="icon-btn" title="主题">🌙</button>
+    </div>
+  </aside>
 
-  <main class="container">
+  <main class="content">
     <!-- Translate -->
     <section class="panel active" data-panel="translate">
       <div class="card lang-card">
@@ -164,9 +167,9 @@
       </div>
       <div id="settings-status" class="muted"></div>
     </section>
+    <footer class="footer">Crafted with ♥ by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
-
-  <footer class="footer">Crafted with ♥ by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
+ </div>
   <script src="/static/app.js"></script>
 </body>
 </html>

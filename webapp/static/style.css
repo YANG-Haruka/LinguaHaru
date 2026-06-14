@@ -59,47 +59,54 @@ body {
   transition: background .25s, color .25s;
 }
 
-/* ---------- top bar ---------- */
-.topbar {
-  display: flex; align-items: center; gap: 22px;
-  padding: 14px 28px;
-  background: color-mix(in srgb, var(--surface) 78%, transparent);
+/* ---------- app shell: left sidebar + content ---------- */
+.app { display: flex; min-height: 100vh; }
+
+.sidebar {
+  width: 232px; flex-shrink: 0;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 20px 14px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
   backdrop-filter: saturate(180%) blur(14px);
   -webkit-backdrop-filter: saturate(180%) blur(14px);
-  border-bottom: 1px solid var(--border);
-  position: sticky; top: 0; z-index: 20;
+  border-right: 1px solid var(--border);
+  position: sticky; top: 0; height: 100vh;
 }
 .brand {
-  font-size: 1.32rem; font-weight: 800; letter-spacing: .3px;
+  font-size: 1.4rem; font-weight: 800; letter-spacing: .3px;
+  padding: 6px 12px 16px;
   background: linear-gradient(120deg, var(--accent), #8a5cf0);
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
-.tabs { display: flex; gap: 4px; flex: 1; }
+.tabs { display: flex; flex-direction: column; gap: 4px; }
 .tab {
-  border: none; background: transparent; color: var(--muted);
-  padding: 9px 18px; border-radius: 999px; cursor: pointer;
-  font-size: .95rem; font-weight: 600; position: relative;
+  display: flex; align-items: center; gap: 11px;
+  border: none; background: transparent; color: var(--text-soft);
+  padding: 11px 14px; border-radius: 12px; cursor: pointer;
+  font-size: .96rem; font-weight: 600; text-align: left;
   transition: color .15s, background .15s;
 }
-.tab:hover { background: var(--surface-2); color: var(--text-soft); }
+.tab .ti { font-size: 1.05rem; width: 20px; text-align: center; }
+.tab:hover { background: var(--surface-2); color: var(--text); }
 .tab.active {
   color: #fff;
   background: linear-gradient(120deg, var(--accent), var(--accent-2));
   box-shadow: 0 6px 16px var(--accent-soft);
 }
+.sidebar-bottom { margin-top: auto; display: flex; justify-content: flex-start; padding: 8px 6px 0; }
 .icon-btn {
   border: 1px solid var(--border); background: var(--surface-2);
-  color: var(--text); width: 40px; height: 40px; border-radius: 50%;
+  color: var(--text); width: 42px; height: 42px; border-radius: 12px;
   cursor: pointer; font-size: 1.05rem; display: grid; place-items: center;
   transition: transform .15s, background .15s, border-color .15s;
 }
 .icon-btn:hover { transform: translateY(-1px); border-color: var(--border-strong); background: var(--surface-hover); }
 
-/* ---------- layout ---------- */
-.container { max-width: 1060px; margin: 0 auto; padding: 30px 18px 80px; }
-.panel { display: none; animation: fade .25s ease; }
-.panel.active { display: block; }
-@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* ---------- content ---------- */
+.content { flex: 1; min-width: 0; max-width: 1100px; margin: 0 auto; padding: 34px 32px 60px; width: 100%; }
+.panel { display: none; }
+.panel.active { display: block; animation: fade .18s ease; }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 
 .card {
   background: var(--surface);
@@ -199,11 +206,22 @@ th, td { border-bottom: 1px solid var(--border); padding: 9px 12px; text-align: 
 tr:last-child td { border-bottom: none; }
 th { background: var(--surface-2); position: sticky; top: 0; font-weight: 700; color: var(--text-soft); }
 tbody tr:hover { background: var(--surface-2); }
-td input { border: 1px solid transparent; background: transparent; padding: 6px; border-radius: 6px; }
+td input { border: 1px solid transparent; background: transparent; padding: 6px; border-radius: 6px; width: 100%; }
 td input:hover { border-color: var(--border); }
-td input:focus { background: var(--surface); }
+td input:focus { background: var(--surface); border-color: var(--accent); }
 #modules-table td, #modules-table th { white-space: nowrap; }
 #modules-table { border: none; }
+
+/* Glossary: many columns — size to content + min width, scroll horizontally
+   instead of squeezing cells until the text is clipped. */
+#glossary-table { width: max-content; min-width: 100%; }
+#glossary-table th { white-space: nowrap; }
+#glossary-table td { min-width: 110px; }
+
+/* Proofread: 3 columns — fixed layout, narrow index, wide wrapping text. */
+#proofread-table { table-layout: fixed; }
+#proofread-table th, #proofread-table td { white-space: normal; word-break: break-word; vertical-align: top; }
+#proofread-table th:first-child, #proofread-table td:first-child { width: 64px; }
 
 .live-text {
   min-height: 120px; max-height: 320px; overflow-y: auto;
@@ -214,8 +232,11 @@ td input:focus { background: var(--surface); }
 
 .footer { text-align: center; color: var(--muted); padding: 28px; font-size: .82rem; }
 
-@media (max-width: 720px) {
+@media (max-width: 820px) {
   .row-2, .lang-card { grid-template-columns: 1fr; }
-  .container { padding: 18px 12px 60px; }
-  .topbar { gap: 12px; padding: 12px 16px; }
+  .content { padding: 20px 16px 60px; }
+  .sidebar { width: 64px; }
+  .sidebar .brand { font-size: 0; padding: 6px; }
+  .tab { justify-content: center; font-size: 0; gap: 0; padding: 11px 0; }
+  .tab .ti { font-size: 1.15rem; }
 }
