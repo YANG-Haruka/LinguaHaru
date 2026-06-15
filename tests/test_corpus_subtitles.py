@@ -140,6 +140,38 @@ def test_lrc_repeated_timestamps():
           f"[00:10.00]{T}Opening verse line here" in result, result)
 
 
+def test_vtt_no_hours_timestamps():
+    print("VTT: MM:SS.mmm (no-hours) timestamps are recognized, cues translated")
+    from core.pipelines.subtitle_formats_pipeline import (
+        extract_vtt_content_to_json, write_translated_content_to_vtt)
+    import json
+
+    src = os.path.join(WORK_DIR, "nohours.vtt")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write("WEBVTT\n\n"
+                "00:01.000 --> 00:04.000\n"
+                "First cue with no hours field\n\n"
+                "01:05.500 --> 01:09.000\n"
+                "Second cue also without hours\n")
+
+    src_json = extract_vtt_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f)]
+    check("both no-hours cues extracted (not dropped)",
+          len(extracted) == 2, str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_vtt(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    with open(out, encoding="utf-8") as f:
+        result = f.read()
+    check("no-hours timestamps preserved", "00:01.000 --> 00:04.000" in result, result)
+    check("no-hours cue text translated",
+          T + "First cue with no hours field" in result
+          and T + "Second cue also without hours" in result, result)
+
+
 if __name__ == "__main__":
     run([test_srt_long_multiline_cues, test_vtt_voice_spans,
+         test_vtt_no_hours_timestamps,
          test_ass_karaoke_tags, test_lrc_repeated_timestamps])

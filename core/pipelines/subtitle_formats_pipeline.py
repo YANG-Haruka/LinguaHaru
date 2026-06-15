@@ -11,7 +11,8 @@ from .skip_pipeline import should_translate
 from .txt_translation_pipeline import read_file_with_encoding
 from core.log_config import app_logger
 
-_VTT_TIMESTAMP = re.compile(r"\d{1,2}:?\d{2}:\d{2}[.,]\d{3}\s*-->")
+# Hours are optional in WebVTT: both HH:MM:SS.mmm and MM:SS.mmm are valid.
+_VTT_TIMESTAMP = re.compile(r"(?:\d{1,2}:)?\d{2}:\d{2}[.,]\d{3}\s*-->")
 _LRC_TIME_TAGS = re.compile(r"^((?:\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\])+)(.*)$")
 _ASS_OVERRIDE = re.compile(r"\{[^}]*\}")
 

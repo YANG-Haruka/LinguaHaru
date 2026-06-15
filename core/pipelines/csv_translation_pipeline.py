@@ -85,7 +85,9 @@ def write_translated_content_to_csv(file_path, original_json_path, translated_js
     extension = os.path.splitext(file_path)[1].lower() or ".csv"  # also serves .tsv
     result_path = os.path.join(result_dir, f"{filename}_{lang_suffix}{extension}")
 
-    with open(result_path, "w", encoding="utf-8-sig", newline="") as f:
+    # Plain UTF-8 (no BOM): a BOM would be glued to the first header cell
+    # (e.g. "﻿id"), breaking strict CSV consumers.
+    with open(result_path, "w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f, delimiter=layout["delimiter"])
         writer.writerows(rows)
 

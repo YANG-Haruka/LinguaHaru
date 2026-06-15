@@ -71,15 +71,41 @@ def extract_md_content_to_json(file_path, temp_dir):
     
     # Counter
     count = 0
-    
-    # Code block tracker
+
+    # Code block tracker (records the opening fence so ``` / ~~~ are matched
+    # by their own marker, per CommonMark).
     in_code_block = False
-    
+    fence_marker = None
+
+    # YAML/TOML front-matter: a leading '---' (or '+++') fenced block at the very
+    # top is metadata, not prose — translating it corrupts the keys. Find its
+    # extent so those lines pass through verbatim.
+    front_matter_end = -1
+    if lines and lines[0].strip() in ("---", "+++"):
+        _fence = lines[0].strip()
+        for _j in range(1, len(lines)):
+            if lines[_j].strip() == _fence:
+                front_matter_end = _j
+                break
+
     # Process each line
     for line_index, line in enumerate(lines):
-        # Handle code blocks
-        if line.strip().startswith('```'):
-            in_code_block = not in_code_block
+        # Front-matter block (including its delimiters): keep verbatim.
+        if front_matter_end >= 0 and line_index <= front_matter_end:
+            structure_items.append({
+                "index": position_index,
+                "type": "front_matter",
+                "value": line,
+                "translate": False
+            })
+            position_index += 1
+            continue
+
+        # Handle code blocks — ``` or ~~~ (CommonMark fenced code).
+        stripped = line.strip()
+        if not in_code_block and (stripped.startswith("```") or stripped.startswith("~~~")):
+            in_code_block = True
+            fence_marker = stripped[:3]
             structure_items.append({
                 "index": position_index,
                 "type": "code_marker",
@@ -88,7 +114,18 @@ def extract_md_content_to_json(file_path, temp_dir):
             })
             position_index += 1
             continue
-        
+        if in_code_block and stripped.startswith(fence_marker):
+            in_code_block = False
+            fence_marker = None
+            structure_items.append({
+                "index": position_index,
+                "type": "code_marker",
+                "value": line,
+                "translate": False
+            })
+            position_index += 1
+            continue
+
         # Skip translation for code block content
         if in_code_block:
             structure_items.append({

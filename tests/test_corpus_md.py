@@ -110,5 +110,51 @@ def test_md_structures():
           f"{len(lines)} vs {len(SOURCE.split(chr(10)))}")
 
 
+FRONT_MATTER_SRC = """---
+title: My Document Title
+tags: [alpha, beta]
+---
+
+# Real heading here
+
+~~~js
+const x = "do not translate this code line";
+~~~
+
+Normal paragraph to translate.
+"""
+
+
+def test_md_frontmatter_and_tilde_fence():
+    print("MD: YAML front-matter + ~~~ fenced code are NOT translated")
+    from core.pipelines.md_translation_pipeline import (
+        extract_md_content_to_json, write_translated_content_to_md)
+    import json
+
+    src = os.path.join(WORK_DIR, "frontmatter.md")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write(FRONT_MATTER_SRC)
+
+    src_json = extract_md_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f)]
+    check("front-matter keys NOT extracted",
+          not any("title:" in v or "tags:" in v for v in extracted), str(extracted))
+    check("~~~ code content NOT extracted",
+          not any("do not translate" in v for v in extracted), str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_md(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                         src_lang="en", dst_lang="ja")
+    with open(out, encoding="utf-8") as f:
+        result = f.read()
+    check("front-matter block byte-identical",
+          "---\ntitle: My Document Title\ntags: [alpha, beta]\n---" in result, result)
+    check("~~~ code block byte-identical",
+          '~~~js\nconst x = "do not translate this code line";\n~~~' in result, result)
+    check("real heading translated", T + "# Real heading here" in result, result)
+    check("paragraph translated", T + "Normal paragraph to translate." in result, result)
+
+
 if __name__ == "__main__":
-    run([test_md_structures])
+    run([test_md_structures, test_md_frontmatter_and_tilde_fence])

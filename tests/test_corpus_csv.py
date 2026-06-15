@@ -89,5 +89,28 @@ def test_tsv_quoted_fields():
           rows[1][1] == T + "Contains a\ttab and\na newline inside", repr(rows[1]))
 
 
+def test_csv_no_bom():
+    print("CSV: output has no UTF-8 BOM (first cell not corrupted)")
+    from core.pipelines.csv_translation_pipeline import (
+        extract_csv_content_to_json, write_translated_content_to_csv)
+
+    src = os.path.join(WORK_DIR, "header.csv")
+    with open(src, "w", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["Title", "Body"])
+        w.writerow(["Hello", "World text"])
+
+    src_json = extract_csv_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_csv(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    raw = open(out, "rb").read()
+    check("no UTF-8 BOM at file start", not raw.startswith(b"\xef\xbb\xbf"), repr(raw[:6]))
+    with open(out, encoding="utf-8", newline="") as f:
+        rows = list(csv.reader(f))
+    check("first cell has no BOM glued to it", rows[0][0] == T + "Title", str(rows[0]))
+
+
 if __name__ == "__main__":
-    run([test_csv_quoted_delimiters, test_csv_quoted_newlines, test_tsv_quoted_fields])
+    run([test_csv_quoted_delimiters, test_csv_quoted_newlines, test_tsv_quoted_fields,
+         test_csv_no_bom])
