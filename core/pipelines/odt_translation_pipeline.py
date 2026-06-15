@@ -19,6 +19,17 @@ TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
 PARA_TAGS = {f"{{{TEXT_NS}}}p", f"{{{TEXT_NS}}}h"}
 A_TAG = f"{{{TEXT_NS}}}a"
 
+# Paragraph-bearing members: content.xml (body) + styles.xml (headers/footers
+# live in master-page <style:header>/<style:footer> as text:p elements).
+PARA_MEMBERS = ("content.xml", "styles.xml")
+
+# meta.xml metadata worth translating (title/subject/description/keywords);
+# author/creator names, dates and generator strings are left untouched.
+_DC_NS = "http://purl.org/dc/elements/1.1/"
+_META_NS = "urn:oasis:names:tc:opendocument:xmlns:meta:1.0"
+_META_TAGS = {f"{{{_DC_NS}}}title", f"{{{_DC_NS}}}subject",
+              f"{{{_DC_NS}}}description", f"{{{_META_NS}}}keyword"}
+
 # User-supplied XML: disable entity resolution / DTD / network access (XXE)
 _SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
 
@@ -96,28 +107,57 @@ def _apply_to_paragraph(el, translated, links=None):
     el.text = translated
 
 
-def extract_odt_content_to_json(file_path, temp_dir):
-    with zipfile.ZipFile(file_path) as zf:
-        root = etree.fromstring(zf.read("content.xml"), parser=_SAFE_PARSER)
+def _iter_meta(root):
+    for el in root.iter():
+        if el.tag in _META_TAGS and (el.text or "").strip():
+            yield el
 
+
+def extract_odt_content_to_json(file_path, temp_dir):
     content_data = []
     count = 0
-    for index, el in enumerate(_iter_paragraphs(root)):
-        text, links = _extract_paragraph(el)
-        text = text.strip()
-        plain = HLINK_RE.sub(lambda m: m.group(2), text)
-        if not plain.strip() or not should_translate(plain.strip()):
-            continue
-        count += 1
-        item = {
-            "count_src": count,
-            "type": "text",
-            "value": text,
-            "para_index": index,
-        }
-        if links:
-            item["links"] = links
-        content_data.append(item)
+
+    with zipfile.ZipFile(file_path) as zf:
+        members = set(zf.namelist())
+
+        # Paragraph text from content.xml (body) and styles.xml (headers/footers)
+        for member in PARA_MEMBERS:
+            if member not in members:
+                continue
+            root = etree.fromstring(zf.read(member), parser=_SAFE_PARSER)
+            for index, el in enumerate(_iter_paragraphs(root)):
+                text, links = _extract_paragraph(el)
+                text = text.strip()
+                plain = HLINK_RE.sub(lambda m: m.group(2), text)
+                if not plain.strip() or not should_translate(plain.strip()):
+                    continue
+                count += 1
+                item = {
+                    "count_src": count,
+                    "type": "text",
+                    "value": text,
+                    "member": member,
+                    "para_index": index,
+                }
+                if links:
+                    item["links"] = links
+                content_data.append(item)
+
+        # Document metadata from meta.xml
+        if "meta.xml" in members:
+            meta_root = etree.fromstring(zf.read("meta.xml"), parser=_SAFE_PARSER)
+            for meta_index, el in enumerate(_iter_meta(meta_root)):
+                text = el.text.strip()
+                if not should_translate(text):
+                    continue
+                count += 1
+                content_data.append({
+                    "count_src": count,
+                    "type": "odt_meta",
+                    "value": text,
+                    "member": "meta.xml",
+                    "meta_index": meta_index,
+                })
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
@@ -138,7 +178,16 @@ def write_translated_content_to_odt(file_path, original_json_path, translated_js
         translated_data = json.load(f)
 
     translations = {item["count_src"]: item["translated"] for item in translated_data}
-    by_index = {item["para_index"]: item for item in original_data}
+    # Paragraph items grouped per member (older JSON without "member" defaults
+    # to content.xml); metadata items grouped separately.
+    para_by_member = {}
+    meta_items = {}
+    for item in original_data:
+        if item.get("type") == "odt_meta":
+            meta_items[item["meta_index"]] = item
+        else:
+            member = item.get("member", "content.xml")
+            para_by_member.setdefault(member, {})[item["para_index"]] = item
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
@@ -149,7 +198,8 @@ def write_translated_content_to_odt(file_path, original_json_path, translated_js
         with zipfile.ZipFile(result_path, "w") as zout:
             for info in zin.infolist():
                 data = zin.read(info.filename)
-                if info.filename == "content.xml":
+                by_index = para_by_member.get(info.filename)
+                if info.filename in PARA_MEMBERS and by_index:
                     root = etree.fromstring(data, parser=_SAFE_PARSER)
                     # Materialize before mutating (live-iterator pitfall)
                     for index, el in enumerate(list(_iter_paragraphs(root))):
@@ -159,6 +209,13 @@ def write_translated_content_to_odt(file_path, original_json_path, translated_js
                         translated = translations.get(item["count_src"])
                         if translated:
                             _apply_to_paragraph(el, translated, item.get("links"))
+                    data = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
+                elif info.filename == "meta.xml" and meta_items:
+                    root = etree.fromstring(data, parser=_SAFE_PARSER)
+                    for meta_index, el in enumerate(_iter_meta(root)):
+                        item = meta_items.get(meta_index)
+                        if item and translations.get(item["count_src"]):
+                            el.text = translations[item["count_src"]]
                     data = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
                 compress = (zipfile.ZIP_STORED if info.filename == "mimetype"
                             else zipfile.ZIP_DEFLATED)

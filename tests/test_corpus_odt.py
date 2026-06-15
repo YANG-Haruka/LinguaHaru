@@ -110,5 +110,68 @@ def test_odt_hyperlinks():
           T + "Paragraph without any links at all." in content, content)
 
 
+STYLES_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<office:document-styles '
+    'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+    'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" '
+    'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0">'
+    "<office:master-styles>"
+    '<style:master-page style:name="Standard">'
+    "<style:header><text:p>Header text on every page</text:p></style:header>"
+    "<style:footer><text:p>Footer copyright notice here</text:p></style:footer>"
+    "</style:master-page></office:master-styles></office:document-styles>")
+
+META_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?>'
+    '<office:document-meta '
+    'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+    'xmlns:dc="http://purl.org/dc/elements/1.1/" '
+    'xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0">'
+    "<office:meta>"
+    "<dc:title>The Document Title Here</dc:title>"
+    "<dc:creator>Original Author Name</dc:creator>"
+    "<dc:description>A summary describing the document.</dc:description>"
+    "<meta:keyword>First keyword phrase</meta:keyword>"
+    "</office:meta></office:document-meta>")
+
+
+def test_odt_headers_footers_and_meta():
+    print("ODT: styles.xml header/footer + meta.xml title/desc/keyword translated")
+    from core.pipelines.odt_translation_pipeline import (
+        extract_odt_content_to_json, write_translated_content_to_odt)
+
+    src = os.path.join(WORK_DIR, "headfoot.odt")
+    body = "<text:p>Main body paragraph of the document.</text:p>"
+    with zipfile.ZipFile(src, "w") as z:
+        z.writestr("mimetype", "application/vnd.oasis.opendocument.text",
+                   compress_type=zipfile.ZIP_STORED)
+        z.writestr("content.xml", CONTENT_HEAD + body + CONTENT_TAIL,
+                   compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("styles.xml", STYLES_XML, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("meta.xml", META_XML, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("META-INF/manifest.xml", MANIFEST, compress_type=zipfile.ZIP_DEFLATED)
+
+    src_json = extract_odt_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_odt(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    with zipfile.ZipFile(out) as z:
+        content = z.read("content.xml").decode("utf-8")
+        styles = z.read("styles.xml").decode("utf-8")
+        meta = z.read("meta.xml").decode("utf-8")
+
+    check("body paragraph translated", T + "Main body paragraph of the document." in content,
+          content)
+    check("header text translated", T + "Header text on every page" in styles, styles)
+    check("footer text translated", T + "Footer copyright notice here" in styles, styles)
+    check("meta title translated", T + "The Document Title Here" in meta, meta)
+    check("meta description translated", T + "A summary describing the document." in meta, meta)
+    check("meta keyword translated", T + "First keyword phrase" in meta, meta)
+    check("meta creator (author) NOT translated",
+          "<dc:creator>Original Author Name</dc:creator>" in meta, meta)
+
+
 if __name__ == "__main__":
-    run([test_odt_nested_table, test_odt_hyperlinks])
+    run([test_odt_nested_table, test_odt_hyperlinks,
+         test_odt_headers_footers_and_meta])
