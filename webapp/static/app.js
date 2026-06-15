@@ -184,6 +184,7 @@ async function activateIface(name, online) {
   BOOT.config.default_online = online;            // sync the translate dropdown
   if (online) BOOT.config.default_online_model = name;
   fillSelect($("model"), modelsForMode(online), online ? name : null);
+  if (typeof refreshLiveModel === "function") refreshLiveModel();
   loadInterfaces();
 }
 let _ifaceEditing = null;
@@ -312,6 +313,7 @@ async function boot() {
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   renderModules();
   fillLiveTarget();
+  refreshLiveModel();
   updateLiveHint();
   if (BOOT.server_mode) applyServerMode();
   refreshApiKeyState();
@@ -811,7 +813,7 @@ function fillLiveTarget() {
   sel.value = BOOT.language_map[BOOT.config.default_dst_lang] || "zh";
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
-function setLiveBusy(b) { $("live-start").disabled = b; $("live-stop").disabled = !b; }
+function setLiveBusy(b) { const g = $("live-go"); if (g) g.classList.toggle("running", b); }
 
 // Mode switch (disabled while a session is running).
 document.querySelectorAll("#live-mode .seg").forEach((s) => {
@@ -838,12 +840,18 @@ async function updateLiveHint() {
   return !msg;  // ready?
 }
 
-$("live-start").onclick = async () => {
-  if (liveRunning) return;
+// One round button toggles start/stop (green play -> red stop).
+$("live-go").onclick = async () => {
+  if (liveRunning) { if (liveMode === "google") stopGoogle(); else stopLocal(); return; }
   if (!(await updateLiveHint())) return;   // blocked: hint already shown
   if (liveMode === "google") startGoogle(); else startLocal();
 };
-$("live-stop").onclick = () => { if (liveMode === "google") stopGoogle(); else stopLocal(); };
+
+// Show the model the live translation will use (the active interface's).
+function refreshLiveModel() {
+  const el = $("live-model");
+  if (el) el.textContent = (BOOT.config && BOOT.config.default_online_model) || "—";
+}
 
 // --- Google (Gemini Live): continuous 16k PCM over WS, plays 24k reply audio ---
 async function startGoogle() {

@@ -13,12 +13,12 @@ the small pure-Python helpers below decode/resample/re-encode with the stdlib
 import array
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
+    QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton,
 )
 
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
-    PrimaryPushButton, PushButton, CardWidget, TextEdit, FluentIcon, InfoBar,
+    CardWidget, TextEdit, FluentIcon, InfoBar,
     InfoBarPosition, ProgressBar, IconWidget,
 )
 
@@ -171,13 +171,13 @@ class LivePage(ScrollArea):
         self._mic_devices = []
         self._populate_mics()
         ctrl.addWidget(self.mic_combo, 1)
-        self.start_btn = PrimaryPushButton(FluentIcon.MICROPHONE, tr("Start Listening", lang))
-        self.start_btn.clicked.connect(self.on_start)
-        ctrl.addWidget(self.start_btn)
-        self.stop_btn = PushButton(FluentIcon.CANCEL, tr("Stop", lang))
-        self.stop_btn.clicked.connect(self.on_stop)
-        self.stop_btn.setEnabled(False)
-        ctrl.addWidget(self.stop_btn)
+        # Single round start/stop button (green play -> red stop), like the
+        # Transync reference.
+        self.go_btn = QPushButton("▶")
+        self.go_btn.setFixedSize(46, 46)
+        self.go_btn.clicked.connect(self._toggle_listen)
+        self._style_go(False)
+        ctrl.addWidget(self.go_btn)
         layout.addWidget(ctrl_card)
 
         self.hint_label = CaptionLabel("")
@@ -209,6 +209,8 @@ class LivePage(ScrollArea):
         left_col.setSpacing(6)
         self.input_header = StrongBodyLabel(tr("Recognized Speech", lang))
         left_col.addWidget(self.input_header)
+        self.input_sub = CaptionLabel(tr("Auto Detect", lang))
+        left_col.addWidget(self.input_sub)
         self.input_text = TextEdit()
         self.input_text.setReadOnly(True)
         self.input_text.setMinimumHeight(140)
@@ -220,6 +222,9 @@ class LivePage(ScrollArea):
         right_col.setSpacing(6)
         self.output_header = StrongBodyLabel(tr("Translation Result", lang))
         right_col.addWidget(self.output_header)
+        self.model_sub = CaptionLabel("")
+        right_col.addWidget(self.model_sub)
+        self._refresh_model_sub()
         self.output_text = TextEdit()
         self.output_text.setReadOnly(True)
         self.output_text.setMinimumHeight(140)
@@ -247,10 +252,10 @@ class LivePage(ScrollArea):
         self.target_label.setText(tr("Target Language", lang))
         self.mic_label.setText(tr("Microphone", lang))
         self._populate_mics()
-        self.start_btn.setText(tr("Start Listening", lang))
-        self.stop_btn.setText(tr("Stop", lang))
         self.input_header.setText(tr("Recognized Speech", lang))
+        self.input_sub.setText(tr("Auto Detect", lang))
         self.output_header.setText(tr("Translation Result", lang))
+        self._refresh_model_sub()
         self._update_hint()
 
     def _on_mode_changed(self, index):
@@ -293,6 +298,11 @@ class LivePage(ScrollArea):
         self.mic_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.mic_combo.blockSignals(False)
 
+    def _refresh_model_sub(self):
+        online = backend.get_config("default_online", True)
+        model = backend.get_active_model(online)
+        self.model_sub.setText(f"{tr('Current Model', self._lang)}: {model or '-'}")
+
     def _selected_mic(self):
         """The chosen QAudioDevice, or None to mean the system default."""
         i = self.mic_combo.currentIndex()
@@ -301,12 +311,28 @@ class LivePage(ScrollArea):
         return None
 
     def showEvent(self, event):
-        # Refresh the mic list each time the page is shown (devices may change).
+        # Refresh the mic list + active model each time the page is shown.
         if self._source is None:
             self._populate_mics()
+        self._refresh_model_sub()
         super().showEvent(event)
 
     # --- lifecycle ---
+    def _style_go(self, running):
+        """Round green 'play' button; turns red 'stop' while listening."""
+        self.go_btn.setText("■" if running else "▶")
+        color, hover = ("#ef4444", "#dc2626") if running else ("#22c55e", "#16a34a")
+        self.go_btn.setStyleSheet(
+            "QPushButton{background:%s;color:white;border:none;border-radius:23px;"
+            "font-size:17px;font-weight:600;}"
+            "QPushButton:hover{background:%s;}" % (color, hover))
+
+    def _toggle_listen(self):
+        if self._source is not None:
+            self.on_stop()
+        else:
+            self.on_start()
+
     def on_start(self):
         if self._source is not None:
             return
@@ -346,8 +372,7 @@ class LivePage(ScrollArea):
                 self._preloader.done.connect(self._on_preload_done)
                 self._preloader.start()
 
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
+        self._style_go(True)
         self.target_combo.setEnabled(False)
         self.mode_combo.setEnabled(False)
 
@@ -411,8 +436,7 @@ class LivePage(ScrollArea):
             self._play_io = None
         self._reset_vad()
         self.level_bar.setValue(0)
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
+        self._style_go(False)
         self.target_combo.setEnabled(True)
         self.mode_combo.setEnabled(True)
         self.status_label.setText(tr("Connection closed", self._lang))
