@@ -71,6 +71,24 @@ def read_file_with_encoding(file_path):
     # If all encodings fail, raise an exception
     raise Exception(f"Unable to decode file {file_path} with any supported encoding")
 
+def detect_newline(file_path):
+    """Detect the dominant line ending of a text file from its raw bytes.
+
+    Python's text-mode reading collapses all newlines to '\\n', so the original
+    style must be sniffed from bytes. Returns '\\r\\n', '\\r' or '\\n'.
+    """
+    try:
+        with open(file_path, "rb") as f:
+            data = f.read()
+    except Exception:
+        return "\n"
+    if b"\r\n" in data:
+        return "\r\n"
+    if b"\r" in data:
+        return "\r"
+    return "\n"
+
+
 def extract_txt_content_to_json(file_path, temp_dir):
     """
     Extract all text content from TXT file and save in JSON format, each original paragraph counted separately
@@ -103,6 +121,7 @@ def extract_txt_content_to_json(file_path, temp_dir):
     encoding_info = {
         "original_encoding": used_encoding,
         "source_file": file_path,
+        "newline": detect_newline(file_path),  # preserve CRLF/CR/LF on write-back
         "processed_at": None  # Can be filled with timestamp if needed
     }
     with open(os.path.join(temp_folder, "encoding_info.json"), "w", encoding="utf-8") as encoding_file:
@@ -164,6 +183,14 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
     temp_folder = os.path.join(temp_dir, filename)
     all_content_path = os.path.join(temp_folder, "all_content.json")
 
+    # Recover the original line ending so CRLF/CR files round-trip unchanged
+    newline = "\n"
+    try:
+        with open(os.path.join(temp_folder, "encoding_info.json"), "r", encoding="utf-8") as ef:
+            newline = json.load(ef).get("newline", "\n") or "\n"
+    except Exception:
+        pass
+
     try:
         with open(all_content_path, "r", encoding="utf-8") as all_file:
             all_content_data = json.load(all_file)
@@ -193,7 +220,9 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
     # Write content to new file (always in UTF-8), reproducing the original
     # line structure: blank lines, single newlines and indentation are kept
     try:
-        with open(result_path, "w", encoding="utf-8") as result_file:
+        # newline="" disables Python's platform newline translation so the
+        # detected line ending is written verbatim and deterministically
+        with open(result_path, "w", encoding="utf-8", newline="") as result_file:
             output_lines = []
             for item in all_content_data:
                 count = item["count_src"]
@@ -209,7 +238,7 @@ def write_translated_content_to_txt(file_path, original_json_path, translated_js
                         output_lines.append(raw)
                 else:
                     output_lines.append(raw)
-            result_file.write('\n'.join(output_lines))
+            result_file.write(newline.join(output_lines))
         
         app_logger.info(f"Translated TXT document saved to: {result_path}")
         return result_path
