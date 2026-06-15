@@ -19,12 +19,28 @@ _MODEL = "models/gemini-3.5-live-translate-preview"
 _STT_LOCK = threading.Lock()
 
 
+class PreloadWorker(QThread):
+    """Load the local STT model up front so the first utterance isn't blocked on
+    a multi-second model load. Emits done(ready)."""
+    done = Signal(bool)
+
+    def run(self):
+        try:
+            from core.pipelines.video_translation_pipeline import preload_recognizer
+            self.done.emit(bool(preload_recognizer()))
+        except Exception:  # noqa: BLE001
+            self.done.emit(False)
+
+
 class LocalLiveWorker(QThread):
     """Recognize one utterance locally (SenseVoice) then translate it (LLM).
 
     The page does client-side VAD and hands a complete utterance (16 kHz mono
-    PCM16) to a fresh worker; recognition is serialized via _STT_LOCK."""
-    result = Signal(str, str)   # (source_text, translated_text)
+    PCM16) to a fresh worker; recognition is serialized via _STT_LOCK. The source
+    line is emitted as soon as it's recognized (recognized), then the matching
+    translation (result) — both share one timestamp so the two panes line up."""
+    recognized = Signal(str, str)   # (timestamp, source_text)
+    result = Signal(str, str)       # (timestamp, translated_text)
     failed = Signal(str)
 
     def __init__(self, pcm_bytes, sample_rate, dst_code, model, use_online,
@@ -39,15 +55,18 @@ class LocalLiveWorker(QThread):
 
     def run(self):
         try:
+            from datetime import datetime
             from core.pipelines.video_translation_pipeline import recognize_utterance
             from core.llm.llm_wrapper import translate_text_simple
             with _STT_LOCK:
                 source, detected = recognize_utterance(self._pcm, sample_rate=self._sr)
             if not source:
                 return
+            ts = datetime.now().strftime("%H:%M:%S")
+            self.recognized.emit(ts, source)   # show the source line immediately
             translated, ok, _usage = translate_text_simple(
                 source, detected or "auto", self._dst, self._model, self._online, self._key)
-            self.result.emit(source, translated if ok else "")
+            self.result.emit(ts, translated if ok else "")
         except Exception as e:  # noqa: BLE001
             self.failed.emit(str(e)[:200])
 

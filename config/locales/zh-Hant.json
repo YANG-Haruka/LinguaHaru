@@ -95,6 +95,7 @@
   "Live Tasks": "即時任務數",
   "Load Glossary": "載入詞彙表",
   "Loaded entries": "已載入 {name} 的 {count} 列",
+  "Loading model": "正在載入模型…（首次需下載，請稍候）",
   "Local": "本機",
   "Local Interfaces": "本機介面",
   "Local Interfaces Subtitle": "本機上的 Ollama / LM Studio 模型",

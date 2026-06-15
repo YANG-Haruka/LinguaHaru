@@ -95,6 +95,7 @@
   "Live Tasks": "Live Tasks",
   "Load Glossary": "Load Glossary",
   "Loaded entries": "Loaded {count} row(s) from {name}",
+  "Loading model": "Loading model… (first run downloads it, please wait)",
   "Local": "Local",
   "Local Interfaces": "Local Interfaces",
   "Local Interfaces Subtitle": "Ollama / LM Studio models on this machine",

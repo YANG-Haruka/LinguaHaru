@@ -24,7 +24,7 @@ from qfluentwidgets import (
 
 from core import backend
 from qt_app.i18n import tr
-from qt_app.live_worker import LiveWorker, LocalLiveWorker
+from qt_app.live_worker import LiveWorker, LocalLiveWorker, PreloadWorker
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP
 from core.optional_modules import video_translation_available
@@ -109,6 +109,7 @@ class LivePage(ScrollArea):
         self._lang = lang
         self._mode = "local"    # "local" (SenseVoice+LLM) | "google" (Gemini Live)
         self._worker = None
+        self._preloader = None
         self._local_workers = []
         self._source = None     # QAudioSource (mic)
         self._mic_io = None
@@ -269,7 +270,16 @@ class LivePage(ScrollArea):
             self._worker.status.connect(self._on_status)
             self._worker.start()
         else:
-            self.status_label.setText(tr("Listening", self._lang))
+            # Local mode: preload the model first and show a loading hint, so the
+            # first sentence isn't silently blocked on a slow model load.
+            from core.pipelines.video_translation_pipeline import recognizer_ready
+            if recognizer_ready():
+                self.status_label.setText(tr("Listening", self._lang))
+            else:
+                self.status_label.setText(tr("Loading model", self._lang))
+                self._preloader = PreloadWorker(self)
+                self._preloader.done.connect(self._on_preload_done)
+                self._preloader.start()
 
         self.start_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -320,6 +330,9 @@ class LivePage(ScrollArea):
             self._worker.stop()
             self._worker.wait(2000)
             self._worker = None
+        if self._preloader is not None:
+            self._preloader.wait(2000)
+            self._preloader = None
         for w in list(self._local_workers):
             w.wait(3000)
         self._local_workers.clear()
@@ -413,8 +426,8 @@ class LivePage(ScrollArea):
         model = backend.get_active_model(online)
         api_key = load_api_key_for_model(model) if online else ""
         dst = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
-        self.status_label.setText(tr("Recognizing", self._lang))
         w = LocalLiveWorker(utt, _IN_RATE, dst, model, online, api_key)
+        w.recognized.connect(self._on_local_recognized)
         w.result.connect(self._on_local_result)
         w.failed.connect(lambda e: self.status_label.setText("error: " + e))
         w.finished.connect(lambda w=w: self._retire_local(w))
@@ -425,12 +438,21 @@ class LivePage(ScrollArea):
         if w in self._local_workers:
             self._local_workers.remove(w)
 
-    def _on_local_result(self, source, translated):
+    def _on_preload_done(self, ready):
+        if self._source is not None:
+            self.status_label.setText(tr("Listening", self._lang))
+
+    def _on_local_recognized(self, ts, source):
+        # Source line shown as soon as it's recognized (before translation).
         if source:
-            self.input_text.insertPlainText(source + "\n")
+            self.input_text.insertPlainText(f"[{ts}] {source}\n")
             self.input_text.ensureCursorVisible()
+            if self._source is not None:
+                self.status_label.setText(tr("Translating", self._lang))
+
+    def _on_local_result(self, ts, translated):
         if translated:
-            self.output_text.insertPlainText(translated + "\n")
+            self.output_text.insertPlainText(f"[{ts}] {translated}\n")
             self.output_text.ensureCursorVisible()
         if self._source is not None:
             self.status_label.setText(tr("Listening", self._lang))

@@ -157,6 +157,30 @@ def interruptible_sleep(duration, check_stop_callback=None):
         elapsed += sleep_time
 
 
+def _plain_translation(result):
+    """Return clean translated text from a model reply.
+
+    The translate_online/offline backends wrap output as JSON
+    ({"translated_text": "..."} or {"1": "..."}); the real-time voice UI wants
+    just the text, with no braces / key names. Falls back to the raw string."""
+    s = (result or "").strip()
+    if s.startswith("```"):  # strip code fences if any
+        import re
+        s = re.sub(r"^```[a-zA-Z]*\n?|\n?```$", "", s).strip()
+    try:
+        data = json.loads(s)
+    except (json.JSONDecodeError, TypeError):
+        return s
+    if isinstance(data, dict) and data:
+        for key in ("translated_text", "translation", "text", "1"):
+            if isinstance(data.get(key), str):
+                return data[key].strip()
+        for v in data.values():  # any first string value
+            if isinstance(v, str):
+                return v.strip()
+    return s
+
+
 def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key):
     """
     Simple text translation without complex prompt templates.
@@ -192,7 +216,7 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key):
             translation_result, api_success, token_usage = translate_online(api_key, messages, model)
 
         if api_success and translation_result:
-            return translation_result.strip(), True, token_usage
+            return _plain_translation(translation_result), True, token_usage
         else:
             app_logger.warning(f"Simple translation failed: {translation_result}")
             return text, False, token_usage

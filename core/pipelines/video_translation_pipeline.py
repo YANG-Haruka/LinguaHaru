@@ -245,6 +245,32 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
     return out
 
 
+def recognizer_ready():
+    """True if the local STT model is already loaded (no first-use load delay)."""
+    import importlib.util
+    if importlib.util.find_spec("funasr") is not None:
+        return _sensevoice is not None
+    return bool(_whisper_models)
+
+
+def preload_recognizer(model_name="iic/SenseVoiceSmall"):
+    """Load the local STT model now (downloads on first use) so the first
+    utterance isn't blocked on a multi-second model load. Returns True on ready."""
+    import importlib.util
+    try:
+        if importlib.util.find_spec("funasr") is not None:
+            _get_sensevoice(model_name)
+            return True
+        if importlib.util.find_spec("faster_whisper") is not None:
+            model_def = get_stt_model(get_selected_stt_model())
+            size = model_def["size"] if model_def["engine"] == "whisper" else "small"
+            _get_whisper_model(size)
+            return True
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(f"Preload recognizer failed: {e}")
+    return False
+
+
 def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000,
                         model_name="iic/SenseVoiceSmall"):
     """Recognize one short utterance (raw mono PCM16) with the available STT

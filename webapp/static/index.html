@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615b" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615c" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -424,13 +424,9 @@
       </div>
       <div class="card">
         <h3 data-i18n="Run Mode">运行模式</h3>
-        <label class="check"><input type="checkbox" id="set-online" /> 使用在线模型</label>
         <label class="check"><input type="checkbox" id="set-lan" /> 局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</label>
         <div class="field" style="margin-top:10px"><label>局域网管理密码（可选；设置后，局域网用户需输入密码才能修改配置 / 密钥 / 安装插件）</label><input type="password" id="set-lan-admin" placeholder="留空则不启用" /></div>
         <label class="check" style="margin-top:10px"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
-      </div>
-      <div class="card">
-        <div class="muted" data-i18n="Per Model Hint">每个模型的 API 密钥、RPM、线程数、最大重试次数请在「接口管理」中双击对应接口单独设置；Google 实时语音密钥也在「接口管理」里。</div>
       </div>
       <div id="settings-status" class="muted"></div>
     </section>
@@ -438,7 +434,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615b"></script>
-  <script src="/static/app.js?v=20260615b"></script>
+  <script src="/static/background.js?v=20260615c"></script>
+  <script src="/static/app.js?v=20260615c"></script>
 </body>
 </html>

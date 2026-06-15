@@ -803,8 +803,25 @@ async def live_translate(ws: WebSocket):
 _STT_LOCK = threading.Lock()  # funasr is not thread-safe — serialize recognition
 
 
-@app.post("/api/live-local")
-async def live_local(payload: dict, request: Request):
+@app.post("/api/live-preload")
+async def live_preload():
+    """Load the local STT model up front so the first utterance isn't blocked on
+    a multi-second model load. The Live page calls this on Start."""
+    if not video_translation_available():
+        raise HTTPException(400, "Local STT needs the Video/Audio plugin (funasr).")
+    from core.pipelines.video_translation_pipeline import (
+        preload_recognizer, recognizer_ready)
+    if recognizer_ready():
+        return {"ready": True}
+    loop = asyncio.get_event_loop()
+    ready = await loop.run_in_executor(None, preload_recognizer)
+    return {"ready": bool(ready)}
+
+
+@app.post("/api/live-recognize")
+async def live_recognize(payload: dict):
+    """Step 1 of local live voice: recognize one utterance -> source text.
+    Split from translation so the UI can show the source line immediately."""
     if not video_translation_available():
         raise HTTPException(400, "Local STT needs the Video/Audio plugin (funasr).")
     import base64
@@ -813,26 +830,33 @@ async def live_local(payload: dict, request: Request):
     except Exception:
         raise HTTPException(400, "Bad audio payload")
     if not pcm:
-        return {"source": "", "translated": ""}
-
-    dst_lang = payload.get("dst_lang", "en")
-    model = payload.get("model", "")
-    use_online = bool(payload.get("use_online", True))
-
+        return {"source": "", "detected": ""}
     from core.pipelines.video_translation_pipeline import recognize_utterance
-    from core.llm.llm_wrapper import translate_text_simple
     loop = asyncio.get_event_loop()
 
     def _recognize():
         with _STT_LOCK:
             return recognize_utterance(pcm, sample_rate=16000)
     source, detected = await loop.run_in_executor(None, _recognize)
-    if not source:
-        return {"source": "", "translated": ""}
+    return {"source": source or "", "detected": detected or ""}
 
+
+@app.post("/api/live-translate-text")
+async def live_translate_text(payload: dict):
+    """Step 2 of local live voice: translate a recognized line. Model/online are
+    taken from the ACTIVE interface (no Settings checkbox)."""
+    source = (payload.get("source") or "").strip()
+    if not source:
+        return {"translated": ""}
+    dst_lang = payload.get("dst_lang", "en")
+    src_code = payload.get("src_lang") or "auto"
+    cfg = backend.read_config()
+    use_online = bool(cfg.get("default_online", True))
+    model = backend.get_active_model(use_online=use_online)
     api_key = (load_api_key_for_model(model)
                or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
-    src_code = detected or "auto"
+    from core.llm.llm_wrapper import translate_text_simple
+    loop = asyncio.get_event_loop()
 
     def _translate():
         return translate_text_simple(source, src_code, dst_lang, model, use_online, api_key)
@@ -840,7 +864,7 @@ async def live_local(payload: dict, request: Request):
         translated, ok, _usage = await loop.run_in_executor(None, _translate)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Translate failed: {e}")
-    return {"source": source, "translated": translated if ok else ""}
+    return {"translated": translated if ok else ""}
 
 
 # --------------------------------------------------------------------------- #

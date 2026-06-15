@@ -114,6 +114,12 @@ function modelsForMode(online) {
   return online ? BOOT.online_models : BOOT.local_models;
 }
 
+// Online vs offline is decided by the ACTIVE interface (set in Interface
+// Management), not a Settings checkbox. activateIface keeps this in sync.
+function useOnline() {
+  return !!(BOOT.config && BOOT.config.default_online);
+}
+
 // ----- tabs -----
 document.querySelectorAll(".tab").forEach((t) => {
   t.onclick = () => {
@@ -178,7 +184,6 @@ async function activateIface(name, online) {
   BOOT.config.default_online = online;            // sync the translate dropdown
   if (online) BOOT.config.default_online_model = name;
   fillSelect($("model"), modelsForMode(online), online ? name : null);
-  if ($("set-online")) $("set-online").checked = online;
   loadInterfaces();
 }
 let _ifaceEditing = null;
@@ -301,7 +306,6 @@ async function boot() {
   $("translate-subs").checked = c.translate_subtitles;
 
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
-  $("set-online").checked = c.default_online;
   $("set-lan").checked = !!c.lan_mode;
   $("set-lan-admin").placeholder = c.has_lan_admin ? "已设置（留空则不修改）" : "留空则不启用";
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
@@ -378,7 +382,7 @@ function renderDropBg() {
 // ----- API key state -----
 async function refreshApiKeyState() {
   if (BOOT.server_mode) { $("apikey-warning").hidden = true; return; }
-  const online = $("set-online").checked;
+  const online = useOnline();
   const model = $("model").value;
   if (!online) { $("apikey-warning").hidden = true; return; }
   const st = await api("/api/apikey?model=" + encodeURIComponent(model));
@@ -452,7 +456,7 @@ function setFiles(list) {
 // ----- translate -----
 $("translate-btn").onclick = async () => {
   if (!currentFiles.length) { setStatus("请先选择文件。"); return; }
-  const online = $("set-online").checked;
+  const online = useOnline();
   if (online && !BOOT.server_mode) {
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));
     if (!st.has_key) { setStatus("尚未设置 API 密钥，请在设置中填写。"); return; }
@@ -528,12 +532,7 @@ function setBusy(b) {
 function setStatus(t) { $("status").textContent = t; }
 
 // ----- settings -----
-$("set-online").onchange = () => {
-  const online = $("set-online").checked;
-  saveConfig({ default_online: online });
-  fillSelect($("model"), modelsForMode(online), online ? BOOT.config.default_online_model : null);
-  refreshApiKeyState();
-};
+// (Online/offline is driven by the active interface, not a checkbox.)
 $("set-lan").onchange = () => {
   saveConfig({ lan_mode: $("set-lan").checked });
   $("settings-status").textContent = "局域网模式已更新 —— 重启程序后生效。";
@@ -756,7 +755,8 @@ $("proofread-export").onclick = async () => {
 };
 
 // ----- live voice translation (dual mode) -----
-//  · local : client VAD (vad-worklet) -> POST /api/live-local (SenseVoice + LLM)
+//  · local : client VAD (vad-worklet) -> POST /api/live-recognize then
+//            /api/live-translate-text (SenseVoice + LLM), source shown first
 //  · google: stream 16k PCM over /ws/live-translate (Gemini 3.5 Live Translate)
 let liveWS = null, liveCtx = null, liveSrc = null, liveProc = null, liveStream = null;
 let playCtx = null, playTime = 0;
@@ -850,6 +850,9 @@ async function startLocal() {
       { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
   } catch (e) { setLiveStatus("无法访问麦克风：" + e.message); return; }
   $("live-input").textContent = ""; $("live-output").textContent = "";
+  // Preload the local model so the first sentence isn't blocked on a slow load.
+  setLiveStatus("正在加载本地模型…（首次需下载/加载，请稍候）");
+  try { await api("/api/live-preload", { method: "POST" }); } catch (e) { /* load lazily */ }
   liveCtx = new AudioContext();
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   try {
@@ -878,14 +881,27 @@ function onVadMessage(e) {
   if (m.type === "speechstart") setLiveStatus("识别中…");
   else if (m.type === "segment") sendLocalUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
 }
+function liveTimeStamp() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
 async function sendLocalUtterance(int16) {
+  const ts = liveTimeStamp();
   try {
-    const r = await api("/api/live-local", {
+    // Step 1: recognize and show the source line immediately (streaming feel).
+    const r = await api("/api/live-recognize", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audio_b64: int16ToB64(int16), dst_lang: $("live-target").value,
-        model: $("model").value, use_online: $("set-online").checked }) });
-    if (r.source) appendLive("live-input", r.source + "\n");
-    if (r.translated) appendLive("live-output", r.translated + "\n");
+      body: JSON.stringify({ audio_b64: int16ToB64(int16) }) });
+    if (!r.source) { if (liveRunning) setLiveStatus("正在聆听…（对着麦克风说话）"); return; }
+    appendLive("live-input", `[${ts}] ${r.source}\n`);
+    if (liveRunning) setLiveStatus("翻译中…");
+    // Step 2: translate, then show the matching line (same timestamp).
+    const t = await api("/api/live-translate-text", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: r.source, src_lang: r.detected || "auto",
+        dst_lang: $("live-target").value }) });
+    if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`);
     if (liveRunning) setLiveStatus("正在聆听…（对着麦克风说话）");
   } catch (e) { setLiveStatus("翻译失败：" + e.message); }
 }
