@@ -178,5 +178,63 @@ def test_docx_comments_endnotes_charts():
     check("body paragraph still translated", T + "Main body paragraph text." in body, body)
 
 
+def test_docx_mixed_format_runs_preserved():
+    print("DOCX: mixed-format runs preserved (proportional distribution, no collapse)")
+    from docx import Document
+    from lxml import etree
+    from core.pipelines.word_translation_pipeline import (
+        extract_word_content_to_json, write_translated_content_to_word)
+
+    src = os.path.join(WORK_DIR, "mixed_runs.docx")
+    doc = Document()
+    # One paragraph, three runs with DISTINCT formatting: normal / bold / italic.
+    p = doc.add_paragraph()
+    p.add_run("Normal text ")
+    p.add_run("bold text ").bold = True
+    p.add_run("italic text").italic = True
+    original_joined = "Normal text bold text italic text"
+    doc.save(src)
+
+    src_json = extract_word_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_word(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           bilingual_mode=False, src_lang="en", dst_lang="ja")
+
+    W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    with zipfile.ZipFile(out) as z:
+        tree = etree.fromstring(z.read("word/document.xml"))
+
+    ns = {"w": W_NS}
+    # Locate the body paragraph carrying our text.
+    target_p = None
+    for para in tree.iter(f"{{{W_NS}}}p"):
+        full = "".join(t.text or "" for t in para.iter(f"{{{W_NS}}}t"))
+        if "Normal text" in full and "italic text" in full:
+            target_p = para
+            break
+
+    check("mixed-run paragraph found in output", target_p is not None)
+    if target_p is None:
+        return
+
+    full_text = "".join(t.text or "" for t in target_p.iter(f"{{{W_NS}}}t"))
+    # (a) no text lost or duplicated: full paragraph text == [T] + original join
+    check("full paragraph text equals [T] + original (no loss/dup)",
+          full_text == T + original_joined, full_text)
+
+    runs = target_p.xpath("./w:r", namespaces=ns)
+    # (b) formatting not collapsed to a single run
+    check("multiple runs preserved (not collapsed)", len(runs) > 1, f"run count={len(runs)}")
+
+    has_bold = any(r.xpath("./w:rPr/w:b", namespaces=ns) for r in runs)
+    has_italic = any(r.xpath("./w:rPr/w:i", namespaces=ns) for r in runs)
+    # (c) at least one run keeps bold and one keeps italic (rPr preserved)
+    check("a run still carries w:b (bold rPr preserved)", has_bold,
+          etree.tostring(target_p).decode("utf-8"))
+    check("a run still carries w:i (italic rPr preserved)", has_italic,
+          etree.tostring(target_p).decode("utf-8"))
+
+
 if __name__ == "__main__":
-    run([test_docx_drawing_alttext, test_docx_comments_endnotes_charts])
+    run([test_docx_drawing_alttext, test_docx_comments_endnotes_charts,
+         test_docx_mixed_format_runs_preserved])

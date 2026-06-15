@@ -4252,6 +4252,12 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     if field_info and any(f.get('type') == 'simple_field' for f in field_info):
         direct_simple_fields = paragraph.xpath('./w:fldSimple', namespaces=namespaces)
 
+    # Capture per-run formatting/text of the plain text runs BEFORE they are
+    # removed, so a multi-run, mixed-format paragraph can have the translated
+    # text distributed across the original runs (preserving each run's bold/
+    # italic/color/vertAlign/etc.) instead of collapsing to one format.
+    original_run_infos = _collect_text_run_infos(text_runs, namespaces)
+
     # Get formatting from the first text run if available, or use original structure
     formatting = None
     if original_structure and original_structure.get('runs_info'):
@@ -4292,6 +4298,13 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     if math_info or field_info:
         update_paragraph_content_with_math_and_fields_enhanced(
             paragraph, new_text, namespaces, field_info, math_info, formatting, original_structure
+        )
+    elif _should_distribute_runs(original_run_infos, new_text):
+        # Plain multi-run paragraph with differing formatting and no special
+        # inline objects: distribute the translated text across the original
+        # runs proportionally to preserve mid-paragraph emphasis.
+        add_text_with_distributed_run_formatting(
+            paragraph, new_text, namespaces, original_run_infos
         )
     else:
         add_text_with_enhanced_formatting(paragraph, new_text, namespaces, formatting)
@@ -4664,6 +4677,108 @@ def process_math_placeholder(paragraph, placeholder, math_mapping, namespaces, f
         return None  # Force new run for next content
     
     return current_run
+
+def _collect_text_run_infos(text_runs, namespaces):
+    """Capture (rPr_xml, text, length) for each plain text run before removal.
+
+    Only the visible w:t text is collected. Tab characters are represented as
+    a literal '\\t' (restored by _append_run_text on write-back) so the captured
+    length reflects what the user sees. Runs containing any non-text inline
+    object would not reach here (they are filtered upstream), but as a guard we
+    still only read w:t/w:tab content.
+    """
+    infos = []
+    for run in text_runs:
+        text = ""
+        for child in run:
+            tag = etree.QName(child).localname
+            if tag == 't':
+                text += child.text or ""
+            elif tag == 'tab':
+                text += "\t"
+        rPr_elements = run.xpath('./w:rPr', namespaces=namespaces)
+        rPr_xml = etree.tostring(rPr_elements[0]) if rPr_elements else None
+        infos.append({'rPr_xml': rPr_xml, 'text': text, 'length': len(text)})
+    return infos
+
+
+def _should_distribute_runs(original_run_infos, new_text):
+    """Decide whether to use proportional run distribution.
+
+    Activates ONLY for plain multi-run paragraphs whose runs do NOT all share
+    identical formatting, and only for single-line translated text (no '\\n').
+    Multi-line text keeps the existing line-break-aware path. Uniform or
+    single-run paragraphs keep the existing (cheaper) path with no behavior
+    change.
+    """
+    if "\n" in new_text:
+        return False
+    if len(original_run_infos) < 2:
+        return False
+    # Must have at least two runs with actual text to distribute into.
+    if sum(1 for i in original_run_infos if i['length'] > 0) < 2:
+        return False
+    # Only worthwhile if formatting actually differs between runs; if every run
+    # has identical rPr, a single uniform run is equivalent and cheaper.
+    distinct_rpr = {i['rPr_xml'] for i in original_run_infos}
+    return len(distinct_rpr) > 1
+
+
+def add_text_with_distributed_run_formatting(paragraph, text, namespaces, original_run_infos):
+    """Rebuild runs by distributing `text` across the original runs in proportion
+    to each original run's character length, preserving every run's rPr.
+
+    Mirrors the PPT pipeline's _distribute_text_to_runs heuristic: proportional
+    split by original length, last text-bearing run takes the remainder, with a
+    light word-boundary nudge. The concatenation of all emitted runs equals
+    `text` exactly (no text lost or duplicated).
+    """
+    # Indices of runs that originally carried text; empty runs are recreated
+    # empty (preserving structure) and receive no characters.
+    meaningful = [idx for idx, i in enumerate(original_run_infos) if i['length'] > 0]
+    total_length = sum(original_run_infos[idx]['length'] for idx in meaningful)
+    if total_length == 0:
+        # Defensive: nothing to base proportions on, fall back to first run.
+        add_text_with_enhanced_formatting(
+            paragraph, text,
+            namespaces,
+            etree.fromstring(original_run_infos[0]['rPr_xml']) if original_run_infos[0]['rPr_xml'] else None,
+        )
+        return
+
+    chars = text
+    char_index = 0
+    last_meaningful = meaningful[-1]
+
+    for idx, info in enumerate(original_run_infos):
+        run = etree.SubElement(paragraph, f"{{{namespaces['w']}}}r")
+        if info['rPr_xml']:
+            run.insert(0, etree.fromstring(info['rPr_xml']))
+
+        if info['length'] == 0:
+            # Preserve an originally-empty run as empty.
+            continue
+
+        if idx == last_meaningful:
+            run_text = chars[char_index:]
+            char_index = len(chars)
+        else:
+            proportion = info['length'] / total_length
+            target_length = max(1, int(len(chars) * proportion))
+            end = min(char_index + target_length, len(chars))
+            # Light word-boundary nudge: if we'd cut mid-word, extend to the
+            # next space (bounded) so words aren't split unnecessarily.
+            if 0 < end < len(chars) and chars[end - 1] != ' ' and chars[end] != ' ':
+                limit = min(len(chars), char_index + int(target_length * 1.5))
+                while end < limit and chars[end] != ' ':
+                    end += 1
+            run_text = chars[char_index:end]
+            char_index = end
+
+        # Always emit a w:t (empty if no characters were allotted) so each run
+        # stays well-formed; _append_run_text also restores any tab characters.
+        _append_run_text(run, run_text, namespaces)
+
 
 def add_text_with_enhanced_formatting(paragraph, text, namespaces, formatting=None):
     """Add text to paragraph while preserving line breaks and enhanced formatting"""
