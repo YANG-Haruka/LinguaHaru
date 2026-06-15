@@ -307,6 +307,125 @@ def test_xlsx_comment_openpyxl_path():
     check("comment text translated", T + "Reviewer remark to translate" in comments, comments)
 
 
+def _inject_mixed_drawing(xlsx_path, png_bytes):
+    """Add a drawing with BOTH a picture and a textbox (openpyxl rewrites such
+    a drawing lossily, dropping the textbox)."""
+    import shutil
+    import zipfile
+    draw = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"'
+            ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
+            ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            '<xdr:twoCellAnchor><xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff>'
+            '<xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>3</xdr:col>'
+            '<xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>'
+            '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Picture 1"/><xdr:cNvPicPr/></xdr:nvPicPr>'
+            '<xdr:blipFill><a:blip r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>'
+            '<xdr:spPr/></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>'
+            '<xdr:twoCellAnchor><xdr:from><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff>'
+            '<xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>7</xdr:col>'
+            '<xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>'
+            '<xdr:sp><xdr:nvSpPr><xdr:cNvPr id="3" name="TextBox 1"/><xdr:cNvSpPr txBox="1"/>'
+            '</xdr:nvSpPr><xdr:spPr/><xdr:txBody><a:bodyPr/><a:p><a:r><a:t>Caption beside picture</a:t>'
+            '</a:r></a:p></xdr:txBody></xdr:sp><xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>')
+    tmp = xlsx_path + ".inj"
+    with zipfile.ZipFile(xlsx_path) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for n in zin.namelist():
+            data = zin.read(n)
+            if n == "[Content_Types].xml":
+                data = data.replace(
+                    b"</Types>",
+                    b'<Default Extension="png" ContentType="image/png"/>'
+                    b'<Override PartName="/xl/drawings/drawing1.xml" '
+                    b'ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>')
+            if n == "xl/worksheets/sheet1.xml":
+                if b"xmlns:r=" not in data.split(b">", 1)[0]:
+                    data = data.replace(b"<worksheet ",
+                                        b'<worksheet xmlns:r="http://schemas.openxmlformats.org/'
+                                        b'officeDocument/2006/relationships" ', 1)
+                data = data.replace(b"</worksheet>", b'<drawing r:id="rId1"/></worksheet>')
+            zout.writestr(n, data)
+        zout.writestr("xl/drawings/drawing1.xml", draw)
+        zout.writestr("xl/drawings/_rels/drawing1.xml.rels",
+                      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/'
+                      '2006/relationships/image" Target="../media/image1.png"/></Relationships>')
+        zout.writestr("xl/media/image1.png", png_bytes)
+        zout.writestr("xl/worksheets/_rels/sheet1.xml.rels",
+                      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+                      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/'
+                      '2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>')
+    shutil.move(tmp, xlsx_path)
+
+
+def test_xlsx_mixed_drawing_image_and_textbox():
+    print("XLSX: drawing with picture + textbox keeps the IMAGE and translates the textbox")
+    import zipfile
+    import openpyxl
+    from PIL import Image
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel)
+
+    png = os.path.join(WORK_DIR, "pic.png")
+    Image.new("RGB", (50, 30), (30, 140, 90)).save(png)
+    png_bytes = open(png, "rb").read()
+
+    src = os.path.join(WORK_DIR, "mixed.xlsx")
+    wb = openpyxl.Workbook()
+    wb.active.title = "Sheet1"
+    wb.active["A1"] = "Body cell"
+    wb.save(src)
+    _inject_mixed_drawing(src, png_bytes)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_excel(src, src_json, dst_json, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+
+    with zipfile.ZipFile(out) as z:
+        names = z.namelist()
+        check("embedded image survived (bytes identical)",
+              "xl/media/image1.png" in names and z.read("xl/media/image1.png") == png_bytes,
+              str([n for n in names if "media" in n]))
+        drawing = z.read("xl/drawings/drawing1.xml").decode("utf-8") if "xl/drawings/drawing1.xml" in names else ""
+    check("picture kept in the drawing (not dropped by openpyxl rewrite)",
+          "r:embed" in drawing or "blip" in drawing, drawing[:200])
+    check("textbox in the mixed drawing translated",
+          T + "Caption beside picture" in drawing, drawing)
+
+
+def test_xlsx_cell_value_sanitized():
+    print("XLSX: translated cell starting with '=' is not turned into a formula")
+    import openpyxl
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel)
+    import json
+
+    src = os.path.join(WORK_DIR, "sanitize.xlsx")
+    wb = openpyxl.Workbook()
+    wb.active.title = "Data2024"  # non-translatable sheet name
+    wb.active["A1"] = "equals note"
+    wb.save(src)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    data = json.load(open(src_json, encoding="utf-8"))
+    for it in data:
+        it["translated"] = "=DANGER()" if it["value"] == "equals note" else "[T]" + it["value"]
+    dj = os.path.join(TEMP_DIR, "sanitize", "dst.json")
+    json.dump(data, open(dj, "w", encoding="utf-8"))
+    out = write_translated_content_to_excel(src, src_json, dj, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+
+    wb2 = openpyxl.load_workbook(out)
+    cell = wb2["Data2024"]["A1"]
+    check("'='-leading translation stored as literal text, not a formula",
+          cell.data_type != "f" and str(cell.value).strip() == "=DANGER()",
+          f"data_type={cell.data_type} value={cell.value!r}")
+
+
 if __name__ == "__main__":
     run([test_xlsx_structures, test_xlsx_textbox_openpyxl_path,
-         test_xlsx_chart_openpyxl_path, test_xlsx_comment_openpyxl_path])
+         test_xlsx_chart_openpyxl_path, test_xlsx_comment_openpyxl_path,
+         test_xlsx_mixed_drawing_image_and_textbox, test_xlsx_cell_value_sanitized])

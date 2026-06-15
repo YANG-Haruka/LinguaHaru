@@ -60,6 +60,26 @@ def write_translated_content_to_excel(file_path, original_json_path, translated_
 # SHARED UTILITIES
 # ============================================================================
 
+_ILLEGAL_XLSX_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _safe_cell_value(value):
+    """Make a translated string safe to write into an Excel cell.
+
+    - Strips control characters openpyxl rejects (would raise IllegalCharacterError
+      and abort the whole save).
+    - Space-prefixes a value starting with '=' / '+' / '-' / '@' so Excel treats
+      it as literal text, not a formula (formula injection). We skip formula
+      cells on extraction, but a *translation* may legitimately start this way.
+    """
+    if not isinstance(value, str):
+        return value
+    value = _ILLEGAL_XLSX_CHARS.sub("", value)
+    if value[:1] in ("=", "+", "-", "@"):
+        value = " " + value
+    return value
+
+
 def sanitize_sheet_name(sheet_name):
     """
     Clean sheet name by removing/replacing invalid characters.
@@ -303,7 +323,7 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         # already preserved by openpyxl; writing the top-left cell is enough.
         sheet = workbook[sheet_name]
         cell = sheet.cell(row=row, column=column)
-        cell.value = value
+        cell.value = _safe_cell_value(value)
 
     # Final pass: Rename sheets with their translations
     for original_name, translated_name in sheet_name_translations.items():
@@ -359,20 +379,28 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             raise
 
     # openpyxl silently DROPS DrawingML parts it cannot model (textboxes,
-    # shapes, SmartArt, charts) when it saves. Restore those parts from the
-    # original file before patching, otherwise there is nothing left to edit.
+    # shapes, SmartArt, charts) when it saves. Restore dropped parts (and
+    # re-wire the worksheet <drawing> reference) from the original first.
     if smartart_items or drawing_items or chart_items:
         try:
             _restore_drawingml_parts(file_path, result_path)
         except Exception as e:
             app_logger.error(f"Failed to restore DrawingML parts (openpyxl path): {str(e)}")
-    # Charts are also rewritten lossily even when kept; comments are
-    # regenerated. Force-restore the original bytes so the patch matches.
+    # openpyxl also REWRITES drawings/charts LOSSILY even when it keeps them:
+    # e.g. a drawing mixing a picture + a textbox is rewritten with the picture
+    # but WITHOUT the textbox, and charts lose their caches/styling. Comments
+    # are regenerated. Force-restore the original bytes (drawings/media/charts/
+    # diagrams/comments) so nothing is lost and the patch edits real structure.
+    force_prefixes = ()
+    if drawing_items or smartart_items:
+        force_prefixes += ("xl/drawings/", "xl/diagrams/", "xl/media/", "xl/embeddings/")
     if chart_items:
+        force_prefixes += ("xl/charts/",)
+    if force_prefixes:
         try:
-            _force_restore_excel_parts(file_path, result_path, ("xl/charts/",))
+            _force_restore_excel_parts(file_path, result_path, force_prefixes)
         except Exception as e:
-            app_logger.error(f"Failed to restore chart parts (openpyxl path): {str(e)}")
+            app_logger.error(f"Failed to force-restore drawing/chart parts (openpyxl path): {str(e)}")
     if comment_items:
         try:
             _force_restore_excel_parts(file_path, result_path, ("xl/comments",))
