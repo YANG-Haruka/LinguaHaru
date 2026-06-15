@@ -212,6 +212,23 @@ def _extract_with_openpyxl(file_path, temp_dir):
                 }
                 cell_data.append(cell_info)
 
+        # Data-validation input-message / error-alert popups. These are
+        # user-visible text but live on the validation object, not in a cell.
+        for dv_index, dv in enumerate(sheet.data_validations.dataValidation):
+            for field in ("promptTitle", "prompt", "errorTitle", "error"):
+                text = getattr(dv, field, None)
+                if not text or not str(text).strip() or not should_translate(str(text)):
+                    continue
+                count += 1
+                cell_data.append({
+                    "count_src": count,
+                    "type": "excel_datavalidation",
+                    "sheet": sheet_name,
+                    "dv_index": dv_index,
+                    "field": field,
+                    "value": str(text).replace("\n", "␊").replace("\r", "␍"),
+                })
+
     # openpyxl's object model exposes only worksheet cells -- it cannot see the
     # DrawingML parts (xl/drawings, xl/diagrams) that hold textboxes, shapes and
     # SmartArt. Without this, any such text is silently dropped. The helpers read
@@ -294,8 +311,10 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
 
         # Skip drawing / SmartArt / chart / comment entries: they have no
         # row/column and are written back at the ZIP/XML level after saving.
+        # Data-validation entries are written below via the openpyxl model.
         if cell_info.get("type") in ("excel_smartart", "excel_drawing",
-                                     "excel_chart", "excel_comment"):
+                                     "excel_chart", "excel_comment",
+                                     "excel_datavalidation"):
             continue
 
         count = str(cell_info["count_src"])  # Ensure count is a string
@@ -324,6 +343,23 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         sheet = workbook[sheet_name]
         cell = sheet.cell(row=row, column=column)
         cell.value = _safe_cell_value(value)
+
+    # Data-validation popup write-back (openpyxl-native; do this before the
+    # sheet-rename pass so item["sheet"] still resolves to the original title).
+    for cell_info in original_data:
+        if cell_info.get("type") != "excel_datavalidation":
+            continue
+        value = translations.get(str(cell_info["count_src"]))
+        if value is None:
+            continue
+        try:
+            sheet = workbook[cell_info["sheet"]]
+            dvs = sheet.data_validations.dataValidation
+            if cell_info["dv_index"] < len(dvs):
+                setattr(dvs[cell_info["dv_index"]], cell_info["field"],
+                        value.replace("␊", "\n").replace("␍", "\r"))
+        except Exception as e:
+            app_logger.error(f"Error writing data-validation text back: {str(e)}")
 
     # Final pass: Rename sheets with their translations
     for original_name, translated_name in sheet_name_translations.items():

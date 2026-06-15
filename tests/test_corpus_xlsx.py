@@ -425,7 +425,53 @@ def test_xlsx_cell_value_sanitized():
           f"data_type={cell.data_type} value={cell.value!r}")
 
 
+def test_xlsx_data_validation():
+    print("XLSX: data-validation prompt/error popups translated, rule intact")
+    import openpyxl
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel)
+
+    src = os.path.join(WORK_DIR, "validation.xlsx")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Form"
+    ws["A1"] = "Enter a value below"
+    dv = DataValidation(type="whole", operator="between", formula1="1", formula2="100")
+    dv.promptTitle = "Input required"
+    dv.prompt = "Please enter a whole number from one to one hundred"
+    dv.errorTitle = "Invalid entry"
+    dv.error = "The value must be between one and one hundred"
+    dv.showInputMessage = True
+    dv.showErrorMessage = True
+    ws.add_data_validation(dv)
+    dv.add("A2")
+    wb.save(src)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_excel(src, src_json, dst_json, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+
+    wb2 = openpyxl.load_workbook(out)
+    ws2 = wb2.worksheets[0]  # sheet name "Form" is translatable -> renamed
+    dvs = ws2.data_validations.dataValidation
+    check("one data validation preserved", len(dvs) == 1, str(len(dvs)))
+    d = dvs[0]
+    check("promptTitle translated", d.promptTitle == T + "Input required", repr(d.promptTitle))
+    check("prompt body translated",
+          d.prompt == T + "Please enter a whole number from one to one hundred", repr(d.prompt))
+    check("errorTitle translated", d.errorTitle == T + "Invalid entry", repr(d.errorTitle))
+    check("error body translated",
+          d.error == T + "The value must be between one and one hundred", repr(d.error))
+    check("validation rule intact (type + range)",
+          d.type == "whole" and str(d.sqref) == "A2", f"{d.type}/{d.sqref}")
+    check("cell text still translated", ws2["A1"].value == T + "Enter a value below",
+          repr(ws2["A1"].value))
+
+
 if __name__ == "__main__":
     run([test_xlsx_structures, test_xlsx_textbox_openpyxl_path,
          test_xlsx_chart_openpyxl_path, test_xlsx_comment_openpyxl_path,
-         test_xlsx_mixed_drawing_image_and_textbox, test_xlsx_cell_value_sanitized])
+         test_xlsx_mixed_drawing_image_and_textbox, test_xlsx_cell_value_sanitized,
+         test_xlsx_data_validation])
