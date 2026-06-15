@@ -38,6 +38,9 @@ _VAD_ON_ABS, _VAD_ON_MUL = 0.009, 2.5
 _VAD_OFF_ABS, _VAD_OFF_MUL = 0.006, 1.7
 _VAD_ON_MS, _VAD_HANG_MS = 90, 600
 _VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
+# Lead-in kept before speech onset is confirmed, so the first words (often the
+# key info) aren't clipped. Mirrors the Web vad-worklet's pre-roll ring buffer.
+_VAD_PREROLL_MS = 500
 
 
 # --------------------------------------------------------------------------- #
@@ -120,6 +123,7 @@ class LivePage(ScrollArea):
         # local-mode energy VAD state
         self._vad_on = False
         self._vad_buf = bytearray()
+        self._vad_preroll = bytearray()
         self._vad_voice_ms = 0.0
         self._vad_sil_ms = 0.0
         self._vad_floor = 0.003
@@ -160,6 +164,12 @@ class LivePage(ScrollArea):
         config = backend.read_config()
         self._set_combo(self.target_combo, config.get("default_dst_lang", "English"))
         ctrl.addWidget(self.target_combo, 1)
+        self.mic_label = BodyLabel(tr("Microphone", lang))
+        ctrl.addWidget(self.mic_label)
+        self.mic_combo = ComboBox()
+        self._mic_devices = []
+        self._populate_mics()
+        ctrl.addWidget(self.mic_combo, 1)
         self.start_btn = PrimaryPushButton(FluentIcon.MICROPHONE, tr("Start Listening", lang))
         self.start_btn.clicked.connect(self.on_start)
         ctrl.addWidget(self.start_btn)
@@ -215,6 +225,8 @@ class LivePage(ScrollArea):
         self.mode_combo.setCurrentIndex(max(0, cur))
         self.mode_combo.blockSignals(False)
         self.target_label.setText(tr("Target Language", lang))
+        self.mic_label.setText(tr("Microphone", lang))
+        self._populate_mics()
         self.start_btn.setText(tr("Start Listening", lang))
         self.stop_btn.setText(tr("Stop", lang))
         self.input_header.setText(tr("Recognized Speech", lang))
@@ -242,6 +254,37 @@ class LivePage(ScrollArea):
         idx = combo.findText(value)
         if idx >= 0:
             combo.setCurrentIndex(idx)
+
+    def _populate_mics(self):
+        """List available microphones (index 0 = system default). Refreshed when
+        the page is shown, so newly plugged devices appear."""
+        try:
+            from PySide6.QtMultimedia import QMediaDevices
+        except Exception:  # noqa: BLE001
+            return
+        prev = self.mic_combo.currentText() if self.mic_combo.count() else ""
+        self.mic_combo.blockSignals(True)
+        self.mic_combo.clear()
+        self._mic_devices = list(QMediaDevices.audioInputs())
+        self.mic_combo.addItem(tr("Default Microphone", self._lang))
+        for dev in self._mic_devices:
+            self.mic_combo.addItem(dev.description())
+        idx = self.mic_combo.findText(prev)
+        self.mic_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.mic_combo.blockSignals(False)
+
+    def _selected_mic(self):
+        """The chosen QAudioDevice, or None to mean the system default."""
+        i = self.mic_combo.currentIndex()
+        if i > 0 and (i - 1) < len(self._mic_devices):
+            return self._mic_devices[i - 1]
+        return None
+
+    def showEvent(self, event):
+        # Refresh the mic list each time the page is shown (devices may change).
+        if self._source is None:
+            self._populate_mics()
+        super().showEvent(event)
 
     # --- lifecycle ---
     def on_start(self):
@@ -304,7 +347,7 @@ class LivePage(ScrollArea):
             f.setSampleFormat(QAudioFormat.SampleFormat.Int16)
             return f
 
-        in_dev = QMediaDevices.defaultAudioInput()
+        in_dev = self._selected_mic() or QMediaDevices.defaultAudioInput()
         if in_dev is None or in_dev.isNull():
             self._info(tr("No microphone found", self._lang), error=True)
             return False
@@ -385,6 +428,7 @@ class LivePage(ScrollArea):
     def _reset_vad(self):
         self._vad_on = False
         self._vad_buf = bytearray()
+        self._vad_preroll = bytearray()
         self._vad_voice_ms = 0.0
         self._vad_sil_ms = 0.0
         self._vad_floor = 0.003
@@ -400,6 +444,12 @@ class LivePage(ScrollArea):
         dt_ms = len(a) / _IN_RATE * 1000.0
         on_th = max(_VAD_ON_ABS, self._vad_floor * _VAD_ON_MUL)
         off_th = max(_VAD_OFF_ABS, self._vad_floor * _VAD_OFF_MUL)
+        # Always keep a rolling pre-roll of the most recent audio so the lead-in
+        # before onset (often the first, key words) isn't lost.
+        self._vad_preroll += pcm
+        max_pre = int(_IN_RATE * _VAD_PREROLL_MS / 1000) * 2  # bytes (2/sample)
+        if len(self._vad_preroll) > max_pre:
+            del self._vad_preroll[:-max_pre]
         if not self._vad_on:
             if level < on_th:
                 self._vad_floor = self._vad_floor * 0.99 + level * 0.01
@@ -408,7 +458,8 @@ class LivePage(ScrollArea):
                 if self._vad_voice_ms >= _VAD_ON_MS:
                     self._vad_on = True
                     self._vad_sil_ms = 0.0
-                    self._vad_buf = bytearray(pcm)
+                    # Start from the pre-roll (includes this chunk + lead-in).
+                    self._vad_buf = bytearray(self._vad_preroll)
             else:
                 self._vad_voice_ms = 0.0
         else:
