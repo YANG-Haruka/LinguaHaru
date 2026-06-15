@@ -7,13 +7,17 @@ def extract_srt_content_to_json(file_path, temp_dir):
     """
     Extract subtitles from an SRT file and save them in a JSON format.
     """
-    with open(file_path, "r", encoding="utf-8") as file:
+    # utf-8-sig strips a leading BOM; with plain utf-8 the BOM glues onto the
+    # first cue's index (﻿1) and the whole first cue fails to match
+    with open(file_path, "r", encoding="utf-8-sig") as file:
         srt_content = file.read()
-    
+
     # Tolerant of common SRT variants: 1-2 digit hours, '.' as millisecond
-    # separator, 1-3 millisecond digits
+    # separator, 1-3 millisecond digits. The numeric index line is optional
+    # (some files omit it); the timestamp line is the reliable anchor, and we
+    # renumber sequentially anyway.
     srt_pattern = re.compile(
-        r"(\d+)\s*\r?\n"
+        r"(?:\d+\s*\r?\n)?"
         r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*"
         r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*\r?\n"
         r"(.*?)(?=\r?\n\r?\n|\Z)",
@@ -25,7 +29,7 @@ def extract_srt_content_to_json(file_path, temp_dir):
     # Renumber sequentially: count_src is the translation lookup key, and
     # malformed files can repeat cue numbers, which would collapse entries
     for idx, match in enumerate(srt_pattern.finditer(srt_content), start=1):
-        _, start_time, end_time, value = match.groups()
+        start_time, end_time, value = match.groups()
         value = value.replace("\n", "␊").replace("\r", "␍")
 
         content_data.append({

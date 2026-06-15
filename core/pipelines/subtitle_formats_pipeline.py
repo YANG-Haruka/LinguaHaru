@@ -149,9 +149,13 @@ def extract_ass_content_to_json(file_path, temp_dir):
         protected = text
         for tag_index, tag in enumerate(tags):
             protected = protected.replace(tag, f"{{{{ASS_{tag_index}}}}}", 1)
-        protected = protected.replace("\\N", "␊").replace("\\n", "␊")
+        # \N / \n = line break; \h = hard (non-breaking) space. Protect \h with
+        # a sentinel so it round-trips instead of being sent literally to the
+        # translator (which would mangle "word\hword").
+        protected = protected.replace("\\N", "␊").replace("\\n", "␊").replace("\\h", "␠")
 
-        plain = _ASS_OVERRIDE.sub("", text).replace("\\N", " ").replace("\\n", " ").strip()
+        plain = (_ASS_OVERRIDE.sub("", text)
+                 .replace("\\N", " ").replace("\\n", " ").replace("\\h", " ").strip())
         if not plain or not should_translate(plain):
             continue
 
@@ -179,7 +183,7 @@ def write_translated_content_to_ass(file_path, original_json_path, translated_js
         translated = translations.get(info["count_src"])
         if not translated:
             continue
-        text = translated.replace("␊", "\\N").replace("␍", "")
+        text = translated.replace("␊", "\\N").replace("␠", "\\h").replace("␍", "")
         for tag_index, tag in enumerate(info["tags"]):
             text = text.replace(f"{{{{ASS_{tag_index}}}}}", tag)
         lines[int(line_index)] = info["prefix"] + text

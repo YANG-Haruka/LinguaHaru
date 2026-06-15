@@ -171,7 +171,68 @@ def test_vtt_no_hours_timestamps():
           and T + "Second cue also without hours" in result, result)
 
 
+def test_srt_bom_and_optional_index():
+    print("SRT: UTF-8 BOM stripped + cues without an index line still parse")
+    import json
+    from core.pipelines.subtitle_translation_pipeline import (
+        extract_srt_content_to_json, write_translated_content_to_srt)
+
+    src = os.path.join(WORK_DIR, "bom_noindex.srt")
+    # BOM at file start; first cue has an index, second cue omits it entirely.
+    with open(src, "w", encoding="utf-8-sig") as f:
+        f.write("1\n00:00:01,000 --> 00:00:03,000\nFirst cue with an index\n\n"
+                "00:00:04,000 --> 00:00:06,000\nSecond cue without any index\n")
+
+    src_json = extract_srt_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        extracted = json.load(f)
+    check("both cues parsed (BOM first cue not lost, index-less cue kept)",
+          len(extracted) == 2, str(extracted))
+    check("first cue text clean (no BOM glued on)",
+          extracted[0]["value"] == "First cue with an index", repr(extracted[0]["value"]))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_srt(src, src_json, dst_json, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    raw = open(out, "rb").read()
+    check("output has no BOM", not raw.startswith(b"\xef\xbb\xbf"), repr(raw[:6]))
+    content = raw.decode("utf-8")
+    check("both cues translated",
+          T + "First cue with an index" in content
+          and T + "Second cue without any index" in content, content)
+
+
+def test_ass_hard_space():
+    print(r"ASS: \h hard space round-trips, not sent literally to translator")
+    import json
+    from core.pipelines.subtitle_formats_pipeline import (
+        extract_ass_content_to_json, write_translated_content_to_ass)
+
+    src = os.path.join(WORK_DIR, "hardspace.ass")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write("[Events]\n"
+                "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+                "Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,"
+                "Hello\\hthere\\hfriend\n")
+
+    src_json = extract_ass_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f)]
+    check(r"no literal \h reaches the translatable text",
+          not any("\\h" in v for v in extracted), str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_ass(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    with open(out, encoding="utf-8-sig") as f:
+        result = f.read()
+    check(r"\h hard spaces restored on write-back",
+          result.count("\\h") == 2, result)
+    check("dialogue text translated", T in result and "friend" in result, result)
+
+
 if __name__ == "__main__":
     run([test_srt_long_multiline_cues, test_vtt_voice_spans,
          test_vtt_no_hours_timestamps,
+         test_srt_bom_and_optional_index, test_ass_hard_space,
          test_ass_karaoke_tags, test_lrc_repeated_timestamps])
