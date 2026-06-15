@@ -98,7 +98,7 @@
     <div id="update-banner" class="update-banner" hidden>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
       <span id="update-text"></span>
-      <a id="update-link" target="_blank" rel="noopener noreferrer">前往下载</a>
+      <a id="update-link" target="_blank" rel="noopener noreferrer" data-i18n="Go to Download">前往下载</a>
       <button id="update-dismiss" title="关闭" aria-label="关闭">×</button>
     </div>
     <!-- Interface management: provider cards, click to activate, double-click to configure -->
@@ -152,7 +152,7 @@
       <div class="page-head">
         <div class="kicker mono">Translate</div>
         <h2 data-i18n="Translate">翻译</h2>
-        <p>上传文档、字幕、表格或媒体一键翻译，或对着麦克风实时口译 —— 都在这一页。</p>
+        <p data-i18n="Translate Page Subtitle">上传文档、字幕、表格或媒体一键翻译，或对着麦克风实时口译 —— 都在这一页。</p>
       </div>
 
       <div class="segmented" id="translate-mode" role="tablist">
@@ -212,7 +212,7 @@
         <!-- Media (video/audio) STT options -->
         <div class="card row-2" id="media-options" hidden>
           <div class="field">
-            <label>语音转文字模型</label>
+            <label data-i18n="Speech-to-Text Model">语音转文字模型</label>
             <select id="stt-model"></select>
           </div>
           <label class="check"><input type="checkbox" id="translate-subs" checked /> 翻译字幕（不勾选则仅转写）</label>
@@ -307,7 +307,7 @@
       <div class="page-head">
         <div class="kicker mono">Library · Glossary</div>
         <h2 data-i18n="Glossary">词汇表</h2>
-        <p>维护术语对照表，翻译时自动套用，保证专有名词一致。</p>
+        <p data-i18n="Glossary Subtitle">维护术语对照表，翻译时自动套用，保证专有名词一致。</p>
       </div>
       <div class="card">
         <div class="field"><label data-i18n="Glossary">词汇表</label><select id="glossary-edit-select"></select></div>
@@ -319,7 +319,7 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
             添加行
           </button>
-          <button id="glossary-save" class="primary">保存词汇表</button>
+          <button id="glossary-save" class="primary" data-i18n="Save Glossary">保存词汇表</button>
         </div>
         <div id="glossary-status" class="muted"></div>
       </div>
@@ -330,10 +330,10 @@
       <div class="page-head">
         <div class="kicker mono">Library · Proofread</div>
         <h2 data-i18n="Proofread">校对</h2>
-        <p>逐段查看原文与译文，手动修正后可重新导出。</p>
+        <p data-i18n="Proofread Subtitle">逐段查看原文与译文，手动修正后可重新导出。</p>
       </div>
       <div class="card row-2">
-        <div class="field"><label>校对文档</label><select id="proofread-select"></select></div>
+        <div class="field"><label data-i18n="Proofread Document">校对文档</label><select id="proofread-select"></select></div>
         <div class="actions" style="align-items:end">
           <button id="proofread-refresh">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-1.6 5.6"/><path d="M20 4v5h-5"/></svg>
@@ -345,8 +345,8 @@
         <div class="table-scroll"><table id="proofread-table"></table></div>
         <div id="proofread-pager" class="pager"></div>
         <div class="actions">
-          <button id="proofread-save" class="primary">保存修改</button>
-          <button id="proofread-export">重新导出</button>
+          <button id="proofread-save" class="primary" data-i18n="Save Edits">保存修改</button>
+          <button id="proofread-export" data-i18n="Re-export">重新导出</button>
           <a id="proofread-download" class="primary" download hidden>下载</a>
         </div>
         <div id="proofread-status" class="muted"></div>
@@ -358,18 +358,18 @@
       <div class="page-head">
         <div class="kicker mono">Library · History</div>
         <h2 data-i18n="History">历史记录</h2>
-        <p>查看过往翻译任务的文件、语言、模型与用量。</p>
+        <p data-i18n="History Subtitle">查看过往翻译任务的文件、语言、模型与用量。</p>
       </div>
       <div class="card">
         <div class="actions" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
-          <div class="field" style="min-width:140px"><label>文件类型</label><select id="history-type"><option value="">全部类型</option></select></div>
-          <div class="field" style="min-width:140px"><label>排序</label>
+          <div class="field" style="min-width:140px"><label>文件类型</label><select id="history-type"><option value="" data-i18n="All Types">全部类型</option></select></div>
+          <div class="field" style="min-width:140px"><label data-i18n="Sort">排序</label>
             <select id="history-sort">
-              <option value="start_time|1">时间（新→旧）</option>
-              <option value="start_time|0">时间（旧→新）</option>
+              <option value="start_time|1" data-i18n="Newest">时间（新→旧）</option>
+              <option value="start_time|0" data-i18n="Oldest">时间（旧→新）</option>
               <option value="file_type|0">文件类型</option>
-              <option value="input_file|0">文件名</option>
-              <option value="total_tokens|1">Token（多→少）</option>
+              <option value="input_file|0" data-i18n="By Name">文件名</option>
+              <option value="total_tokens|1" data-i18n="By Tokens">Token（多→少）</option>
             </select>
           </div>
           <button id="history-refresh" style="align-self:end">
@@ -386,7 +386,7 @@
       <div class="page-head">
         <div class="kicker mono">System · Plugins</div>
         <h2 data-i18n="Plugins">插件</h2>
-        <p>按需安装可选能力模块。安装后重启程序即可扩展支持的文件类型。</p>
+        <p data-i18n="Plugins Subtitle">按需安装可选能力模块。安装后重启程序即可扩展支持的文件类型。</p>
       </div>
       <div class="card">
         <h3>可选模块</h3>
@@ -400,10 +400,10 @@
       <div class="page-head">
         <div class="kicker mono">System · Settings</div>
         <h2 data-i18n="Settings">设置</h2>
-        <p>模型密钥、网络与重试。可选能力模块请前往「插件」。</p>
+        <p data-i18n="Settings Subtitle">模型密钥、网络与重试。可选能力模块请前往「插件」。</p>
       </div>
       <div class="card">
-        <h3>运行模式</h3>
+        <h3 data-i18n="Run Mode">运行模式</h3>
         <label class="check"><input type="checkbox" id="set-online" /> 使用在线模型</label>
         <label class="check"><input type="checkbox" id="set-lan" /> 局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</label>
         <div class="field" style="margin-top:10px"><label>局域网管理密码（可选；设置后，局域网用户需输入密码才能修改配置 / 密钥 / 安装插件）</label><input type="password" id="set-lan-admin" placeholder="留空则不启用" /></div>
