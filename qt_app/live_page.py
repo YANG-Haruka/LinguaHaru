@@ -154,19 +154,34 @@ class _Waveform(QWidget):
 
 
 class _CaptionBar(QWidget):
-    """Always-on-top, frameless, draggable floating caption window (like
-    Windows Live Captions). Shows the latest source line and the translated
-    line (translated emphasized) over whatever else is on screen."""
+    """Always-on-top, frameless, draggable, RESIZABLE floating caption window
+    (like Windows Live Captions). Shows the latest source line and translated
+    line over whatever else is on screen.
 
-    def __init__(self, parent=None):
+    Controls (compact top row): A- / A+ adjust the live font size; a mode button
+    cycles Bilingual -> Translation Only -> Source Only; × closes. The window is
+    resizable via a QSizeGrip in the bottom-right corner; dragging the body moves
+    it. Translated text stays emphasized (larger/bold) relative to the source."""
+
+    _FONT_MIN, _FONT_MAX = 12, 48
+    _MODES = ("bilingual", "translation", "source")
+
+    def __init__(self, parent=None, lang="en"):
         # No parent: a top-level Tool window that floats above other apps.
         super().__init__(None)
+        self._lang = lang
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setMinimumWidth(420)
-        self.setMaximumWidth(900)
+        self.setMinimumWidth(320)
+        self.setMaximumWidth(1600)
+        self.setMinimumHeight(70)
         self._drag_pos = None
+        self._mode = "bilingual"
+        # Base translated font size; the source line is kept smaller/emphasis-low.
+        self._font_size = 20
+        self._source_text = ""
+        self._trans_text = ""
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -179,41 +194,107 @@ class _CaptionBar(QWidget):
         root.addWidget(self._panel)
 
         inner = QVBoxLayout(self._panel)
-        inner.setContentsMargins(18, 12, 18, 14)
+        inner.setContentsMargins(18, 8, 18, 14)
         inner.setSpacing(4)
 
         top = QHBoxLayout()
         top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(4)
+        self._mode_btn = self._mk_btn("", 70, 22)
+        self._mode_btn.setToolTip(tr("Display Mode", self._lang))
+        self._mode_btn.clicked.connect(self._cycle_mode)
+        top.addWidget(self._mode_btn)
         top.addStretch(1)
-        self._close_btn = QPushButton("×", self._panel)
-        self._close_btn.setFixedSize(22, 22)
-        self._close_btn.setCursor(Qt.PointingHandCursor)
-        self._close_btn.setStyleSheet(
-            "QPushButton{background:transparent;color:#cbd5e1;border:none;"
-            "font-size:18px;font-weight:600;}"
-            "QPushButton:hover{color:#ffffff;}")
+        self._minus_btn = self._mk_btn("A-", 26, 22)
+        self._minus_btn.setToolTip(tr("Font Size", self._lang))
+        self._minus_btn.clicked.connect(lambda: self._bump_font(-2))
+        top.addWidget(self._minus_btn)
+        self._plus_btn = self._mk_btn("A+", 26, 22)
+        self._plus_btn.setToolTip(tr("Font Size", self._lang))
+        self._plus_btn.clicked.connect(lambda: self._bump_font(2))
+        top.addWidget(self._plus_btn)
+        self._close_btn = self._mk_btn("×", 22, 22, big=True)
         self._close_btn.clicked.connect(self.hide)
         top.addWidget(self._close_btn)
         inner.addLayout(top)
 
         self._source_lbl = QLabel("", self._panel)
         self._source_lbl.setWordWrap(True)
-        self._source_lbl.setStyleSheet(
-            "color:#9aa6b2; font-size:13px; background:transparent;")
         inner.addWidget(self._source_lbl)
 
         self._trans_lbl = QLabel("", self._panel)
         self._trans_lbl.setWordWrap(True)
-        self._trans_lbl.setStyleSheet(
-            "color:#f1f5f9; font-size:20px; font-weight:700;"
-            "background:transparent;")
         inner.addWidget(self._trans_lbl)
 
+        # Bottom-right grip lets the user resize the frameless window. It sits in
+        # its own bottom row so it doesn't overlap the caption text.
+        from PySide6.QtWidgets import QSizeGrip
+        grip_row = QHBoxLayout()
+        grip_row.setContentsMargins(0, 0, 0, 0)
+        grip_row.addStretch(1)
+        self._grip = QSizeGrip(self._panel)
+        self._grip.setFixedSize(14, 14)
+        grip_row.addWidget(self._grip, 0, Qt.AlignRight | Qt.AlignBottom)
+        inner.addLayout(grip_row)
+
+        self._apply_fonts()
+        self._update_mode_btn()
+        self._apply_mode_visibility()
+
+    @staticmethod
+    def _mk_btn(text, w, h, big=False):
+        from PySide6.QtWidgets import QPushButton as _QPB
+        b = _QPB(text)
+        b.setFixedSize(w, h)
+        b.setCursor(Qt.PointingHandCursor)
+        fs = 18 if big else 12
+        b.setStyleSheet(
+            "QPushButton{background:transparent;color:#cbd5e1;border:none;"
+            "font-size:%dpx;font-weight:600;}"
+            "QPushButton:hover{color:#ffffff;}" % fs)
+        return b
+
+    def _apply_fonts(self):
+        src = max(self._FONT_MIN - 4, int(self._font_size * 0.65))
+        self._source_lbl.setStyleSheet(
+            "color:#9aa6b2; font-size:%dpx; background:transparent;" % src)
+        self._trans_lbl.setStyleSheet(
+            "color:#f1f5f9; font-size:%dpx; font-weight:700;"
+            "background:transparent;" % self._font_size)
+
+    def _bump_font(self, delta):
+        new = max(self._FONT_MIN, min(self._FONT_MAX, self._font_size + delta))
+        if new != self._font_size:
+            self._font_size = new
+            self._apply_fonts()
+
+    def _mode_label(self):
+        if self._mode == "translation":
+            return tr("Translation Only", self._lang)
+        if self._mode == "source":
+            return tr("Source Only", self._lang)
+        return tr("Bilingual", self._lang)
+
+    def _update_mode_btn(self):
+        self._mode_btn.setText(self._mode_label())
+
+    def _cycle_mode(self):
+        i = self._MODES.index(self._mode)
+        self._mode = self._MODES[(i + 1) % len(self._MODES)]
+        self._update_mode_btn()
+        self._apply_mode_visibility()
+
+    def _apply_mode_visibility(self):
+        self._source_lbl.setVisible(self._mode in ("bilingual", "source"))
+        self._trans_lbl.setVisible(self._mode in ("bilingual", "translation"))
+
     def set_source(self, text):
-        self._source_lbl.setText(text or "")
+        self._source_text = text or ""
+        self._source_lbl.setText(self._source_text)
 
     def set_translated(self, text):
-        self._trans_lbl.setText(text or "")
+        self._trans_text = text or ""
+        self._trans_lbl.setText(self._trans_text)
 
     def show_centered(self):
         """Place near the bottom-center of the primary screen, then show."""
@@ -228,7 +309,8 @@ class _CaptionBar(QWidget):
             self.move(max(geo.x(), x), max(geo.y(), y))
         self.raise_()
 
-    # Drag the frameless window by pressing anywhere on it.
+    # Drag the frameless window by pressing anywhere on it (the QSizeGrip in the
+    # corner intercepts its own events, so resize still works).
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
             self._drag_pos = (event.globalPosition().toPoint()
@@ -379,6 +461,11 @@ class LivePage(ScrollArea):
         # string for soundcard system-audio capture.
         self._mic_loopback_ids = []
         self._populate_mics()
+        # Live input switching: when a session is already listening, changing the
+        # source swaps just the capture device without stopping the session. The
+        # signal is connected AFTER the initial populate; every repopulate blocks
+        # signals (see _populate_mics), so this never fires on programmatic edits.
+        self.mic_combo.currentIndexChanged.connect(self._on_mic_changed)
         row1.addWidget(self.mic_combo, 1)
         ctrl.addLayout(row1)
 
@@ -649,37 +736,35 @@ class LivePage(ScrollArea):
         self.target_combo.setEnabled(False)
         self.mode_combo.setEnabled(False)
 
-    def _start_audio(self, with_playback=True):
-        """Open the mic (QAudioSource); also the speaker (QAudioSink) if needed."""
+    @staticmethod
+    def _audio_fmt(rate):
+        from PySide6.QtMultimedia import QAudioFormat
+        f = QAudioFormat()
+        f.setSampleRate(rate)
+        f.setChannelCount(1)
+        f.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+        return f
+
+    def _open_input(self):
+        """Open ONLY the currently-selected capture device (mic QAudioSource OR
+        the soundcard loopback worker) and wire it to the pipeline. Returns True
+        on success. Reused by both _start_audio and live input switching, so it
+        must not touch playback/worker/VAD state. Assumes any prior input was
+        already torn down by the caller."""
         try:
-            from PySide6.QtMultimedia import (
-                QAudioSource, QAudioSink, QAudioFormat, QMediaDevices)
+            from PySide6.QtMultimedia import QAudioSource, QMediaDevices
         except Exception as e:  # noqa: BLE001
             self._info(f"QtMultimedia unavailable: {e}", error=True)
             return False
 
-        def _fmt(rate):
-            f = QAudioFormat()
-            f.setSampleRate(rate)
-            f.setChannelCount(1)
-            f.setSampleFormat(QAudioFormat.SampleFormat.Int16)
-            return f
-
         # System-audio (loopback) input: capture via the soundcard thread
-        # instead of QAudioSource. The mic path below is left 100% unchanged.
+        # instead of QAudioSource.
         loopback_id = self._selected_loopback_id()
         if loopback_id is not None:
             self._loopback = _LoopbackWorker(loopback_id, self)
             self._loopback.pcm.connect(self._on_loopback_pcm)
             self._loopback.failed.connect(self._on_loopback_failed)
             self._loopback.start()
-            if with_playback:
-                out_dev = QMediaDevices.defaultAudioOutput()
-                want_out = _fmt(_OUT_RATE)
-                self._out_fmt = (want_out if out_dev.isFormatSupported(want_out)
-                                 else out_dev.preferredFormat())
-                self._sink = QAudioSink(out_dev, self._out_fmt)
-                self._play_io = self._sink.start()
             return True
 
         in_dev = self._selected_mic() or QMediaDevices.defaultAudioInput()
@@ -687,7 +772,7 @@ class LivePage(ScrollArea):
             self._info(tr("No microphone found", self._lang), error=True)
             return False
 
-        want_in = _fmt(_IN_RATE)
+        want_in = self._audio_fmt(_IN_RATE)
         self._in_fmt = want_in if in_dev.isFormatSupported(want_in) else in_dev.preferredFormat()
         self._source = QAudioSource(in_dev, self._in_fmt)
         self._mic_io = self._source.start()
@@ -696,14 +781,56 @@ class LivePage(ScrollArea):
             self._source = None
             return False
         self._mic_io.readyRead.connect(self._on_mic_ready)
+        return True
+
+    def _stop_input(self):
+        """Tear down ONLY the capture device (mic or loopback), leaving the
+        worker/VAD/playback running. Used by live input switching."""
+        if self._source is not None:
+            self._source.stop()
+            self._source = None
+            self._mic_io = None
+        if self._loopback is not None:
+            self._loopback.stop()
+            self._loopback.wait(2000)
+            self._loopback = None
+
+    def _start_audio(self, with_playback=True):
+        """Open the mic (QAudioSource); also the speaker (QAudioSink) if needed."""
+        if not self._open_input():
+            return False
 
         if with_playback:
+            try:
+                from PySide6.QtMultimedia import QAudioSink, QMediaDevices
+            except Exception as e:  # noqa: BLE001
+                self._info(f"QtMultimedia unavailable: {e}", error=True)
+                return False
             out_dev = QMediaDevices.defaultAudioOutput()
-            want_out = _fmt(_OUT_RATE)
-            self._out_fmt = want_out if out_dev.isFormatSupported(want_out) else out_dev.preferredFormat()
+            want_out = self._audio_fmt(_OUT_RATE)
+            self._out_fmt = (want_out if out_dev.isFormatSupported(want_out)
+                             else out_dev.preferredFormat())
             self._sink = QAudioSink(out_dev, self._out_fmt)
             self._play_io = self._sink.start()
         return True
+
+    def _on_mic_changed(self, index):
+        """User picked a different input source. If a session is currently
+        listening, swap just the capture device on the fly (keep worker/VAD/
+        transcript). Otherwise it's just a stored selection (used at next start).
+        Fail-safe: if the new device won't open, stop the whole session."""
+        if not self._is_listening():
+            return
+        self._stop_input()
+        # Reset the VAD so a half-captured utterance from the old device isn't
+        # spliced onto the new one; the transcript/worker stay intact.
+        self._reset_vad()
+        self.waveform.clear()
+        if not self._open_input():
+            # _open_input already surfaced the error; stop cleanly.
+            self.on_stop()
+            return
+        self.status_label.setText(tr("Listening", self._lang))
 
     def on_stop(self):
         if self._worker is not None:
@@ -934,7 +1061,7 @@ class LivePage(ScrollArea):
     def _on_caption_toggled(self, checked):
         if checked:
             if self._caption_bar is None:
-                self._caption_bar = _CaptionBar()
+                self._caption_bar = _CaptionBar(lang=self._lang)
                 self._caption_bar.destroyed.connect(self._on_caption_destroyed)
             self._caption_bar.show_centered()
         elif self._caption_bar is not None:
