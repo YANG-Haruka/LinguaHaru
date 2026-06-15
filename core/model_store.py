@@ -34,17 +34,49 @@ def current_dir():
 
 def setup_model_env():
     """Point every model library's cache at the unified dir. Idempotent; uses
-    setdefault so an explicit user env var still wins. Call at app startup."""
+    setdefault so an explicit user env var still wins. Call at app startup,
+    BEFORE the model libraries are imported (they read these env vars at import).
+
+    BabelDOC has no cache env var (its CACHE_FOLDER is a hardcoded module
+    global); it is redirected separately by `redirect_babeldoc_cache()`, called
+    from the PDF translator just before its first run."""
     md = current_dir()
     os.makedirs(md, exist_ok=True)
-    # faster-whisper + BabelDOC layout model + any huggingface_hub download
+    # faster-whisper + any huggingface_hub download
     os.environ.setdefault("HF_HOME", md)
     os.environ.setdefault("HUGGINGFACE_HUB_CACHE", os.path.join(md, "hub"))
     # funasr/modelscope fallback
     os.environ.setdefault("MODELSCOPE_CACHE", os.path.join(md, "modelscope"))
+    # PaddleOCR / PaddleX official models (PP-OCRv6 etc.) -> md/paddlex/official_models
+    os.environ.setdefault("PADDLE_PDX_CACHE_HOME", os.path.join(md, "paddlex"))
     # China-friendly mirror for huggingface (kept consistent with SenseVoice).
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
     return md
+
+
+def redirect_babeldoc_cache():
+    """Point BabelDOC's hardcoded ~/.cache/babeldoc at the unified models dir.
+
+    BabelDOC exposes no cache env var: `babeldoc.const.CACHE_FOLDER` is a module
+    global read at call time by `get_cache_file_path()`. We repoint it (and the
+    import-time tiktoken cache it derives) AFTER importing babeldoc but BEFORE
+    the first PDF translation downloads the DocLayout model / fonts. Best-effort:
+    any failure leaves BabelDOC on its own default and never blocks PDF."""
+    try:
+        import babeldoc.const as const
+        target = os.path.join(current_dir(), "babeldoc")
+        os.makedirs(target, exist_ok=True)
+        from pathlib import Path
+        const.CACHE_FOLDER = Path(target)
+        tk = os.path.join(target, "tiktoken")
+        os.makedirs(tk, exist_ok=True)
+        const.TIKTOKEN_CACHE_FOLDER = Path(tk)
+        os.environ["TIKTOKEN_CACHE_DIR"] = tk
+        app_logger.info(f"BabelDOC cache redirected to {target}")
+        return target
+    except Exception as e:  # noqa: BLE001
+        app_logger.warning(f"Could not redirect BabelDOC cache: {e}")
+        return None
 
 
 def whisper_dir():
@@ -81,6 +113,8 @@ _KNOWN = [
     ("fsmn-vad", "FSMN-VAD (语音断句)"),
     ("DocLayout", "BabelDOC 版面模型 (PDF)"),
     ("doclayout", "BabelDOC 版面模型 (PDF)"),
+    ("babeldoc", "BabelDOC 模型/字体 (PDF)"),
+    ("paddlex", "PaddleOCR (图片识别)"),
     ("PP-OCR", "PaddleOCR (图片识别)"),
     ("rapidocr", "RapidOCR (图片识别)"),
 ]

@@ -32,6 +32,12 @@ from core.engine.text_separator import load_glossary, find_terms_with_hashtable
 from core.pipelines.skip_pipeline import should_translate
 from core.engine.translation_checker import clean_json
 from core.log_config import app_logger
+from core import model_store
+
+# Redirect BabelDOC's hardcoded ~/.cache/babeldoc into the unified models dir
+# BEFORE init / first download, so the PDF layout model + fonts live alongside
+# the other engines' models (data/models, or the user-chosen location).
+model_store.redirect_babeldoc_cache()
 
 # Ensure BabelDOC is initialized
 try:
