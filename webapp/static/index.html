@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615z" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615A" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -537,38 +537,50 @@
         <h2 data-i18n="Settings">设置</h2>
         <p data-i18n="Settings Subtitle">模型密钥、网络与重试。可选能力模块请前往「插件」。</p>
       </div>
-      <div class="card">
-        <h3 data-i18n="Run Mode">运行模式</h3>
-        <label class="check"><input type="checkbox" id="set-lan" /> 局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</label>
-        <div class="field" style="margin-top:10px"><label>局域网管理密码（可选；设置后，局域网用户需输入密码才能修改配置 / 密钥 / 安装插件）</label><input type="password" id="set-lan-admin" placeholder="留空则不启用" /></div>
-        <label class="check" style="margin-top:10px"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
-      </div>
-      <div class="card">
-        <h3 data-i18n="Translation Options">翻译选项</h3>
-        <label class="check"><input type="checkbox" id="set-mask-ph" /> 占位符保护（翻译前屏蔽 %s / ${var} / {占位符}，避免被改写；推荐开启）</label>
-        <label class="check" style="margin-top:10px"><input type="checkbox" id="set-dedup-context" /> 上下文区分去重（相同文本但不同位置/类型分别翻译，更准但更费 token）</label>
-      </div>
-      <div class="card">
-        <h3 data-i18n="Model Management">模型管理</h3>
-        <div class="field"><label data-i18n="Model Location">模型位置</label><input type="text" id="models-dir" readonly /></div>
-        <div id="models-list" class="muted" style="margin-top:10px"></div>
-        <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model">语音转文字模型</label><select id="models-stt"></select></div>
-        <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
-      </div>
-      <div class="card">
-        <h3 data-i18n="History">历史记录</h3>
-        <div class="field"><label>结果保存位置（输出文件 / 实时语音字幕的保存目录）</label><input type="text" id="set-result-dir" placeholder="data/result" /></div>
-        <div class="field" style="margin-top:10px"><label>超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
-        <div class="field" style="margin-top:10px"><label>超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
-        <button id="set-hist-clear" class="danger" style="margin-top:12px" data-i18n="Clear History">清空历史记录</button>
-      </div>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Run Mode">运行模式</span><span class="set-card-sub">局域网模式 · 管理密码</span></summary>
+        <div class="set-card-body">
+          <label class="check"><input type="checkbox" id="set-lan" /> 局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</label>
+          <div class="field" style="margin-top:10px"><label>局域网管理密码（可选；设置后，局域网用户需输入密码才能修改配置 / 密钥 / 安装插件）</label><input type="password" id="set-lan-admin" placeholder="留空则不启用" /></div>
+        </div>
+      </details>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Translation Options">翻译选项</span><span class="set-card-sub">AI 术语提取 · 占位符保护 · 上下文区分去重</span></summary>
+        <div class="set-card-body">
+          <label class="check"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
+          <label class="check" style="margin-top:10px"><input type="checkbox" id="set-mask-ph" /> 占位符保护（翻译前屏蔽 %s / ${var} / {占位符}，避免被改写；推荐开启）</label>
+          <label class="check" style="margin-top:10px"><input type="checkbox" id="set-dedup-context" /> 上下文区分去重（相同文本但不同位置/类型分别翻译，更准但更费 token）</label>
+        </div>
+      </details>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Data &amp; Storage">数据保存</span><span class="set-card-sub">保存位置 · 自动删除 · 清空</span></summary>
+        <div class="set-card-body">
+          <div class="field"><label>结果保存位置（输出文件 / 实时语音字幕的保存目录）</label>
+            <div class="dir-row"><input type="text" id="set-result-dir" placeholder="data/result" /><button id="set-result-browse" type="button" data-i18n="Browse">浏览</button></div>
+          </div>
+          <div class="row-2" style="margin-top:10px">
+            <div class="field"><label>超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
+            <div class="field"><label>超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
+          </div>
+          <button id="set-hist-clear" class="danger" style="margin-top:14px" data-i18n="Clear History">清空历史记录</button>
+        </div>
+      </details>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Model Management">模型管理</span><span class="set-card-sub">模型位置 · 已下载列表 · 语音转文字模型</span></summary>
+        <div class="set-card-body">
+          <div class="field"><label data-i18n="Model Location">模型位置</label><input type="text" id="models-dir" readonly /></div>
+          <div id="models-list" class="muted" style="margin-top:10px"></div>
+          <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model">语音转文字模型</label><select id="models-stt"></select></div>
+          <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
+        </div>
+      </details>
       <div id="settings-status" class="muted"></div>
     </section>
 
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615z"></script>
-  <script src="/static/app.js?v=20260615z"></script>
+  <script src="/static/background.js?v=20260615A"></script>
+  <script src="/static/app.js?v=20260615A"></script>
 </body>
 </html>

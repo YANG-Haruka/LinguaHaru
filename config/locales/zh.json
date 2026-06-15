@@ -290,5 +290,11 @@
   "threads": "线程",
   "Auto-delete by count": "超过多少条自动删除（0 = 不限）",
   "Auto-delete by age": "超过多少天自动删除（0 = 不限）",
-  "Clear history confirm": "确定清空全部历史记录？此操作不可撤销。"
+  "Clear history confirm": "确定清空全部历史记录？此操作不可撤销。",
+  "Data & Storage": "数据保存",
+  "LAN Mode": "局域网模式（让其他设备通过浏览器访问）",
+  "LAN admin password": "局域网管理密码（可选）",
+  "LAN access hint": "开启后，本机会启动 Web 服务；局域网内的其他设备可用下面的网址在浏览器中访问。",
+  "LAN starting": "启动中…（需几秒）",
+  "LAN stopped": "已停止"
 }

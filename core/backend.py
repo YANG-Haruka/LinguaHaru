@@ -208,6 +208,36 @@ def set_config(key, value):
     return value
 
 
+# --- LAN admin password hashing (shared by the Web server + the Qt LAN toggle) ---
+_PBKDF2_ITERS = 200_000
+
+
+def hash_lan_password(pw):
+    """Salted PBKDF2-HMAC-SHA256 of a password. Only the hash is stored (config
+    is git-tracked). Format: pbkdf2_sha256$<iters>$<salt_hex>$<hash_hex>."""
+    import hashlib
+    import secrets
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", str(pw).encode("utf-8"),
+                             bytes.fromhex(salt), _PBKDF2_ITERS)
+    return f"pbkdf2_sha256${_PBKDF2_ITERS}${salt}${dk.hex()}"
+
+
+def verify_lan_password(pw, stored):
+    """Constant-time check of a password against a stored PBKDF2 hash."""
+    import hashlib
+    import hmac
+    try:
+        algo, iters, salt, want = stored.split("$")
+        if algo != "pbkdf2_sha256":
+            return False
+        dk = hashlib.pbkdf2_hmac("sha256", str(pw).encode("utf-8"),
+                                 bytes.fromhex(salt), int(iters))
+        return hmac.compare_digest(dk.hex(), want)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def get_custom_paths():
     """Resolve and create temp/result/log dirs (absolute, anchored at repo)."""
     config = read_config()

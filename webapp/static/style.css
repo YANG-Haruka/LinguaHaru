@@ -284,6 +284,36 @@ html[data-theme="light"] .card { box-shadow: var(--shadow-1), var(--shadow-2); }
 }
 .card h3::after { content: ""; flex: 1; height: 1px; background: var(--border); }
 
+/* Collapsible settings cards: show a title + one-line summary; expand on click. */
+details.set-card { padding: 0; overflow: hidden; }
+details.set-card > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  padding: 18px 24px; display: flex; align-items: center; gap: 12px;
+  border-radius: var(--r-lg);
+}
+details.set-card > summary::-webkit-details-marker { display: none; }
+details.set-card > summary::after {
+  content: ""; margin-left: auto; flex: none; width: 8px; height: 8px;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg); transition: transform .2s;
+}
+details.set-card[open] > summary::after { transform: rotate(-135deg); }
+details.set-card > summary:hover { background: var(--surface-2); }
+.set-card-title {
+  font-size: 0.74rem; font-weight: 600; color: var(--text-2);
+  letter-spacing: 1px; text-transform: uppercase; font-family: var(--font-mono);
+}
+.set-card-sub { color: var(--muted); font-size: 0.82rem; }
+.set-card-body { padding: 2px 24px 22px; }
+.dir-row { display: flex; gap: 8px; align-items: stretch; }
+.dir-row input { flex: 1; }
+.dir-row button {
+  flex: none; height: 42px; padding: 0 16px; border-radius: var(--r); cursor: pointer;
+  border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text-2);
+  font-size: 0.9rem; transition: background .2s, color .2s, border-color .2s;
+}
+.dir-row button:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
+
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: end; }
 .lang-card { display: grid; grid-template-columns: 1fr auto 1fr; gap: 18px; align-items: end; }
 

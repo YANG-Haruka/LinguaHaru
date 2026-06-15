@@ -638,6 +638,17 @@ $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("s
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
 if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
+if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
+  $("settings-status").textContent = "正在打开文件夹选择器…（窗口可能在后台）";
+  try {
+    const r = await api("/api/pick-folder", { method: "POST" });
+    if (r && r.path) {
+      $("set-result-dir").value = r.path;
+      saveConfig({ result_dir: r.path });
+      $("settings-status").textContent = "结果保存位置已更新。";
+    } else { $("settings-status").textContent = ""; }
+  } catch (e) { $("settings-status").textContent = "无法打开文件夹选择器：" + e.message; }
+};
 if ($("set-hist-max")) $("set-hist-max").onchange = () => saveConfig({ history_max_records: Math.max(0, parseInt($("set-hist-max").value || "0", 10) || 0) });
 if ($("set-hist-age")) $("set-hist-age").onchange = () => saveConfig({ history_max_age_days: Math.max(0, parseInt($("set-hist-age").value || "0", 10) || 0) });
 if ($("set-hist-clear")) $("set-hist-clear").onclick = async () => {

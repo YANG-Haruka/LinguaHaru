@@ -290,5 +290,11 @@
   "threads": "threads",
   "Auto-delete by count": "Auto-delete beyond N records (0 = unlimited)",
   "Auto-delete by age": "Auto-delete older than N days (0 = unlimited)",
-  "Clear history confirm": "Clear all history? This cannot be undone."
+  "Clear history confirm": "Clear all history? This cannot be undone.",
+  "Data & Storage": "Data & Storage",
+  "LAN Mode": "LAN mode (let other devices open it in a browser)",
+  "LAN admin password": "LAN admin password (optional)",
+  "LAN access hint": "When on, this device runs the web app for your LAN — others open the URL below in a browser.",
+  "LAN starting": "Starting… (a few seconds)",
+  "LAN stopped": "Stopped"
 }

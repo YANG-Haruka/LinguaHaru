@@ -17,9 +17,6 @@ import uuid
 import asyncio
 import time
 import contextvars
-import hashlib
-import hmac
-import secrets
 
 from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
@@ -68,30 +65,9 @@ def server_mode_on():
 _admin_token = contextvars.ContextVar("admin_token", default="")
 
 
-_PBKDF2_ITERS = 200_000
-
-
-def _hash_pw(pw):
-    """Salted PBKDF2-HMAC-SHA256 of a password (stdlib, no extra deps). We store
-    only this hash — never plaintext, since system_config.json is git-tracked.
-    Format: pbkdf2_sha256$<iters>$<salt_hex>$<hash_hex>."""
-    salt = secrets.token_hex(16)
-    dk = hashlib.pbkdf2_hmac("sha256", str(pw).encode("utf-8"),
-                             bytes.fromhex(salt), _PBKDF2_ITERS)
-    return f"pbkdf2_sha256${_PBKDF2_ITERS}${salt}${dk.hex()}"
-
-
-def _verify_pw(pw, stored):
-    """Constant-time check of a password against a stored PBKDF2 hash."""
-    try:
-        algo, iters, salt, want = stored.split("$")
-        if algo != "pbkdf2_sha256":
-            return False
-        dk = hashlib.pbkdf2_hmac("sha256", str(pw).encode("utf-8"),
-                                 bytes.fromhex(salt), int(iters))
-        return hmac.compare_digest(dk.hex(), want)
-    except Exception:
-        return False
+# Password hashing lives in core.backend so the Qt LAN toggle shares it.
+_hash_pw = backend.hash_lan_password
+_verify_pw = backend.verify_lan_password
 
 
 def _block_in_server_mode():
@@ -641,6 +617,28 @@ def history_clear(request: Request):
     _, _, log_dir = sessions.session_paths(request.state.session_id)
     ok = TranslationHistoryManager(log_dir=log_dir).clear_all_records()
     return {"ok": bool(ok)}
+
+
+@app.post("/api/pick-folder")
+def pick_folder():
+    """Open a native folder picker ON THE SERVER machine (local desktop use) and
+    return the chosen absolute path. Runs in a subprocess so tkinter never
+    touches the server's asyncio loop. Disabled on public/shared deploys (no
+    display there anyway)."""
+    if server_mode_on():
+        raise HTTPException(403, "Folder picker is not available in server mode")
+    import subprocess
+    import sys
+    code = ("import tkinter, sys\n"
+            "from tkinter import filedialog\n"
+            "r = tkinter.Tk(); r.withdraw(); r.attributes('-topmost', True)\n"
+            "sys.stdout.write(filedialog.askdirectory() or '')\n")
+    try:
+        out = subprocess.run([sys.executable, "-c", code],
+                             capture_output=True, text=True, timeout=180)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Folder picker failed: {e}")
+    return {"path": (out.stdout or "").strip()}
 
 
 # --------------------------------------------------------------------------- #
