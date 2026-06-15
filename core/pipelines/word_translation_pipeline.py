@@ -73,6 +73,20 @@ def extract_word_content_to_json(file_path, save_temp_dir):
         if os.path.exists(footnotes_xml_path):
             with open(footnotes_xml_path, 'rb') as f:
                 footnotes_xml = f.read()
+
+        # Read endnotes.xml if exists
+        endnotes_xml = None
+        endnotes_xml_path = os.path.join(temp_dir, 'word', 'endnotes.xml')
+        if os.path.exists(endnotes_xml_path):
+            with open(endnotes_xml_path, 'rb') as f:
+                endnotes_xml = f.read()
+
+        # Read comments.xml if exists
+        comments_xml = None
+        comments_xml_path = os.path.join(temp_dir, 'word', 'comments.xml')
+        if os.path.exists(comments_xml_path):
+            with open(comments_xml_path, 'rb') as f:
+                comments_xml = f.read()
         
         # Get all header and footer files
         word_dir = os.path.join(temp_dir, 'word')
@@ -138,7 +152,25 @@ def extract_word_content_to_json(file_path, save_temp_dir):
                 footnote_item["count_src"] = item_id
                 content_data.append(footnote_item)
         
-        # Extract SmartArt content using ZipFile object
+        # Extract endnotes content
+        if endnotes_xml:
+            endnote_items = extract_endnotes_translatable_content(endnotes_xml, namespaces)
+            for endnote_item in endnote_items:
+                item_id += 1
+                endnote_item["id"] = item_id
+                endnote_item["count_src"] = item_id
+                content_data.append(endnote_item)
+
+        # Extract comments content
+        if comments_xml:
+            comment_items = extract_comments_translatable_content(comments_xml, namespaces)
+            for comment_item in comment_items:
+                item_id += 1
+                comment_item["id"] = item_id
+                comment_item["count_src"] = item_id
+                content_data.append(comment_item)
+
+        # Extract SmartArt and chart content using ZipFile object
         with ZipFile(file_path, 'r') as docx:
             smartart_items = extract_smartart_content(docx, namespaces)
             for smartart_item in smartart_items:
@@ -146,6 +178,13 @@ def extract_word_content_to_json(file_path, save_temp_dir):
                 smartart_item["id"] = item_id
                 smartart_item["count_src"] = item_id
                 content_data.append(smartart_item)
+
+            chart_items = extract_word_charts(docx, namespaces)
+            for chart_item in chart_items:
+                item_id += 1
+                chart_item["id"] = item_id
+                chart_item["count_src"] = item_id
+                content_data.append(chart_item)
         
         # Process main document content
         item_id = process_document_content(
@@ -255,6 +294,184 @@ def extract_footnotes_translatable_content(footnotes_xml, namespaces):
         app_logger.error(f"Error extracting footnotes content: {e}")
     
     return footnote_items
+
+def _extract_word_para_container(xml_bytes, namespaces, elem_xpath, id_key, item_type):
+    """Generic extractor for paragraph-bearing parts (comments/endnotes).
+
+    Mirrors extract_footnotes_translatable_content but parameterized by the
+    container element (w:comment / w:endnote) and the id key stored per item."""
+    items = []
+    if not xml_bytes:
+        return items
+    try:
+        tree = etree.fromstring(xml_bytes, parser=_SAFE_PARSER)
+        for elem in tree.xpath(elem_xpath, namespaces=namespaces):
+            elem_id = elem.get(f'{{{namespaces["w"]}}}id')
+            if elem_id is None:
+                continue
+            paragraphs = elem.xpath('.//w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]',
+                                    namespaces=namespaces)
+            for para_idx, paragraph in enumerate(paragraphs):
+                is_toc, toc_info = detect_toc_paragraph_enhanced(paragraph, namespaces, False)
+                if is_toc:
+                    toc_title_text, toc_structure = extract_toc_title_with_complete_structure_enhanced(
+                        paragraph, namespaces)
+                    paragraph_text, field_info, math_info = toc_title_text, None, None
+                else:
+                    paragraph_text, field_info, math_info = extract_paragraph_text_with_variables_and_formulas(
+                        paragraph, namespaces, None, True)
+                    toc_structure = None
+
+                if paragraph_text and paragraph_text.strip() and should_translate_enhanced(paragraph_text):
+                    item = {
+                        "type": item_type,
+                        id_key: elem_id,
+                        "paragraph_index": para_idx,
+                        "is_toc": is_toc,
+                        "value": paragraph_text.replace("\n", "␊").replace("\r", "␍"),
+                        "original_pPr": extract_paragraph_properties(paragraph, namespaces),
+                        "original_structure": extract_paragraph_structure(paragraph, namespaces),
+                    }
+                    if field_info:
+                        item["field_info"] = field_info
+                    if math_info:
+                        item["math_info"] = math_info
+                    if is_toc:
+                        item.update({"toc_info": toc_info, "toc_structure": toc_structure})
+                    items.append(item)
+        app_logger.info(f"Extracted {len(items)} translatable {item_type} items")
+    except Exception as e:
+        app_logger.error(f"Error extracting {item_type} content: {e}")
+    return items
+
+
+def extract_endnotes_translatable_content(endnotes_xml, namespaces):
+    """Extract translatable content from endnotes.xml (same shape as footnotes)."""
+    return _extract_word_para_container(
+        endnotes_xml, namespaces,
+        '//w:endnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]',
+        "endnote_id", "endnote")
+
+
+def extract_comments_translatable_content(comments_xml, namespaces):
+    """Extract translatable content from comments.xml (w:comment containers)."""
+    return _extract_word_para_container(
+        comments_xml, namespaces, '//w:comment', "comment_id", "comment")
+
+
+def _update_word_para_container(tree, original_data, translations, namespaces,
+                               elem_xpath, id_key, item_type, bilingual_mode=False):
+    """Generic write-back for comments/endnotes (mirror of footnotes update)."""
+    by_id = {}
+    for elem in tree.xpath(elem_xpath, namespaces=namespaces):
+        elem_id = elem.get(f'{{{namespaces["w"]}}}id')
+        if elem_id is not None:
+            by_id[elem_id] = elem
+
+    for item in original_data:
+        if item.get("type") != item_type:
+            continue
+        item_id = str(item.get("id", item.get("count_src")))
+        translated_text = translations.get(item_id)
+        if not translated_text:
+            continue
+        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+        if bilingual_mode:
+            original_text = item.get("value", "").replace("␊", "\n").replace("␍", "\r")
+            translated_text = create_bilingual_text(original_text, translated_text)
+
+        elem_id = item.get(id_key)
+        if elem_id not in by_id:
+            app_logger.error(f"{item_type} id {elem_id} not found")
+            continue
+        paragraphs = by_id[elem_id].xpath(
+            './/w:p[not(ancestor::wps:txbx) and not(ancestor::v:textbox)]', namespaces=namespaces)
+        para_idx = item.get("paragraph_index")
+        if para_idx is None or para_idx >= len(paragraphs):
+            continue
+        target_paragraph = paragraphs[para_idx]
+        original_pPr = item.get("original_pPr")
+        if original_pPr:
+            restore_paragraph_properties(target_paragraph, original_pPr, namespaces)
+        if item.get("is_toc", False):
+            update_toc_paragraph_with_complete_structure(
+                target_paragraph, translated_text, namespaces, item.get("toc_structure"))
+        else:
+            update_paragraph_text_with_enhanced_preservation(
+                target_paragraph, translated_text, namespaces, None,
+                item.get("field_info"), item.get("math_info"), item.get("original_structure"))
+
+
+# --- Word charts (word/charts/chartN.xml: titles, axis/labels, cache values) ---
+_WORD_CHART_NS = {
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "c": "http://schemas.openxmlformats.org/drawingml/2006/chart",
+}
+
+
+def _word_chart_nodes(tree):
+    nodes = [(n, "a_t") for n in tree.xpath(".//a:t", namespaces=_WORD_CHART_NS)]
+    nodes += [(n, "str_v") for n in tree.xpath(".//c:strCache/c:pt/c:v", namespaces=_WORD_CHART_NS)]
+    return nodes
+
+
+def extract_word_charts(docx, namespaces):
+    """Extract translatable text from word/charts/chartN.xml."""
+    items = []
+    chart_files = sorted(n for n in docx.namelist()
+                         if re.match(r"word/charts/chart\d+\.xml$", n))
+    for chart_file in chart_files:
+        try:
+            tree = etree.fromstring(docx.read(chart_file), parser=_SAFE_PARSER)
+        except etree.XMLSyntaxError as e:
+            app_logger.warning(f"Failed to parse {chart_file}: {e}")
+            continue
+        for node_index, (node, kind) in enumerate(_word_chart_nodes(tree)):
+            text = (node.text or "").strip()
+            if not text or not should_translate_enhanced(text):
+                continue
+            items.append({
+                "type": "chart", "chart_file": chart_file,
+                "node_kind": kind, "node_index": node_index, "value": node.text,
+            })
+    app_logger.info(f"Extracted {len(items)} Word chart text items")
+    return items
+
+
+def update_word_charts(temp_dir, original_data, translations, namespaces, bilingual_mode=False):
+    """Apply chart translations to word/charts/chartN.xml inside temp_dir."""
+    chart_items = [i for i in original_data if i.get("type") == "chart"]
+    if not chart_items:
+        return
+    by_file = {}
+    for item in chart_items:
+        by_file.setdefault(item["chart_file"], []).append(item)
+
+    for chart_file, items in by_file.items():
+        path = os.path.join(temp_dir, chart_file.replace("/", os.sep))
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, "rb") as f:
+                tree = etree.fromstring(f.read(), parser=_SAFE_PARSER)
+            nodes = _word_chart_nodes(tree)
+            for item in items:
+                item_id = str(item.get("id", item.get("count_src")))
+                translated = translations.get(item_id)
+                if not translated:
+                    continue
+                idx = item["node_index"]
+                if 0 <= idx < len(nodes):
+                    text = translated.replace("␊", "\n").replace("␍", "\r")
+                    if bilingual_mode:
+                        text = create_bilingual_text(
+                            item.get("value", "").replace("␊", "\n").replace("␍", "\r"), text)
+                    nodes[idx][0].text = text
+            with open(path, "wb") as f:
+                f.write(etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+        except Exception as e:
+            app_logger.error(f"Failed to update Word chart {chart_file}: {e}")
+
 
 def extract_smartart_content(docx, namespaces):
     """Extract translatable content from SmartArt diagrams in Word document"""
@@ -2651,6 +2868,30 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             else:
                 update_footnotes_with_translations(footnotes_tree, original_data, translations, namespaces)
 
+        # Load and update endnotes.xml if exists
+        endnotes_tree = None
+        endnotes_xml_path = os.path.join(temp_dir, 'word', 'endnotes.xml')
+        if os.path.exists(endnotes_xml_path):
+            with open(endnotes_xml_path, 'rb') as f:
+                endnotes_tree = etree.fromstring(f.read(), parser=_SAFE_PARSER)
+            _update_word_para_container(
+                endnotes_tree, original_data, translations, namespaces,
+                '//w:endnote[not(@w:type="separator") and not(@w:type="continuationSeparator")]',
+                "endnote_id", "endnote", bilingual_mode)
+
+        # Load and update comments.xml if exists
+        comments_tree = None
+        comments_xml_path = os.path.join(temp_dir, 'word', 'comments.xml')
+        if os.path.exists(comments_xml_path):
+            with open(comments_xml_path, 'rb') as f:
+                comments_tree = etree.fromstring(f.read(), parser=_SAFE_PARSER)
+            _update_word_para_container(
+                comments_tree, original_data, translations, namespaces,
+                '//w:comment', "comment_id", "comment", bilingual_mode)
+
+        # Apply chart translations (word/charts/chartN.xml inside temp_dir)
+        update_word_charts(temp_dir, original_data, translations, namespaces, bilingual_mode)
+
         # Load header/footer files
         header_footer_trees = {}
         word_dir = os.path.join(temp_dir, 'word')
@@ -2686,8 +2927,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             if not translated_text:
                 continue
 
-            # Skip numbering and SmartArt items as they're handled separately
-            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart", "footnote"]:
+            # Skip items handled separately (numbering, SmartArt, notes, comments, charts)
+            if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart",
+                                 "footnote", "endnote", "comment", "chart"]:
                 continue
 
             translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
@@ -2750,7 +2992,15 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         if footnotes_tree is not None:
             with open(footnotes_xml_path, "wb") as f:
                 f.write(etree.tostring(footnotes_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
-        
+
+        if endnotes_tree is not None:
+            with open(endnotes_xml_path, "wb") as f:
+                f.write(etree.tostring(endnotes_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+
+        if comments_tree is not None:
+            with open(comments_xml_path, "wb") as f:
+                f.write(etree.tostring(comments_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+
         for hf_file, hf_tree in header_footer_trees.items():
             hf_path = os.path.join(temp_dir, hf_file.replace('/', os.sep))
             with open(hf_path, "wb") as f:
