@@ -176,6 +176,16 @@ function showTranslateSub(sub) {
   document.querySelectorAll('.panel[data-panel="translate"] .subpane').forEach((x) => x.classList.remove("active"));
   const el = document.querySelector(`.panel[data-panel="translate"] .subpane[data-sub="${sub}"]`);
   if (el) el.classList.add("active");
+  // Heading reflects the active sub: live -> 实时语音, doc -> 文件翻译 (data-i18n
+  // kept in sync so it stays correct after a language switch).
+  const h2 = document.querySelector('.panel[data-panel="translate"] .page-head h2');
+  const p = document.querySelector('.panel[data-panel="translate"] .page-head p');
+  if (h2) { h2.dataset.i18n = sub === "live" ? "Real-Time Voice" : "File Translation";
+            h2.textContent = _label(h2.dataset.i18n, h2.textContent); }
+  if (p) { p.dataset.i18n = sub === "live" ? "Real-Time Voice Subtitle" : "Translate Page Subtitle";
+           p.textContent = _label(p.dataset.i18n, p.textContent); }
+  document.querySelectorAll('#translate-mode .seg').forEach(
+    (s) => s.classList.toggle("active", s.dataset.sub === sub));
 }
 
 // ----- interface management (mirrors the Qt Interface page) -----
@@ -1032,6 +1042,60 @@ function fillLiveTarget() {
     o.value = code; o.textContent = name; sel.appendChild(o);
   }
   sel.value = BOOT.language_map[BOOT.config.default_dst_lang] || "zh";
+  refreshLiveInputDevices();
+}
+
+// Populate the live "输入" (input source) dropdown: each microphone + (where the
+// browser supports it) a system/tab-audio option via getDisplayMedia. Device
+// labels only appear after mic permission has been granted once.
+async function refreshLiveInputDevices() {
+  const sel = $("live-input-dev");
+  if (!sel || !navigator.mediaDevices) return;
+  const cur = sel.value;
+  let devs = [];
+  try { devs = await navigator.mediaDevices.enumerateDevices(); } catch (e) { /* */ }
+  sel.replaceChildren();
+  const def = document.createElement("option");
+  def.value = ""; def.textContent = _label("Default Microphone", "默认麦克风");
+  sel.appendChild(def);
+  let n = 0;
+  for (const d of devs) {
+    if (d.kind !== "audioinput") continue;
+    n += 1;
+    const o = document.createElement("option");
+    o.value = d.deviceId; o.textContent = d.label || `${_label("Input", "输入")} ${n}`;
+    sel.appendChild(o);
+  }
+  if (navigator.mediaDevices.getDisplayMedia) {
+    const o = document.createElement("option");
+    o.value = "__system__"; o.textContent = _label("System Audio", "系统/标签页声音");
+    sel.appendChild(o);
+  }
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
+if (navigator.mediaDevices) {
+  navigator.mediaDevices.ondevicechange = () => refreshLiveInputDevices();
+}
+
+// Acquire the live audio stream from the chosen input: a specific mic, the
+// default mic, or system/tab audio (getDisplayMedia, audio-only).
+async function acquireLiveStream() {
+  const dev = $("live-input-dev") ? $("live-input-dev").value : "";
+  if (dev === "__system__") {
+    const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    s.getVideoTracks().forEach((t) => t.stop());   // keep audio only
+    if (!s.getAudioTracks().length) {
+      s.getTracks().forEach((t) => t.stop());
+      throw new Error("未捕获到系统/标签页音频（分享时请勾选“分享音频”）");
+    }
+    return s;
+  }
+  const audio = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+  if (dev) audio.deviceId = { exact: dev };
+  const s = await navigator.mediaDevices.getUserMedia({ audio });
+  // First grant reveals device labels — refresh so the dropdown shows names.
+  refreshLiveInputDevices();
+  return s;
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
 function setLiveBusy(b) { const g = $("live-go"); if (g) g.classList.toggle("running", b); }
@@ -1087,9 +1151,8 @@ function refreshLiveModel() {
 // --- Google (Gemini Live): continuous 16k PCM over WS, plays 24k reply audio ---
 async function startGoogle() {
   try {
-    liveStream = await navigator.mediaDevices.getUserMedia(
-      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch (e) { setLiveStatus("无法访问麦克风：" + e.message); return; }
+    liveStream = await acquireLiveStream();
+  } catch (e) { setLiveStatus("无法访问输入设备：" + e.message); return; }
   $("live-input").textContent = ""; $("live-output").textContent = "";
   liveCtx = new AudioContext();
   const srcRate = liveCtx.sampleRate;
@@ -1123,9 +1186,8 @@ function stopGoogle() {
 // --- Local (SenseVoice + LLM): audio-thread VAD segments -> POST per utterance ---
 async function startLocal() {
   try {
-    liveStream = await navigator.mediaDevices.getUserMedia(
-      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch (e) { setLiveStatus("无法访问麦克风：" + e.message); return; }
+    liveStream = await acquireLiveStream();
+  } catch (e) { setLiveStatus("无法访问输入设备：" + e.message); return; }
   $("live-input").textContent = ""; $("live-output").textContent = "";
   // Preload the local model so the first sentence isn't blocked on a slow load.
   setLiveStatus("正在加载本地模型…（首次需下载/加载，请稍候）");
