@@ -32,22 +32,42 @@ class PreloadWorker(QThread):
             self.done.emit(False)
 
 
-class LocalLiveWorker(QThread):
-    """Recognize one utterance locally (SenseVoice) then translate it (LLM).
+class LiveRecognizeWorker(QThread):
+    """Recognize a (possibly partial) PCM16 buffer locally — NO translation.
 
-    The page does client-side VAD and hands a complete utterance (16 kHz mono
-    PCM16) to a fresh worker; recognition is serialized via _STT_LOCK. The source
-    line is emitted as soon as it's recognized (recognized), then the matching
-    translation (result) — both share one timestamp so the two panes line up."""
-    recognized = Signal(str, str)   # (timestamp, source_text)
-    result = Signal(str, str)       # (timestamp, translated_text)
-    failed = Signal(str)
+    Used for streaming captions: the page sends the growing audio of the current
+    utterance every ~360ms; we re-run STT and emit the full text-so-far. The page
+    applies stable-prefix commit on the text. ``is_final`` marks the end-of-
+    utterance pass (flush the remainder)."""
+    done = Signal(str, str, bool)   # (text, detected_lang, is_final)
 
-    def __init__(self, pcm_bytes, sample_rate, dst_code, model, use_online,
-                 api_key, parent=None):
+    def __init__(self, pcm_bytes, sample_rate, is_final, parent=None):
         super().__init__(parent)
         self._pcm = pcm_bytes
         self._sr = sample_rate
+        self._final = is_final
+
+    def run(self):
+        try:
+            from core.pipelines.video_translation_pipeline import recognize_utterance
+            with _STT_LOCK:
+                text, detected = recognize_utterance(self._pcm, sample_rate=self._sr)
+            self.done.emit(text or "", detected or "auto", self._final)
+        except Exception:  # noqa: BLE001 — transient; the next partial retries
+            self.done.emit("", "auto", self._final)
+
+
+class LiveTranslateWorker(QThread):
+    """Translate one finalized sentence (LLM). Emits done(timestamp, translated)
+    so the matching source/translation lines line up by timestamp."""
+    done = Signal(str, str)
+
+    def __init__(self, ts, source, src_code, dst_code, model, use_online,
+                 api_key, parent=None):
+        super().__init__(parent)
+        self._ts = ts
+        self._source = source
+        self._src = src_code
         self._dst = dst_code
         self._model = model
         self._online = use_online
@@ -55,20 +75,13 @@ class LocalLiveWorker(QThread):
 
     def run(self):
         try:
-            from datetime import datetime
-            from core.pipelines.video_translation_pipeline import recognize_utterance
             from core.llm.llm_wrapper import translate_text_simple
-            with _STT_LOCK:
-                source, detected = recognize_utterance(self._pcm, sample_rate=self._sr)
-            if not source:
-                return
-            ts = datetime.now().strftime("%H:%M:%S")
-            self.recognized.emit(ts, source)   # show the source line immediately
             translated, ok, _usage = translate_text_simple(
-                source, detected or "auto", self._dst, self._model, self._online, self._key)
-            self.result.emit(ts, translated if ok else "")
-        except Exception as e:  # noqa: BLE001
-            self.failed.emit(str(e)[:200])
+                self._source, self._src or "auto", self._dst, self._model,
+                self._online, self._key)
+            self.done.emit(self._ts, translated if ok else "")
+        except Exception:  # noqa: BLE001
+            self.done.emit(self._ts, "")
 
 
 class LiveWorker(QThread):

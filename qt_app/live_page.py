@@ -12,6 +12,7 @@ the small pure-Python helpers below decode/resample/re-encode with the stdlib
 
 import array
 import html as _html
+import re
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
@@ -27,7 +28,8 @@ from qfluentwidgets import (
 
 from core import backend
 from qt_app.i18n import tr
-from qt_app.live_worker import LiveWorker, LocalLiveWorker, PreloadWorker
+from qt_app.live_worker import (
+    LiveWorker, LiveRecognizeWorker, LiveTranslateWorker, PreloadWorker)
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP
 from core.optional_modules import video_translation_available
@@ -45,6 +47,8 @@ _VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
 # Lead-in kept before speech onset is confirmed, so the first words (often the
 # key info) aren't clipped. Mirrors the Web vad-worklet's pre-roll ring buffer.
 _VAD_PREROLL_MS = 500
+# How often to re-recognize the growing utterance for streaming captions.
+_VAD_PARTIAL_MS = 360
 
 
 # --------------------------------------------------------------------------- #
@@ -186,6 +190,7 @@ class _CaptionBar(QWidget):
         # Rolling buffer of recent utterances; a bigger window shows more lines.
         self._entries = []          # list of {"src": str, "dst": str}
         self._CAP_MAX = 60
+        self._interim = ""          # live, not-yet-finalized source line
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -299,6 +304,10 @@ class _CaptionBar(QWidget):
                 parts.append(
                     "<div style='color:#f1f5f9;font-size:%dpx;font-weight:700;'>%s</div>"
                     % (self._font_size, _html.escape(e["dst"])))
+        if self._interim and show_src:        # live, still-being-spoken text (dim)
+            parts.append(
+                "<div style='color:#9aa6b2;font-size:%dpx;margin-top:8px;'>%s …</div>"
+                % (src_px, _html.escape(self._interim)))
         self._cap.setHtml("".join(parts))
         from PySide6.QtGui import QTextCursor
         self._cap.moveCursor(QTextCursor.End)      # keep newest visible
@@ -322,6 +331,14 @@ class _CaptionBar(QWidget):
             self._entries.append({"src": "", "dst": text})
         self._trim()
         self._render()
+
+    def set_interim(self, text):
+        """Live, not-yet-finalized source text (shown dim under the committed
+        lines). Cleared by passing an empty string."""
+        new = (text or "").strip()
+        if new != self._interim:
+            self._interim = new
+            self._render()
 
     def _trim(self):
         if len(self._entries) > self._CAP_MAX:
@@ -447,6 +464,12 @@ class LivePage(ScrollArea):
         self._vad_voice_ms = 0.0
         self._vad_sil_ms = 0.0
         self._vad_floor = 0.003
+        # streaming-recognition state (Windows-Live-Captions style)
+        self._partial_ms = 0.0          # ms since the last partial dispatch
+        self._stream_emitted = 0        # sentences committed in the current utterance
+        self._recog_busy = False        # one STT worker in flight at a time
+        self._recog_pending = None      # (pcm, is_final) — latest-wins while busy
+        self._stream_detected = "auto"
 
         self.setWidgetResizable(True)
         self.enableTransparentBackground()
@@ -966,6 +989,9 @@ class LivePage(ScrollArea):
         self._vad_voice_ms = 0.0
         self._vad_sil_ms = 0.0
         self._vad_floor = 0.003
+        self._partial_ms = 0.0
+        self._stream_emitted = 0
+        self._recog_pending = None
 
     def _vad_feed(self, pcm):
         import array
@@ -992,6 +1018,9 @@ class LivePage(ScrollArea):
                 if self._vad_voice_ms >= _VAD_ON_MS:
                     self._vad_on = True
                     self._vad_sil_ms = 0.0
+                    self._partial_ms = 0.0
+                    self._stream_emitted = 0       # new utterance
+                    self._stream_detected = "auto"
                     # Start from the pre-roll (includes this chunk + lead-in).
                     self._vad_buf = bytearray(self._vad_preroll)
             else:
@@ -1000,23 +1029,31 @@ class LivePage(ScrollArea):
             self._vad_buf += pcm
             self._vad_sil_ms = self._vad_sil_ms + dt_ms if level < off_th else 0.0
             dur_ms = len(self._vad_buf) / 2 / _IN_RATE * 1000.0
-            if self._vad_sil_ms >= _VAD_HANG_MS or dur_ms >= _VAD_MAX_MS:
+            self._partial_ms += dt_ms
+            ended = self._vad_sil_ms >= _VAD_HANG_MS or dur_ms >= _VAD_MAX_MS
+            if ended:
                 utt = bytes(self._vad_buf)
                 self._vad_on = False
                 self._vad_voice_ms = 0.0
                 self._vad_buf = bytearray()
                 if dur_ms >= _VAD_MIN_MS:
-                    self._dispatch_local(utt)
+                    self._dispatch_recognize(utt, is_final=True)   # flush remainder
+            elif self._partial_ms >= _VAD_PARTIAL_MS and dur_ms >= _VAD_MIN_MS:
+                self._partial_ms = 0.0
+                self._dispatch_recognize(bytes(self._vad_buf), is_final=False)
 
-    def _dispatch_local(self, utt):
-        online = backend.get_config("default_online", True)
-        model = backend.get_active_model(online)
-        api_key = load_api_key_for_model(model) if online else ""
-        dst = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
-        w = LocalLiveWorker(utt, _IN_RATE, dst, model, online, api_key)
-        w.recognized.connect(self._on_local_recognized)
-        w.result.connect(self._on_local_result)
-        w.failed.connect(lambda e: self.status_label.setText("error: " + e))
+    def _dispatch_recognize(self, pcm, is_final):
+        """Run one STT pass (partial or final) on the utterance-so-far. Only one
+        worker is in flight; while busy the newest request is queued (a final
+        overrides a pending partial) so we never lag behind fast speech."""
+        if self._recog_busy:
+            if (is_final or self._recog_pending is None
+                    or not self._recog_pending[1]):
+                self._recog_pending = (pcm, is_final)
+            return
+        self._recog_busy = True
+        w = LiveRecognizeWorker(pcm, _IN_RATE, is_final)
+        w.done.connect(self._on_recognized_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
         w.start()
@@ -1029,22 +1066,68 @@ class LivePage(ScrollArea):
         if self._is_listening():
             self.status_label.setText(tr("Listening", self._lang))
 
-    def _on_local_recognized(self, ts, source):
-        # Source line shown as soon as it's recognized (before translation).
-        if source:
-            self.input_text.insertPlainText(f"[{ts}] {source}\n")
-            self.input_text.ensureCursorVisible()
-            self._push_caption(source=source)
-            if self._is_listening():
-                self.status_label.setText(tr("Translating", self._lang))
+    @staticmethod
+    def _split_sents(text):
+        """Finished sentences (kept with terminator) + trailing unfinished tail."""
+        sents = [s.strip() for s in re.findall(r"[^。！？!?.]*[。！？!?.]", text or "")]
+        sents = [s for s in sents if s]
+        tail = re.sub(r"[^。！？!?.]*[。！？!?.]", "", text or "").strip()
+        return sents, tail
 
-    def _on_local_result(self, ts, translated):
+    def _on_recognized_stream(self, text, detected, is_final):
+        """Stable-prefix commit: a sentence is finalized (and translated) the
+        moment the NEXT sentence starts appearing, so sentence 1 is translated
+        while you're already speaking sentence 2."""
+        self._recog_busy = False
+        if detected:
+            self._stream_detected = detected
+        sents, tail = self._split_sents(text)
+        if is_final:
+            rest = sents[self._stream_emitted:]
+            if tail:
+                rest.append(tail)
+            for s in rest:
+                self._commit_stream_sentence(s)
+            self._stream_emitted = 0
+            self._set_caption_interim("")
+            if self._is_listening():
+                self.status_label.setText(tr("Listening", self._lang))
+        else:
+            confirmable = len(sents) if tail else max(0, len(sents) - 1)
+            while self._stream_emitted < confirmable:
+                self._commit_stream_sentence(sents[self._stream_emitted])
+                self._stream_emitted += 1
+            self._set_caption_interim("".join(sents[confirmable:]) + tail)
+        if self._recog_pending is not None:        # process the freshest queued audio
+            pcm, fin = self._recog_pending
+            self._recog_pending = None
+            self._dispatch_recognize(pcm, fin)
+
+    def _commit_stream_sentence(self, source):
+        source = (source or "").strip()
+        if not source:
+            return
+        from datetime import datetime
+        ts = datetime.now().strftime("%H:%M:%S")
+        self.input_text.insertPlainText(f"[{ts}] {source}\n")
+        self.input_text.ensureCursorVisible()
+        self._push_caption(source=source)
+        online = backend.get_config("default_online", True)
+        model = backend.get_active_model(online)
+        api_key = load_api_key_for_model(model) if online else ""
+        dst = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
+        w = LiveTranslateWorker(ts, source, self._stream_detected, dst, model,
+                                online, api_key)
+        w.done.connect(self._on_translated_stream)
+        w.finished.connect(lambda w=w: self._retire_local(w))
+        self._local_workers.append(w)
+        w.start()
+
+    def _on_translated_stream(self, ts, translated):
         if translated:
             self.output_text.insertPlainText(f"[{ts}] {translated}\n")
             self.output_text.ensureCursorVisible()
             self._push_caption(translated=translated)
-        if self._is_listening():
-            self.status_label.setText(tr("Listening", self._lang))
 
     def _play_audio(self, data):
         if self._play_io is None:
@@ -1109,6 +1192,11 @@ class LivePage(ScrollArea):
             bar.set_source(source)
         if translated is not None:
             bar.set_translated(translated)
+
+    def _set_caption_interim(self, text):
+        """Show the live, not-yet-finalized source text in the caption bar."""
+        if self._caption_bar is not None:
+            self._caption_bar.set_interim(text)
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success

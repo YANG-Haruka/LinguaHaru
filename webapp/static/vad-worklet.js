@@ -5,7 +5,8 @@
 // main → worklet:  { type:'mode', mode:'open'|'block' }, { type:'mute', value }
 // worklet → main:  { type:'level', level }              (throttled input level)
 //                  { type:'speechstart' }               (confirmed voice onset)
-//                  { type:'segment', sampleRate, pcm }  (Float32 utterance, transferred)
+//                  { type:'partial', sampleRate, pcm }  (Float32 audio-so-far, COPIED — for live streaming captions)
+//                  { type:'segment', sampleRate, pcm }  (Float32 utterance, transferred — final)
 //                  { type:'drop', reason }              (too-short / steady-noise)
 class VADProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -16,6 +17,8 @@ class VADProcessor extends AudioWorkletProcessor {
     this.minSegMs = o.minSegMs || 280;   // shorter than this → drop as a blip
     this.noiseMaxMs = o.noiseMaxMs || 6000;   // flat loud noise dropped after this
     this.maxSegMs = o.maxSegMs || 30000;      // hard ceiling → force-send
+    this.partialMs = o.partialMs || 360;      // emit a live partial this often while capturing
+    this.lastPartial = 0;
     const prerollMs = o.prerollMs || 500;
     this.onAbs = o.onAbs || 0.009; this.onMul = o.onMul || 2.5;       // onset
     this.offAbs = o.offAbs || 0.006; this.offMul = o.offMul || 1.7;   // end-of-speech
@@ -60,6 +63,11 @@ class VADProcessor extends AudioWorkletProcessor {
     else { const tail = this.preN - this.ringPos; out.set(this.ring.subarray(this.ringPos), 0); out.set(this.ring.subarray(0, this.ringPos), tail); }
     return out;
   }
+  _snapshotSeg() {                               // COPY of audio-so-far (keep capturing)
+    const pcm = new Float32Array(this.segN);
+    let o = 0; for (let i = 0; i < this.seg.length; i++) { pcm.set(this.seg[i], o); o += this.seg[i].length; }
+    return pcm;
+  }
   _flush(durMs) {
     const total = this.segN;
     const pcm = new Float32Array(total);
@@ -78,7 +86,15 @@ class VADProcessor extends AudioWorkletProcessor {
     const dtMs = (buf.length / this.sr) * 1000;
 
     this._ringWrite(buf);
-    if (this.capturing) { this.seg.push(new Float32Array(buf)); this.segN += buf.length; }
+    if (this.capturing) {
+      this.seg.push(new Float32Array(buf)); this.segN += buf.length;
+      // Emit a live partial (audio so far) so the UI can stream the recognition.
+      if (currentTime - this.lastPartial > this.partialMs / 1000) {
+        this.lastPartial = currentTime;
+        const snap = this._snapshotSeg();
+        this.port.postMessage({ type: 'partial', sampleRate: this.sr, pcm: snap.buffer }, [snap.buffer]);
+      }
+    }
 
     if (currentTime - this.lastLevelPost > 0.1) { this.lastLevelPost = currentTime; this.port.postMessage({ type: 'level', level }); }
 
@@ -97,6 +113,7 @@ class VADProcessor extends AudioWorkletProcessor {
         this.voiceMs += dtMs;
         if (this.voiceMs >= this.onMs) {           // confirmed speech → capture with pre-roll
           this.capturing = true; this.silenceMs = 0; this.segDip = false; this.segMin = 1; this.segMax = 0;
+          this.lastPartial = currentTime;        // first partial ~partialMs after onset
           const pre = this._ringSnapshot();
           this.seg = [pre]; this.segN = pre.length;
           this.port.postMessage({ type: 'speechstart' });

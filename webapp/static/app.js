@@ -977,6 +977,7 @@ let pipWin = null, pipMode = "both", pipFont = 24;
 // many as fit (newest pinned to the bottom), so a big window shows more lines.
 let pipEntries = [];
 const PIP_MAX = 60;
+let pipInterim = "";   // live, not-yet-finalized source text (streaming)
 let liveAnalyser = null, liveLevelRAF = null;
 
 // Mic level feedback: drive the bar + icon from live mic volume so you can see
@@ -1231,34 +1232,90 @@ function stopLocal() {
   if (liveCtx) liveCtx.close();
   liveNode = null; liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
 }
+// --- Streaming live recognition (Windows-Live-Captions style) ---------------
+// Within one VAD utterance the worklet sends growing `partial` audio; we re-run
+// STT on it (latest-wins, one in flight), and use STABLE-PREFIX commit: a
+// sentence is finalized & translated the moment the NEXT sentence starts to
+// appear — so sentence 1 is translated while you're already saying sentence 2.
+let liveEmitted = 0;        // sentences already committed in the current utterance
+let livePartialBusy = false, livePendingPcm = null;
+let liveLastDetected = "auto";
+
 function onVadMessage(e) {
   const m = e.data || {};
-  if (m.type === "speechstart") setLiveStatus("识别中…");
-  else if (m.type === "segment") sendLocalUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
+  if (m.type === "speechstart") {
+    liveEmitted = 0; livePendingPcm = null; pipInterim = "";
+    setLiveStatus("识别中…");
+  } else if (m.type === "partial") {
+    streamPartial(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
+  } else if (m.type === "segment") {
+    finalizeUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
+  }
 }
 function liveTimeStamp() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, "0");
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
-async function sendLocalUtterance(int16) {
-  const ts = liveTimeStamp();
+// Split text into finished sentences (kept with their terminator) + a trailing
+// unfinished fragment.
+function splitSentences(text) {
+  const sents = (text.match(/[^。！？!?.]*[。！？!?.]/g) || []).map((s) => s.trim()).filter(Boolean);
+  const tail = text.replace(/[^。！？!?.]*[。！？!?.]/g, "").trim();
+  return { sents, tail };
+}
+async function recognizeInt16(int16) {
+  const r = await api("/api/live-recognize", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ audio_b64: int16ToB64(int16) }) });
+  return r;
+}
+async function streamPartial(int16) {
+  if (livePartialBusy) { livePendingPcm = int16; return; }   // latest-wins
+  livePartialBusy = true;
   try {
-    // Step 1: recognize and show the source line immediately (streaming feel).
-    const r = await api("/api/live-recognize", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ audio_b64: int16ToB64(int16) }) });
-    if (!r.source) { if (liveRunning) setLiveStatus("正在聆听…（对着麦克风说话）"); return; }
-    appendLive("live-input", `[${ts}] ${r.source}\n`);
-    if (liveRunning) setLiveStatus("翻译中…");
-    // Step 2: translate, then show the matching line (same timestamp).
+    const r = await recognizeInt16(int16);
+    liveLastDetected = r.detected || liveLastDetected;
+    const { sents, tail } = splitSentences(r.source || "");
+    const confirmable = tail ? sents.length : Math.max(0, sents.length - 1);
+    while (liveEmitted < confirmable) {
+      commitLiveSentence(sents[liveEmitted]); liveEmitted++;
+    }
+    pipInterim = sents.slice(confirmable).join("") + tail;   // live, not-yet-final
+    updatePipCaption();
+    if (liveRunning && pipInterim) setLiveStatus("识别中：" + pipInterim);
+  } catch (e) { /* transient; next partial retries */ }
+  finally {
+    livePartialBusy = false;
+    if (livePendingPcm) { const p = livePendingPcm; livePendingPcm = null; streamPartial(p); }
+  }
+}
+async function finalizeUtterance(int16) {
+  livePendingPcm = null;
+  try {
+    const r = await recognizeInt16(int16);
+    const { sents, tail } = splitSentences(r.source || "");
+    const rest = sents.slice(liveEmitted);
+    if (tail) rest.push(tail);
+    liveLastDetected = r.detected || liveLastDetected;
+    for (const s of rest) commitLiveSentence(s);
+  } catch (e) { /* drop */ }
+  liveEmitted = 0; pipInterim = ""; updatePipCaption();
+  if (liveRunning) setLiveStatus("正在聆听…（对着麦克风说话）");
+}
+// Finalize one sentence: show the source line now, then translate it.
+async function commitLiveSentence(source) {
+  source = (source || "").trim();
+  if (!source) return;
+  const ts = liveTimeStamp();
+  appendLive("live-input", `[${ts}] ${source}\n`);
+  try {
     const t = await api("/api/live-translate-text", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: r.source, src_lang: r.detected || "auto",
+      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto",
         dst_lang: $("live-target").value }) });
     if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`);
-    if (liveRunning) setLiveStatus("正在聆听…（对着麦克风说话）");
-  } catch (e) { setLiveStatus("翻译失败：" + e.message); }
+  } catch (e) { /* leave source line; translation failed */ }
 }
 
 function downsamplePCM16(input, srcRate) {
@@ -1341,6 +1398,13 @@ function updatePipCaption() {
       t.textContent = e.dst; block.appendChild(t);
     }
     if (block.childNodes.length) cap.appendChild(block);
+  }
+  // Live interim (still being spoken) — dim, shown when source is visible.
+  if (pipInterim && pipMode !== "dst") {
+    const it = d.createElement("div"); it.className = "c-src";
+    it.style.fontSize = Math.round(pipFont * 0.7) + "px";
+    it.style.opacity = "0.6"; it.textContent = pipInterim + " …";
+    cap.appendChild(it);
   }
   cap.scrollTop = cap.scrollHeight;   // keep newest visible
 }
