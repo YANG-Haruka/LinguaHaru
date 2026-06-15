@@ -224,6 +224,79 @@ def create_translation_record(
     }
 
 
+def save_live_session(
+    source_lines: List[str],
+    translated_lines: List[str],
+    src_display: str,
+    dst_display: str,
+    model: str,
+    use_online: bool,
+    result_dir: str,
+    log_dir: str,
+    start_time: Optional[datetime] = None,
+    end_time: Optional[datetime] = None,
+) -> Optional[Dict[str, Any]]:
+    """Persist a real-time-voice session: write a bilingual transcript file and
+    add a history record (file_type 'realtime'). Source/translated lines are the
+    timestamped lines shown in the two live panes; they're paired by their
+    ``[HH:MM:SS]`` prefix. Returns the record, or None if there's nothing to save.
+    """
+    import re
+    import uuid
+
+    src = [ln.strip() for ln in (source_lines or []) if ln and ln.strip()]
+    dst = [ln.strip() for ln in (translated_lines or []) if ln and ln.strip()]
+    if not src and not dst:
+        return None
+    end_time = end_time or datetime.now()
+    start_time = start_time or end_time
+
+    def _ts(line: str) -> Optional[str]:
+        m = re.match(r"^\[(\d{2}:\d{2}:\d{2})\]", line)
+        return m.group(1) if m else None
+
+    # Pair translations to their source by the shared timestamp (handles
+    # out-of-order LLM replies); leftover translations are appended at the end.
+    out_by_ts: Dict[str, list] = {}
+    for ln in dst:
+        t = _ts(ln)
+        if t:
+            out_by_ts.setdefault(t, []).append(ln)
+    body = [f"# Real-Time Voice {end_time.strftime('%Y-%m-%d %H:%M:%S')}",
+            f"# {src_display} -> {dst_display} | {model}", ""]
+    for sl in src:
+        body.append(sl)
+        t = _ts(sl)
+        if t and out_by_ts.get(t):
+            body.append(out_by_ts[t].pop(0))
+        body.append("")
+    leftover = [ln for rem in out_by_ts.values() for ln in rem]
+    body.extend(leftover)
+
+    os.makedirs(result_dir, exist_ok=True)
+    name = f"realtime_{end_time.strftime('%Y%m%d_%H%M%S')}.txt"
+    out_path = os.path.join(result_dir, name)
+    try:
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(body).rstrip() + "\n")
+    except Exception as e:  # noqa: BLE001
+        app_logger.warning(f"Could not write live transcript: {e}")
+        out_path = ""
+
+    rec = create_translation_record(
+        translation_id=uuid.uuid4().hex[:12],
+        start_time=start_time, end_time=end_time, total_tokens=0,
+        src_lang="", src_lang_display=src_display,
+        dst_lang="", dst_lang_display=dst_display,
+        model=model, use_online=use_online,
+        input_file=name, output_file_path=out_path, log_file_path="",
+        status="success",
+    )
+    rec["file_type"] = "realtime"     # group under its own type in the browse UI
+    TranslationHistoryManager(log_dir=log_dir).add_record(rec)
+    return rec
+
+
 def format_duration(seconds: int) -> str:
     """Format a duration in seconds, e.g. '5m 23s' or '1h 30m 45s'."""
     if seconds < 60:

@@ -940,6 +940,27 @@ async def live_translate_text(payload: dict):
     return {"translated": translated if ok else ""}
 
 
+@app.post("/api/live-save-history")
+def live_save_history(payload: dict, request: Request):
+    """Save a finished real-time-voice session (source + translation) to the
+    per-session history. Called by the frontend when a live session stops."""
+    if server_mode_on():               # no history on public/shared deploys
+        return {"saved": False}
+    src = payload.get("source_lines") or []
+    dst = payload.get("translated_lines") or []
+    if not src and not dst:
+        return {"saved": False}
+    _, result_dir, log_dir = sessions.session_paths(request.state.session_id)
+    cfg = backend.read_config()
+    use_online = bool(cfg.get("default_online", True))
+    model = backend.get_active_model(use_online=use_online)
+    from core.translation_history import save_live_session
+    rec = save_live_session(
+        src, dst, payload.get("src_display", "Auto"),
+        payload.get("dst_display", ""), model, use_online, result_dir, log_dir)
+    return {"saved": bool(rec)}
+
+
 # --- quick (short-text) translate, Google-Translate-style -------------------
 def _quick_store_dir(request):
     """Per-session history dir so users on a shared/LAN deploy never see each

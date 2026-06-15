@@ -896,6 +896,7 @@ class LivePage(ScrollArea):
         for w in list(self._local_workers):
             w.wait(3000)
         self._local_workers.clear()
+        self._save_live_history()       # persist this session's transcript
         if self._source is not None:
             self._source.stop()
             self._source = None
@@ -914,6 +915,23 @@ class LivePage(ScrollArea):
         self.target_combo.setEnabled(True)
         self.mode_combo.setEnabled(True)
         self.status_label.setText(tr("Connection closed", self._lang))
+
+    def _save_live_history(self):
+        """Save the just-finished session (source + translation) to history."""
+        src = [ln for ln in self.input_text.toPlainText().splitlines() if ln.strip()]
+        dst = [ln for ln in self.output_text.toPlainText().splitlines() if ln.strip()]
+        if not src and not dst:
+            return
+        try:
+            from core.translation_history import save_live_session
+            _, result_dir, log_dir = backend.get_custom_paths()
+            online = backend.get_config("default_online", True)
+            model = backend.get_active_model(online)
+            save_live_session(src, dst, "Auto",
+                              self.target_combo.currentText(), model, online,
+                              result_dir, log_dir)
+        except Exception:  # noqa: BLE001 — history is best-effort
+            pass
 
     def hideEvent(self, event):
         # Leaving the page must not keep the mic/loopback hot or the bar open.

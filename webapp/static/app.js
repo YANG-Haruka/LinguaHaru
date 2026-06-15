@@ -1119,6 +1119,19 @@ async function acquireLiveStream() {
   refreshLiveInputDevices();
   return s;
 }
+// Save the just-finished session (source + translation) to history on stop.
+function saveLiveHistory() {
+  const lines = (id) => (($(id) && $(id).textContent) || "")
+    .split("\n").map((s) => s.trim()).filter(Boolean);
+  const src = lines("live-input"), dst = lines("live-output");
+  if (!src.length && !dst.length) return;
+  const tsel = $("live-target");
+  const dstDisplay = tsel ? (tsel.options[tsel.selectedIndex] || {}).text || "" : "";
+  api("/api/live-save-history", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_lines: src, translated_lines: dst,
+      src_display: "Auto", dst_display: dstDisplay }) }).catch(() => {});
+}
 function setLiveStatus(t) { $("live-status").textContent = t; }
 // "Listening" wording adapts to the input (mic vs shared system/tab audio).
 function liveListenMsg() {
@@ -1218,6 +1231,7 @@ async function startGoogle() {
   liveRunning = true; setLiveBusy(true); startMicMeter();
 }
 function stopGoogle() {
+  saveLiveHistory();
   stopMicMeter();
   try { if (liveProc) liveProc.disconnect(); if (liveSrc) liveSrc.disconnect(); } catch (e) { /* */ }
   if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
@@ -1252,6 +1266,7 @@ async function startLocal() {
   startMicMeter();
 }
 function stopLocal() {
+  saveLiveHistory();
   stopMicMeter();
   try {
     if (liveNode) { if (liveNode.port) liveNode.port.postMessage({ type: "mode", mode: "block" }); liveNode.disconnect(); }
