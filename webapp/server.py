@@ -29,6 +29,8 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 
 from core import backend
+from core.model_store import setup_model_env
+setup_model_env()  # unify model cache dirs before whisper/funasr/babeldoc import
 from webapp import sessions
 from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)

@@ -126,8 +126,10 @@ def extract_audio_to_wav(media_path, output_dir):
 def _get_whisper_model(size):
     if size not in _whisper_models:
         from faster_whisper import WhisperModel
+        from core.model_store import whisper_dir
         app_logger.info(f"Loading faster-whisper model '{size}' (downloads on first use)...")
-        _whisper_models[size] = WhisperModel(size, device="auto")
+        # download_root keeps whisper models in the unified data/models location.
+        _whisper_models[size] = WhisperModel(size, device="auto", download_root=whisper_dir())
     return _whisper_models[size]
 
 
@@ -179,9 +181,9 @@ def _sensevoice_local_dir():
     Downloads into a stable, project-local cache (data/models) instead of the
     user's global HF cache, so the model lives in a predictable place and is
     downloaded only once (hf_hub_download reuses cached files)."""
-    from core.paths import DATA_DIR
+    from core.model_store import current_dir
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
-    cache_dir = os.path.join(DATA_DIR, "models")
+    cache_dir = current_dir()
     os.makedirs(cache_dir, exist_ok=True)
     try:
         from huggingface_hub import hf_hub_download

@@ -42,6 +42,11 @@ _patch_tiktoken()
 # Run with the repo root as cwd so config/glossary/temp resolve as expected.
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+# Point all model libraries (whisper/funasr/babeldoc/OCR) at the unified
+# data/models cache BEFORE any of them are imported.
+from core.model_store import setup_model_env  # noqa: E402
+setup_model_env()
+
 
 def _install_qt_log_filter():
     """Silence the benign 'QFont::setPointSize: Point size <= 0 (-1)' spam.
