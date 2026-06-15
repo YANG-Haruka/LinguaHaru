@@ -161,6 +161,13 @@ def set_plugin_model(name, model_id):
     if not spec or model_id not in {m["id"] for m in spec["models"]}:
         return False
     _cfg_write(spec["config_key"], model_id)
+    # Switching an STT model: free the previously-loaded one if nothing else uses it.
+    if spec["config_key"] in ("stt_model", "live_stt_model", "quick_stt_model"):
+        try:
+            from core.pipelines.video_translation_pipeline import release_unused_stt_models
+            release_unused_stt_models()
+        except Exception:  # noqa: BLE001
+            pass
     return True
 
 

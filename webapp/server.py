@@ -240,6 +240,13 @@ async def update_config(payload: dict):
     if "rpm_limit" in payload:  # apply the new RPM cap without a restart
         from core.llm.online_translation import reset_rpm_limit_cache
         reset_rpm_limit_cache()
+    if any(k in payload for k in ("stt_model", "live_stt_model", "quick_stt_model")):
+        # Switched an STT model -> free the previously-loaded one if now unused.
+        try:
+            from core.pipelines.video_translation_pipeline import release_unused_stt_models
+            release_unused_stt_models()
+        except Exception:  # noqa: BLE001
+            pass
     return {"ok": True}
 
 

@@ -387,6 +387,12 @@ class SettingsPage(ScrollArea):
     def _on_stt_changed(self, index):
         if 0 <= index < len(self._stt_models):
             backend.set_config("stt_model", self._stt_models[index]["id"])
+            # Free the previously-loaded STT model if no feature uses it anymore.
+            try:
+                from core.pipelines.video_translation_pipeline import release_unused_stt_models
+                release_unused_stt_models()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _on_ocr_changed(self, index):
         if 0 <= index < len(self._ocr_models):

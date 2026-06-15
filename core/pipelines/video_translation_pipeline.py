@@ -147,6 +147,51 @@ def _resolve_stt_engine(model_def):
     return engine, size
 
 
+def _inuse_stt_keys():
+    """(engine, size) keys for the STT models currently selected by ANY feature
+    (video subtitles / real-time voice / quick-translate voice)."""
+    keys = set()
+    for getter in (get_selected_stt_model, get_selected_live_stt_model,
+                   get_selected_quick_stt_model):
+        try:
+            keys.add(_resolve_stt_engine(get_stt_model(getter())))
+        except Exception:  # noqa: BLE001
+            pass
+    return keys
+
+
+def release_unused_stt_models():
+    """Free any loaded STT model that NO feature selects anymore, so switching a
+    model releases the previous one (RAM/VRAM). Features sharing the SAME model
+    keep using the single cached instance — no double-load. Called on feature
+    start (preload) and on model switches."""
+    global _sensevoice
+    inuse = _inuse_stt_keys()
+    freed = []
+    for size in list(_whisper_models):
+        if ("whisper", size) not in inuse:
+            del _whisper_models[size]
+            freed.append(f"whisper:{size}")
+    for repo in list(_qwen_models):
+        if ("qwen3asr", repo) not in inuse:
+            del _qwen_models[repo]
+            freed.append(f"qwen:{repo}")
+    if _sensevoice is not None and not any(e == "sensevoice" for e, _s in inuse):
+        _sensevoice = None
+        freed.append("sensevoice")
+    if freed:
+        app_logger.info(f"Released unused STT model(s): {', '.join(freed)}")
+        try:
+            import gc
+            import torch
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001
+            pass
+    return freed
+
+
 # --- audio extraction -------------------------------------------------------
 def _format_srt_time(seconds):
     if seconds is None or seconds < 0:
@@ -422,6 +467,7 @@ def preload_recognizer(model_id=None):
     selection; the engine degrades gracefully if its dep is missing. True=ready."""
     import time
     try:
+        release_unused_stt_models()   # free models no feature selects anymore
         model_def = get_stt_model(model_id or get_selected_live_stt_model())
         engine, size = _resolve_stt_engine(model_def)
         if engine == "sensevoice":
