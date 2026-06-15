@@ -3,10 +3,27 @@
 # up when their extra dependencies are installed (requirements/pdf.txt,
 # requirements/ocr.txt, requirements/video.txt).
 import importlib.util
+import os
 import shutil
 
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
 MEDIA_EXTENSIONS = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".m4a", ".flac"]
+
+
+def ffmpeg_exe():
+    """Path to an ffmpeg executable.
+
+    Prefers the pip-bundled binary from `imageio-ffmpeg` (installed with the
+    Video/Audio plugin, so NO system/PATH install is needed), then falls back to
+    an ffmpeg already on PATH. Returns None if neither is available."""
+    try:
+        import imageio_ffmpeg
+        exe = imageio_ffmpeg.get_ffmpeg_exe()
+        if exe and os.path.exists(exe):
+            return exe
+    except Exception:  # noqa: BLE001 — package missing or download failed
+        pass
+    return shutil.which("ffmpeg")
 
 
 def pdf_translation_available():
@@ -22,10 +39,11 @@ def image_translation_available():
 
 
 def video_translation_available():
-    # Either STT engine works: faster-whisper or SenseVoice (funasr).
+    # Either STT engine works: faster-whisper or SenseVoice (funasr); ffmpeg may
+    # be the pip-bundled imageio-ffmpeg binary (no PATH install required).
     has_stt = (importlib.util.find_spec("faster_whisper") is not None
                or importlib.util.find_spec("funasr") is not None)
-    return has_stt and shutil.which("ffmpeg") is not None
+    return has_stt and ffmpeg_exe() is not None
 
 
 def available_optional_extensions():
@@ -52,6 +70,6 @@ def module_status():
         # One "Speech" plugin powers BOTH video/audio subtitles AND real-time
         # voice translation (same STT engines), per the merged-plugin design.
         {"name": "Video/Audio", "available": video_translation_available(),
-         "detail": "faster-whisper / SenseVoice + ffmpeg · 视频字幕 + 实时语音",
-         "install": "pip install -r requirements/video.txt (+ ffmpeg)"},
+         "detail": "faster-whisper / SenseVoice · ffmpeg 已内置 · 视频字幕 + 实时语音",
+         "install": "pip install -r requirements/video.txt"},
     ]

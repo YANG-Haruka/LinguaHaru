@@ -107,14 +107,19 @@ def _format_srt_time(seconds):
 
 
 def extract_audio_to_wav(media_path, output_dir):
-    """Extract/normalize the audio track to 16 kHz mono WAV via ffmpeg."""
-    if shutil.which("ffmpeg") is None:
+    """Extract/normalize the audio track to 16 kHz mono WAV via ffmpeg.
+
+    Uses the pip-bundled imageio-ffmpeg binary when present (no PATH install
+    needed); falls back to a system ffmpeg on PATH."""
+    from core.optional_modules import ffmpeg_exe
+    exe = ffmpeg_exe()
+    if exe is None:
         raise RuntimeError(
-            "ffmpeg not found on PATH - it is required for video/audio translation. "
-            "Install it from https://ffmpeg.org/ or via your package manager."
+            "ffmpeg not found - install the Video/Audio plugin (bundles ffmpeg "
+            "via imageio-ffmpeg), or install ffmpeg from https://ffmpeg.org/."
         )
     wav_path = os.path.join(output_dir, "audio_16k.wav")
-    cmd = ["ffmpeg", "-y", "-i", media_path, "-vn",
+    cmd = [exe, "-y", "-i", media_path, "-vn",
            "-ac", "1", "-ar", "16000", "-f", "wav", wav_path]
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
