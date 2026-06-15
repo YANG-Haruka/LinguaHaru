@@ -19,14 +19,16 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
     StrongBodyLabel, PrimaryPushButton, PillPushButton, FluentIcon, FlowLayout,
-    SimpleCardWidget, IconWidget, InfoBar, InfoBarPosition, MessageBoxBase,
-    LineEdit, RoundMenu, Action,
+    SimpleCardWidget, CardWidget, IconWidget, InfoBar, InfoBarPosition, MessageBoxBase,
+    LineEdit, PasswordLineEdit, RoundMenu, Action,
 )
 
 from core import backend
 from qt_app.i18n import tr
 from qt_app.widgets import EntryCard
 from core.api_keys import load_api_key_for_model, save_api_key_for_model
+
+_GOOGLE_PROVIDER = "(Google) Live Translate"
 
 
 class AddInterfaceDialog(MessageBoxBase):
@@ -55,6 +57,12 @@ class AddInterfaceDialog(MessageBoxBase):
         self.temp_edit.setPlaceholderText("0.7")
         self.topp_edit = LineEdit(self)
         self.topp_edit.setPlaceholderText("0.95")
+        self.rpm_edit = LineEdit(self)
+        self.rpm_edit.setPlaceholderText("0 = unlimited")
+        self.thread_edit = LineEdit(self)
+        self.thread_edit.setPlaceholderText("4")
+        self.retries_edit = LineEdit(self)
+        self.retries_edit.setPlaceholderText("4")
 
         form.addRow(tr("Interface Name", lang), self.name_edit)
         form.addRow(tr("Base URL", lang), self.base_edit)
@@ -62,6 +70,9 @@ class AddInterfaceDialog(MessageBoxBase):
         form.addRow(tr("API Key", lang), self.key_edit)
         form.addRow(tr("Temperature", lang), self.temp_edit)
         form.addRow(tr("Top P", lang), self.topp_edit)
+        form.addRow(tr("RPM Limit", lang), self.rpm_edit)
+        form.addRow(tr("Thread Count", lang), self.thread_edit)
+        form.addRow(tr("Max Retries", lang), self.retries_edit)
         self.viewLayout.addWidget(form_host)
 
         self.yesButton.setText(tr("Save", lang))
@@ -78,6 +89,9 @@ class AddInterfaceDialog(MessageBoxBase):
             self.key_edit.setText(load_api_key_for_model(existing))
             self.temp_edit.setText(str(cfg.get("temperature", "")))
             self.topp_edit.setText(str(cfg.get("top_p", "")))
+            self.rpm_edit.setText("" if cfg.get("rpm") is None else str(cfg.get("rpm")))
+            self.thread_edit.setText("" if cfg.get("thread_count") is None else str(cfg.get("thread_count")))
+            self.retries_edit.setText("" if cfg.get("max_retries") is None else str(cfg.get("max_retries")))
 
     def api_key(self):
         return self.key_edit.text().strip()
@@ -88,13 +102,22 @@ class AddInterfaceDialog(MessageBoxBase):
                 return float(text)
             except (TypeError, ValueError):
                 return None
+        def _int(text):
+            try:
+                return int(text)
+            except (TypeError, ValueError):
+                return None
         # The API key is intentionally NOT written into the config JSON; it is
-        # saved separately per provider in mykeys/ (see on_add).
+        # saved separately per provider in mykeys/ (see on_add). write_api_config
+        # merges, so leaving a field blank keeps its previous value.
         return self.name_edit.text().strip(), {
             "base_url": self.base_edit.text().strip(),
             "model": self.model_edit.text().strip(),
             "temperature": _num(self.temp_edit.text().strip()),
             "top_p": _num(self.topp_edit.text().strip()),
+            "rpm": _int(self.rpm_edit.text().strip()),
+            "thread_count": _int(self.thread_edit.text().strip()),
+            "max_retries": _int(self.retries_edit.text().strip()),
         }
 
 
@@ -186,9 +209,31 @@ class InterfacePage(ScrollArea):
         layout.addWidget(self.local_group)
         layout.addWidget(self.official_group)
         layout.addWidget(self.custom_group)
+
+        # --- Google realtime-voice key (Gemini Live), its own card ---
+        self.google_section = StrongBodyLabel(tr("Realtime Voice", lang))
+        layout.addWidget(self.google_section)
+        google_card = CardWidget()
+        g_form = QFormLayout(google_card)
+        g_form.setContentsMargins(20, 16, 20, 16)
+        g_form.setSpacing(12)
+        self.google_key_edit = PasswordLineEdit()
+        self.google_key_edit.setText(load_api_key_for_model(_GOOGLE_PROVIDER))
+        self.google_key_edit.setPlaceholderText("AIza... / AQ...")
+        self.google_key_edit.editingFinished.connect(self._save_google_key)
+        self.google_key_label = BodyLabel(tr("Google API Key", lang))
+        g_form.addRow(self.google_key_label, self.google_key_edit)
+        self.google_hint = BodyLabel(tr("Google API Key Hint", lang))
+        self.google_hint.setWordWrap(True)
+        g_form.addRow("", self.google_hint)
+        layout.addWidget(google_card)
         layout.addStretch(1)
 
         self.reload()
+
+    def _save_google_key(self):
+        save_api_key_for_model(_GOOGLE_PROVIDER, self.google_key_edit.text().strip())
+        self._info(tr("Google key saved", self._lang))
 
     # --- i18n ---
     def retranslate(self, lang):
@@ -202,6 +247,9 @@ class InterfacePage(ScrollArea):
         self.official_group.subtitle.setText(tr("Official Interfaces Subtitle", lang))
         self.custom_group.title.setText(tr("Custom Interfaces", lang))
         self.custom_group.subtitle.setText(tr("Custom Interfaces Subtitle", lang))
+        self.google_section.setText(tr("Realtime Voice", lang))
+        self.google_key_label.setText(tr("Google API Key", lang))
+        self.google_hint.setText(tr("Google API Key Hint", lang))
         self.reload()
 
     # --- data ---
@@ -244,6 +292,9 @@ class InterfacePage(ScrollArea):
             card = EntryCard(name, "Ollama / LM Studio", FluentIcon.IOT,
                              active=(name == active))
             card.clicked.connect(lambda n=name: self._set_active(n, online=False))
+            # Double-click to set this local model's thread count (default 4);
+            # other fields are harmless for local models.
+            card.doubleClicked.connect(lambda n=name: self.on_add(existing=n))
             self.local_group.add_entry(card)
 
         # Official + Custom
@@ -308,7 +359,10 @@ class InterfacePage(ScrollArea):
         try:
             backend.write_api_config(name, data)
             # Persist the key per provider in mykeys/ (shared with the Web app).
-            save_api_key_for_model(name, dlg.api_key())
+            # Only when one was entered, so editing a local model's thread count
+            # (empty key field) doesn't write an empty key file.
+            if dlg.api_key():
+                save_api_key_for_model(name, dlg.api_key())
         except Exception as e:  # noqa: BLE001
             self._info(str(e), error=True)
             return
