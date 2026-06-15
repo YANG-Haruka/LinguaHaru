@@ -115,6 +115,7 @@
   "Model ID": "模型 ID",
   "Models": "模型",
   "New Language Name": "新語言名稱",
+  "New Translation": "新翻譯",
   "Newest": "時間（新→舊）",
   "Next": "下一頁",
   "No Local Model Placeholder": "未偵測到本地模型 — 安裝 Ollama 或在設定中啟用線上模型",

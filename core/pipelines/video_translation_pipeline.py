@@ -143,7 +143,8 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback):
         if text:
             out.append((seg.start, seg.end, text))
         if progress_callback and duration:
-            progress_callback(0.03 + 0.05 * min(seg.end / duration, 1.0),
+            # Full 0..1 of this phase; caller maps it into the extraction range.
+            progress_callback(min(seg.end / duration, 1.0),
                               desc=f"Transcribing (whisper-{size})...")
     return out
 
@@ -248,7 +249,9 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
         if text:
             out.append((s_ms / 1000.0, e_ms / 1000.0, text))
         if progress_callback:
-            progress_callback(0.03 + 0.05 * (i + 1) / total, desc="Transcribing (SenseVoice)...")
+            # Emit the full 0..1 of this phase; the caller maps it into the
+            # extraction sub-range (e.g. 0..50%) via EXTRACTION_PROGRESS_SHARE.
+            progress_callback((i + 1) / total, desc="Transcribing (SenseVoice)...")
     return out
 
 

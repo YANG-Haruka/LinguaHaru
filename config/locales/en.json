@@ -115,6 +115,7 @@
   "Model ID": "Model ID",
   "Models": "Models",
   "New Language Name": "New language name",
+  "New Translation": "New translation",
   "Newest": "Newest first",
   "Next": "Next",
   "No Local Model Placeholder": "No local model detected — install Ollama or enable online models in Settings",

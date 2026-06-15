@@ -34,11 +34,13 @@ def _fmt_tokens(n):
 
 
 class ProgressDashboard(QWidget):
-    def __init__(self, parent=None, lang="en", on_stop=None):
+    def __init__(self, parent=None, lang="en", on_stop=None, on_open=None, on_back=None):
         super().__init__(parent)
         self.setObjectName("ProgressDashboard")
         self._lang = lang
         self._on_stop = on_stop
+        self._on_open = on_open
+        self._on_back = on_back
         self._start_time = None
         self._last_percent = 0.0
         # Tick the clock every second so Elapsed/ETA keep moving even during the
@@ -58,6 +60,15 @@ class ProgressDashboard(QWidget):
         self.stop_btn = PushButton(FluentIcon.CANCEL, tr("Stop Translation", lang))
         self.stop_btn.clicked.connect(lambda: self._on_stop and self._on_stop())
         head.addWidget(self.stop_btn)
+        # Shown only after completion (metrics stay visible alongside).
+        self.open_btn = PushButton(FluentIcon.FOLDER, tr("Open Output Folder", lang))
+        self.open_btn.clicked.connect(lambda: self._on_open and self._on_open())
+        self.open_btn.hide()
+        head.addWidget(self.open_btn)
+        self.back_btn = PushButton(FluentIcon.RETURN, tr("New Translation", lang))
+        self.back_btn.clicked.connect(lambda: self._on_back and self._on_back())
+        self.back_btn.hide()
+        head.addWidget(self.back_btn)
         layout.addLayout(head)
 
         grid = QGridLayout()
@@ -115,6 +126,8 @@ class ProgressDashboard(QWidget):
         self._lang = lang
         self.title.setText(tr("Task Progress", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
+        self.open_btn.setText(tr("Open Output Folder", lang))
+        self.back_btn.setText(tr("New Translation", lang))
         self.ring_card.set_label(tr("Task Progress", lang))
         for card, key in self._cards.values():
             card.set_label(tr(key, lang))
@@ -128,7 +141,20 @@ class ProgressDashboard(QWidget):
         self._last_percent = 0.0
         self.ring_card.set_value(0)
         self.status.setText("")
+        # Running state: stop visible, open/back hidden.
+        self.stop_btn.show()
+        self.open_btn.hide()
+        self.back_btn.hide()
         self._clock.start()
+
+    def show_done(self, summary, can_open):
+        """Finished: keep all metrics on screen, swap Stop for Open/New."""
+        self._clock.stop()
+        self.stop_btn.hide()
+        self.open_btn.setVisible(bool(can_open))
+        self.back_btn.show()
+        if summary:
+            self.status.setText("✓ " + summary)
 
     def stop_clock(self):
         self._clock.stop()

@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from qfluentwidgets import (
-    ComboBox, PushButton, PrimaryPushButton, ProgressBar, SwitchButton,
+    ComboBox, PushButton, PrimaryPushButton, SwitchButton,
     BodyLabel, CardWidget, TitleLabel,
     InfoBar, InfoBarPosition, FluentIcon, ToolButton,
     ScrollArea,
@@ -190,27 +190,15 @@ class TranslatePage(QStackedWidget):
         action_row.addStretch(1)
         layout.addLayout(action_row)
 
-        # --- Inline progress + status (kept for quick feedback) ---
-        self.progress = ProgressBar()
-        self.progress.setValue(0)
-        layout.addWidget(self.progress)
-        self.status_label = BodyLabel("")
-        layout.addWidget(self.status_label)
-
-        # --- Result ---
-        result_row = QHBoxLayout()
-        self.open_output_btn = PushButton(FluentIcon.FOLDER, tr("Open Output Folder", lang))
-        self.open_output_btn.setEnabled(False)
-        self.open_output_btn.clicked.connect(
-            lambda: open_folder(self._last_output_dir))
-        result_row.addWidget(self.open_output_btn)
-        result_row.addStretch(1)
-        layout.addLayout(result_row)
-
+        # Progress, status and the open-output button live ONLY on the detailed
+        # dashboard now (not cluttering the controls page).
         layout.addStretch(1)
 
         # --- dashboard view ---
-        self.dashboard = ProgressDashboard(lang=lang, on_stop=self.on_stop)
+        self.dashboard = ProgressDashboard(
+            lang=lang, on_stop=self.on_stop,
+            on_open=lambda: open_folder(self._last_output_dir),
+            on_back=self._back_to_controls)
 
         self.addWidget(self._controls)
         self.addWidget(self.dashboard)
@@ -236,7 +224,6 @@ class TranslatePage(QStackedWidget):
         self.translate_subs_label.setText(tr("Translate Subtitles", lang))
         self.translate_btn.setText(tr("Translate", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
-        self.open_output_btn.setText(tr("Open Output Folder", lang))
         self.dashboard.retranslate(lang)
 
     def _refresh_format_availability(self):
@@ -426,8 +413,6 @@ class TranslatePage(QStackedWidget):
         self._running = True
         self.translate_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
-        self.open_output_btn.setEnabled(False)
-        self.progress.setValue(0)
 
         # Switch to the metric dashboard for the duration of the run.
         self.dashboard.start()
@@ -471,7 +456,7 @@ class TranslatePage(QStackedWidget):
         self._workers.append(worker)
         self._progress[worker] = 0.0
         worker.start()
-        self.status_label.setText(
+        self.dashboard.set_status(
             tr("Translating", self._lang) + f" {os.path.basename(file_path)}...")
         self._refresh_dashboard()
 
@@ -500,11 +485,9 @@ class TranslatePage(QStackedWidget):
 
     def on_progress(self, worker, value, desc):
         self._progress[worker] = float(value)
-        self.progress.setValue(self._aggregate_progress())
         if desc:
             name = os.path.basename(getattr(worker, "_lh_file", ""))
             line = f"{name}: {desc}" if name else desc
-            self.status_label.setText(line)
             self.dashboard.set_status(line)  # surface speed/ETA on the dashboard
             # Opportunistically scrape a token total from the final desc.
             self._tokens = max(self._tokens, _parse_tokens(desc))
@@ -526,7 +509,6 @@ class TranslatePage(QStackedWidget):
         name = os.path.basename(getattr(worker, "_lh_file", output_path))
         self._results.append(output_path)
         self._last_output_dir = os.path.dirname(output_path)
-        self.open_output_btn.setEnabled(True)
         detail = ""
         if missing:
             tmpl = tr("Missing Segments", self._lang)
@@ -537,41 +519,43 @@ class TranslatePage(QStackedWidget):
     def on_file_failed(self, worker, message):
         name = os.path.basename(getattr(worker, "_lh_file", "?"))
         self._file_results.append((name, "failed", message))
-        self.status_label.setText(f"{name}: {message}")
+        self.dashboard.set_status(f"{name}: {message}")
         self._retire(worker)
 
     def on_stop(self):
-        self.status_label.setText(tr("Stopping", self._lang) + "...")
+        self.dashboard.set_status(tr("Stopping", self._lang) + "...")
         for worker in list(self._workers):
             if worker.isRunning():
                 worker.request_stop()
         # Drop anything not yet started so the pool drains.
         self._queue = []
 
+    def _back_to_controls(self):
+        """Return from the (post-run) dashboard to the controls to start anew."""
+        self.setCurrentWidget(self._controls)
+
     def _finish_all(self):
         self._running = False
-        self.dashboard.stop_clock()
         self.translate_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         ok = [r for r in self._file_results if r[1] == "ok"]
         failed = [r for r in self._file_results if r[1] == "failed"]
-        if ok:
-            self.progress.setValue(100)
         # For multi-file runs, package a zip with a per-file results.txt.
         if len(self._file_results) > 1 and self._results:
             try:
                 zip_path = backend.zip_results(self._results, self._file_results)
                 self._last_output_dir = os.path.dirname(zip_path)
-                self.open_output_btn.setEnabled(True)
             except Exception:  # noqa: BLE001 - zipping is best-effort
                 pass
-        summary = f"{tr('Completed Files', self._lang)}: {len(ok)}"
+        done_tmpl = tr("Completed Files", self._lang)  # "完成 {done}/{total}"
+        summary = done_tmpl.format(done=len(ok), total=len(self._file_results)) \
+            if "{done}" in done_tmpl else f"{done_tmpl}: {len(ok)}"
         if failed:
             summary += f" | {tr('Failed', self._lang)}: {len(failed)}"
-        self.status_label.setText(summary)
         self._refresh_dashboard()
-        # Return to the controls view so the user can start another run.
-        self.setCurrentWidget(self._controls)
+        # Stay on the dashboard so the metrics (speed/tokens/time) remain visible;
+        # just show a "done" banner + Open-folder / New-translation buttons.
+        self.dashboard.show_done(summary, can_open=bool(self._results))
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
 
     def _info(self, title, text, error=False):

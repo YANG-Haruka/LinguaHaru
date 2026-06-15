@@ -945,6 +945,25 @@ class DocumentTranslator:
         # process re-translating the same doc).
         invalidate_results(self.result_split_json_path)
 
+        # Phased progress: when a translator declares EXTRACTION_PROGRESS_SHARE
+        # (e.g. video transcription / image OCR is a big up-front step), map the
+        # extraction phase into [0, share] and the translation phase into
+        # [share, 1] so the bar moves during BOTH. Default 0 = no phasing (the
+        # extraction is instant for plain docs, translation keeps the full bar).
+        _orig_cb = progress_callback
+        _share = getattr(self, "EXTRACTION_PROGRESS_SHARE", 0.0) or 0.0
+
+        def _extract_cb(value, desc=None):
+            if _orig_cb:
+                _orig_cb(float(value) * _share, desc=desc)
+
+        def _trans_cb(value, desc=None):
+            if _orig_cb:
+                _orig_cb(_share + float(value) * (1.0 - _share), desc=desc)
+
+        # The rest of process() is the translation phase; extraction uses _extract_cb.
+        progress_callback = _trans_cb
+
         # Continue mode
         if self.continue_mode:
             app_logger.info("Continue mode: checking existing files...")
@@ -952,7 +971,7 @@ class DocumentTranslator:
             # Check source JSON
             if not os.path.exists(self.src_json_path):
                 app_logger.info("Source JSON not found, extracting content...")
-                self.extract_content_to_json(progress_callback)
+                self.extract_content_to_json(_extract_cb)
             
             # Check deduped files
             if not os.path.exists(self.src_deduped_json_path):
@@ -995,7 +1014,7 @@ class DocumentTranslator:
 
             app_logger.info("Extracting content...")
             self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Extracting text')}...")
-            self.extract_content_to_json(progress_callback)
+            self.extract_content_to_json(_extract_cb)
 
             app_logger.info("Deduplicating content...")
             self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Removing duplicates')}...")

@@ -17,6 +17,10 @@ class VideoTranslator(DocumentTranslator):
 
     bilingual_mode puts the translation and the original line in each cue."""
 
+    # Transcription is a big up-front step: map it into 0-50% of the bar, and
+    # the subtitle translation into 50-100%.
+    EXTRACTION_PROGRESS_SHARE = 0.5
+
     def __init__(self, *args, bilingual_mode=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.bilingual_mode = bilingual_mode
