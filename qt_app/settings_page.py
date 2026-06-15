@@ -65,6 +65,22 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("auto_extract_glossary", v))
         self.auto_glossary_label = BodyLabel(tr("AI Glossary Extraction", lang))
         gl_form.addRow(self.auto_glossary_label, self.auto_glossary)
+
+        # Placeholder protection (mask %s / ${var} / {ph} before the LLM).
+        self.mask_ph = SwitchButton()
+        self.mask_ph.setChecked(config.get("mask_placeholders", True))
+        self.mask_ph.checkedChanged.connect(
+            lambda v: backend.set_config("mask_placeholders", v))
+        self.mask_ph_label = BodyLabel(tr("Placeholder Protection", lang))
+        gl_form.addRow(self.mask_ph_label, self.mask_ph)
+
+        # Context-aware dedup (same text, different type/place -> separate).
+        self.dedup_ctx = SwitchButton()
+        self.dedup_ctx.setChecked(config.get("dedup_context", False))
+        self.dedup_ctx.checkedChanged.connect(
+            lambda v: backend.set_config("dedup_context", v))
+        self.dedup_ctx_label = BodyLabel(tr("Context-aware Dedup", lang))
+        gl_form.addRow(self.dedup_ctx_label, self.dedup_ctx)
         layout.addWidget(glossary_card)
 
         # Output folder — separate card/section.
@@ -192,6 +208,8 @@ class SettingsPage(ScrollArea):
         self.per_model_hint.setText(tr("Per Model Hint", lang))
         self.section_options.setText(tr("Translation Options", lang))
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
+        self.mask_ph_label.setText(tr("Placeholder Protection", lang))
+        self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))
         self.section_output.setText(tr("Output Folder", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))

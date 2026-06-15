@@ -193,6 +193,8 @@ def bootstrap():
             # the safety-net default when unset (so the UI isn't misleading).
             "rpm_limit": config.get("rpm_limit", _DEFAULT_RPM),
             "auto_extract_glossary": config.get("auto_extract_glossary", False),
+            "mask_placeholders": config.get("mask_placeholders", True),
+            "dedup_context": config.get("dedup_context", False),
             "lan_mode": config.get("lan_mode", False),
             "has_lan_admin": bool(config.get("lan_admin_password_hash")),  # never expose the value
             "default_thread_count_online": config.get("default_thread_count_online", 8),
@@ -220,7 +222,8 @@ async def update_config(payload: dict):
     allowed = {"default_online", "default_online_model", "default_src_lang",
                "default_dst_lang", "default_glossary", "stt_model",
                "translate_subtitles", "max_retries", "rpm_limit",
-               "auto_extract_glossary", "lan_mode",
+               "auto_extract_glossary", "mask_placeholders", "dedup_context",
+               "lan_mode",
                "default_thread_count_online", "default_thread_count_offline",
                "max_api_concurrency"}
     config = backend.read_config()

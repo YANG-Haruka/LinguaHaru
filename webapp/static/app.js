@@ -338,6 +338,8 @@ async function boot() {
   $("set-lan").checked = !!c.lan_mode;
   $("set-lan-admin").placeholder = c.has_lan_admin ? "已设置（留空则不修改）" : "留空则不启用";
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
+  if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
+  if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   renderModules();
   fillLiveTarget();
@@ -578,6 +580,8 @@ $("set-lan-admin").onchange = () => {
   $("settings-status").textContent = "局域网管理密码已更新。";
 };
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
+if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
+if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
 // Per-model key/RPM/thread/retries moved to Interface Management; their old
 // Settings controls were removed.
 
