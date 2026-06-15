@@ -861,7 +861,18 @@ def update_check():
     return _UPDATE_CACHE["data"] or {"update": False}
 
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+class _NoCacheStatic(StaticFiles):
+    """StaticFiles that asks browsers to revalidate every time, so UI edits to
+    style.css / app.js show up on reload instead of serving a stale cached copy
+    (browsers cache CSS heuristically when no Cache-Control is sent)."""
+
+    def file_response(self, *args, **kwargs):
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
+
+
+app.mount("/static", _NoCacheStatic(directory=STATIC_DIR), name="static")
 
 # Serve assets/ (file-type SVG icons, images) so the Web UI can reuse the same
 # icon set as the Qt app. core.paths.ASSETS_DIR is __file__-anchored, so it

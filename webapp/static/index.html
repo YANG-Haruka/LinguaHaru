@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615b" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -38,11 +38,13 @@
 
     <nav class="nav" id="tabs">
       <div class="nav-group">
-        <div class="nav-label"><b>快速开始</b><span>Start</span></div>
         <button class="tab" data-tab="interface" title="接口管理">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><path d="M8 12h8"/></svg></span>
           <span data-i18n="Interface Management">接口管理</span>
         </button>
+      </div>
+
+      <div class="nav-group">
         <button class="tab active" data-tab="translate" title="翻译">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18"/><path d="M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg></span>
           <span data-i18n="Translate">翻译</span>
@@ -54,7 +56,6 @@
       </div>
 
       <div class="nav-group">
-        <div class="nav-label"><b>资料库</b><span>Library</span></div>
         <button class="tab" data-tab="glossary" title="词汇表">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.4 5 7.9 4.5 4.5 4.9V18c3.4-.4 5.9.1 7.5 1.6"/><path d="M12 6.5C13.6 5 16.1 4.5 19.5 4.9V18c-3.4-.4-5.9.1-7.5 1.6"/><path d="M12 6.5v13"/></svg></span>
           <span>词汇表</span>
@@ -70,11 +71,13 @@
       </div>
 
       <div class="nav-group">
-        <div class="nav-label"><b>系统</b><span>System</span></div>
         <button class="tab" data-tab="modules" title="插件">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span>
           <span>插件</span>
         </button>
+      </div>
+
+      <div class="nav-group">
         <button class="tab" data-tab="settings" title="设置">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9"/><path d="M18 7h2"/><circle cx="15.5" cy="7" r="2.2"/><path d="M4 17h2"/><path d="M11 17h9"/><circle cx="8.5" cy="17" r="2.2"/></svg></span>
           <span>设置</span>
@@ -435,7 +438,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/background.js?v=20260615b"></script>
+  <script src="/static/app.js?v=20260615b"></script>
 </body>
 </html>

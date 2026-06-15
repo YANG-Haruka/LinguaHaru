@@ -124,33 +124,36 @@ class MainWindow(FluentWindow):
 
         nav = self.navigationInterface
 
-        # --- Quick Start group ---
-        self._add_header("hdr_quick", "Quick Start")
+        # Nav order/grouping (separators between the 5 groups), per user spec:
+        #   1) Interface Management
+        #   2) Translate, Real-Time Voice
+        #   3) Glossary, Proofread, History
+        #   4) Plugins
+        #   5) Settings
         self.addSubInterface(self.interface_page, FluentIcon.CONNECT,
                              tr("Interface Management", self._lang))
+
+        nav.addSeparator()
         self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
                              tr("Translate", self._lang))
         self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
                              tr("Real-Time Voice", self._lang))
 
-        # --- Advanced group ---
-        self._add_header("hdr_advanced", "Advanced")
-        self.addSubInterface(self.settings_page, FluentIcon.SETTING,
-                             tr("Settings", self._lang))
-        self.addSubInterface(self.history_page, FluentIcon.HISTORY,
-                             tr("History", self._lang))
-        self.addSubInterface(self.proofread_page, FluentIcon.EDIT,
-                             tr("Proofread", self._lang))
-
-        # --- Vocabulary group ---
-        self._add_header("hdr_vocab", "Vocabulary")
+        nav.addSeparator()
         self.addSubInterface(self.glossary_page, FluentIcon.DICTIONARY,
                              tr("Glossary", self._lang))
+        self.addSubInterface(self.proofread_page, FluentIcon.EDIT,
+                             tr("Proofread", self._lang))
+        self.addSubInterface(self.history_page, FluentIcon.HISTORY,
+                             tr("History", self._lang))
 
-        # --- standalone ---
         nav.addSeparator()
         self.addSubInterface(self.plugins_page, FluentIcon.APPLICATION,
                              tr("Plugins", self._lang))
+
+        nav.addSeparator()
+        self.addSubInterface(self.settings_page, FluentIcon.SETTING,
+                             tr("Settings", self._lang))
 
         # Cross-page wiring.
         self.settings_page.on_ui_lang_changed = self.on_lang_changed

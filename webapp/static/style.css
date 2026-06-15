@@ -287,6 +287,22 @@ select:focus, input:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring); background: var(--surface);
 }
+input:disabled, select:disabled { opacity: .6; cursor: not-allowed; }
+/* Chrome autofill paints filled fields with its own light/yellow background and
+   text colour, which overrode the dark theme (base-url/model looked different
+   from the empty fields). Force the themed look via an inset box-shadow. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+select:-webkit-autofill,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px var(--surface-2) inset;
+  box-shadow: 0 0 0 1000px var(--surface-2) inset;
+  border: 1px solid var(--border-2);
+  caret-color: var(--text);
+  transition: background-color 9999s ease-out 0s;
+}
 
 .swap {
   align-self: center; width: 42px; height: 42px;
