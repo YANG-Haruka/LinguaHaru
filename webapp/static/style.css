@@ -716,6 +716,15 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
 .live-go .ico-stop { display: none; }
 .live-go.running .ico-play { display: none; }
 .live-go.running .ico-stop { display: block; }
+.live-pip {
+  width: 40px; height: 40px; border-radius: 50%; flex: none; cursor: pointer;
+  display: grid; place-items: center; border: 1px solid var(--border-2);
+  background: var(--surface-2); color: var(--text);
+  transition: background .2s, transform .1s;
+}
+.live-pip:hover { background: var(--surface-3, var(--surface)); }
+.live-pip:active { transform: scale(0.94); }
+.live-pip svg { width: 18px; height: 18px; }
 .live-pane-sub { font-size: 0.72rem; color: var(--muted); margin: -2px 0 10px; }
 
 /* Mic level feedback: icon pulses + bar fills with your speaking volume, so you

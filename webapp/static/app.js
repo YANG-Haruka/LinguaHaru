@@ -971,6 +971,12 @@ $("proofread-export").onclick = async () => {
 let liveWS = null, liveCtx = null, liveSrc = null, liveProc = null, liveStream = null;
 let playCtx = null, playTime = 0;
 let liveMode = "local", liveNode = null, liveRunning = false;
+// Floating captions via Document Picture-in-Picture (Chrome 116+).
+let pipWin = null, pipMode = "both", pipFont = 24;
+// Rolling buffer of recent utterances {src, dst}. The caption window shows as
+// many as fit (newest pinned to the bottom), so a big window shows more lines.
+let pipEntries = [];
+const PIP_MAX = 60;
 let liveAnalyser = null, liveLevelRAF = null;
 
 // Mic level feedback: drive the bar + icon from live mic volume so you can see
@@ -1099,6 +1105,13 @@ async function acquireLiveStream() {
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
 function setLiveBusy(b) { const g = $("live-go"); if (g) g.classList.toggle("running", b); }
+
+// Hot-switch input device mid-session; floating-caption (PiP) toggle.
+if ($("live-input-dev")) $("live-input-dev").onchange = switchLiveInput;
+if ($("live-pip")) {
+  $("live-pip").onclick = toggleLivePip;
+  if (!("documentPictureInPicture" in window)) $("live-pip").style.display = "none";
+}
 
 // Mode switch (disabled while a session is running).
 document.querySelectorAll("#live-mode .seg").forEach((s) => {
@@ -1273,7 +1286,92 @@ function onLiveMessage(ev) {
     for (const p of sc.modelTurn.parts) if (p.inlineData && p.inlineData.data) playPCM24k(p.inlineData.data);
   }
 }
-function appendLive(id, text) { const el = $(id); el.textContent += text; el.scrollTop = el.scrollHeight; }
+function appendLive(id, text) {
+  const el = $(id); el.textContent += text; el.scrollTop = el.scrollHeight;
+  // Feed the floating-caption buffer with the latest line (timestamp stripped).
+  const last = (el.textContent.trim().split("\n").filter(Boolean).pop() || "")
+    .replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
+  if (!last) return;
+  if (id === "live-input") {
+    pipEntries.push({ src: last, dst: "" });
+  } else if (id === "live-output") {
+    const tail = pipEntries[pipEntries.length - 1];
+    if (tail && !tail.dst) tail.dst = last;     // pair with the source line
+    else pipEntries.push({ src: "", dst: last });
+  }
+  if (pipEntries.length > PIP_MAX) pipEntries.splice(0, pipEntries.length - PIP_MAX);
+  updatePipCaption();
+}
+
+// --- Live input hot-switch: change device mid-session without stopping ---
+async function switchLiveInput() {
+  if (!liveRunning) return;             // not running -> selection applies on next start
+  let newStream;
+  try { newStream = await acquireLiveStream(); }
+  catch (e) { setLiveStatus("无法切换输入：" + e.message); return; }
+  try {
+    if (liveSrc) liveSrc.disconnect();
+    if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
+    liveStream = newStream;
+    liveSrc = liveCtx.createMediaStreamSource(liveStream);
+    liveSrc.connect(liveMode === "google" ? liveProc : liveNode);
+    setLiveStatus("已切换输入 · 正在聆听…");
+  } catch (e) { setLiveStatus("切换输入失败：" + e.message); }
+}
+
+// --- Floating captions (Document Picture-in-Picture, Chrome 116+) ---
+// Renders the rolling buffer; the window is a scroll container pinned to the
+// bottom, so resizing it bigger simply reveals more lines (no fixed line count).
+function updatePipCaption() {
+  if (!pipWin || pipWin.closed) return;
+  const cap = pipWin.document.getElementById("cap");
+  if (!cap) return;
+  const d = pipWin.document;
+  cap.textContent = "";
+  for (const e of pipEntries) {
+    const block = d.createElement("div"); block.className = "blk";
+    if (pipMode !== "dst" && e.src) {
+      const s = d.createElement("div"); s.className = "c-src";
+      s.style.fontSize = Math.round(pipFont * 0.7) + "px";
+      s.textContent = e.src; block.appendChild(s);
+    }
+    if (pipMode !== "src" && e.dst) {
+      const t = d.createElement("div"); t.className = "c-dst";
+      t.style.fontSize = pipFont + "px";
+      t.textContent = e.dst; block.appendChild(t);
+    }
+    if (block.childNodes.length) cap.appendChild(block);
+  }
+  cap.scrollTop = cap.scrollHeight;   // keep newest visible
+}
+async function toggleLivePip() {
+  if (!("documentPictureInPicture" in window)) {
+    setLiveStatus("此浏览器不支持悬浮字幕（需 Chrome 116+）"); return;
+  }
+  if (pipWin && !pipWin.closed) { pipWin.close(); pipWin = null; return; }
+  try { pipWin = await window.documentPictureInPicture.requestWindow({ width: 560, height: 240 }); }
+  catch (e) { setLiveStatus("无法打开悬浮字幕：" + e.message); return; }
+  const d = pipWin.document;
+  const st = d.createElement("style");
+  st.textContent = "html,body{height:100%;}"
+    + "body{margin:0;display:flex;flex-direction:column;font-family:system-ui,'Noto Sans SC',sans-serif;background:rgba(16,18,24,.92);color:#fff;}"
+    + ".bar{flex:none;display:flex;gap:6px;justify-content:flex-end;padding:6px 8px;}"
+    + ".bar button{background:rgba(255,255,255,.14);color:#fff;border:none;border-radius:6px;padding:3px 9px;cursor:pointer;font-size:12px;}"
+    + "#cap{flex:1;overflow-y:auto;padding:2px 14px 14px;scrollbar-width:thin;}"
+    + ".blk{margin:0 0 10px;}.c-src{color:#b8c0cc;line-height:1.4;}.c-dst{font-weight:700;line-height:1.45;margin-top:2px;}";
+  d.head.appendChild(st);
+  const label = () => ({ both: _label("Bilingual", "双语"), dst: _label("Translation Only", "仅译文"), src: _label("Source Only", "仅原文") }[pipMode]);
+  const bar = d.createElement("div"); bar.className = "bar";
+  const mk = (txt, fn) => { const b = d.createElement("button"); b.textContent = txt; b.onclick = fn; return b; };
+  const modeBtn = mk(label(), () => { pipMode = pipMode === "both" ? "dst" : pipMode === "dst" ? "src" : "both"; modeBtn.textContent = label(); updatePipCaption(); });
+  bar.append(modeBtn,
+    mk("A-", () => { pipFont = Math.max(14, pipFont - 2); updatePipCaption(); }),
+    mk("A+", () => { pipFont = Math.min(48, pipFont + 2); updatePipCaption(); }));
+  const cap = d.createElement("div"); cap.id = "cap";
+  d.body.append(bar, cap);
+  pipWin.addEventListener("pagehide", () => { pipWin = null; });
+  updatePipCaption();
+}
 function playPCM24k(b64) {
   const bin = atob(b64), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);

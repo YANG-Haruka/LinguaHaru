@@ -11,10 +11,12 @@ the small pure-Python helpers below decode/resample/re-encode with the stdlib
 """
 
 import array
+import html as _html
 
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QLabel,
+    QTextEdit,
 )
 
 from qfluentwidgets import (
@@ -175,13 +177,15 @@ class _CaptionBar(QWidget):
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setMinimumWidth(320)
         self.setMaximumWidth(1600)
-        self.setMinimumHeight(70)
+        self.setMinimumHeight(90)
+        self.resize(560, 200)       # roomy default so several lines are visible
         self._drag_pos = None
         self._mode = "bilingual"
         # Base translated font size; the source line is kept smaller/emphasis-low.
         self._font_size = 20
-        self._source_text = ""
-        self._trans_text = ""
+        # Rolling buffer of recent utterances; a bigger window shows more lines.
+        self._entries = []          # list of {"src": str, "dst": str}
+        self._CAP_MAX = 60
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -218,13 +222,18 @@ class _CaptionBar(QWidget):
         top.addWidget(self._close_btn)
         inner.addLayout(top)
 
-        self._source_lbl = QLabel("", self._panel)
-        self._source_lbl.setWordWrap(True)
-        inner.addWidget(self._source_lbl)
-
-        self._trans_lbl = QLabel("", self._panel)
-        self._trans_lbl.setWordWrap(True)
-        inner.addWidget(self._trans_lbl)
+        # Auto-scrolling multi-line caption area: holds several recent lines and
+        # pins the newest to the bottom, so resizing the window taller shows more.
+        self._cap = QTextEdit(self._panel)
+        self._cap.setReadOnly(True)
+        self._cap.setFrameStyle(0)
+        self._cap.setTextInteractionFlags(Qt.NoTextInteraction)  # let drag pass
+        self._cap.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self._cap.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._cap.setStyleSheet(
+            "QTextEdit{background:transparent;border:none;}")
+        self._cap.setMinimumHeight(40)
+        inner.addWidget(self._cap, 1)
 
         # Bottom-right grip lets the user resize the frameless window. It sits in
         # its own bottom row so it doesn't overlap the caption text.
@@ -237,9 +246,8 @@ class _CaptionBar(QWidget):
         grip_row.addWidget(self._grip, 0, Qt.AlignRight | Qt.AlignBottom)
         inner.addLayout(grip_row)
 
-        self._apply_fonts()
         self._update_mode_btn()
-        self._apply_mode_visibility()
+        self._render()
 
     @staticmethod
     def _mk_btn(text, w, h, big=False):
@@ -254,19 +262,11 @@ class _CaptionBar(QWidget):
             "QPushButton:hover{color:#ffffff;}" % fs)
         return b
 
-    def _apply_fonts(self):
-        src = max(self._FONT_MIN - 4, int(self._font_size * 0.65))
-        self._source_lbl.setStyleSheet(
-            "color:#9aa6b2; font-size:%dpx; background:transparent;" % src)
-        self._trans_lbl.setStyleSheet(
-            "color:#f1f5f9; font-size:%dpx; font-weight:700;"
-            "background:transparent;" % self._font_size)
-
     def _bump_font(self, delta):
         new = max(self._FONT_MIN, min(self._FONT_MAX, self._font_size + delta))
         if new != self._font_size:
             self._font_size = new
-            self._apply_fonts()
+            self._render()
 
     def _mode_label(self):
         if self._mode == "translation":
@@ -282,25 +282,55 @@ class _CaptionBar(QWidget):
         i = self._MODES.index(self._mode)
         self._mode = self._MODES[(i + 1) % len(self._MODES)]
         self._update_mode_btn()
-        self._apply_mode_visibility()
+        self._render()
 
-    def _apply_mode_visibility(self):
-        self._source_lbl.setVisible(self._mode in ("bilingual", "source"))
-        self._trans_lbl.setVisible(self._mode in ("bilingual", "translation"))
+    def _render(self):
+        """Rebuild the caption HTML from the rolling buffer and pin to bottom."""
+        src_px = max(self._FONT_MIN - 4, int(self._font_size * 0.65))
+        show_src = self._mode in ("bilingual", "source")
+        show_dst = self._mode in ("bilingual", "translation")
+        parts = []
+        for e in self._entries:
+            if show_src and e.get("src"):
+                parts.append(
+                    "<div style='color:#9aa6b2;font-size:%dpx;margin-top:8px;'>%s</div>"
+                    % (src_px, _html.escape(e["src"])))
+            if show_dst and e.get("dst"):
+                parts.append(
+                    "<div style='color:#f1f5f9;font-size:%dpx;font-weight:700;'>%s</div>"
+                    % (self._font_size, _html.escape(e["dst"])))
+        self._cap.setHtml("".join(parts))
+        from PySide6.QtGui import QTextCursor
+        self._cap.moveCursor(QTextCursor.End)      # keep newest visible
+        self._cap.ensureCursorVisible()
 
     def set_source(self, text):
-        self._source_text = text or ""
-        self._source_lbl.setText(self._source_text)
+        text = (text or "").strip()
+        if not text:
+            return
+        self._entries.append({"src": text, "dst": ""})
+        self._trim()
+        self._render()
 
     def set_translated(self, text):
-        self._trans_text = text or ""
-        self._trans_lbl.setText(self._trans_text)
+        text = (text or "").strip()
+        if not text:
+            return
+        if self._entries and not self._entries[-1].get("dst"):
+            self._entries[-1]["dst"] = text     # pair with the source line
+        else:
+            self._entries.append({"src": "", "dst": text})
+        self._trim()
+        self._render()
+
+    def _trim(self):
+        if len(self._entries) > self._CAP_MAX:
+            self._entries = self._entries[-self._CAP_MAX:]
 
     def show_centered(self):
         """Place near the bottom-center of the primary screen, then show."""
         from PySide6.QtWidgets import QApplication
         self.show()
-        self.adjustSize()
         screen = QApplication.primaryScreen()
         if screen is not None:
             geo = screen.availableGeometry()
