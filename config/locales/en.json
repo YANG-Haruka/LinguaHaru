@@ -297,5 +297,12 @@
   "LAN access hint": "When on, this device runs the web app for your LAN — others open the URL below in a browser.",
   "LAN starting": "Starting… (a few seconds)",
   "LAN stopped": "Stopped",
-  "Image OCR Model": "Image OCR Model"
+  "Image OCR Model": "Image OCR Model",
+  "Bilingual Bold": "Bilingual: bold translation",
+  "Translation Color": "Translation color",
+  "None": "None",
+  "Red": "Red",
+  "Blue": "Blue",
+  "Green": "Green",
+  "Orange": "Orange"
 }

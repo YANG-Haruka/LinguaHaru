@@ -179,6 +179,10 @@ _DEFAULT_CONFIG = {
     # (0 = unlimited / no age limit).
     "history_max_records": 1000,
     "history_max_age_days": 0,
+    # Bilingual (双语对照): style the TRANSLATED text so it stands out from the
+    # original. color is a hex without '#' ("" = no color). Subtitles (srt/vtt).
+    "bilingual_bold": True,
+    "bilingual_color": "",
 }
 
 

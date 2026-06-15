@@ -147,6 +147,28 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("dedup_context", v))
         self.dedup_ctx_label = BodyLabel(tr("Context-aware Dedup", lang))
         gl_form.addRow(self.dedup_ctx_label, self.dedup_ctx)
+        # Bilingual: bold + color the translated text so it stands out (subtitles).
+        self.bi_bold = SwitchButton()
+        self.bi_bold.setChecked(config.get("bilingual_bold", True))
+        self.bi_bold.checkedChanged.connect(
+            lambda v: backend.set_config("bilingual_bold", v))
+        self.bi_bold_label = BodyLabel(tr("Bilingual Bold", lang))
+        gl_form.addRow(self.bi_bold_label, self.bi_bold)
+        self._bi_colors = [("", tr("None", lang)), ("C00000", tr("Red", lang)),
+                           ("1F4E79", tr("Blue", lang)), ("2E7D32", tr("Green", lang)),
+                           ("B36B00", tr("Orange", lang))]
+        self.bi_color = ComboBox()
+        for _hex, label in self._bi_colors:
+            self.bi_color.addItem(label)
+        cur_col = str(config.get("bilingual_color", "") or "")
+        for i, (h, _l) in enumerate(self._bi_colors):
+            if h == cur_col:
+                self.bi_color.setCurrentIndex(i)
+                break
+        self.bi_color.currentIndexChanged.connect(
+            lambda idx: backend.set_config("bilingual_color", self._bi_colors[idx][0]))
+        self.bi_color_label = BodyLabel(tr("Translation Color", lang))
+        gl_form.addRow(self.bi_color_label, self.bi_color)
         self.card_options.body.addLayout(gl_form)
 
         # --- Card 3: Data & Storage (output folder + history retention/clear) ---
@@ -413,6 +435,8 @@ class SettingsPage(ScrollArea):
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
         self.mask_ph_label.setText(tr("Placeholder Protection", lang))
         self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))
+        self.bi_bold_label.setText(tr("Bilingual Bold", lang))
+        self.bi_color_label.setText(tr("Translation Color", lang))
         self.card_data.set_title(tr("Data & Storage", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))

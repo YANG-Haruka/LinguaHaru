@@ -88,7 +88,8 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
         if bilingual_mode:
             original_text = value.replace("␊", "\n").replace("␍", "\r")
             if translated_text.strip() != original_text.strip():
-                translated_text = f"{translated_text}\n{original_text}"
+                from core.engine.bilingual_format import style_markup
+                translated_text = f"{style_markup(translated_text, 'srt')}\n{original_text}"
 
         output_srt_lines.append(f"{count}\n{start_time} --> {end_time}\n{translated_text}\n\n")
 

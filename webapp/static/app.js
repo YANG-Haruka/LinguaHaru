@@ -364,6 +364,8 @@ async function boot() {
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
+  if ($("set-bi-bold")) $("set-bi-bold").checked = c.bilingual_bold !== false;
+  if ($("set-bi-color")) $("set-bi-color").value = c.bilingual_color || "";
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
@@ -640,6 +642,8 @@ $("set-lan-admin").onchange = () => {
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
+if ($("set-bi-bold")) $("set-bi-bold").onchange = () => saveConfig({ bilingual_bold: $("set-bi-bold").checked });
+if ($("set-bi-color")) $("set-bi-color").onchange = () => saveConfig({ bilingual_color: $("set-bi-color").value });
 if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
 if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
   $("settings-status").textContent = "正在打开文件夹选择器…（窗口可能在后台）";

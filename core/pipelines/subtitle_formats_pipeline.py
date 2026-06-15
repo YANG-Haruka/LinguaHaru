@@ -129,7 +129,8 @@ def write_translated_content_to_vtt(file_path, original_json_path, translated_js
         if bilingual_mode:
             original = originals.get(count, lines[int(line_index)]).replace("␊", "\n").replace("␍", "")
             if translated.strip() != original.strip():
-                translated = f"{translated}\n{original}"
+                from core.engine.bilingual_format import style_markup
+                translated = f"{style_markup(translated, 'vtt')}\n{original}"
         lines[int(line_index)] = translated
 
     # Remove tail lines that were merged into a grouped unit
