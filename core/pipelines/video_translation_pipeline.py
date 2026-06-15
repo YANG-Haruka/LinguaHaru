@@ -255,11 +255,25 @@ def recognizer_ready():
 
 def preload_recognizer(model_name="iic/SenseVoiceSmall"):
     """Load the local STT model now (downloads on first use) so the first
-    utterance isn't blocked on a multi-second model load. Returns True on ready."""
+    utterance isn't blocked on a multi-second model load. Also runs a tiny
+    warm-up inference: the very first generate() lazily builds graphs/buffers and
+    is otherwise several times slower than steady state. Returns True on ready."""
     import importlib.util
+    import time
     try:
         if importlib.util.find_spec("funasr") is not None:
+            t0 = time.time()
             _get_sensevoice(model_name)
+            app_logger.info(f"SenseVoice loaded in {time.time() - t0:.1f}s; warming up…")
+            try:
+                import numpy as np
+                asr, _vad = _sensevoice
+                t1 = time.time()
+                asr.generate(input=np.zeros(16000, dtype=np.float32), fs=16000,
+                             language="auto", use_itn=True)
+                app_logger.info(f"SenseVoice warm-up done in {time.time() - t1:.1f}s")
+            except Exception as e:  # noqa: BLE001
+                app_logger.warning(f"SenseVoice warm-up skipped: {e}")
             return True
         if importlib.util.find_spec("faster_whisper") is not None:
             model_def = get_stt_model(get_selected_stt_model())
@@ -284,15 +298,22 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000,
     Used by real-time *local* voice translation: the client does VAD and sends a
     complete utterance, so no server-side segmentation is needed here."""
     import importlib.util
+    import time
     import numpy as np
 
     audio = np.frombuffer(pcm16_bytes, dtype=np.int16).astype(np.float32) / 32768.0
     if audio.size == 0:
         return "", None
+    dur = audio.size / float(sample_rate or 16000)
+    t0 = time.time()
     if importlib.util.find_spec("funasr") is not None:
-        return _recognize_sensevoice(audio, src_lang, sample_rate, model_name)
+        text, detected = _recognize_sensevoice(audio, src_lang, sample_rate, model_name)
+        app_logger.info(f"STT(SenseVoice) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+        return text, detected
     if importlib.util.find_spec("faster_whisper") is not None:
-        return _recognize_whisper(audio, src_lang)
+        text, detected = _recognize_whisper(audio, src_lang)
+        app_logger.info(f"STT(whisper) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+        return text, detected
     raise RuntimeError(
         "No speech-to-text engine installed. Install the Video/Audio plugin "
         "(faster-whisper or funasr).")

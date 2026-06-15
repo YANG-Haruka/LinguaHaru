@@ -36,7 +36,7 @@ _OUT_RATE = 24000  # Gemini output
 # Energy-VAD thresholds for the local mode (mirror the Web vad-worklet).
 _VAD_ON_ABS, _VAD_ON_MUL = 0.009, 2.5
 _VAD_OFF_ABS, _VAD_OFF_MUL = 0.006, 1.7
-_VAD_ON_MS, _VAD_HANG_MS = 90, 850
+_VAD_ON_MS, _VAD_HANG_MS = 90, 600
 _VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
 
 
@@ -141,28 +141,18 @@ class LivePage(ScrollArea):
         self.subtitle.setWordWrap(True)
         layout.addWidget(self.subtitle)
 
-        # --- Mode: local (SenseVoice + LLM) vs Google (Gemini Live) ---
-        mode_card = CardWidget()
-        mode_row = QHBoxLayout(mode_card)
-        mode_row.setContentsMargins(20, 14, 20, 14)
-        mode_row.setSpacing(10)
-        self.mode_label = BodyLabel(tr("Live Mode", lang))
-        mode_row.addWidget(self.mode_label)
-        self.mode_combo = ComboBox()
+        # --- Controls: mode + target language + start/stop, all on one row ---
         self._mode_ids = ["local", "google"]
-        self.mode_combo.addItems([tr("Local Voice Mode", lang), tr("Google Voice Mode", lang)])
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        mode_row.addWidget(self.mode_combo, 1)
-        layout.addWidget(mode_card)
-        self.hint_label = CaptionLabel("")
-        self.hint_label.setWordWrap(True)
-        layout.addWidget(self.hint_label)
-
-        # --- Controls: target language + start/stop ---
         ctrl_card = CardWidget()
         ctrl = QHBoxLayout(ctrl_card)
         ctrl.setContentsMargins(20, 14, 20, 14)
         ctrl.setSpacing(10)
+        self.mode_label = BodyLabel(tr("Live Mode", lang))
+        ctrl.addWidget(self.mode_label)
+        self.mode_combo = ComboBox()
+        self.mode_combo.addItems([tr("Local Voice Mode", lang), tr("Google Voice Mode", lang)])
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        ctrl.addWidget(self.mode_combo, 1)
         self.target_label = BodyLabel(tr("Target Language", lang))
         ctrl.addWidget(self.target_label)
         self.target_combo = ComboBox()
@@ -179,24 +169,36 @@ class LivePage(ScrollArea):
         ctrl.addWidget(self.stop_btn)
         layout.addWidget(ctrl_card)
 
+        self.hint_label = CaptionLabel("")
+        self.hint_label.setWordWrap(True)
+        layout.addWidget(self.hint_label)
         self.status_label = CaptionLabel("")
         layout.addWidget(self.status_label)
 
-        # --- Transcript panels ---
+        # --- Transcript panels: source on the LEFT, translation on the RIGHT ---
+        panels = QHBoxLayout()
+        panels.setSpacing(14)
+        left_col = QVBoxLayout()
+        left_col.setSpacing(6)
         self.input_header = StrongBodyLabel(tr("Recognized Speech", lang))
-        layout.addWidget(self.input_header)
+        left_col.addWidget(self.input_header)
         self.input_text = TextEdit()
         self.input_text.setReadOnly(True)
-        self.input_text.setMinimumHeight(120)
-        layout.addWidget(self.input_text)
+        self.input_text.setMinimumHeight(260)
+        left_col.addWidget(self.input_text)
+        panels.addLayout(left_col, 1)
 
+        right_col = QVBoxLayout()
+        right_col.setSpacing(6)
         self.output_header = StrongBodyLabel(tr("Translation Result", lang))
-        layout.addWidget(self.output_header)
+        right_col.addWidget(self.output_header)
         self.output_text = TextEdit()
         self.output_text.setReadOnly(True)
-        self.output_text.setMinimumHeight(120)
-        layout.addWidget(self.output_text)
+        self.output_text.setMinimumHeight(260)
+        right_col.addWidget(self.output_text)
+        panels.addLayout(right_col, 1)
 
+        layout.addLayout(panels)
         layout.addStretch(1)
         self._update_hint()
 

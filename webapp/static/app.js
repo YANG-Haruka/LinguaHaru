@@ -858,7 +858,7 @@ async function startLocal() {
   try {
     await liveCtx.audioWorklet.addModule("/static/vad-worklet.js");
     liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
-      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 850, minSegMs: 280, maxSegMs: 30000 } });
+      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000 } });
     liveNode.port.onmessage = onVadMessage;
     liveNode.port.postMessage({ type: "mode", mode: "open" });
     liveSrc.connect(liveNode); liveNode.connect(liveCtx.destination);
