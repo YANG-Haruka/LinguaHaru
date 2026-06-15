@@ -16,3 +16,8 @@ funasr>=1.1.0
 # Optional: capture system audio (speaker loopback) as a live input source.
 # If absent, the Real-Time Voice page silently falls back to microphones only.
 soundcard>=0.4.2
+# Qwen3-ASR STT engine (optional, highest accuracy — esp. the 1.7B for offline
+# video subtitle extraction; 30 languages incl. zh/en/ja/ko). If absent, those
+# models gracefully fall back to SenseVoice/Whisper. Pins transformers==4.57.6,
+# which is compatible with the rest of the stack (paddlex needs transformers<5).
+qwen-asr>=0.0.6

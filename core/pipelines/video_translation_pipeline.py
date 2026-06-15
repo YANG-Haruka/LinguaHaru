@@ -30,6 +30,10 @@ STT_MODELS = [
      "label": "Whisper Small (balanced)", "disk": "~490MB", "vram": "~2GB"},
     {"id": "whisper-large-v3-turbo", "engine": "whisper",    "size": "large-v3-turbo",
      "label": "Whisper Large-v3 Turbo (accurate)", "disk": "~1.6GB", "vram": "~6GB"},
+    {"id": "qwen3-asr-0.6b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-0.6B",
+     "label": "Qwen3-ASR 0.6B (accurate · 30 langs)", "disk": "~2GB", "vram": "~3GB"},
+    {"id": "qwen3-asr-1.7b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-1.7B",
+     "label": "Qwen3-ASR 1.7B (most accurate)", "disk": "~4GB", "vram": "~6GB"},
 ]
 
 # Default for video subtitles AND real-time voice: SenseVoice is small + fast.
@@ -50,6 +54,7 @@ from core.paths import SYSTEM_CONFIG as _SYSTEM_CONFIG  # absolute; frozen-safe
 
 _whisper_models = {}   # size -> WhisperModel
 _sensevoice = None     # (asr_model, vad_model)
+_qwen_models = {}      # repo id -> Qwen3ASRModel
 
 
 def _stt_device():
@@ -121,7 +126,16 @@ def _resolve_stt_engine(model_def):
     import importlib.util
     has_funasr = importlib.util.find_spec("funasr") is not None
     has_whisper = importlib.util.find_spec("faster_whisper") is not None
+    has_qwen = importlib.util.find_spec("qwen_asr") is not None
     engine, size = model_def["engine"], model_def["size"]
+    if engine == "qwen3asr" and not has_qwen:
+        # Qwen3-ASR package not installed -> degrade to the best available engine.
+        if has_funasr:
+            app_logger.warning("qwen-asr not installed; falling back to SenseVoice.")
+            return "sensevoice", "iic/SenseVoiceSmall"
+        if has_whisper:
+            app_logger.warning("qwen-asr not installed; falling back to faster-whisper 'small'.")
+            return "whisper", "small"
     if engine == "sensevoice" and not has_funasr and has_whisper:
         app_logger.warning(
             "SenseVoice (funasr) not installed; falling back to faster-whisper 'small'.")
@@ -269,6 +283,90 @@ def _get_sensevoice(model_name):
     return _sensevoice
 
 
+_vad_only = None  # fsmn-vad loaded standalone (so Qwen needn't load SenseVoice)
+
+
+def _get_vad():
+    """fsmn-vad on its own (used to time-segment audio for the Qwen engine)."""
+    global _vad_only
+    if _vad_only is None:
+        from funasr import AutoModel
+        _vad_only = AutoModel(model="fsmn-vad", disable_update=True,
+                              device=_stt_device(),
+                              vad_kwargs={"max_single_segment_time": 30000})
+    return _vad_only
+
+
+# --- Qwen3-ASR engine (qwen-asr) -------------------------------------------
+_QWEN_LANG_CODE = {"Chinese": "zh", "English": "en", "Japanese": "ja",
+                   "Korean": "ko", "Cantonese": "zh"}
+
+
+def _get_qwen(model_name):
+    if model_name not in _qwen_models:
+        from qwen_asr import Qwen3ASRModel
+        dm = "cuda:0" if _stt_device() == "cuda" else "cpu"
+        app_logger.info(f"Loading {model_name} on {dm} (downloads on first use)...")
+        _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(model_name, device_map=dm)
+    return _qwen_models[model_name]
+
+
+def _qwen_text(result):
+    return (result.text if hasattr(result, "text") else str(result)).strip()
+
+
+def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
+    """Recognize one utterance (16 kHz float32) with Qwen3-ASR (no temp file —
+    qwen-asr accepts a (ndarray, sr) tuple)."""
+    model = _get_qwen(model_name)
+    results = model.transcribe((audio, sample_rate))
+    if not results:
+        return "", (src_lang or "auto")
+    r = results[0]
+    detected = _QWEN_LANG_CODE.get(getattr(r, "language", None), src_lang or "auto")
+    return _qwen_text(r), detected
+
+
+def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback):
+    """VAD-segment the audio (for SRT timing) then batch-recognize the segments
+    with Qwen3-ASR. Falls back to a single whole-file pass if VAD is unavailable."""
+    import wave
+    import numpy as np
+
+    model = _get_qwen(model_name)
+    with wave.open(wav_path, "rb") as wf:
+        sr = wf.getframerate()
+        raw = wf.readframes(wf.getnframes())
+    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    try:
+        vad_res = _get_vad().generate(input=wav_path)
+        segments = (vad_res[0].get("value") if vad_res else None) or []
+    except Exception:  # noqa: BLE001 — no funasr/VAD -> one big segment
+        segments = []
+    if not segments:
+        segments = [[0, len(audio) / sr * 1000.0]]
+
+    chunks, spans = [], []
+    for s_ms, e_ms in segments:
+        c = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
+        if c.size:
+            chunks.append((c, sr))
+            spans.append((s_ms / 1000.0, e_ms / 1000.0))
+
+    out = []
+    BATCH = 16
+    total = len(chunks) or 1
+    for i in range(0, len(chunks), BATCH):
+        results = model.transcribe(chunks[i:i + BATCH])
+        for (start, end), r in zip(spans[i:i + BATCH], results):
+            txt = _qwen_text(r)
+            if txt:
+                out.append((start, end, txt))
+        if progress_callback:
+            progress_callback(min(1.0, (i + BATCH) / total), desc="Transcribing (Qwen3-ASR)...")
+    return out
+
+
 def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
     """VAD-segment the audio, recognize each segment with SenseVoice, and return
     (start, end, text) tuples. Timing comes from the VAD so the SRT is aligned."""
@@ -305,11 +403,17 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
 
 
 def recognizer_ready():
-    """True if the local STT model is already loaded (no first-use load delay)."""
-    import importlib.util
-    if importlib.util.find_spec("funasr") is not None:
-        return _sensevoice is not None
-    return bool(_whisper_models)
+    """True if the selected real-time STT model is already loaded (no first-use
+    load delay)."""
+    try:
+        engine, size = _resolve_stt_engine(get_stt_model(get_selected_live_stt_model()))
+        if engine == "qwen3asr":
+            return size in _qwen_models
+        if engine == "sensevoice":
+            return _sensevoice is not None
+        return size in _whisper_models
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def preload_recognizer(model_id=None):
@@ -333,6 +437,11 @@ def preload_recognizer(model_id=None):
                 app_logger.info(f"SenseVoice warm-up done in {time.time() - t1:.1f}s")
             except Exception as e:  # noqa: BLE001
                 app_logger.warning(f"SenseVoice warm-up skipped: {e}")
+            return True
+        if engine == "qwen3asr":
+            t0 = time.time()
+            _get_qwen(size)
+            app_logger.info(f"Qwen3-ASR ({size}) loaded in {time.time() - t0:.1f}s")
             return True
         _get_whisper_model(size)
         return True
@@ -378,6 +487,9 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=
     if engine == "sensevoice":
         text, detected = _recognize_sensevoice(audio, src_lang, sample_rate, model_def["size"])
         app_logger.info(f"STT(SenseVoice) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+    elif engine == "qwen3asr":
+        text, detected = _recognize_qwen(audio, src_lang, size, sample_rate)
+        app_logger.info(f"STT(Qwen3-ASR:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
     else:
         text, detected = _recognize_whisper(audio, src_lang, size)
         app_logger.info(f"STT(whisper:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
@@ -450,6 +562,8 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
 
         if engine == "sensevoice":
             triples = _transcribe_sensevoice(wav_path, size, src_lang, progress_callback)
+        elif engine == "qwen3asr":
+            triples = _transcribe_qwen(wav_path, size, src_lang, progress_callback)
         else:
             triples = _transcribe_whisper(wav_path, size, src_lang, progress_callback)
 
