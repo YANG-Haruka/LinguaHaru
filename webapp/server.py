@@ -195,6 +195,11 @@ def bootstrap():
             "auto_extract_glossary": config.get("auto_extract_glossary", False),
             "mask_placeholders": config.get("mask_placeholders", True),
             "dedup_context": config.get("dedup_context", False),
+            "pdf_translate_table": config.get("pdf_translate_table", False),
+            "pdf_ocr_scanned": config.get("pdf_ocr_scanned", False),
+            "pdf_dual_alternating": config.get("pdf_dual_alternating", False),
+            "pdf_pages": config.get("pdf_pages", ""),
+            "pdf_only_translated_pages": config.get("pdf_only_translated_pages", False),
             "lan_mode": config.get("lan_mode", False),
             "has_lan_admin": bool(config.get("lan_admin_password_hash")),  # never expose the value
             "default_thread_count_online": config.get("default_thread_count_online", 8),
@@ -225,7 +230,9 @@ async def update_config(payload: dict):
                "auto_extract_glossary", "mask_placeholders", "dedup_context",
                "lan_mode",
                "default_thread_count_online", "default_thread_count_offline",
-               "max_api_concurrency"}
+               "max_api_concurrency",
+               "pdf_translate_table", "pdf_ocr_scanned", "pdf_dual_alternating",
+               "pdf_pages", "pdf_only_translated_pages"}
     config = backend.read_config()
     for k, v in payload.items():
         # The LAN admin password is stored ONLY as a hash (system_config.json is

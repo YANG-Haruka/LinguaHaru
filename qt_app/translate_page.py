@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from qfluentwidgets import (
     ComboBox, PushButton, PrimaryPushButton, SwitchButton,
-    BodyLabel, CardWidget, TitleLabel,
+    BodyLabel, CardWidget, TitleLabel, StrongBodyLabel, CaptionLabel, LineEdit,
     InfoBar, InfoBarPosition, FluentIcon, ToolButton,
     ScrollArea,
 )
@@ -179,6 +179,11 @@ class TranslatePage(QStackedWidget):
         self.media_card.setVisible(False)
         layout.addWidget(self.media_card)
 
+        # --- Contextual PDF options (shown only when a PDF is selected) ---
+        self.pdf_card = self._build_pdf_card(lang, config)
+        self.pdf_card.setVisible(False)
+        layout.addWidget(self.pdf_card)
+
         # --- Action buttons ---
         action_row = QHBoxLayout()
         self.translate_btn = PrimaryPushButton(FluentIcon.SEND, tr("Translate", lang))
@@ -223,6 +228,12 @@ class TranslatePage(QStackedWidget):
         self.glossary_label.setText(tr("Glossary", lang))
         self.stt_label.setText(tr("Speech-to-Text Model", lang))
         self.translate_subs_label.setText(tr("Translate Subtitles", lang))
+        self.pdf_title.setText(tr("PDF Options", lang))
+        for label, label_key, caption, hint_key in self._pdf_label_specs:
+            label.setText(tr(label_key, lang))
+            caption.setText(tr(hint_key, lang))
+        self.pdf_pages_label.setText(tr("Page Range", lang))
+        self.pdf_pages_caption.setText(tr("Page Range Hint", lang))
         self.translate_btn.setText(tr("Translate", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.dashboard.retranslate(lang)
@@ -232,6 +243,69 @@ class TranslatePage(QStackedWidget):
         drop-zone background marquee. Kept so page-change / theme / retranslate
         callers don't need to special-case it."""
         pass
+
+    def _build_pdf_card(self, lang, config):
+        """PDF-specific options, surfaced only when a PDF is in the selection.
+        Each control reads its initial value from config and writes back to the
+        backend on change; labels/captions are tracked for retranslate()."""
+        card = CardWidget()
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 14, 20, 14)
+        v.setSpacing(10)
+
+        self.pdf_title = StrongBodyLabel(tr("PDF Options", lang))
+        v.addWidget(self.pdf_title)
+
+        # (label_key, hint_key, config_key, attr) for the boolean switches.
+        switch_specs = [
+            ("Translate Tables", "Translate Tables Hint",
+             "pdf_translate_table", "pdf_table_switch"),
+            ("Scanned PDF OCR", "Scanned PDF OCR Hint",
+             "pdf_ocr_scanned", "pdf_ocr_switch"),
+            ("Dual Alternating Pages", "Dual Alternating Hint",
+             "pdf_dual_alternating", "pdf_dual_switch"),
+            ("Only Translated Pages", "Only Translated Pages Hint",
+             "pdf_only_translated_pages", "pdf_only_switch"),
+        ]
+        # Track (label_widget, label_key, caption_widget, hint_key) for retranslate.
+        self._pdf_label_specs = []
+
+        for label_key, hint_key, cfg_key, attr in switch_specs:
+            row = QHBoxLayout()
+            col = QVBoxLayout()
+            col.setSpacing(2)
+            label = BodyLabel(tr(label_key, lang))
+            caption = CaptionLabel(tr(hint_key, lang))
+            caption.setTextColor("#606060", "#a0a0a0")
+            col.addWidget(label)
+            col.addWidget(caption)
+            row.addLayout(col, 1)
+            sw = SwitchButton()
+            sw.setChecked(config.get(cfg_key, False))
+            sw.checkedChanged.connect(
+                lambda val, k=cfg_key: backend.set_config(k, val))
+            setattr(self, attr, sw)
+            row.addWidget(sw)
+            v.addLayout(row)
+            self._pdf_label_specs.append((label, label_key, caption, hint_key))
+
+        # Page range (LineEdit), saved on textChanged.
+        pr_col = QVBoxLayout()
+        pr_col.setSpacing(2)
+        self.pdf_pages_label = BodyLabel(tr("Page Range", lang))
+        self.pdf_pages_caption = CaptionLabel(tr("Page Range Hint", lang))
+        self.pdf_pages_caption.setTextColor("#606060", "#a0a0a0")
+        self.pdf_pages_edit = LineEdit()
+        self.pdf_pages_edit.setPlaceholderText("1-3,5")
+        self.pdf_pages_edit.setText(str(config.get("pdf_pages", "")))
+        self.pdf_pages_edit.textChanged.connect(
+            lambda val: backend.set_config("pdf_pages", val))
+        pr_col.addWidget(self.pdf_pages_label)
+        pr_col.addWidget(self.pdf_pages_caption)
+        pr_col.addWidget(self.pdf_pages_edit)
+        v.addLayout(pr_col)
+
+        return card
 
     # --- helpers ---
     @staticmethod
@@ -305,6 +379,9 @@ class TranslatePage(QStackedWidget):
         self.media_card.setVisible(has_media)
         if has_media and 0 <= self.stt_combo.currentIndex() < len(self._stt_ids):
             self._apply_stt_language_restriction(self._stt_ids[self.stt_combo.currentIndex()])
+        # Show PDF options only when the selection includes a PDF.
+        has_pdf = any(os.path.splitext(p)[1].lower() == ".pdf" for p in paths)
+        self.pdf_card.setVisible(has_pdf)
 
     # --- drag & drop ---
     def dragEnterEvent(self, event):

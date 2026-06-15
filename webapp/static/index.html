@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615n" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615o" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -239,6 +239,32 @@
           <div class="muted" id="media-note"></div>
         </div>
 
+        <!-- PDF options (shown only when a PDF is selected) -->
+        <div class="card pdf-options" id="pdf-options" hidden>
+          <div class="pdf-options-head" data-i18n="PDF Options">PDF 选项</div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-translate-table" /> <span data-i18n="Translate Tables">Translate table text</span></label>
+            <div class="muted" data-i18n="Translate Tables Hint">Translate Tables Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-ocr-scanned" /> <span data-i18n="Scanned PDF OCR">Scanned PDF OCR</span></label>
+            <div class="muted" data-i18n="Scanned PDF OCR Hint">Scanned PDF OCR Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-dual-alternating" /> <span data-i18n="Dual Alternating Pages">Dual Alternating Pages</span></label>
+            <div class="muted" data-i18n="Dual Alternating Hint">Dual Alternating Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="field-label" data-i18n="Page Range" for="pdf-pages">Page Range</label>
+            <input type="text" id="pdf-pages" placeholder="1-3,5" />
+            <div class="muted" data-i18n="Page Range Hint">Page Range Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-only-translated" /> <span data-i18n="Only Translated Pages">Only Translated Pages</span></label>
+            <div class="muted" data-i18n="Only Translated Pages Hint">Only Translated Pages Hint</div>
+          </div>
+        </div>
+
         <div class="actions">
           <button id="translate-btn" class="primary">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
@@ -451,7 +477,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615n"></script>
-  <script src="/static/app.js?v=20260615n"></script>
+  <script src="/static/background.js?v=20260615o"></script>
+  <script src="/static/app.js?v=20260615o"></script>
 </body>
 </html>

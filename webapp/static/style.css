@@ -344,6 +344,18 @@ textarea:-webkit-autofill {
 }
 .check input { width: 17px; height: 17px; accent-color: var(--accent); flex-shrink: 0; }
 
+/* PDF options group (Translate page) */
+.pdf-options { display: flex; flex-direction: column; gap: 12px; }
+.pdf-options-head { font-weight: 600; color: var(--text-2); font-size: 0.92rem; }
+.pdf-opt { display: flex; flex-direction: column; gap: 4px; }
+.pdf-opt .field-label { font-weight: 500; color: var(--text-2); font-size: 0.9rem; padding: 4px 0; }
+.pdf-opt input[type="text"] {
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r);
+  background: var(--surface); color: var(--text); font-size: 0.9rem; max-width: 220px;
+}
+.pdf-opt .muted { margin-left: 27px; }
+.pdf-opt .field-label + input + .muted { margin-left: 0; }
+
 /* drop zone */
 .drop {
   position: relative; overflow: hidden; min-height: 188px;

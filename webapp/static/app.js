@@ -340,6 +340,12 @@ async function boot() {
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
+  // PDF options (Translate page; shown only when a PDF is selected)
+  if ($("pdf-translate-table")) $("pdf-translate-table").checked = !!c.pdf_translate_table;
+  if ($("pdf-ocr-scanned")) $("pdf-ocr-scanned").checked = !!c.pdf_ocr_scanned;
+  if ($("pdf-dual-alternating")) $("pdf-dual-alternating").checked = !!c.pdf_dual_alternating;
+  if ($("pdf-pages")) $("pdf-pages").value = c.pdf_pages || "";
+  if ($("pdf-only-translated")) $("pdf-only-translated").checked = !!c.pdf_only_translated_pages;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   renderModules();
   fillLiveTarget();
@@ -484,6 +490,8 @@ function setFiles(list) {
   const anyMedia = list.some((f) => MEDIA_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
   $("media-options").hidden = !anyMedia;
   if (anyMedia) applySenseVoiceRestriction();
+  const anyPdf = list.some((f) => f.name.split(".").pop().toLowerCase() === "pdf");
+  $("pdf-options").hidden = !anyPdf;
 }
 
 // ----- translate -----
@@ -604,6 +612,12 @@ $("set-lan-admin").onchange = () => {
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
+// PDF options (Translate page) — persisted to config; backend reads them.
+if ($("pdf-translate-table")) $("pdf-translate-table").onchange = () => saveConfig({ pdf_translate_table: $("pdf-translate-table").checked });
+if ($("pdf-ocr-scanned")) $("pdf-ocr-scanned").onchange = () => saveConfig({ pdf_ocr_scanned: $("pdf-ocr-scanned").checked });
+if ($("pdf-dual-alternating")) $("pdf-dual-alternating").onchange = () => saveConfig({ pdf_dual_alternating: $("pdf-dual-alternating").checked });
+if ($("pdf-pages")) $("pdf-pages").onchange = () => saveConfig({ pdf_pages: $("pdf-pages").value.trim() });
+if ($("pdf-only-translated")) $("pdf-only-translated").onchange = () => saveConfig({ pdf_only_translated_pages: $("pdf-only-translated").checked });
 // Per-model key/RPM/thread/retries moved to Interface Management; their old
 // Settings controls were removed.
 
