@@ -225,11 +225,31 @@ class PdfTranslator(DocumentTranslator):
                 return value
         return None
 
+    @staticmethod
+    def _pdf_options():
+        """User-set PDF/BabelDOC options from system_config (all default off)."""
+        try:
+            from core.paths import SYSTEM_CONFIG
+            with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:  # noqa: BLE001
+            cfg = {}
+        return {
+            "table": bool(cfg.get("pdf_translate_table", False)),
+            "ocr": bool(cfg.get("pdf_ocr_scanned", False)),
+            "alternating": bool(cfg.get("pdf_dual_alternating", False)),
+            "pages": (cfg.get("pdf_pages") or "").strip(),
+            "only_translated": bool(cfg.get("pdf_only_translated_pages", False)),
+        }
+
     def _create_babeldoc_config(self, translator):
         os.makedirs(self.babeldoc_working_dir, exist_ok=True)
         os.makedirs(self.result_dir, exist_ok=True)
 
-        return TranslationConfig(
+        opt = self._pdf_options()
+        bilingual = bool(self.word_bilingual_mode)
+
+        kwargs = dict(
             input_file=self.input_file_path,
             translator=translator,
             lang_in=self.src_lang,
@@ -237,18 +257,43 @@ class PdfTranslator(DocumentTranslator):
             output_dir=self.result_dir,
             working_dir=self.babeldoc_working_dir,
             doc_layout_model=self._ensure_layout_model(),
-            no_dual=not self.word_bilingual_mode,
+            no_dual=not bilingual,
             no_mono=False,
             watermark_output_mode=WatermarkOutputMode.NoWatermark,
             # Concurrency: BabelDOC defaults to qps=4, which throttles the
             # whole translation stage; use the user-selected thread count
             qps=max(1, self.num_threads),
             pool_max_workers=max(1, self.num_threads),
-            # Performance: skip stages we don't use
-            skip_scanned_detection=True,
             auto_extract_glossary=False,
             debug=False,
         )
+
+        # Scanned/image PDF: enable OCR (else we skip scan detection for speed).
+        if opt["ocr"]:
+            kwargs["auto_enable_ocr_workaround"] = True
+            kwargs["skip_scanned_detection"] = False
+        else:
+            kwargs["skip_scanned_detection"] = True
+
+        # Table text translation (experimental, slower) — RapidOCR table model.
+        if opt["table"]:
+            try:
+                from babeldoc.docvision.table_detection.rapidocr import RapidOCRModel
+                kwargs["table_model"] = RapidOCRModel()
+            except Exception as e:  # noqa: BLE001
+                app_logger.warning(f"Table model unavailable, skipping table OCR: {e}")
+
+        # Bilingual layout: alternating original/translated pages (vs side-by-side).
+        if bilingual and opt["alternating"]:
+            kwargs["use_alternating_pages_dual"] = True
+
+        # Page range (e.g. "1-3,5") + optionally output only the translated pages.
+        if opt["pages"]:
+            kwargs["pages"] = opt["pages"]
+            if opt["only_translated"]:
+                kwargs["only_include_translated_page"] = True
+
+        return TranslationConfig(**kwargs)
 
     def _make_progress_callback(self, progress_callback):
         """Adapt BabelDOC ProgressMonitor events to the Gradio callback."""
