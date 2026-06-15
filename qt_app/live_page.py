@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
     CardWidget, TextEdit, FluentIcon, InfoBar,
-    InfoBarPosition, ProgressBar, IconWidget,
+    InfoBarPosition, IconWidget,
 )
 
 from core import backend
@@ -106,6 +106,52 @@ def _encode_from_mono_float(samples, sample_format, channels):
     return b""
 
 
+class _Waveform(QWidget):
+    """iOS-style scrolling voice waveform: a fixed row of center-mirrored bars
+    that bounce with the live mic level (green = good, gray = quiet, red = loud).
+    Far more elegant than one long progress line."""
+
+    def __init__(self, parent=None, bars=28):
+        super().__init__(parent)
+        self._n = bars
+        self._levels = [0.0] * bars
+        self.setMinimumHeight(36)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+
+    def push(self, level):
+        self._levels.append(max(0.0, min(1.0, level)))
+        self._levels = self._levels[-self._n:]
+        self.update()
+
+    def clear(self):
+        self._levels = [0.0] * self._n
+        self.update()
+
+    def paintEvent(self, event):
+        from PySide6.QtGui import QPainter, QColor
+        from PySide6.QtCore import Qt, QRectF
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        p.setPen(Qt.NoPen)
+        w, h = self.width(), self.height()
+        n = self._n
+        gap = 4.0
+        bw = max(2.0, (w - gap * (n - 1)) / n)
+        cy = h / 2.0
+        for i, lv in enumerate(self._levels):
+            bh = max(3.0, lv * (h - 6))
+            x = i * (bw + gap)
+            if lv < 0.10:
+                c = QColor("#6b7a90")
+            elif lv < 0.88:
+                c = QColor("#22c55e")
+            else:
+                c = QColor("#ef4444")
+            p.setBrush(c)
+            p.drawRoundedRect(QRectF(x, cy - bh / 2.0, bw, bh), bw / 2.0, bw / 2.0)
+        p.end()
+
+
 class LivePage(ScrollArea):
     def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
@@ -183,11 +229,8 @@ class LivePage(ScrollArea):
         self.mic_icon = IconWidget(FluentIcon.MICROPHONE, self)
         self.mic_icon.setFixedSize(18, 18)
         row2.addWidget(self.mic_icon)
-        self.level_bar = ProgressBar()
-        self.level_bar.setRange(0, 100)
-        self.level_bar.setValue(0)
-        self.level_bar.setFixedHeight(8)
-        row2.addWidget(self.level_bar, 1)
+        self.waveform = _Waveform(self)
+        row2.addWidget(self.waveform, 1)
         # Single round start/stop button (green play -> red stop).
         self.go_btn = QPushButton("▶")
         self.go_btn.setFixedSize(46, 46)
@@ -437,7 +480,7 @@ class LivePage(ScrollArea):
             self._sink = None
             self._play_io = None
         self._reset_vad()
-        self.level_bar.setValue(0)
+        self.waveform.clear()
         self._style_go(False)
         self.target_combo.setEnabled(True)
         self.mode_combo.setEnabled(True)
@@ -473,24 +516,15 @@ class LivePage(ScrollArea):
             self._vad_feed(pcm)
 
     def _update_level(self, pcm):
-        """Drive the mic level bar from the chunk's RMS (visual 'I hear you').
-        Color: too quiet (gray-blue) -> good (green) -> too loud (red)."""
+        """Feed the waveform from the chunk's RMS (visual 'I hear you')."""
         import array
         import math
-        from PySide6.QtGui import QColor
         a = array.array("h")
         a.frombytes(pcm)
         if not a:
             return
         rms = math.sqrt(sum((v / 32768.0) ** 2 for v in a) / len(a))
-        pct = max(0, min(100, int(rms * 280)))
-        color = QColor("#6b7a90") if pct < 10 else (
-            QColor("#22c55e") if pct < 88 else QColor("#ef4444"))
-        try:
-            self.level_bar.setCustomBarColor(color, color)
-        except Exception:  # noqa: BLE001 - older qfluentwidgets
-            pass
-        self.level_bar.setValue(pct)
+        self.waveform.push(min(1.0, rms * 2.8))
 
     # --- local mode: energy VAD over 16k PCM16, dispatch each utterance ---
     def _reset_vad(self):

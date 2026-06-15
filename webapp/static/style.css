@@ -625,7 +625,7 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
   color: var(--text); font-size: 0.9rem; box-shadow: none;
 }
 .live-target-pill select:focus { box-shadow: none; background: transparent; }
-.mic-pill .mic-meter { width: 140px; }
+.mic-wave { width: 220px; height: 34px; display: block; }
 .live-go {
   width: 52px; height: 52px; border-radius: 50%; flex: none; cursor: pointer;
   display: grid; place-items: center; border: none; color: #fff;

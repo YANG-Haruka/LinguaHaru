@@ -767,6 +767,30 @@ let liveAnalyser = null, liveLevelRAF = null;
 
 // Mic level feedback: drive the bar + icon from live mic volume so you can see
 // you're actually being heard (and whether you're loud enough).
+const _WAVE_N = 28;
+let _waveHist = new Array(_WAVE_N).fill(0);
+function _roundRectPath(ctx, x, y, w, h, r) {
+  r = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function _drawWave(ctx, cv) {
+  const w = cv.width, h = cv.height, n = _WAVE_N;
+  ctx.clearRect(0, 0, w, h);
+  const gap = 4, bw = Math.max(2, (w - gap * (n - 1)) / n), cy = h / 2;
+  for (let i = 0; i < n; i++) {
+    const lv = _waveHist[i];
+    const bh = Math.max(3, lv * (h - 6));
+    ctx.fillStyle = lv < 0.10 ? "#6b7a90" : (lv < 0.88 ? "#22c55e" : "#ef4444");
+    _roundRectPath(ctx, i * (bw + gap), cy - bh / 2, bw, bh, bw / 2);
+    ctx.fill();
+  }
+}
 function startMicMeter() {
   if (!liveCtx || !liveSrc) return;
   try {
@@ -775,18 +799,17 @@ function startMicMeter() {
     liveSrc.connect(liveAnalyser);     // tap only; not connected to destination
   } catch (e) { return; }
   const buf = new Float32Array(liveAnalyser.fftSize);
-  const fill = $("mic-level"), icon = $("mic-icon");
+  const cv = $("mic-wave"), ctx = cv && cv.getContext("2d"), icon = $("mic-icon");
+  _waveHist = new Array(_WAVE_N).fill(0);
   const tick = () => {
     if (!liveAnalyser) return;
     liveAnalyser.getFloatTimeDomainData(buf);
     let sum = 0;
     for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-    const rms = Math.sqrt(sum / buf.length);
-    const pct = Math.min(100, Math.round(rms * 280));   // ~speech RMS -> 0..100
-    // Color feedback: too quiet (gray-blue) -> good (green) -> too loud (red).
-    const color = pct < 10 ? "#6b7a90" : (pct < 88 ? "#22c55e" : "#ef4444");
-    if (fill) { fill.style.width = pct + "%"; fill.style.background = color; }
-    if (icon) icon.classList.toggle("speaking", pct >= 10);
+    const lv = Math.min(1, Math.sqrt(sum / buf.length) * 2.8);
+    _waveHist.push(lv); _waveHist.shift();
+    if (ctx) _drawWave(ctx, cv);
+    if (icon) icon.classList.toggle("speaking", lv > 0.10);
     liveLevelRAF = requestAnimationFrame(tick);
   };
   tick();
@@ -796,8 +819,8 @@ function stopMicMeter() {
   liveLevelRAF = null;
   try { if (liveAnalyser) liveAnalyser.disconnect(); } catch (e) { /* */ }
   liveAnalyser = null;
-  const fill = $("mic-level"), icon = $("mic-icon");
-  if (fill) fill.style.width = "0%";
+  const cv = $("mic-wave"), icon = $("mic-icon");
+  if (cv) { const c = cv.getContext("2d"); if (c) c.clearRect(0, 0, cv.width, cv.height); }
   if (icon) icon.classList.remove("speaking");
 }
 
