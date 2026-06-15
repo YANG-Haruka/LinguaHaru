@@ -13,7 +13,7 @@ the small pure-Python helpers below decode/resample/re-encode with the stdlib
 import array
 
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy,
 )
 
 from qfluentwidgets import (
@@ -194,8 +194,9 @@ class LivePage(ScrollArea):
         left_col.addWidget(self.input_header)
         self.input_text = TextEdit()
         self.input_text.setReadOnly(True)
-        self.input_text.setMinimumHeight(260)
-        left_col.addWidget(self.input_text)
+        self.input_text.setMinimumHeight(140)
+        self.input_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        left_col.addWidget(self.input_text, 1)
         panels.addLayout(left_col, 1)
 
         right_col = QVBoxLayout()
@@ -204,12 +205,14 @@ class LivePage(ScrollArea):
         right_col.addWidget(self.output_header)
         self.output_text = TextEdit()
         self.output_text.setReadOnly(True)
-        self.output_text.setMinimumHeight(260)
-        right_col.addWidget(self.output_text)
+        self.output_text.setMinimumHeight(140)
+        self.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        right_col.addWidget(self.output_text, 1)
         panels.addLayout(right_col, 1)
 
-        layout.addLayout(panels)
-        layout.addStretch(1)
+        # stretch=1 so the panels (and their text boxes) grow to fill the window
+        # height; no trailing addStretch (which would pin them to a fixed size).
+        layout.addLayout(panels, 1)
         self._update_hint()
 
     # --- i18n ---
