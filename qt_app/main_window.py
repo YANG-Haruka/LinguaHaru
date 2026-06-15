@@ -162,6 +162,7 @@ class MainWindow(FluentWindow):
         # interface button jumps to Interface Management.
         self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
         self.translate_page.on_open_interface = lambda: self.switchTo(self.interface_page)
+        self.live_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
 
         # Interface-language picker + theme toggle pinned at the bottom of the
         # navigation rail (language above theme).

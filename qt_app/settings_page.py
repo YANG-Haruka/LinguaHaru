@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QF
 
 from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, CaptionLabel,
-    CardWidget, PushButton, LineEdit, FluentIcon, MessageBox,
+    CardWidget, PushButton, LineEdit, FluentIcon, MessageBox, ComboBox,
 )
 
 from core import backend
@@ -108,10 +108,36 @@ class SettingsPage(ScrollArea):
         self.models_list_host = QVBoxLayout()
         self.models_list_host.setSpacing(4)
         mv.addLayout(self.models_list_host)
+        # Speech-to-text engine/model choice (SenseVoice default; Whisper sizes).
+        from core.pipelines.video_translation_pipeline import (
+            STT_MODELS, get_selected_stt_model)
+        self._stt_models = STT_MODELS
+        stt_row = QHBoxLayout()
+        stt_row.setSpacing(8)
+        self.stt_mm_label = BodyLabel(tr("Speech-to-Text Model", self._lang))
+        stt_row.addWidget(self.stt_mm_label)
+        self.stt_mm_combo = ComboBox()
+        for m in STT_MODELS:
+            self.stt_mm_combo.addItem(m["label"])
+        cur = get_selected_stt_model()
+        for i, m in enumerate(STT_MODELS):
+            if m["id"] == cur:
+                self.stt_mm_combo.setCurrentIndex(i)
+                break
+        self.stt_mm_combo.currentIndexChanged.connect(self._on_stt_changed)
+        stt_row.addWidget(self.stt_mm_combo, 1)
+        mv.addLayout(stt_row)
+        self.stt_hint = CaptionLabel(tr("Whisper Hint", self._lang))
+        self.stt_hint.setWordWrap(True)
+        mv.addWidget(self.stt_hint)
         layout.addWidget(models_card)
         self._refresh_models()
 
         layout.addStretch(1)
+
+    def _on_stt_changed(self, index):
+        if 0 <= index < len(self._stt_models):
+            backend.set_config("stt_model", self._stt_models[index]["id"])
 
     def _refresh_models(self):
         self.models_dir_edit.setText(model_store.current_dir())
@@ -172,4 +198,6 @@ class SettingsPage(ScrollArea):
         self.section_models.setText(tr("Model Management", lang))
         self.models_loc_label.setText(tr("Model Location", lang))
         self.models_browse.setText(tr("Change Location", lang))
+        self.stt_mm_label.setText(tr("Speech-to-Text Model", lang))
+        self.stt_hint.setText(tr("Whisper Hint", lang))
         self._refresh_models()

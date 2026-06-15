@@ -120,8 +120,14 @@ function useOnline() {
   return !!(BOOT.config && BOOT.config.default_online);
 }
 
+// Model Management: STT model picker (synced with the translate page via config).
+if ($("models-stt")) $("models-stt").onchange = () => {
+  saveConfig({ stt_model: $("models-stt").value });
+  if ($("stt-model")) $("stt-model").value = $("models-stt").value;
+};
 // Model Management: show the unified download location + downloaded models.
 async function refreshModels() {
+  if ($("models-stt") && BOOT) fillSelect($("models-stt"), BOOT.stt_models, BOOT.config.stt_model);
   if (!$("models-dir")) return;
   try {
     const d = await api("/api/models");
@@ -873,18 +879,28 @@ document.querySelectorAll("#live-mode .seg").forEach((s) => {
 });
 
 // Show a hint when the chosen mode isn't ready (no plugin / no Google key).
+let _liveHintIsPlugin = false;
 async function updateLiveHint() {
   let msg = "";
+  _liveHintIsPlugin = false;
   if (liveMode === "local") {
-    if (!BOOT.local_live_available) msg = "本地模式需要「Video/Audio」插件（SenseVoice）。请前往「插件」安装。";
+    if (!BOOT.local_live_available) {
+      msg = "本地模式需要「语音」插件（SenseVoice）。点此前往「插件」安装。";
+      _liveHintIsPlugin = true;
+    }
   } else {
     const st = await api("/api/apikey?model=" + encodeURIComponent("(Google) Live Translate")).catch(() => ({ has_key: false }));
-    if (!st.has_key) msg = "Google 实时翻译需要 Google API Key。请在「设置」中填写。";
+    if (!st.has_key) msg = "Google 实时翻译需要 Google API Key。请在「接口管理」中填写。";
   }
   $("live-hint-text").textContent = msg;
   $("live-hint").hidden = !msg;
+  $("live-hint").style.cursor = _liveHintIsPlugin ? "pointer" : "default";
   return !msg;  // ready?
 }
+// One-click jump to the Plugins page when the hint is about a missing plugin.
+if ($("live-hint")) $("live-hint").onclick = () => {
+  if (_liveHintIsPlugin) { const t = document.querySelector('.tab[data-tab="modules"]'); if (t) t.click(); }
+};
 
 // One round button toggles start/stop (green play -> red stop).
 $("live-go").onclick = async () => {

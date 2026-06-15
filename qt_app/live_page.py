@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
-    CardWidget, TextEdit, FluentIcon, InfoBar,
+    CardWidget, TextEdit, FluentIcon, InfoBar, PushButton,
     InfoBarPosition, IconWidget,
 )
 
@@ -158,6 +158,7 @@ class LivePage(ScrollArea):
         self.setObjectName("LivePage")
         self._lang = lang
         self._mode = "local"    # "local" (SenseVoice+LLM) | "google" (Gemini Live)
+        self.on_open_plugins = None  # set by MainWindow -> jump to Plugins page
         self._worker = None
         self._preloader = None
         self._local_workers = []
@@ -240,9 +241,16 @@ class LivePage(ScrollArea):
         ctrl.addLayout(row2)
         layout.addWidget(ctrl_card)
 
+        hint_row = QHBoxLayout()
+        hint_row.setSpacing(8)
         self.hint_label = CaptionLabel("")
         self.hint_label.setWordWrap(True)
-        layout.addWidget(self.hint_label)
+        hint_row.addWidget(self.hint_label, 1)
+        self.plugin_btn = PushButton(FluentIcon.APPLICATION, tr("Go to Plugins", lang))
+        self.plugin_btn.clicked.connect(lambda: self.on_open_plugins and self.on_open_plugins())
+        self.plugin_btn.hide()
+        hint_row.addWidget(self.plugin_btn)
+        layout.addLayout(hint_row)
 
         self.status_label = CaptionLabel("")
         layout.addWidget(self.status_label)
@@ -300,6 +308,7 @@ class LivePage(ScrollArea):
         self.input_header.setText(tr("Recognized Speech", lang))
         self.input_sub.setText(tr("Auto Detect", lang))
         self.output_header.setText(tr("Translation Result", lang))
+        self.plugin_btn.setText(tr("Go to Plugins", lang))
         self._refresh_model_sub()
         self._update_hint()
 
@@ -311,13 +320,17 @@ class LivePage(ScrollArea):
     def _update_hint(self):
         """Show a hint when the chosen mode isn't ready (no plugin / no key)."""
         msg = ""
+        need_plugin = False
         if self._mode == "local":
             if not video_translation_available():
                 msg = tr("Local Voice Needs Plugin", self._lang)
+                need_plugin = True
         else:
             if not load_api_key_for_model(_GOOGLE_PROVIDER):
                 msg = tr("Google key not set", self._lang)
         self.hint_label.setText(msg)
+        # Offer a one-click jump to the Plugins page when a plugin is missing.
+        self.plugin_btn.setVisible(need_plugin)
 
     @staticmethod
     def _set_combo(combo, value):

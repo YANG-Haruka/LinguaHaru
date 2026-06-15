@@ -49,7 +49,9 @@ def module_status():
          "detail": "BabelDOC", "install": "pip install -r requirements/pdf.txt"},
         {"name": "Image OCR", "available": image_translation_available(),
          "detail": ocr_engine, "install": "pip install -r requirements/ocr.txt"},
+        # One "Speech" plugin powers BOTH video/audio subtitles AND real-time
+        # voice translation (same STT engines), per the merged-plugin design.
         {"name": "Video/Audio", "available": video_translation_available(),
-         "detail": "faster-whisper / SenseVoice + ffmpeg",
+         "detail": "faster-whisper / SenseVoice + ffmpeg · 视频字幕 + 实时语音",
          "install": "pip install -r requirements/video.txt (+ ffmpeg)"},
     ]
