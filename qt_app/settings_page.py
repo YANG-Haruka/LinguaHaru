@@ -169,6 +169,12 @@ class SettingsPage(ScrollArea):
             lambda idx: backend.set_config("bilingual_color", self._bi_colors[idx][0]))
         self.bi_color_label = BodyLabel(tr("Translation Color", lang))
         gl_form.addRow(self.bi_color_label, self.bi_color)
+        self.live_stream = SwitchButton()
+        self.live_stream.setChecked(config.get("live_stream_translation", False))
+        self.live_stream.checkedChanged.connect(
+            lambda v: backend.set_config("live_stream_translation", v))
+        self.live_stream_label = BodyLabel(tr("Stream Translation", lang))
+        gl_form.addRow(self.live_stream_label, self.live_stream)
         self.card_options.body.addLayout(gl_form)
 
         # --- Card 3: Data & Storage (output folder + history retention/clear) ---
@@ -437,6 +443,7 @@ class SettingsPage(ScrollArea):
         self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))
         self.bi_bold_label.setText(tr("Bilingual Bold", lang))
         self.bi_color_label.setText(tr("Translation Color", lang))
+        self.live_stream_label.setText(tr("Stream Translation", lang))
         self.card_data.set_title(tr("Data & Storage", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))

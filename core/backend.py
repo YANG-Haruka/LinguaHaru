@@ -183,6 +183,8 @@ _DEFAULT_CONFIG = {
     # original. color is a hex without '#' ("" = no color). Subtitles (srt/vtt).
     "bilingual_bold": True,
     "bilingual_color": "",
+    # Live captions: stream the translation token-by-token (online only). Opt-in.
+    "live_stream_translation": False,
 }
 
 

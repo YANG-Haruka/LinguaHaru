@@ -178,6 +178,7 @@ def bootstrap():
             "dedup_context": config.get("dedup_context", False),
             "bilingual_bold": config.get("bilingual_bold", True),
             "bilingual_color": config.get("bilingual_color", ""),
+            "live_stream_translation": config.get("live_stream_translation", False),
             "pdf_translate_table": config.get("pdf_translate_table", False),
             "pdf_ocr_scanned": config.get("pdf_ocr_scanned", False),
             "pdf_dual_alternating": config.get("pdf_dual_alternating", False),
@@ -214,7 +215,7 @@ async def update_config(payload: dict):
                "default_dst_lang", "default_glossary", "stt_model", "ocr_model_size",
                "translate_subtitles", "max_retries", "rpm_limit",
                "auto_extract_glossary", "mask_placeholders", "dedup_context",
-               "bilingual_bold", "bilingual_color",
+               "bilingual_bold", "bilingual_color", "live_stream_translation",
                "lan_mode",
                "result_dir", "history_max_records", "history_max_age_days",
                "default_thread_count_online", "default_thread_count_offline",
@@ -955,6 +956,35 @@ async def live_translate_text(payload: dict):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Translate failed: {e}")
     return {"translated": translated if ok else ""}
+
+
+@app.post("/api/live-translate-stream")
+def live_translate_stream(payload: dict):
+    """Stream a live-caption translation token-by-token (SSE). Each event is a
+    JSON-encoded cumulative string; ends with [DONE]. Online-only; the generator
+    falls back to a single chunk offline/on failure."""
+    import json as _json
+    from fastapi.responses import StreamingResponse
+    source = (payload.get("source") or "").strip()
+    dst_lang = payload.get("dst_lang", "en")
+    src_code = payload.get("src_lang") or "auto"
+    cfg = backend.read_config()
+    use_online = bool(cfg.get("default_online", True))
+    model = backend.get_active_model(use_online=use_online)
+    api_key = (load_api_key_for_model(model)
+               or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
+
+    def gen():
+        if source:
+            from core.llm.llm_wrapper import translate_text_simple_stream
+            try:
+                for partial in translate_text_simple_stream(
+                        source, src_code, dst_lang, model, use_online, api_key):
+                    yield f"data: {_json.dumps(partial)}\n\n"
+            except Exception:  # noqa: BLE001
+                yield f"data: {_json.dumps('')}\n\n"
+        yield "data: [DONE]\n\n"
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 @app.post("/api/live-save-history")

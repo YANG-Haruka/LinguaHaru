@@ -366,6 +366,7 @@ async function boot() {
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
   if ($("set-bi-bold")) $("set-bi-bold").checked = c.bilingual_bold !== false;
   if ($("set-bi-color")) $("set-bi-color").value = c.bilingual_color || "";
+  if ($("set-live-stream")) $("set-live-stream").checked = !!c.live_stream_translation;
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
@@ -644,6 +645,11 @@ if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeh
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
 if ($("set-bi-bold")) $("set-bi-bold").onchange = () => saveConfig({ bilingual_bold: $("set-bi-bold").checked });
 if ($("set-bi-color")) $("set-bi-color").onchange = () => saveConfig({ bilingual_color: $("set-bi-color").value });
+if ($("set-live-stream")) $("set-live-stream").onchange = () => {
+  const v = $("set-live-stream").checked;
+  if (BOOT.config) BOOT.config.live_stream_translation = v;   // applies without reload
+  saveConfig({ live_stream_translation: v });
+};
 if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
 if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
   $("settings-status").textContent = "正在打开文件夹选择器…（窗口可能在后台）";
@@ -1393,19 +1399,63 @@ async function finalizeUtterance(int16) {
   liveEmitted = 0; pipInterim = ""; updatePipCaption();
   if (liveRunning) setLiveStatus(liveListenMsg());
 }
-// Finalize one sentence: show the source line now, then translate it.
-async function commitLiveSentence(source) {
+// Finalize one sentence: show the source line now, then translate it. Commits
+// are serialized through a promise chain so the optional stream mode can safely
+// grow the last output line without races between overlapping sentences.
+let liveCommitChain = Promise.resolve();
+function commitLiveSentence(source) {
   source = (source || "").trim();
   if (!source) return;
+  liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source));
+  return liveCommitChain;
+}
+async function _doCommitSentence(source) {
   const ts = liveTimeStamp();
   appendLive("live-input", `[${ts}] ${source}\n`);
+  const streaming = !!(BOOT.config && BOOT.config.live_stream_translation);
+  const dst = $("live-target").value;
+  if (!streaming) {
+    try {
+      const t = await api("/api/live-translate-text", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst }) });
+      if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`);
+    } catch (e) { /* leave source line; translation failed */ }
+    return;
+  }
+  // Stream mode: grow the last output line + a PiP entry token-by-token.
+  const out = $("live-output");
+  const start = out.textContent.length;
+  out.textContent += `[${ts}] \n`;
+  const entry = { src: source, dst: "" };
+  pipEntries.push(entry);
+  if (pipEntries.length > PIP_MAX) pipEntries.splice(0, pipEntries.length - PIP_MAX);
+  const paint = (txt) => {
+    out.textContent = out.textContent.slice(0, start) + `[${ts}] ${txt}\n`;
+    out.scrollTop = out.scrollHeight;
+    entry.dst = txt; updatePipCaption();
+  };
   try {
-    const t = await api("/api/live-translate-text", {
+    const resp = await fetch("/api/live-translate-stream", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto",
-        dst_lang: $("live-target").value }) });
-    if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`);
-  } catch (e) { /* leave source line; translation failed */ }
+      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst }) });
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const parts = buf.split("\n\n"); buf = parts.pop();
+      for (const p of parts) {
+        const i = p.indexOf("data: "); if (i < 0) continue;
+        const d = p.slice(i + 6);
+        if (d === "[DONE]") continue;
+        let txt; try { txt = JSON.parse(d); } catch (e) { continue; }
+        paint(txt);
+      }
+    }
+  } catch (e) { /* leave whatever streamed */ }
 }
 
 function downsamplePCM16(input, srcRate) {

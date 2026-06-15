@@ -29,7 +29,8 @@ from qfluentwidgets import (
 from core import backend
 from qt_app.i18n import tr
 from qt_app.live_worker import (
-    LiveWorker, LiveRecognizeWorker, LiveTranslateWorker, PreloadWorker)
+    LiveWorker, LiveRecognizeWorker, LiveTranslateWorker,
+    LiveTranslateStreamWorker, PreloadWorker)
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP
 from core.optional_modules import video_translation_available
@@ -473,6 +474,7 @@ class LivePage(ScrollArea):
         self._recog_busy = False        # one STT worker in flight at a time
         self._recog_pending = None      # (pcm, is_final) — latest-wins while busy
         self._stream_detected = "auto"
+        self._stream_text = {}          # ts -> cumulative streamed translation
 
         self.setWidgetResizable(True)
         self.enableTransparentBackground()
@@ -1183,6 +1185,19 @@ class LivePage(ScrollArea):
         model = backend.get_active_model(online)
         api_key = load_api_key_for_model(model) if online else ""
         dst = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
+        if online and backend.get_config("live_stream_translation", False):
+            # Stream mode: append a placeholder line and grow it token-by-token.
+            self.output_text.insertPlainText(f"[{ts}] \n")
+            self.output_text.ensureCursorVisible()
+            self._stream_text[ts] = ""
+            w = LiveTranslateStreamWorker(ts, source, self._stream_detected, dst,
+                                          model, online, api_key)
+            w.chunk.connect(self._on_stream_chunk)
+            w.done.connect(self._on_stream_done)
+            w.finished.connect(lambda w=w: self._retire_local(w))
+            self._local_workers.append(w)
+            w.start()
+            return
         w = LiveTranslateWorker(ts, source, self._stream_detected, dst, model,
                                 online, api_key)
         w.done.connect(self._on_translated_stream)
@@ -1195,6 +1210,29 @@ class LivePage(ScrollArea):
             self.output_text.insertPlainText(f"[{ts}] {translated}\n")
             self.output_text.ensureCursorVisible()
             self._push_caption(translated=translated)
+
+    def _set_out_line_for_ts(self, ts, text):
+        pre = f"[{ts}] "
+        lines = self.output_text.toPlainText().split("\n")
+        for i, l in enumerate(lines):
+            if l.startswith(pre):
+                lines[i] = pre + text
+                break
+        self.output_text.setPlainText("\n".join(lines))
+        from PySide6.QtGui import QTextCursor
+        self.output_text.moveCursor(QTextCursor.End)
+        self.output_text.ensureCursorVisible()
+
+    def _on_stream_chunk(self, ts, text):
+        self._stream_text[ts] = text
+        self._set_out_line_for_ts(ts, text)
+        self._set_caption_interim(text)        # show the growing translation live
+
+    def _on_stream_done(self, ts):
+        final = self._stream_text.pop(ts, "")
+        if final:
+            self._push_caption(translated=final)
+        self._set_caption_interim("")
 
     def _play_audio(self, data):
         if self._play_io is None:
