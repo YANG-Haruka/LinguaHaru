@@ -734,14 +734,27 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
 }
 
 /* ============================ quick translate ============================ */
-.quick-pane { display: flex; flex-direction: column; gap: 10px; }
+/* The quick panel is the primary "翻译" page: make it fill the viewport height
+   so the input/output boxes grow as tall as the layout allows. */
+.panel[data-panel="quick"].active {
+  display: flex; flex-direction: column;
+  min-height: calc(100vh - 118px);
+}
+/* Quick (翻译) page fills the whole content width + height — overrides the
+   narrow reading-width cap applied to .panel > * so the boxes auto-adapt to the
+   window instead of sitting in a centered 1060px column. */
+.panel[data-panel="quick"] > * { max-width: none; margin-left: 0; margin-right: 0; }
+.panel[data-panel="quick"] .quick-split {
+  flex: 1; min-height: 0; align-items: stretch;
+}
+.quick-pane { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .quick-area {
-  min-height: 220px; max-height: 420px; overflow-y: auto;
+  flex: 1; min-height: 240px; overflow-y: auto;
   font-size: 1.05rem; line-height: 1.7; color: var(--text);
   white-space: pre-wrap; word-break: break-word;
 }
 textarea.quick-area {
-  width: 100%; resize: vertical; border: none; background: transparent;
+  width: 100%; resize: none; border: none; background: transparent;
   font-family: inherit; padding: 0; box-shadow: none;
 }
 textarea.quick-area:focus { outline: none; box-shadow: none; }
@@ -773,6 +786,29 @@ textarea.quick-area:focus { outline: none; box-shadow: none; }
 .quick-history-item .qh-arrow { color: var(--faint); margin: 0 6px; }
 .quick-history-item .qh-dst { color: var(--muted); }
 .quick-history-empty { color: var(--faint); font-size: 0.84rem; font-family: var(--font-mono); }
+
+/* Collapsible history: a <details> whose <summary> shows only the most-recent
+   entry; expanding reveals the full list + the clear button. */
+.quick-history-box {
+  flex: none; margin-top: 4px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 12px 16px;
+}
+.quick-history-head {
+  display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+}
+.quick-history-head::-webkit-details-marker { display: none; }
+.qh-chevron { width: 16px; height: 16px; flex: none; color: var(--muted); transition: transform .2s; }
+.quick-history-box[open] .qh-chevron { transform: rotate(90deg); }
+.qh-head-label { font-weight: 600; font-size: 0.92rem; color: var(--text); flex: none; }
+.quick-history-recent { flex: 1; min-width: 0; overflow: hidden; }
+.quick-history-recent .quick-history-item {
+  padding: 4px 0; border: none; background: transparent;
+  white-space: nowrap; text-overflow: ellipsis; overflow: hidden;
+}
+.quick-history-recent .quick-history-item:hover { border: none; }
+.quick-history-recent .quick-history-empty { padding: 4px 0; }
+.quick-history-body { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 
 /* ============================ segmented toggle ============================ */
 .segmented {

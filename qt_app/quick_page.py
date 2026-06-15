@@ -1,16 +1,21 @@
 """Quick Translate page: a Google-Translate-style short-text translator.
 
-A lightweight companion to the file-based Translate page. The user types (or
-speaks) a short text, picks source/target languages, and gets an instant
-translation via the ACTIVE interface (same model resolution as document/voice
-translation). Recent translations are remembered (<=10) and click-to-reload.
+This is the app's PRIMARY "翻译" page (the file-based view is "文件翻译"). The
+user types (or speaks) a short text, picks source/target languages, and gets an
+instant translation via the ACTIVE interface (same model resolution as
+document/voice translation). Recent translations are remembered (<=50) and
+click-to-reload.
 
-Text translation always works (no optional deps). Voice input reuses the
-Real-Time Voice plugin: when unavailable the mic is disabled with a hint and a
-one-click jump to the Plugins page (mirrors live_page).
+Text translation always works (no optional deps). Voice input AND read-aloud
+both need the "翻译语音输入" plugin (STT + edge-tts); when it is unavailable both
+the mic and speaker buttons are disabled with a hint and a one-click jump to the
+Plugins page (mirrors live_page). Voice input uses the QUICK STT model.
 """
 
-from PySide6.QtCore import Qt, QEvent
+import os
+import tempfile
+
+from PySide6.QtCore import Qt, QEvent, QUrl
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QListWidgetItem,
@@ -19,13 +24,14 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
     CardWidget, PlainTextEdit, TextEdit, PushButton, PrimaryPushButton,
-    ToolButton, FluentIcon, InfoBar, InfoBarPosition, ListWidget,
+    ToolButton, TransparentToolButton, FluentIcon, InfoBar, InfoBarPosition,
+    ListWidget,
 )
 
 from core import backend
 from core import quick_translate
 from qt_app.i18n import tr
-from qt_app.worker import QuickTranslateWorker
+from qt_app.worker import QuickTranslateWorker, TtsWorker
 
 _IN_RATE = 16000  # SenseVoice / mic input sample rate
 
@@ -36,6 +42,10 @@ class QuickPage(ScrollArea):
         self.setObjectName("QuickPage")
         self._lang = lang
         self._worker = None
+        self._tts = None
+        self._player = None
+        self._audio_out = None
+        self._tts_path = None
         self.on_open_plugins = None  # set by MainWindow -> jump to Plugins page
 
         # voice capture state (reuses live_page's QAudioSource approach)
@@ -56,7 +66,7 @@ class QuickPage(ScrollArea):
         layout.setSpacing(14)
 
         # --- page head ---
-        self.title = TitleLabel(tr("Quick Translate", lang))
+        self.title = TitleLabel(tr("Translate", lang))
         layout.addWidget(self.title)
         self.subtitle = CaptionLabel(tr("Quick Translate Subtitle", lang))
         self.subtitle.setWordWrap(True)
@@ -93,7 +103,7 @@ class QuickPage(ScrollArea):
         left.setSpacing(8)
         self.input_text = PlainTextEdit()
         self.input_text.setPlaceholderText(tr("Enter Text", lang))
-        self.input_text.setMinimumHeight(160)
+        self.input_text.setMinimumHeight(220)
         self.input_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.input_text.installEventFilter(self)
         left.addWidget(self.input_text, 1)
@@ -115,20 +125,26 @@ class QuickPage(ScrollArea):
         right.setSpacing(8)
         self.output_text = TextEdit()
         self.output_text.setReadOnly(True)
-        self.output_text.setMinimumHeight(160)
+        self.output_text.setMinimumHeight(220)
         self.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right.addWidget(self.output_text, 1)
         right_bottom = QHBoxLayout()
         right_bottom.addStretch(1)
+        self.speak_btn = ToolButton(FluentIcon.VOLUME)
+        self.speak_btn.setToolTip(tr("Read Aloud", lang))
+        self.speak_btn.clicked.connect(self.on_read_aloud)
+        right_bottom.addWidget(self.speak_btn)
         self.copy_btn = PushButton(FluentIcon.COPY, tr("Copy", lang))
         self.copy_btn.clicked.connect(self.on_copy)
         right_bottom.addWidget(self.copy_btn)
         right.addLayout(right_bottom)
         panes.addWidget(right_card, 1)
 
+        # Give the panes the lion's share of the vertical space so the boxes are
+        # as large as the layout allows (history is collapsed by default).
         layout.addLayout(panes, 1)
 
-        # --- voice hint + jump-to-plugins (shown only when STT unavailable) ---
+        # --- voice hint + jump-to-plugins (shown only when voice unavailable) ---
         hint_row = QHBoxLayout()
         hint_row.setSpacing(8)
         self.voice_hint = CaptionLabel("")
@@ -140,37 +156,64 @@ class QuickPage(ScrollArea):
         hint_row.addWidget(self.plugin_btn)
         layout.addLayout(hint_row)
 
-        # --- history ---
+        # --- collapsible history ---
+        # Header: a clickable chevron + "History" label toggles the full list.
         hist_head = QHBoxLayout()
+        hist_head.setSpacing(6)
+        self.hist_toggle_btn = TransparentToolButton(FluentIcon.CHEVRON_RIGHT)
+        self.hist_toggle_btn.clicked.connect(self._toggle_history)
+        hist_head.addWidget(self.hist_toggle_btn)
         self.history_title = StrongBodyLabel(tr("History", lang))
-        hist_head.addWidget(self.history_title, 1)
-        self.clear_btn = PushButton(FluentIcon.DELETE, tr("Clear History", lang))
-        self.clear_btn.clicked.connect(self.on_clear_history)
-        hist_head.addWidget(self.clear_btn)
+        self.history_title.installEventFilter(self)  # click the label to toggle too
+        hist_head.addWidget(self.history_title)
+        hist_head.addStretch(1)
         layout.addLayout(hist_head)
 
+        # Collapsed view: just the single most-recent entry (click to reload).
+        self.latest_label = BodyLabel("")
+        self.latest_label.setWordWrap(True)
+        self.latest_label.setCursor(Qt.PointingHandCursor)
+        self.latest_label.installEventFilter(self)
+        layout.addWidget(self.latest_label)
+
+        # Expanded view: the full list (up to 50) + a Clear button. Hidden until
+        # the user expands the section.
         self.history_list = ListWidget()
-        self.history_list.setMinimumHeight(120)
+        self.history_list.setMinimumHeight(160)
         self.history_list.itemClicked.connect(self._on_history_clicked)
+        self.history_list.hide()
         layout.addWidget(self.history_list)
 
+        clear_row = QHBoxLayout()
+        clear_row.addStretch(1)
+        self.clear_btn = PushButton(FluentIcon.DELETE, tr("Clear History", lang))
+        self.clear_btn.clicked.connect(self.on_clear_history)
+        clear_row.addWidget(self.clear_btn)
+        self.clear_row_host = QWidget()
+        self.clear_row_host.setLayout(clear_row)
+        self.clear_row_host.hide()
+        layout.addWidget(self.clear_row_host)
+
+        self._history_expanded = False
         self._update_voice_availability()
         self.reload_history()
 
     # --- i18n ---
     def retranslate(self, lang):
         self._lang = lang
-        self.title.setText(tr("Quick Translate", lang))
+        self.title.setText(tr("Translate", lang))
         self.subtitle.setText(tr("Quick Translate Subtitle", lang))
         self.src_combo.setItemText(0, tr("Auto Detect", lang))
         self.input_text.setPlaceholderText(tr("Enter Text", lang))
         self.input_hint.setText(tr("Enter To Translate", lang))
         self.mic_btn.setToolTip(tr("Voice Input", lang))
+        self.speak_btn.setToolTip(tr("Read Aloud", lang))
         self.copy_btn.setText(tr("Copy", lang))
         self.plugin_btn.setText(tr("Go to Plugins", lang))
         self.history_title.setText(tr("History", lang))
         self.clear_btn.setText(tr("Clear History", lang))
         self._update_voice_availability()
+        self.reload_history()
 
     # --- helpers ---
     @staticmethod
@@ -192,12 +235,13 @@ class QuickPage(ScrollArea):
         super().showEvent(event)
 
     def hideEvent(self, event):
-        # Leaving the page must not keep the mic hot.
+        # Leaving the page must not keep the mic hot or audio playing.
         if self._source is not None:
             self._stop_recording(dispatch=False)
+        self._stop_playback()
         super().hideEvent(event)
 
-    # --- Enter-to-translate ---
+    # --- Enter-to-translate + click-to-toggle/reload via event filter ---
     def eventFilter(self, obj, event):
         # ScrollArea's base __init__ installs filters before our widgets exist.
         if obj is getattr(self, "input_text", None) and event.type() == QEvent.KeyPress:
@@ -207,6 +251,16 @@ class QuickPage(ScrollArea):
                     return False  # Shift+Enter -> newline (default behavior)
                 self.on_translate()
                 return True       # Enter -> translate (swallow the newline)
+        # Click the section header label to expand/collapse.
+        if obj is getattr(self, "history_title", None) and event.type() == QEvent.MouseButtonRelease:
+            self._toggle_history()
+            return True
+        # Click the collapsed "latest" entry to reload it.
+        if obj is getattr(self, "latest_label", None) and event.type() == QEvent.MouseButtonRelease:
+            items = quick_translate.get_history()
+            if items:
+                self._load_entry(items[0])
+            return True
         return super().eventFilter(obj, event)
 
     # --- translate ---
@@ -259,21 +313,105 @@ class QuickPage(ScrollArea):
         QGuiApplication.clipboard().setText(text)
         self._info(tr("Copied", self._lang), error=False)
 
-    # --- history ---
+    # --- read aloud (TTS off the UI thread, then play the mp3) ---
+    def on_read_aloud(self):
+        from core.optional_modules import quick_voice_available
+        if not quick_voice_available():
+            self._info(tr("Voice Needs Plugin", self._lang), error=True)
+            return
+        text = self.output_text.toPlainText().strip()
+        if not text:
+            return
+        if self._tts is not None and self._tts.isRunning():
+            return
+        self.speak_btn.setEnabled(False)
+        # Synthesize the OUTPUT text in the TARGET language.
+        self._tts = TtsWorker(text, self.dst_combo.currentText())
+        self._tts.done.connect(self._on_tts_done)
+        self._tts.start()
+
+    def _on_tts_done(self, audio):
+        self.speak_btn.setEnabled(True)
+        if not audio:
+            self._info(tr("Voice Needs Plugin", self._lang), error=True)
+            return
+        self._play_mp3(audio)
+
+    def _play_mp3(self, audio):
+        """Write the mp3 bytes to a temp file and play via Qt's multimedia
+        backend (ffmpeg). The player/output are kept alive on self."""
+        try:
+            from PySide6.QtMultimedia import QMediaPlayer, QAudioOutput
+        except Exception as e:  # noqa: BLE001
+            self._info(f"QtMultimedia unavailable: {e}", error=True)
+            return
+        self._stop_playback()
+        try:
+            fd, path = tempfile.mkstemp(suffix=".mp3", prefix="lh_tts_")
+            with os.fdopen(fd, "wb") as f:
+                f.write(audio)
+        except Exception as e:  # noqa: BLE001
+            self._info(f"Audio write failed: {e}", error=True)
+            return
+        self._tts_path = path
+        self._audio_out = QAudioOutput()
+        self._player = QMediaPlayer()
+        self._player.setAudioOutput(self._audio_out)
+        self._player.setSource(QUrl.fromLocalFile(path))
+        self._player.play()
+
+    def _stop_playback(self):
+        if self._player is not None:
+            try:
+                self._player.stop()
+            except Exception:  # noqa: BLE001
+                pass
+            self._player = None
+            self._audio_out = None
+        if self._tts_path and os.path.exists(self._tts_path):
+            try:
+                os.remove(self._tts_path)
+            except Exception:  # noqa: BLE001 - temp file removal is best-effort
+                pass
+        self._tts_path = None
+
+    # --- history (collapsible) ---
+    def _toggle_history(self):
+        self._history_expanded = not self._history_expanded
+        self._apply_history_visibility()
+
+    def _apply_history_visibility(self):
+        expanded = self._history_expanded
+        self.hist_toggle_btn.setIcon(
+            FluentIcon.CHEVRON_DOWN_MED if expanded else FluentIcon.CHEVRON_RIGHT_MED)
+        self.history_list.setVisible(expanded)
+        self.clear_row_host.setVisible(expanded)
+        # In the collapsed state show only the single most-recent entry.
+        self.latest_label.setVisible(not expanded)
+
     def reload_history(self):
+        items = quick_translate.get_history()
+        # Collapsed view: the single most-recent entry.
+        self.latest_label.setText(self._entry_text(items[0]) if items else "")
+        # Expanded view: the full list.
         self.history_list.clear()
-        for it in quick_translate.get_history():
-            src = (it.get("src") or "").replace("\n", " ")
-            tgt = (it.get("translated") or "").replace("\n", " ")
-            text = f"{src}  →  {tgt}"
-            if len(text) > 90:
-                text = text[:89] + "…"
-            item = QListWidgetItem(text)
+        for it in items:
+            item = QListWidgetItem(self._entry_text(it))
             item.setData(Qt.UserRole, it)
             self.history_list.addItem(item)
+        self._apply_history_visibility()
+
+    @staticmethod
+    def _entry_text(it):
+        src = (it.get("src") or "").replace("\n", " ")
+        tgt = (it.get("translated") or "").replace("\n", " ")
+        text = f"{src}  →  {tgt}"
+        return text[:89] + "…" if len(text) > 90 else text
 
     def _on_history_clicked(self, item):
-        it = item.data(Qt.UserRole) or {}
+        self._load_entry(item.data(Qt.UserRole) or {})
+
+    def _load_entry(self, it):
         # Restore languages.
         src_lang = it.get("src_lang", "auto")
         idx = self.src_combo.findData(src_lang)
@@ -292,14 +430,20 @@ class QuickPage(ScrollArea):
 
     # --- voice input (reuses live_page's QAudioSource + recognize_utterance) ---
     def _update_voice_availability(self):
-        from core.optional_modules import realtime_voice_available
-        available = realtime_voice_available()
+        from core.optional_modules import quick_voice_available
+        available = quick_voice_available()
+        # Gate BOTH the mic and the read-aloud speaker on the single plugin.
         self.mic_btn.setEnabled(available or self._source is not None)
+        self.speak_btn.setEnabled(available)
         if available:
+            self.mic_btn.setToolTip(tr("Voice Input", self._lang))
+            self.speak_btn.setToolTip(tr("Read Aloud", self._lang))
             self.voice_hint.setText("")
             self.plugin_btn.hide()
         else:
-            self.voice_hint.setText(tr("Local Voice Needs Plugin", self._lang))
+            self.mic_btn.setToolTip(tr("Voice Needs Plugin", self._lang))
+            self.speak_btn.setToolTip(tr("Voice Needs Plugin", self._lang))
+            self.voice_hint.setText(tr("Voice Needs Plugin", self._lang))
             self.plugin_btn.show()
 
     def on_mic(self):
@@ -309,9 +453,9 @@ class QuickPage(ScrollArea):
             self._start_recording()
 
     def _start_recording(self):
-        from core.optional_modules import realtime_voice_available
-        if not realtime_voice_available():
-            self._info(tr("Local Voice Needs Plugin", self._lang), error=True)
+        from core.optional_modules import quick_voice_available
+        if not quick_voice_available():
+            self._info(tr("Voice Needs Plugin", self._lang), error=True)
             return
         try:
             from PySide6.QtMultimedia import (
@@ -386,7 +530,7 @@ class QuickPage(ScrollArea):
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
-        bar(tr("Quick Translate", self._lang), text, orient=1, isClosable=True,
+        bar(tr("Translate", self._lang), text, orient=1, isClosable=True,
             position=InfoBarPosition.TOP, duration=2500, parent=self)
 
 
@@ -395,7 +539,8 @@ from PySide6.QtCore import QThread, Signal
 
 class _RecognizeWorker(QThread):
     """Recognize one captured utterance off the UI thread (STT is blocking and
-    funasr is not thread-safe; serialized via live_worker._STT_LOCK)."""
+    funasr is not thread-safe; serialized via live_worker._STT_LOCK). Uses the
+    QUICK STT model selection."""
     done = Signal(str)
 
     def __init__(self, pcm_bytes, sample_rate, parent=None):
@@ -405,10 +550,13 @@ class _RecognizeWorker(QThread):
 
     def run(self):
         try:
-            from core.pipelines.video_translation_pipeline import recognize_utterance
+            from core.pipelines.video_translation_pipeline import (
+                recognize_utterance, get_selected_quick_stt_model)
             from qt_app.live_worker import _STT_LOCK
             with _STT_LOCK:
-                text, _detected = recognize_utterance(self._pcm, sample_rate=self._sr)
+                text, _detected = recognize_utterance(
+                    self._pcm, sample_rate=self._sr,
+                    model_id=get_selected_quick_stt_model())
             self.done.emit(text or "")
         except Exception:  # noqa: BLE001 - a failed recognition just yields nothing
             self.done.emit("")

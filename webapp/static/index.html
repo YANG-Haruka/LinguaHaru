@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615q" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615s" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -45,13 +45,13 @@
       </div>
 
       <div class="nav-group">
-        <button class="tab active" data-tab="translate" title="翻译">
+        <button class="tab active" data-tab="quick" title="翻译">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18"/><path d="M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg></span>
           <span data-i18n="Translate">翻译</span>
         </button>
-        <button class="tab" data-tab="quick" title="速译">
-          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12z"/></svg></span>
-          <span data-i18n="Quick Translate">速译</span>
+        <button class="tab" data-tab="translate" title="文件翻译">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l2-2h5l2 2h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg></span>
+          <span data-i18n="File Translation">文件翻译</span>
         </button>
         <button class="tab" data-tab="live" title="实时语音">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></span>
@@ -186,10 +186,10 @@
     </div>
 
     <!-- Translate (document; live voice is its own nav item) -->
-    <section class="panel active" data-panel="translate">
+    <section class="panel" data-panel="translate">
       <div class="page-head">
         <div class="kicker mono">Translate</div>
-        <h2 data-i18n="Translate">翻译</h2>
+        <h2 data-i18n="File Translation">文件翻译</h2>
         <p data-i18n="Translate Page Subtitle">上传文档、字幕、表格或媒体一键翻译，或对着麦克风实时口译 —— 都在这一页。</p>
       </div>
 
@@ -372,10 +372,10 @@
     </section>
 
     <!-- Quick Translate (Google-Translate-style text box) -->
-    <section class="panel" data-panel="quick">
+    <section class="panel active" data-panel="quick">
       <div class="page-head">
         <div class="kicker mono">Quick</div>
-        <h2 data-i18n="Quick Translate">速译</h2>
+        <h2 data-i18n="Translate">翻译</h2>
         <p data-i18n="Quick Translate Subtitle">输入文字即时翻译，按回车翻译，Shift+回车换行。</p>
       </div>
 
@@ -407,18 +407,27 @@
           <div id="quick-output" class="quick-area quick-output"></div>
           <div class="quick-foot">
             <span class="muted" id="quick-status"></span>
+            <button id="quick-speak" class="quick-mic" data-i18n-title="Read Aloud" title="朗读">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            </button>
             <button id="quick-copy" class="quick-mic" data-i18n="Copy">复制</button>
           </div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="actions" style="margin-bottom:10px">
-          <h3 style="margin:0;flex:1" data-i18n="History">历史记录</h3>
-          <button id="quick-clear" data-i18n="Clear History">清除历史</button>
+      <details id="quick-history" class="quick-history-box">
+        <summary class="quick-history-head">
+          <svg class="qh-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          <span class="qh-head-label" data-i18n="History">历史记录</span>
+          <div id="quick-history-recent" class="quick-history-recent"></div>
+        </summary>
+        <div class="quick-history-body">
+          <div class="actions" style="margin-bottom:10px;justify-content:flex-end">
+            <button id="quick-clear" data-i18n="Clear History">清除历史</button>
+          </div>
+          <div id="quick-history-list" class="quick-history"></div>
         </div>
-        <div id="quick-history-list" class="quick-history"></div>
-      </div>
+      </details>
     </section>
 
     <!-- Glossary -->
@@ -545,7 +554,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615q"></script>
-  <script src="/static/app.js?v=20260615q"></script>
+  <script src="/static/background.js?v=20260615s"></script>
+  <script src="/static/app.js?v=20260615s"></script>
 </body>
 </html>

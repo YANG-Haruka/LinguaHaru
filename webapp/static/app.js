@@ -1310,14 +1310,22 @@ function initQuick() {
   $("quick-copy").onclick = quickCopy;
   $("quick-clear").onclick = quickClearHistory;
   $("quick-mic").onclick = quickMic;
+  $("quick-speak").onclick = quickSpeak;
 
-  // Mic is only usable when the local STT (SenseVoice) plugin is available.
-  // When it isn't, keep the button clickable but visibly dimmed + a hint, and
-  // make a click jump to the Plugins page (quickMic handles the redirect).
-  if (!BOOT.local_live_available) {
-    const mic = $("quick-mic");
-    mic.title = "语音输入需要「语音」插件（SenseVoice），点此前往「插件」安装。";
-    mic.classList.add("quick-mic-off");
+  // Voice (mic input + read-aloud) is only usable when the 翻译语音输入 plugin
+  // is installed. When it isn't, keep the buttons clickable but visibly dimmed
+  // with a tooltip; a click jumps to the Plugins page (the handlers redirect).
+  if (!BOOT.quick_voice_available) {
+    const hint = _label("Voice Needs Plugin", "语音 / 朗读需要安装语音输入插件。");
+    for (const id of ["quick-mic", "quick-speak"]) {
+      const b = $(id);
+      if (!b) continue;
+      // Drop data-i18n-title so applyI18n (runs later) won't overwrite the
+      // gating tooltip with the generic action label.
+      delete b.dataset.i18nTitle;
+      b.title = hint;
+      b.classList.add("quick-mic-off");
+    }
   }
 }
 
@@ -1375,9 +1383,46 @@ async function loadQuickHistory() {
   } catch (e) { renderQuickHistory([]); }
 }
 
+// Build one clickable history row (XSS-safe: textContent only). Clicking it
+// reloads the entry (langs + source + translation).
+function quickHistoryRow(it) {
+  const row = document.createElement("button");
+  row.type = "button"; row.className = "quick-history-item";
+  const s = document.createElement("span"); s.className = "qh-src"; s.textContent = it.src || "";
+  const a = document.createElement("span"); a.className = "qh-arrow"; a.textContent = "→";
+  const d = document.createElement("span"); d.className = "qh-dst"; d.textContent = it.translated || "";
+  row.append(s, a, d);
+  row.onclick = () => {
+    if (it.src_lang) $("quick-src").value =
+      [...$("quick-src").options].some((o) => o.value === it.src_lang) ? it.src_lang : "auto";
+    if (it.dst_lang && [...$("quick-dst").options].some((o) => o.value === it.dst_lang)) $("quick-dst").value = it.dst_lang;
+    $("quick-input").value = it.src || "";
+    $("quick-output").textContent = it.translated || "";
+  };
+  return row;
+}
+
+// Collapsed by default: the <summary> shows only the most-recent entry (or a
+// dash when empty); expanding reveals the full list (up to 50) + the clear
+// button. Clicking a row inside the summary must NOT toggle the <details>.
 function renderQuickHistory(items) {
+  const recent = $("quick-history-recent");
   const box = $("quick-history-list");
-  if (!box) return;
+  if (!recent || !box) return;
+
+  recent.replaceChildren();
+  if (!items.length) {
+    const e = document.createElement("span");
+    e.className = "quick-history-empty";
+    e.textContent = "—";
+    recent.appendChild(e);
+  } else {
+    const top = quickHistoryRow(items[0]);
+    // The newest row lives inside the <summary>; stop its click from toggling.
+    top.addEventListener("click", (ev) => ev.stopPropagation());
+    recent.appendChild(top);
+  }
+
   box.replaceChildren();
   if (!items.length) {
     const e = document.createElement("div");
@@ -1386,23 +1431,7 @@ function renderQuickHistory(items) {
     box.appendChild(e);
     return;
   }
-  for (const it of items) {
-    const row = document.createElement("button");
-    row.type = "button"; row.className = "quick-history-item";
-    // textContent only (no innerHTML of user text) — XSS-safe.
-    const s = document.createElement("span"); s.className = "qh-src"; s.textContent = it.src || "";
-    const a = document.createElement("span"); a.className = "qh-arrow"; a.textContent = "→";
-    const d = document.createElement("span"); d.className = "qh-dst"; d.textContent = it.translated || "";
-    row.append(s, a, d);
-    row.onclick = () => {
-      if (it.src_lang) $("quick-src").value =
-        [...$("quick-src").options].some((o) => o.value === it.src_lang) ? it.src_lang : "auto";
-      if (it.dst_lang && [...$("quick-dst").options].some((o) => o.value === it.dst_lang)) $("quick-dst").value = it.dst_lang;
-      $("quick-input").value = it.src || "";
-      $("quick-output").textContent = it.translated || "";
-    };
-    box.appendChild(row);
-  }
+  for (const it of items) box.appendChild(quickHistoryRow(it));
 }
 
 async function quickClearHistory() {
@@ -1415,7 +1444,7 @@ async function quickClearHistory() {
 // utterance; the recognized source text is dropped into the input + translated.
 let _quickRecCtx = null, _quickRecStream = null, _quickRecSrc = null, _quickRecNode = null, _quickRecording = false;
 async function quickMic() {
-  if (!BOOT.local_live_available) {
+  if (!BOOT.quick_voice_available) {
     const t = document.querySelector('.tab[data-tab="modules"]'); if (t) t.click();
     return;
   }
@@ -1461,7 +1490,8 @@ function onQuickVad(e) {
 async function quickRecognize(int16) {
   $("quick-status").textContent = "识别中…";
   try {
-    const r = await api("/api/live-recognize", {
+    // Use the quick plugin's own STT endpoint (not /api/live-recognize).
+    const r = await api("/api/quick-recognize", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ audio_b64: int16ToB64(int16) }) });
     if (!r.source) { $("quick-status").textContent = "未识别到语音"; return; }
@@ -1470,6 +1500,30 @@ async function quickRecognize(int16) {
     $("quick-status").textContent = "";
     quickTranslate();
   } catch (e) { $("quick-status").textContent = "识别失败：" + (e.message || "").slice(0, 120); }
+}
+
+// Read-aloud: POST the current output text + target language to /api/tts, which
+// returns an MP3 (audio/mpeg). Gated on the same plugin as the mic.
+let _quickAudio = null;
+async function quickSpeak() {
+  if (!BOOT.quick_voice_available) {
+    const t = document.querySelector('.tab[data-tab="modules"]'); if (t) t.click();
+    return;
+  }
+  const text = $("quick-output").textContent;
+  if (!text.trim()) return;
+  $("quick-status").textContent = _label("Read Aloud", "朗读") + "…";
+  try {
+    const res = await fetch("/api/tts", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, lang: $("quick-dst").value }) });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const blob = await res.blob();
+    if (_quickAudio) { try { _quickAudio.pause(); URL.revokeObjectURL(_quickAudio.src); } catch (e) {} }
+    _quickAudio = new Audio(URL.createObjectURL(blob));
+    _quickAudio.play();
+    $("quick-status").textContent = "";
+  } catch (e) { $("quick-status").textContent = "朗读失败：" + (e.message || "").slice(0, 120); }
 }
 
 boot().catch((e) => { document.body.innerHTML = "<pre style='padding:24px'>启动失败: " + e.message + "</pre>"; });

@@ -85,7 +85,7 @@ class TranslatePage(QStackedWidget):
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
-        self.title = TitleLabel(tr("Translate", lang))
+        self.title = TitleLabel(tr("File Translation", lang))
         layout.addWidget(self.title)
 
         # --- File picker: the one big click-or-drop module. The format
@@ -215,7 +215,7 @@ class TranslatePage(QStackedWidget):
     # --- i18n ---
     def retranslate(self, lang):
         self._lang = lang
-        self.title.setText(tr("Translate", lang))
+        self.title.setText(tr("File Translation", lang))
         if self._files:
             self.dropzone.set_prompt(self._file_summary(self._files))
         else:

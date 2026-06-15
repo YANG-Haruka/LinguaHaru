@@ -147,6 +147,28 @@ class QuickTranslateWorker(QThread):
         self.done.emit(translated, ok)
 
 
+class TtsWorker(QThread):
+    """Synthesize speech for a short text off the UI thread via core.tts.
+
+    Signal:
+        done(bytes) -- MP3 audio bytes (b'' on failure / unavailable).
+    """
+    done = Signal(bytes)
+
+    def __init__(self, text, lang, parent=None):
+        super().__init__(parent)
+        self.text = text
+        self.lang = lang
+
+    def run(self):
+        from core import tts
+        try:
+            audio = tts.synthesize(self.text, self.lang)
+        except Exception:  # noqa: BLE001 - a failed synthesis just yields no audio
+            audio = b""
+        self.done.emit(audio or b"")
+
+
 class _StopRequested(Exception):
     """Raised inside the worker thread when the user asked to stop."""
 

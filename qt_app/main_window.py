@@ -113,8 +113,8 @@ class MainWindow(FluentWindow):
         # routeKey -> label key, so nav text can be re-localized in place
         self._nav_keys = {
             "InterfacePage": "Interface Management",
-            "TranslatePage": "Translate",
-            "QuickPage": "Quick Translate",
+            "QuickPage": "Translate",
+            "TranslatePage": "File Translation",
             "LivePage": "Real-Time Voice",
             "SettingsPage": "Settings",
             "HistoryPage": "History",
@@ -129,7 +129,7 @@ class MainWindow(FluentWindow):
 
         # Nav order/grouping (separators between the 5 groups), per user spec:
         #   1) Interface Management
-        #   2) Translate, Real-Time Voice
+        #   2) Translate (quick), File Translation, Real-Time Voice
         #   3) Glossary, Proofread, History
         #   4) Plugins
         #   5) Settings
@@ -137,10 +137,10 @@ class MainWindow(FluentWindow):
                              tr("Interface Management", self._lang))
 
         nav.addSeparator()
-        self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
-                             tr("Translate", self._lang))
         self.addSubInterface(self.quick_page, FluentIcon.SEND,
-                             tr("Quick Translate", self._lang))
+                             tr("Translate", self._lang))
+        self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
+                             tr("File Translation", self._lang))
         self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
                              tr("Real-Time Voice", self._lang))
 
@@ -210,8 +210,8 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
 
-        # Default to the Translate page on launch.
-        self.switchTo(self.translate_page)
+        # Default to the Translate page (quick translate) on launch.
+        self.switchTo(self.quick_page)
 
         # Reload data whenever a tab becomes current.
         self.stackedWidget.currentChanged.connect(self._on_page_changed)
