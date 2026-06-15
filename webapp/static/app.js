@@ -1093,11 +1093,13 @@ if (navigator.mediaDevices) {
 async function acquireLiveStream() {
   const dev = $("live-input-dev") ? $("live-input-dev").value : "";
   if (dev === "__system__") {
-    // Browsers expose system/tab audio ONLY through getDisplayMedia. Requesting
-    // video (entire-screen hint) + systemAudio:'include' makes Chrome offer the
-    // "share system audio" option; we keep only the audio track.
+    // Browsers expose system/tab audio ONLY through getDisplayMedia. `video`
+    // is required (Chrome won't offer audio without a surface) but we keep just
+    // the audio track. No displaySurface hint, so the picker offers Tab / Window
+    // / Entire-screen equally — sharing the playing TAB (with "share tab audio")
+    // is enough for one webpage; "Entire screen + share system audio" grabs all.
     const s = await navigator.mediaDevices.getDisplayMedia({
-      video: { displaySurface: "monitor" },
+      video: true,
       audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       systemAudio: "include",
       selfBrowserSurface: "exclude",
@@ -1106,7 +1108,7 @@ async function acquireLiveStream() {
     s.getVideoTracks().forEach((t) => t.stop());   // keep audio only
     if (!s.getAudioTracks().length) {
       s.getTracks().forEach((t) => t.stop());
-      throw new Error("未捕获到系统/标签页音频：分享时请选「整个屏幕」并勾选「分享系统音频」，或共享某个标签页并勾选「分享标签页音频」。");
+      throw new Error("未捕获到音频：分享时务必勾选「分享标签页音频」（共享某个标签页时，复选框在弹窗左下角），或「分享系统音频」（共享整个屏幕时）。");
     }
     return s;
   }
@@ -1118,13 +1120,20 @@ async function acquireLiveStream() {
   return s;
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
+// "Listening" wording adapts to the input (mic vs shared system/tab audio).
+function liveListenMsg() {
+  const sel = $("live-input-dev");
+  return (sel && sel.value === "__system__")
+    ? "正在聆听（系统/标签页声音）…"
+    : "正在聆听…（对着麦克风说话）";
+}
 function setLiveBusy(b) { const g = $("live-go"); if (g) g.classList.toggle("running", b); }
 
 // Hot-switch input device mid-session; floating-caption (PiP) toggle.
 function onLiveInputChange() {
   const sel = $("live-input-dev");
   if (sel && sel.value === "__system__") {
-    setLiveStatus("系统/标签页声音需通过浏览器“共享屏幕”捕获：开始后请选「整个屏幕」并勾选「分享系统音频」（或共享某标签页并勾选「分享标签页音频」）。");
+    setLiveStatus("翻译某个网页的声音：开始后在共享框选「该标签页」并勾选「分享标签页音频」（无需整个屏幕）。翻译整机声音：选「整个屏幕」并勾「分享系统音频」。");
   }
   switchLiveInput();
 }
@@ -1196,7 +1205,7 @@ async function startGoogle() {
 
   const proto = location.protocol === "https:" ? "wss:" : "ws:";
   liveWS = new WebSocket(`${proto}//${location.host}/ws/live-translate?target=${encodeURIComponent($("live-target").value)}`);
-  liveWS.onopen = () => setLiveStatus("正在聆听…（对着麦克风说话）");
+  liveWS.onopen = () => setLiveStatus(liveListenMsg());
   liveWS.onmessage = onLiveMessage;
   liveWS.onclose = () => { setLiveStatus("连接已关闭"); liveRunning = false; setLiveBusy(false); };
   liveWS.onerror = () => setLiveStatus("连接错误");
@@ -1239,7 +1248,7 @@ async function startLocal() {
   } catch (e) {
     setLiveStatus("VAD 初始化失败：" + e.message); stopLocal(); return;
   }
-  liveRunning = true; setLiveBusy(true); setLiveStatus("正在聆听…（对着麦克风说话）");
+  liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   startMicMeter();
 }
 function stopLocal() {
@@ -1321,7 +1330,7 @@ async function finalizeUtterance(int16) {
     for (const s of rest) commitLiveSentence(s);
   } catch (e) { /* drop */ }
   liveEmitted = 0; pipInterim = ""; updatePipCaption();
-  if (liveRunning) setLiveStatus("正在聆听…（对着麦克风说话）");
+  if (liveRunning) setLiveStatus(liveListenMsg());
 }
 // Finalize one sentence: show the source line now, then translate it.
 async function commitLiveSentence(source) {
