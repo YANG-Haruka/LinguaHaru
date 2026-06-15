@@ -185,5 +185,68 @@ def test_epub_opf_metadata_and_ncx_toc():
     check("chapter body still translated", T + "A single paragraph of body text." in ch1, ch1)
 
 
+def build_epub_with_attrs(path):
+    """EPUB with out-of-block image alts (figure/div) and an in-block image."""
+    from PIL import Image
+    img_path = os.path.join(WORK_DIR, "pic.png")
+    Image.new("RGB", (20, 20), (200, 60, 60)).save(img_path)
+    with open(img_path, "rb") as f:
+        img_bytes = f.read()
+
+    body = (
+        '<h1>Gallery Heading</h1>'
+        '<figure><img src="pic.png" alt="A scenic mountain view"/>'
+        '<figcaption>Photo caption text</figcaption></figure>'
+        '<div><img src="pic.png" alt="Standalone diagram label" title="Diagram tooltip"/></div>'
+        '<p>Body paragraph with an inline <img src="pic.png" '
+        'alt="inline alt is skipped"/> image here.</p>')
+    ch1 = CHAPTER_TMPL.format(title="Gallery Title", body=body)
+
+    opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+           'unique-identifier="id"><metadata/><manifest>'
+           '<item id="img" href="pic.png" media-type="image/png"/>'
+           '<item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>'
+           '</manifest><spine><itemref idref="c1"/></spine></package>')
+    container = ('<?xml version="1.0"?><container version="1.0" '
+                 'xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
+                 '<rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>'
+                 "</rootfiles></container>")
+
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr("META-INF/container.xml", container, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("content.opf", opf, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("pic.png", img_bytes, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("ch1.xhtml", ch1, compress_type=zipfile.ZIP_DEFLATED)
+
+
+def test_epub_attribute_text():
+    print("EPUB: out-of-block image alt/title translated, in-block alt skipped")
+    from core.pipelines.epub_translation_pipeline import (
+        extract_epub_content_to_json, write_translated_content_to_epub)
+
+    src = os.path.join(WORK_DIR, "attrs.epub")
+    build_epub_with_attrs(src)
+
+    src_json = extract_epub_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_epub(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           src_lang="en", dst_lang="ja")
+
+    with zipfile.ZipFile(out) as z:
+        ch1 = z.read("ch1.xhtml").decode("utf-8")
+
+    check("figure img alt translated", T + "A scenic mountain view" in ch1, ch1)
+    check("standalone div img alt translated", T + "Standalone diagram label" in ch1, ch1)
+    check("standalone img title translated", T + "Diagram tooltip" in ch1, ch1)
+    check("figcaption (block) translated", T + "Photo caption text" in ch1, ch1)
+    check("heading (block) translated", T + "Gallery Heading" in ch1, ch1)
+    check("in-block inline img alt NOT translated (re-inserted verbatim)",
+          'alt="inline alt is skipped"' in ch1
+          and T + "inline alt is skipped" not in ch1, ch1)
+    check("img src untouched", ch1.count('src="pic.png"') == 3, ch1)
+
+
 if __name__ == "__main__":
-    run([test_epub_three_chapters, test_epub_opf_metadata_and_ncx_toc])
+    run([test_epub_three_chapters, test_epub_opf_metadata_and_ncx_toc,
+         test_epub_attribute_text])

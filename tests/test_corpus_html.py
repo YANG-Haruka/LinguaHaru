@@ -126,6 +126,32 @@ building target alpha...
           T + "Run the make build command now." in result, result)
 
 
+def test_html_attribute_text():
+    print("HTML: translatable attribute text (alt/title/aria-label/placeholder/meta)")
+    result = _translate("attrs.html", """<!DOCTYPE html><html><head>
+<meta name="description" content="A friendly guide to widgets">
+<meta name="keywords" content="widgets, gadgets, tools">
+<meta name="viewport" content="width=device-width">
+</head><body>
+<img src="logo.png" alt="Company logo banner" title="Hover tooltip text">
+<button aria-label="Close the dialog">X</button>
+<input type="text" placeholder="Enter your full name">
+<p>Visible paragraph body text</p>
+</body></html>""")
+
+    check("img alt translated", T + "Company logo banner" in result, result)
+    check("title attribute translated", T + "Hover tooltip text" in result, result)
+    check("aria-label translated", T + "Close the dialog" in result, result)
+    check("placeholder translated", T + "Enter your full name" in result, result)
+    check("meta description translated", T + "A friendly guide to widgets" in result, result)
+    check("meta keywords translated", T + "widgets, gadgets, tools" in result, result)
+    check("img src untouched", 'src="logo.png"' in result, result)
+    check("viewport meta untouched (not description/keywords)",
+          "width=device-width" in result and T + "width=device-width" not in result, result)
+    check("paragraph body still translated", T + "Visible paragraph body text" in result, result)
+
+
 if __name__ == "__main__":
     run([test_html_spans_table, test_html_multiple_anchors,
-         test_html_nested_and_definition_lists, test_html_pre_code])
+         test_html_nested_and_definition_lists, test_html_pre_code,
+         test_html_attribute_text])

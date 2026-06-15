@@ -19,6 +19,20 @@ def _sniff_delimiter(sample):
         return ","
 
 
+def _safe_csv_value(value):
+    """Neutralise CSV/formula injection in a translated cell.
+
+    A cell whose text starts with '=' / '+' / '-' / '@' is executed as a
+    formula by spreadsheet apps (Excel/Sheets) when the CSV is opened. We only
+    rewrite *translated* text cells (numbers/codes are skipped on extraction),
+    but a translation may legitimately begin with one of these — space-prefix it
+    so it stays literal, matching the Excel pipeline's _safe_cell_value.
+    """
+    if isinstance(value, str) and value[:1] in ("=", "+", "-", "@"):
+        return " " + value
+    return value
+
+
 def extract_csv_content_to_json(file_path, temp_dir):
     content, encoding = read_file_with_encoding(file_path)
     delimiter = _sniff_delimiter(content[:4096])
@@ -78,7 +92,8 @@ def write_translated_content_to_csv(file_path, original_json_path, translated_js
     for item in original_data:
         translated = translations.get(item["count_src"])
         if translated:
-            rows[item["row"]][item["col"]] = translated.replace("␊", "\n").replace("␍", "\r")
+            restored = translated.replace("␊", "\n").replace("␍", "\r")
+            rows[item["row"]][item["col"]] = _safe_csv_value(restored)
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"

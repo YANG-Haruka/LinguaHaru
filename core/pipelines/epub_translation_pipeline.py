@@ -137,6 +137,42 @@ def _iter_blocks(root):
         yield el
 
 
+# User-visible attribute text worth translating. Pure attributes only, so this
+# never overlaps block-text extraction (which reads element text, never attrs):
+# ids/classes/href/src/data-* are intentionally left untouched.
+_TRANSLATABLE_ATTRS = ("alt", "title", "aria-label", "placeholder")
+
+
+def _has_block_ancestor(el):
+    return any(_local_name(a) in BLOCK_TAGS for a in el.iterancestors())
+
+
+def _iter_attr_targets(root):
+    """Yield (el, attr) for every translatable attribute slot, in document
+    order, WITHOUT content filtering. The running index over this is purely
+    structural, so it maps back at write-back regardless of which slots end up
+    translated (same scheme as _iter_blocks/block_index).
+
+    Covered: alt / title / aria-label / placeholder on elements OUTSIDE any
+    translatable block, plus <meta name="description"|"keywords" content="...">.
+
+    Elements inside a block (e.g. <img> in a <p>) are skipped on purpose: the
+    block rebuild re-inserts them verbatim from a string serialized at
+    extraction time, so an attr set here would be overwritten anyway."""
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        if _local_name(el) == "meta":
+            if (el.get("name") or "").lower() in ("description", "keywords"):
+                yield el, "content"
+            continue
+        if _has_block_ancestor(el):
+            continue
+        for attr in _TRANSLATABLE_ATTRS:
+            if el.get(attr) is not None:
+                yield el, attr
+
+
 def _opf_meta_elements(opf_root):
     """Translatable Dublin Core metadata elements, in document order."""
     result = []
@@ -224,6 +260,17 @@ def extract_epub_content_to_json(file_path, temp_dir):
                 if inlines:
                     item["inlines"] = inlines
                 content_data.append(item)
+
+            # Translatable attribute text (img alt, title, aria-label, ...)
+            for attr_index, (el, attr) in enumerate(_iter_attr_targets(root)):
+                val = (el.get(attr) or "").strip()
+                if not val or not should_translate(val):
+                    continue
+                count += 1
+                content_data.append({
+                    "count_src": count, "type": "attr", "value": val,
+                    "doc_index": doc_index, "attr_index": attr_index, "attr": attr,
+                })
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
@@ -377,6 +424,7 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
 
     # Group items per content document; OPF/NCX items are keyed by member name
     items_by_doc = {}
+    attr_items_by_doc = {}
     opf_items_by_name = {}
     ncx_items_by_name = {}
     for item in original_data:
@@ -384,6 +432,8 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
             opf_items_by_name.setdefault(item["opf_name"], {})[item["meta_index"]] = item
         elif item.get("type") == "ncx_nav":
             ncx_items_by_name.setdefault(item["ncx_name"], {})[item["nav_index"]] = item
+        elif item.get("type") == "attr":
+            attr_items_by_doc.setdefault(item["doc_index"], {})[item["attr_index"]] = item
         else:
             items_by_doc.setdefault(item["doc_index"], {})[item["block_index"]] = item
 
@@ -424,12 +474,18 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
 
                 doc_index = content_names.get(info.filename)
                 doc_items = items_by_doc.get(doc_index) if doc_index is not None else None
-                if doc_items:
+                attr_items = attr_items_by_doc.get(doc_index) if doc_index is not None else None
+                if doc_items or attr_items:
                     root = _parse_doc(data)
+                    # Attribute write-back first (independent of block mutation)
+                    for attr_index, (el, attr) in enumerate(_iter_attr_targets(root)):
+                        item = (attr_items or {}).get(attr_index)
+                        if item and translations.get(item["count_src"]):
+                            el.set(attr, translations[item["count_src"]])
                     # Materialize before mutating: _apply_to_block removes
                     # children, which would derail a live root.iter()
                     for block_index, el in enumerate(list(_iter_blocks(root))):
-                        item = doc_items.get(block_index)
+                        item = (doc_items or {}).get(block_index)
                         if not item:
                             continue
                         translated = translations.get(item["count_src"])
