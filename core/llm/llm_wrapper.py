@@ -302,3 +302,50 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key):
     except Exception as e:
         app_logger.error(f"Simple translation error: {e}")
         return text, False, None
+
+
+def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key):
+    """Like translate_text_simple but a GENERATOR yielding the translation
+    progressively (cumulative string), for live captions' optional stream mode.
+
+    Online only streams; offline or any failure yields the final result once.
+    Isolated from the batch document path (which stays stream=False)."""
+    if not text or not text.strip():
+        yield text
+        return
+    if not use_online:
+        result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        yield result
+        return
+    system_prompt = (f"You are a professional translator. Translate the following text "
+                     f"from {src_lang} to {dst_lang}. Output only the translation, nothing else.")
+    messages = [{"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}]
+    try:
+        from core.llm.online_translation import load_model_config
+        from openai import OpenAI
+        cfg = load_model_config(model) or {}
+        base_url, api_model = cfg.get("base_url"), cfg.get("model")
+        if not (base_url and api_model and api_key):
+            result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            yield result
+            return
+        params = {"model": api_model, "messages": messages, "stream": True}
+        for k in ("top_p", "temperature"):
+            if cfg.get(k) is not None:
+                params[k] = cfg[k]
+        client = OpenAI(api_key=api_key, base_url=base_url)
+        acc = ""
+        for chunk in client.chat.completions.create(**params):
+            choices = getattr(chunk, "choices", None)
+            delta = choices[0].delta.content if choices else None
+            if delta:
+                acc += delta
+                yield _plain_translation(acc)
+        if not acc:        # nothing streamed -> fall back to a normal call
+            result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            yield result
+    except Exception as e:  # noqa: BLE001
+        app_logger.warning(f"Stream translate failed ({e}); falling back.")
+        result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        yield result
