@@ -355,43 +355,6 @@ def _extract_shapes(slide_tree, slide_index: int, namespaces: Dict, content_data
     
     return count
 
-def _extract_charts(slide_tree, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
-    """Extract text from charts, merging runs within the same chart element."""
-    charts = slide_tree.xpath('.//c:chart', namespaces=namespaces)
-    
-    for chart_index, chart in enumerate(charts, start=1):
-        # Group text runs by their parent elements (titles, labels, etc.)
-        chart_text_elements = _group_chart_text_elements(chart, namespaces)
-        
-        for element_index, (element_type, text_runs) in enumerate(chart_text_elements, start=1):
-            if not text_runs:
-                continue
-                
-            # Process runs and preserve exact spacing
-            run_info = _process_text_runs(text_runs, namespaces)
-            
-            if not run_info['merged_text'].strip():
-                continue
-            
-            # Only process if there's meaningful text content and it should be translated
-            if should_translate(run_info['merged_text']):
-                count += 1
-                content_data.append({
-                    "count_src": count,
-                    "slide_index": slide_index,
-                    "chart_index": chart_index,
-                    "element_index": element_index,
-                    "element_type": element_type,
-                    "type": "chart",
-                    "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
-                    "run_texts": run_info['run_texts'],
-                    "run_styles": run_info['run_styles'],
-                    "run_lengths": run_info['run_lengths'],
-                    "xpath": f".//c:chart[{chart_index}]//element[{element_index}]"
-                })
-    
-    return count
-
 def _extract_notes(pptx, notes_path: str, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
     """Extract text from slide notes, merging runs within the same paragraph."""
     try:
@@ -460,27 +423,6 @@ def _process_text_runs(text_runs, namespaces: Dict) -> Dict:
         'run_lengths': run_lengths
     }
 
-def _group_chart_text_elements(chart, namespaces: Dict) -> List[tuple]:
-    """Group chart text runs by their parent elements."""
-    text_elements = []
-    
-    # Common chart text elements
-    elements_to_check = [
-        ('title', './/c:title'),
-        ('axis_title', './/c:axisTitle'),
-        ('legend', './/c:legend'),
-        ('data_labels', './/c:dLbls'),
-        ('series', './/c:ser')
-    ]
-    
-    for element_type, xpath in elements_to_check:
-        elements = chart.xpath(xpath, namespaces=namespaces)
-        for element in elements:
-            text_runs = element.xpath('.//a:r', namespaces=namespaces)
-            if text_runs:
-                text_elements.append((element_type, text_runs))
-    
-    return text_elements
 
 def _extract_run_style(text_run, namespaces: Dict) -> Dict:
     """Extract comprehensive style information from a text run."""
@@ -606,7 +548,7 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     slide_items = [item for item in original_data if item.get('slide_index') == slide_index]
                     
                     # Apply translations to slide
-                    _apply_translations_to_slide(slide_tree, slide_items, translations, namespaces, temp_dir)
+                    _apply_translations_to_slide(slide_tree, slide_items, translations, namespaces)
                     
                     # Save modified slide
                     modified_slide_path = os.path.join(temp_folder, slide_path)
@@ -787,7 +729,7 @@ def _apply_smartart_translations(pptx, smartart_items: List[Dict], translations:
             app_logger.error(f"Failed to apply SmartArt translation to {data_path}: {e}")
             continue
 
-def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translations: Dict, namespaces: Dict, temp_dir):
+def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translations: Dict, namespaces: Dict):
     """Apply translations to a slide tree."""
     for item in slide_items:
         if item['type'] == 'notes':
@@ -813,9 +755,9 @@ def _apply_translations_to_slide(slide_tree, slide_items: List[Dict], translatio
                 _apply_table_cell_translation(slide_tree, item, translated_text, namespaces)
             elif item['type'] == 'shape':
                 _apply_shape_translation(slide_tree, item, translated_text, namespaces)
-            elif item['type'] == 'chart':
-                _apply_chart_translation(slide_tree, item, translated_text, namespaces, temp_dir)
-                
+            # Charts are handled separately via 'chart_part' items
+            # (ppt/charts/chartN.xml), not through the slide tree.
+
         except Exception as e:
             app_logger.error(f"Failed to apply translation for count {count}: {e}")
 
@@ -878,25 +820,6 @@ def _apply_shape_translation(slide_tree, item: Dict, translated_text: str, names
     if item['shape_index'] <= len(non_textbox_shapes):
         shape = non_textbox_shapes[item['shape_index'] - 1]
         _distribute_text_to_runs(shape, translated_text, item, namespaces)
-
-def _apply_chart_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict, temp_dir):
-    """Apply translation to a chart, distributing across runs."""
-    charts = slide_tree.xpath('.//c:chart', namespaces=namespaces)
-    
-    if item['chart_index'] <= len(charts):
-        chart = charts[item['chart_index'] - 1]
-        # Find the specific chart element based on element_index and element_type
-        chart_text_elements = _group_chart_text_elements(chart, namespaces)
-        
-        if item['element_index'] <= len(chart_text_elements):
-            element_type, text_runs = chart_text_elements[item['element_index'] - 1]
-            
-            # Create a temporary container for the runs
-            temp_container = etree.Element(temp_dir)
-            for run in text_runs:
-                temp_container.append(run)
-            
-            _distribute_text_to_runs(temp_container, translated_text, item, namespaces)
 
 def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, namespaces: Dict):
     """Distribute translated text across multiple runs, preserving spacing and structure."""
