@@ -33,11 +33,69 @@ BLOCK_TAGS = {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "td", "th",
 
 CONTENT_EXTENSIONS = (".xhtml", ".html", ".htm")
 
+_OPF_NS = "http://www.idpf.org/2007/opf"
+_DC_NS = "http://purl.org/dc/elements/1.1/"
+_NCX_NS = "http://www.daisy.org/z3986/2005/ncx/"
+# Dublin Core metadata worth translating (titles/descriptions/subjects);
+# identifiers, language, dates and creator names are intentionally left alone.
+_OPF_META_TAGS = ("title", "description", "subject")
+
+
+def _find_opf_name(zf):
+    """Locate the OPF package document via META-INF/container.xml."""
+    try:
+        root = _parse_doc(zf.read("META-INF/container.xml"))
+        for rootfile in root.iter():
+            if _local_name(rootfile) == "rootfile":
+                full_path = rootfile.get("full-path")
+                if full_path:
+                    return full_path
+    except Exception:
+        pass
+    # Fallback: any .opf in the archive
+    for name in zf.namelist():
+        if name.lower().endswith(".opf"):
+            return name
+    return None
+
 
 def _content_documents(zf):
-    """Content document names in zip order (spine order approximation)."""
-    return [n for n in zf.namelist()
-            if posixpath.splitext(n)[1].lower() in CONTENT_EXTENSIONS]
+    """Content document names in spine order (falls back to zip order).
+
+    Spine order is the actual reading order, which gives the translator correct
+    previous-text context; zip order is only an approximation."""
+    zip_order = [n for n in zf.namelist()
+                 if posixpath.splitext(n)[1].lower() in CONTENT_EXTENSIONS]
+    opf_name = _find_opf_name(zf)
+    if not opf_name or opf_name not in zf.namelist():
+        return zip_order
+    try:
+        opf = _parse_doc(zf.read(opf_name))
+        base = posixpath.dirname(opf_name)
+        # manifest: id -> href
+        manifest = {}
+        for item in opf.iter():
+            if _local_name(item) == "item":
+                item_id, href = item.get("id"), item.get("href")
+                if item_id and href:
+                    manifest[item_id] = href
+        # spine: ordered idrefs
+        ordered = []
+        for itemref in opf.iter():
+            if _local_name(itemref) == "itemref":
+                href = manifest.get(itemref.get("idref"))
+                if not href:
+                    continue
+                full = posixpath.normpath(posixpath.join(base, href)) if base else href
+                if full in zip_order and full not in ordered:
+                    ordered.append(full)
+        # Append any content docs missing from the spine, in zip order
+        for name in zip_order:
+            if name not in ordered:
+                ordered.append(name)
+        return ordered or zip_order
+    except Exception:
+        return zip_order
 
 
 def _parse_doc(data):
@@ -79,11 +137,61 @@ def _iter_blocks(root):
         yield el
 
 
+def _opf_meta_elements(opf_root):
+    """Translatable Dublin Core metadata elements, in document order."""
+    result = []
+    for el in opf_root.iter():
+        if _local_name(el) in _OPF_META_TAGS and etree.QName(el).namespace == _DC_NS:
+            if (el.text or "").strip():
+                result.append(el)
+    return result
+
+
+def _ncx_text_elements(ncx_root):
+    """navLabel/text (and pageLabel) text nodes of an NCX TOC, in order."""
+    result = []
+    for el in ncx_root.iter():
+        if _local_name(el) == "text" and (el.text or "").strip():
+            result.append(el)
+    return result
+
+
 def extract_epub_content_to_json(file_path, temp_dir):
     content_data = []
     count = 0
 
     with zipfile.ZipFile(file_path) as zf:
+        # OPF metadata (book title/description/subject)
+        opf_name = _find_opf_name(zf)
+        if opf_name and opf_name in zf.namelist():
+            opf_root = _parse_doc(zf.read(opf_name))
+            if opf_root is not None:
+                for meta_index, el in enumerate(_opf_meta_elements(opf_root)):
+                    text = el.text.strip()
+                    if not should_translate(text):
+                        continue
+                    count += 1
+                    content_data.append({
+                        "count_src": count, "type": "opf_meta", "value": text,
+                        "opf_name": opf_name, "meta_index": meta_index,
+                    })
+
+        # NCX table-of-contents labels (EPUB2). nav.xhtml (EPUB3) is already
+        # handled as a content document.
+        for ncx_name in [n for n in zf.namelist() if n.lower().endswith(".ncx")]:
+            ncx_root = _parse_doc(zf.read(ncx_name))
+            if ncx_root is None:
+                continue
+            for nav_index, el in enumerate(_ncx_text_elements(ncx_root)):
+                text = el.text.strip()
+                if not should_translate(text):
+                    continue
+                count += 1
+                content_data.append({
+                    "count_src": count, "type": "ncx_nav", "value": text,
+                    "ncx_name": ncx_name, "nav_index": nav_index,
+                })
+
         for doc_index, name in enumerate(_content_documents(zf)):
             root = _parse_doc(zf.read(name))
             if root is None:
@@ -267,10 +375,17 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
 
     translations = {item["count_src"]: item["translated"] for item in translated_data}
 
-    # Group items per content document
+    # Group items per content document; OPF/NCX items are keyed by member name
     items_by_doc = {}
+    opf_items_by_name = {}
+    ncx_items_by_name = {}
     for item in original_data:
-        items_by_doc.setdefault(item["doc_index"], {})[item["block_index"]] = item
+        if item.get("type") == "opf_meta":
+            opf_items_by_name.setdefault(item["opf_name"], {})[item["meta_index"]] = item
+        elif item.get("type") == "ncx_nav":
+            ncx_items_by_name.setdefault(item["ncx_name"], {})[item["nav_index"]] = item
+        else:
+            items_by_doc.setdefault(item["doc_index"], {})[item["block_index"]] = item
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
@@ -282,6 +397,30 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
         with zipfile.ZipFile(result_path, "w") as zout:
             for info in zin.infolist():
                 data = zin.read(info.filename)
+
+                # OPF metadata write-back
+                opf_items = opf_items_by_name.get(info.filename)
+                if opf_items:
+                    root = _parse_doc(data)
+                    for meta_index, el in enumerate(_opf_meta_elements(root)):
+                        item = opf_items.get(meta_index)
+                        if item and translations.get(item["count_src"]):
+                            el.text = translations[item["count_src"]]
+                    data = etree.tostring(root, xml_declaration=True, encoding="utf-8")
+                    zout.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
+                    continue
+
+                # NCX TOC write-back
+                ncx_items = ncx_items_by_name.get(info.filename)
+                if ncx_items:
+                    root = _parse_doc(data)
+                    for nav_index, el in enumerate(_ncx_text_elements(root)):
+                        item = ncx_items.get(nav_index)
+                        if item and translations.get(item["count_src"]):
+                            el.text = translations[item["count_src"]]
+                    data = etree.tostring(root, xml_declaration=True, encoding="utf-8")
+                    zout.writestr(info, data, compress_type=zipfile.ZIP_DEFLATED)
+                    continue
 
                 doc_index = content_names.get(info.filename)
                 doc_items = items_by_doc.get(doc_index) if doc_index is not None else None

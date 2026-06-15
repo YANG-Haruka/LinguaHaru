@@ -124,5 +124,66 @@ def test_epub_three_chapters():
           0 <= img_pos < cap_pos, f"img={img_pos} cap={cap_pos}\n{ch1}")
 
 
+def build_epub_with_meta_and_ncx(path):
+    """A minimal EPUB2 with dc:title metadata and a toc.ncx table of contents."""
+    ch1 = CHAPTER_TMPL.format(title="Doc Title One", body=(
+        '<h1 id="top">Heading of the chapter</h1>'
+        "<p>A single paragraph of body text.</p>"))
+
+    opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+           'unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+           '<dc:title>The Grand Book Title</dc:title>'
+           '<dc:creator>Jane Author</dc:creator>'
+           '<dc:description>A short description of the book contents.</dc:description>'
+           '<dc:language>en</dc:language></metadata><manifest>'
+           '<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>'
+           '<item id="c1" href="ch1.xhtml" media-type="application/xhtml+xml"/>'
+           '</manifest><spine toc="ncx"><itemref idref="c1"/></spine></package>')
+    ncx = ('<?xml version="1.0"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">'
+           '<head/><docTitle><text>The Grand Book Title</text></docTitle><navMap>'
+           '<navPoint id="np1" playOrder="1"><navLabel><text>First Chapter Label</text></navLabel>'
+           '<content src="ch1.xhtml"/></navPoint></navMap></ncx>')
+    container = ('<?xml version="1.0"?><container version="1.0" '
+                 'xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles>'
+                 '<rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>'
+                 "</rootfiles></container>")
+
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        z.writestr("META-INF/container.xml", container, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("content.opf", opf, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("toc.ncx", ncx, compress_type=zipfile.ZIP_DEFLATED)
+        z.writestr("ch1.xhtml", ch1, compress_type=zipfile.ZIP_DEFLATED)
+
+
+def test_epub_opf_metadata_and_ncx_toc():
+    print("EPUB: OPF dc:title/description + toc.ncx labels translated, creator/lang left")
+    from core.pipelines.epub_translation_pipeline import (
+        extract_epub_content_to_json, write_translated_content_to_epub)
+
+    src = os.path.join(WORK_DIR, "meta.epub")
+    build_epub_with_meta_and_ncx(src)
+
+    src_json = extract_epub_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_epub(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           src_lang="en", dst_lang="ja")
+
+    with zipfile.ZipFile(out) as z:
+        opf = z.read("content.opf").decode("utf-8")
+        ncx = z.read("toc.ncx").decode("utf-8")
+        ch1 = z.read("ch1.xhtml").decode("utf-8")
+
+    check("OPF dc:title translated", T + "The Grand Book Title" in opf, opf)
+    check("OPF dc:description translated",
+          T + "A short description of the book contents." in opf, opf)
+    check("OPF dc:creator (author name) NOT translated", "Jane Author" in opf
+          and T + "Jane Author" not in opf, opf)
+    check("OPF dc:language untouched", "<dc:language>en</dc:language>" in opf, opf)
+    check("NCX navLabel translated", T + "First Chapter Label" in ncx, ncx)
+    check("NCX docTitle translated", T + "The Grand Book Title" in ncx, ncx)
+    check("chapter body still translated", T + "A single paragraph of body text." in ch1, ch1)
+
+
 if __name__ == "__main__":
-    run([test_epub_three_chapters])
+    run([test_epub_three_chapters, test_epub_opf_metadata_and_ncx_toc])
