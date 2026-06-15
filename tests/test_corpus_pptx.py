@@ -161,5 +161,51 @@ def test_pptx_structures():
           [p.level for p in paras] == [0, 1, 2], str([p.level for p in paras]))
 
 
+_STATIC_SP = (
+    '<p:sp><p:nvSpPr><p:cNvPr id="987" name="StaticBox"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+    '<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>Static footer text in master</a:t>'
+    "</a:r></a:p></p:txBody></p:sp>")
+
+
+def _inject_master_static_text(pptx_path):
+    """Add a non-placeholder static text box to slideMaster1.xml."""
+    import shutil
+    tmp = pptx_path + ".inj"
+    with zipfile.ZipFile(pptx_path) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for n in zin.namelist():
+            data = zin.read(n)
+            if n == "ppt/slideMasters/slideMaster1.xml":
+                data = data.replace(b"</p:spTree>", _STATIC_SP.encode("utf-8") + b"</p:spTree>")
+            zout.writestr(n, data)
+    shutil.move(tmp, pptx_path)
+
+
+def test_pptx_master_static_text():
+    print("PPTX: static (non-placeholder) master text translated; prompts left alone")
+    from core.pipelines.ppt_translation_pipeline import (
+        extract_ppt_content_to_json, write_translated_content_to_ppt)
+
+    src = os.path.join(WORK_DIR, "master.pptx")
+    build_pptx(src)
+    _inject_master_static_text(src)
+
+    src_json = extract_ppt_content_to_json(src, TEMP_DIR)
+    import json
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f)]
+    check("static master text extracted",
+          "Static footer text in master" in extracted, str(extracted))
+    check("placeholder prompt text NOT extracted",
+          not any("Click to edit" in v for v in extracted), str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_ppt(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    with zipfile.ZipFile(out) as z:
+        master = z.read("ppt/slideMasters/slideMaster1.xml").decode("utf-8")
+    check("static master text translated in output",
+          T + "Static footer text in master" in master, master)
+
+
 if __name__ == "__main__":
-    run([test_pptx_structures])
+    run([test_pptx_structures, test_pptx_master_static_text])

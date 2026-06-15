@@ -69,6 +69,11 @@ def extract_ppt_content_to_json(file_path, temp_dir):
             # in ppt/charts/chartN.xml, not in the slide XML)
             count = _extract_chart_parts(pptx, namespaces, content_data, count)
 
+            # Extract static text from slide masters/layouts (footers, logos,
+            # custom text boxes). Placeholder PROMPT text ("Click to edit...")
+            # is skipped so it is never translated.
+            count = _extract_master_layout_parts(pptx, namespaces, content_data, count)
+
     except Exception as e:
         app_logger.error(f"Failed to process PPTX content: {e}")
         raise
@@ -355,6 +360,86 @@ def _extract_shapes(slide_tree, slide_index: int, namespaces: Dict, content_data
     
     return count
 
+_MASTER_LAYOUT_RE = re.compile(
+    r"ppt/slide(?:Masters/slideMaster|Layouts/slideLayout)\d+\.xml$")
+
+
+def _ml_translatable_paragraphs(tree, namespaces: Dict):
+    """Paragraphs of NON-placeholder shapes in a master/layout, in order.
+
+    Placeholder shapes (those with p:ph) hold editing prompts like "Click to
+    edit Master title style" that are never shown, so they are skipped."""
+    out = []
+    for sp in tree.xpath('.//p:sp', namespaces=namespaces):
+        if sp.xpath('.//p:nvSpPr//p:ph', namespaces=namespaces):
+            continue
+        for paragraph in sp.xpath('.//p:txBody//a:p', namespaces=namespaces):
+            out.append((paragraph, paragraph.xpath('.//a:r', namespaces=namespaces)))
+    return out
+
+
+def _extract_master_layout_parts(pptx, namespaces: Dict, content_data: List, count: int) -> int:
+    """Extract static (non-placeholder) text from slide masters and layouts."""
+    parts = sorted(n for n in pptx.namelist() if _MASTER_LAYOUT_RE.match(n))
+    for part in parts:
+        try:
+            tree = etree.fromstring(pptx.read(part), parser=_SAFE_PARSER)
+        except etree.XMLSyntaxError as e:
+            app_logger.warning(f"Failed to parse {part}: {e}")
+            continue
+        for para_index, (paragraph, runs) in enumerate(_ml_translatable_paragraphs(tree, namespaces)):
+            if not runs:
+                continue
+            run_info = _process_text_runs(runs, namespaces)
+            if not run_info['merged_text'].strip() or not should_translate(run_info['merged_text']):
+                continue
+            count += 1
+            content_data.append({
+                "count_src": count,
+                "type": "master_layout",
+                "part_path": part,
+                "para_index": para_index,
+                "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                "run_texts": run_info['run_texts'],
+                "run_styles": run_info['run_styles'],
+                "run_lengths": run_info['run_lengths'],
+            })
+    app_logger.info(f"Extracted {sum(1 for i in content_data if i.get('type') == 'master_layout')} "
+                    f"master/layout text items")
+    return count
+
+
+def _apply_master_layout_translations(pptx, ml_items: List[Dict], translations: Dict,
+                                      temp_folder: str, namespaces: Dict) -> List[str]:
+    """Apply translations to master/layout parts; return modified part paths."""
+    by_part = {}
+    for item in ml_items:
+        by_part.setdefault(item["part_path"], []).append(item)
+
+    modified = []
+    for part, items in by_part.items():
+        try:
+            tree = etree.fromstring(pptx.read(part), parser=_SAFE_PARSER)
+            paragraphs = _ml_translatable_paragraphs(tree, namespaces)
+            for item in items:
+                translated = translations.get(str(item["count_src"]))
+                if not translated:
+                    continue
+                translated = translated.replace("␊", "\n").replace("␍", "\r")
+                idx = item["para_index"]
+                if 0 <= idx < len(paragraphs):
+                    paragraph, _ = paragraphs[idx]
+                    _distribute_text_to_runs(paragraph, translated, item, namespaces)
+            out_path = os.path.join(temp_folder, part)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, "wb") as f:
+                f.write(etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
+            modified.append(part)
+        except Exception as e:
+            app_logger.error(f"Failed to apply master/layout translations to {part}: {e}")
+    return modified
+
+
 def _extract_notes(pptx, notes_path: str, slide_index: int, namespaces: Dict, content_data: List, count: int) -> int:
     """Extract text from slide notes, merging runs within the same paragraph."""
     try:
@@ -604,10 +689,17 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                 _apply_chart_parts_translations(pptx, chart_items, translations, temp_folder, namespaces)
             chart_files = sorted({item['chart_file'] for item in chart_items})
 
-            # Create final PowerPoint file (chart parts ride the same
-            # modified-or-original mechanism as diagram files)
+            # Process slide master/layout static text
+            ml_items = [item for item in original_data if item.get('type') == 'master_layout']
+            ml_files = []
+            if ml_items:
+                ml_files = _apply_master_layout_translations(pptx, ml_items, translations,
+                                                             temp_folder, namespaces)
+
+            # Create final PowerPoint file (chart/master/layout parts ride the
+            # same modified-or-original mechanism as diagram files)
             _create_final_pptx(file_path, result_path, temp_folder, slides, notes_slides,
-                               diagram_files + chart_files)
+                               diagram_files + chart_files + ml_files)
             
     except Exception as e:
         app_logger.error(f"Failed to write translated content: {e}")
