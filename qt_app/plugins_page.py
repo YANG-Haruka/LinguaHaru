@@ -10,14 +10,16 @@ Two sections:
     availability on finish.
 """
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout,
+    QWidget, QVBoxLayout, QHBoxLayout, QButtonGroup,
 )
 
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, StrongBodyLabel,
     SimpleCardWidget, CardWidget, IconWidget, FluentIcon, FlowLayout,
-    PushButton, InfoBadge, InfoBar, InfoBarPosition, ComboBox,
+    PushButton, HyperlinkButton, InfoBadge, InfoBar, InfoBarPosition,
+    RadioButton, MessageBoxBase,
 )
 
 from qt_app.i18n import tr
@@ -42,6 +44,13 @@ _OPTIONAL_ICONS = {
     "Real-Time Voice": FluentIcon.MICROPHONE,
 }
 
+# Uniform card geometry — every optional-plugin card is exactly this size so
+# the FlowLayout renders a tidy aligned grid (3 per row). The height reserves
+# room for the (optional) model line + download status so model and non-model
+# cards line up.
+CARD_WIDTH = 250
+CARD_HEIGHT = 188
+
 
 class _BuiltinChip(SimpleCardWidget):
     """A small enabled-format chip."""
@@ -62,6 +71,49 @@ class _BuiltinChip(SimpleCardWidget):
         layout.addLayout(col, 1)
 
 
+class _ModelPickerDialog(MessageBoxBase):
+    """A small radio-button picker to switch a plugin's model.
+
+    Lists every model as ``label`` + a muted ``info`` caption (size / VRAM);
+    the current one is preselected. ``selected_id`` holds the chosen model id
+    after the user confirms (None if they pick the current one again / cancel).
+    """
+
+    def __init__(self, models, current_id, lang="en", parent=None):
+        super().__init__(parent)
+        self._lang = lang
+        self.selected_id = None
+        self._group = QButtonGroup(self)
+
+        self.titleLabel = StrongBodyLabel(tr("Select Model", lang), self)
+        self.viewLayout.addWidget(self.titleLabel)
+
+        for m in models:
+            mid = m.get("id")
+            radio = RadioButton(m.get("label", mid or ""), self)
+            radio.setProperty("model_id", mid)
+            if mid == current_id:
+                radio.setChecked(True)
+            self._group.addButton(radio)
+            self.viewLayout.addWidget(radio)
+            info = m.get("info")
+            if info:
+                cap = CaptionLabel(info, self)
+                cap.setTextColor("#808080", "#a0a0a0")
+                cap.setContentsMargins(28, 0, 0, 4)
+                self.viewLayout.addWidget(cap)
+
+        self.yesButton.setText(tr("Switch Model", lang))
+        self.cancelButton.setText(tr("Cancel", lang))
+        self.widget.setMinimumWidth(360)
+
+    def validate(self):
+        btn = self._group.checkedButton()
+        if btn is not None:
+            self.selected_id = btn.property("model_id")
+        return True
+
+
 class OptionalPluginCard(CardWidget):
     """A downloadable optional plugin (PDF / Image OCR / Video)."""
 
@@ -72,65 +124,54 @@ class OptionalPluginCard(CardWidget):
         self._on_install = on_install
         self._on_select_model = on_select_model
         self._upgrade_info = None  # (current, latest) when an upgrade is offered
-        self.model_combo = None
-        self.model_caption = None
+        self.model_link = None     # clickable "Model: <label>" line (model plugins)
+        self.status_caption = None  # transient download status under the model line
         self._models = mod.get("models") or []
-        # Fixed width so exactly three cards fit per row (FlowLayout sizes to
-        # content otherwise, which only fit two). Cards with a model selector
-        # are taller to fit the combo + status caption.
-        self.setFixedWidth(258)
-        self.setFixedHeight(236 if self._models else 166)
+        self._busy_download = False
+        # Uniform geometry: every card is the SAME fixed width and height so the
+        # FlowLayout lays them out as a tidy aligned grid (3 per row). PDF (no
+        # model) and model cards look identical; the model line slot is reserved
+        # on every card so heights match regardless of content.
+        self.setFixedWidth(CARD_WIDTH)
+        self.setFixedHeight(CARD_HEIGHT)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(8)
+        layout.setContentsMargins(18, 16, 18, 14)
+        layout.setSpacing(6)
 
         head = QHBoxLayout()
         head.setSpacing(10)
         self.icon = IconWidget(_OPTIONAL_ICONS.get(mod["name"], FluentIcon.APPLICATION), self)
-        self.icon.setFixedSize(28, 28)
-        head.addWidget(self.icon)
+        self.icon.setFixedSize(26, 26)
+        head.addWidget(self.icon, 0, Qt.AlignTop)
         col = QVBoxLayout()
         col.setSpacing(0)
         col.addWidget(StrongBodyLabel(mod["name"], self))
-        col.addWidget(CaptionLabel(mod["detail"], self))
         head.addLayout(col, 1)
         self.badge = None
         head.addStretch(1)
         layout.addLayout(head)
 
-        self.cmd_label = CaptionLabel(mod["install"], self)
-        self.cmd_label.setWordWrap(True)
-        layout.addWidget(self.cmd_label)
-
-        if mod["name"] == "Video/Audio":
-            note = CaptionLabel(tr("Video ffmpeg note", lang), self)
-            note.setWordWrap(True)
-            layout.addWidget(note)
-
-        # Per-plugin model selector (only for plugins that expose models).
-        if self._models:
-            self.model_label = CaptionLabel(tr("Select Model", lang), self)
-            layout.addWidget(self.model_label)
-            self.model_combo = ComboBox(self)
-            for m in self._models:
-                text = m.get("label", m.get("id", ""))
-                info = m.get("info")
-                if info:
-                    text = f"{text} · {info}"
-                self.model_combo.addItem(text, userData=m.get("id"))
-            cur = mod.get("current_model")
-            if cur is not None:
-                idx = self.model_combo.findData(cur)
-                if idx >= 0:
-                    self.model_combo.setCurrentIndex(idx)
-            self.model_combo.currentIndexChanged.connect(self._model_changed)
-            layout.addWidget(self.model_combo)
-            self.model_caption = CaptionLabel("", self)
-            self.model_caption.setWordWrap(True)
-            layout.addWidget(self.model_caption)
+        # Short engine subtitle (muted) — e.g. "BabelDOC" / "RapidOCR · …".
+        # The raw "pip install …" command is NOT shown here; it lives on the
+        # install button's tooltip instead.
+        self.subtitle = CaptionLabel(mod["detail"], self)
+        self.subtitle.setWordWrap(True)
+        self.subtitle.setTextColor("#808080", "#a0a0a0")
+        layout.addWidget(self.subtitle)
 
         layout.addStretch(1)
+
+        # One compact clickable model line (model plugins only). Clicking it
+        # opens a picker dialog; no inline ComboBox clutters the card.
+        if self._models:
+            self.model_link = HyperlinkButton("", "", self)
+            self.model_link.setText(self._current_model_text())
+            self.model_link.clicked.connect(self._open_model_picker)
+            layout.addWidget(self.model_link, 0, Qt.AlignLeft)
+            self.status_caption = CaptionLabel("", self)
+            self.status_caption.setTextColor("#808080", "#a0a0a0")
+            layout.addWidget(self.status_caption)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
@@ -140,6 +181,7 @@ class OptionalPluginCard(CardWidget):
         self.upgrade_btn.hide()
         btn_row.addWidget(self.upgrade_btn)
         self.install_btn = PushButton(FluentIcon.DOWNLOAD, tr("Install", lang), self)
+        self.install_btn.setToolTip(mod["install"])  # raw pip command lives here
         self.install_btn.clicked.connect(self._clicked)
         btn_row.addWidget(self.install_btn)
         layout.addLayout(btn_row)
@@ -155,27 +197,51 @@ class OptionalPluginCard(CardWidget):
         if callable(self._on_install):
             self._on_install(self, "upgrade")
 
-    def _model_changed(self, index):
-        if self.model_combo is None or not callable(self._on_select_model):
+    def _current_model_text(self):
+        """The model line label: 'Model: <short label>'. The "(...)" detail is
+        stripped for this compact line; the full label shows in the picker."""
+        cur = self._mod.get("current_model")
+        label = cur
+        for m in self._models:
+            if m.get("id") == cur:
+                label = m.get("label", cur)
+                break
+        for ch in ("（", "("):
+            idx = (label or "").find(ch)
+            if idx > 0:
+                label = label[:idx].strip()
+                break
+        return f"{tr('Model', self._lang)}: {label}"
+
+    def _open_model_picker(self):
+        """Open the radio-button picker dialog; on confirm, switch the model."""
+        if self._busy_download or not callable(self._on_select_model):
             return
-        model_id = self.model_combo.itemData(index)
-        if model_id:
-            self._on_select_model(self, model_id)
+        dlg = _ModelPickerDialog(
+            self._models, self._mod.get("current_model"), self._lang,
+            parent=self.window())
+        if dlg.exec():
+            model_id = dlg.selected_id
+            if model_id and model_id != self._mod.get("current_model"):
+                self._on_select_model(self, model_id)
 
     def set_download_busy(self, busy):
-        """Disable the combo and show a downloading/ready caption."""
-        if self.model_combo is None:
+        """Show a 'downloading' status under the model line and lock the line."""
+        if self.model_link is None:
             return
-        self.model_combo.setEnabled(not busy)
-        if self.model_caption is not None:
-            self.model_caption.setText(
+        self._busy_download = busy
+        self.model_link.setEnabled(not busy)
+        if self.status_caption is not None:
+            self.status_caption.setText(
                 tr("Downloading Model", self._lang) if busy else "")
 
     def set_model_ready(self, ok):
-        if self.model_combo is not None:
-            self.model_combo.setEnabled(True)
-        if self.model_caption is not None:
-            self.model_caption.setText(
+        if self.model_link is not None:
+            self.model_link.setEnabled(True)
+            self.model_link.setText(self._current_model_text())
+        self._busy_download = False
+        if self.status_caption is not None:
+            self.status_caption.setText(
                 tr("Model Ready", self._lang) if ok else "")
 
     def show_upgrade(self, current, latest):
@@ -285,8 +351,8 @@ class PluginsPage(ScrollArea):
             card.set_state(card._mod["available"])
             if card._upgrade_info:  # set_state doesn't touch a visible upgrade btn
                 card.show_upgrade(*card._upgrade_info)
-            if getattr(card, "model_label", None) is not None:
-                card.model_label.setText(tr("Select Model", lang))
+            if card.model_link is not None:
+                card.model_link.setText(card._current_model_text())
 
     def _start_update_check(self, card):
         """Ask PyPI (off the UI thread) whether this installed plugin has a
@@ -303,6 +369,10 @@ class PluginsPage(ScrollArea):
     def _start_model_download(self, card, model_id=None):
         """Download a plugin model off the UI thread. model_id=None downloads the
         plugin's current/default model (used right after a fresh install)."""
+        if model_id:
+            # ModelDownloadWorker persists the id; reflect it locally so the
+            # model line shows the new selection once the download finishes.
+            card._mod["current_model"] = model_id
         card.set_download_busy(True)
         worker = ModelDownloadWorker(card._mod["name"], model_id)
         self._dl_workers.append(worker)
@@ -326,7 +396,7 @@ class PluginsPage(ScrollArea):
         self._info(card._mod["name"], verb + " " + card._mod["name"])
         worker = InstallWorker(card._mod["name"], action=action)
         self._worker = worker
-        worker.line.connect(lambda text: card.cmd_label.setText(text[-90:]))
+        worker.line.connect(lambda text: card.install_btn.setToolTip(text[-200:]))
         worker.finished_ok.connect(lambda ok, msg, c=card, a=action: self._install_done(c, ok, msg, a))
         worker.start()
 
@@ -338,7 +408,9 @@ class PluginsPage(ScrollArea):
         new_status = {m["name"]: m for m in om.module_status()}
         mod = new_status.get(card._mod["name"], card._mod)
         card._mod = mod
-        card.cmd_label.setText(mod["install"])
+        card.install_btn.setToolTip(mod["install"])
+        if card.model_link is not None:
+            card.model_link.setText(card._current_model_text())
         card.set_state(mod["available"])
         if ok and mod["available"]:
             if action == "upgrade":

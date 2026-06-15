@@ -604,20 +604,41 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
 #modules-table td:first-child { font-weight: 600; color: var(--text); }
 #modules-status { margin-top: 14px; font-family: var(--font-mono); font-size: 0.78rem; }
 
-/* per-plugin model selector row (sits under its plugin's row) */
-#modules-table tr.model-row td { padding-top: 4px; border-bottom: 1px solid var(--border); }
-#modules-table tr.model-row .model-label {
-  font-weight: 400; color: var(--muted); font-family: var(--font-mono);
-  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px; padding-left: 28px;
+/* plugin name + short engine subtitle, stacked in one cell */
+#modules-table td.plugin-name-cell { line-height: 1.3; }
+#modules-table .plugin-name { font-weight: 600; color: var(--text); }
+#modules-table .plugin-sub {
+  margin-top: 2px; color: var(--muted); font-family: var(--font-mono);
+  font-size: 0.72rem; letter-spacing: 0.2px;
 }
-#modules-table .model-select {
-  width: 100%; max-width: 420px; height: 32px; padding: 0 10px;
+#modules-table td.plugin-sub { font-weight: 400; }
+
+/* compact current-model chip; click opens the model picker modal */
+.model-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 8px 0 11px;
   background: var(--surface-2); color: var(--text-2);
-  border: 1px solid var(--border-2); border-radius: var(--r-sm);
-  font-family: var(--font-sans); font-size: 0.82rem; cursor: pointer;
+  border: 1px solid var(--border-2); border-radius: 999px;
+  font-family: var(--font-sans); font-size: 0.8rem; font-weight: 500; cursor: pointer;
 }
-#modules-table .model-select:hover { border-color: var(--border-strong); color: var(--text); }
-#modules-table .model-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); outline: none; }
+.model-chip:hover { border-color: var(--accent); color: var(--text); }
+.model-chip .model-chip-aff { display: inline-flex; opacity: .55; }
+.model-chip .model-chip-aff svg { width: 14px; height: 14px; }
+.model-chip:hover .model-chip-aff { opacity: 1; color: var(--accent); }
+
+/* radio list inside the plugin model picker modal */
+.model-radio-list { display: flex; flex-direction: column; gap: 8px; }
+.model-radio {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border: 1px solid var(--border-2); border-radius: var(--r);
+  background: var(--surface-2); cursor: pointer;
+}
+.model-radio:hover { border-color: var(--border-strong); }
+.model-radio:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
+.model-radio input { accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+.model-radio-body { display: flex; flex-direction: column; gap: 2px; }
+.model-radio-label { color: var(--text); font-weight: 600; font-size: 0.9rem; }
+.model-radio-info { color: var(--muted); font-family: var(--font-mono); font-size: 0.74rem; }
 
 #glossary-table { width: max-content; min-width: 100%; }
 #glossary-table th { white-space: nowrap; }

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615o" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615p" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -154,6 +154,20 @@
           <span style="flex:1"></span>
           <button id="if-cancel" data-i18n="Cancel">取消</button>
           <button id="if-save" class="primary" data-i18n="Save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plugin model picker dialog (opened from a plugin's current-model chip) -->
+    <div id="plugin-model-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <h3 id="plugin-model-title" data-i18n="Select Model">模型</h3>
+        <div id="plugin-model-list" class="model-radio-list"></div>
+        <div id="plugin-model-status" class="muted" style="margin-top:10px"></div>
+        <div class="modal-actions">
+          <span style="flex:1"></span>
+          <button id="plugin-model-cancel" data-i18n="Cancel">取消</button>
+          <button id="plugin-model-switch" class="primary" data-i18n="Switch Model">切换</button>
         </div>
       </div>
     </div>
@@ -477,7 +491,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615o"></script>
-  <script src="/static/app.js?v=20260615o"></script>
+  <script src="/static/background.js?v=20260615p"></script>
+  <script src="/static/app.js?v=20260615p"></script>
 </body>
 </html>

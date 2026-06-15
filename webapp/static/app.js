@@ -7,6 +7,7 @@ const ICON = {
   moon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/></svg>',
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 6.5"/></svg>',
   cross:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
 };
 const pill = (cls, label, icon) => `<span class="pill ${cls}">${icon || ""}${label}</span>`;
 
@@ -621,80 +622,139 @@ if ($("pdf-only-translated")) $("pdf-only-translated").onchange = () => saveConf
 // Per-model key/RPM/thread/retries moved to Interface Management; their old
 // Settings controls were removed.
 
+// Trim the backend's verbose engine "detail" down to a short subtitle: keep
+// only the engine name (the first "·"-separated segment), drop the long tail
+// like "ffmpeg 已内置 · 视频字幕".
+function _engineSubtitle(detail) {
+  return (detail || "").split("·")[0].trim();
+}
+
+// Label shown for a plugin's currently selected model (falls back to the id).
+function _currentModelLabel(m) {
+  if (!m.models || !m.current_model) return "";
+  const cur = m.models.find((x) => x.id === m.current_model);
+  const full = cur ? cur.label : m.current_model;
+  // Compact chip: drop the "(...)" detail; full label shows in the picker modal.
+  return full.replace(/\s*[（(].*$/, "").trim() || full;
+}
+
 function renderModules() {
   const t = $("modules-table");
   t.innerHTML = "";
   const head = document.createElement("tr");
-  head.innerHTML = "<th>模块</th><th>状态</th><th>引擎</th><th>操作</th>";
+  head.innerHTML = "<th>模块</th><th>模型</th><th>状态</th><th>操作</th>";
   t.appendChild(head);
   for (const m of BOOT.modules) {
     const tr = document.createElement("tr");
-    const nameTd = document.createElement("td"); nameTd.textContent = m.name;
+
+    // Name + short engine subtitle, stacked.
+    const nameTd = document.createElement("td");
+    nameTd.className = "plugin-name-cell";
+    const nm = document.createElement("div"); nm.className = "plugin-name"; nm.textContent = m.name;
+    const sub = document.createElement("div"); sub.className = "plugin-sub"; sub.textContent = _engineSubtitle(m.detail);
+    nameTd.append(nm, sub);
+
+    // Current model: a compact clickable chip that opens the picker modal.
+    // Plugins without models (PDF) show a muted dash.
+    const modelTd = document.createElement("td");
+    if (m.models && m.models.length) {
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "model-chip";
+      const txt = document.createElement("span"); txt.textContent = _currentModelLabel(m);
+      const aff = document.createElement("span"); aff.className = "model-chip-aff"; aff.innerHTML = ICON.chevron;
+      chip.append(txt, aff);
+      chip.onclick = () => openPluginModelModal(m, chip, txt);
+      modelTd.appendChild(chip);
+    } else {
+      modelTd.className = "plugin-sub"; modelTd.textContent = "—";
+    }
+
     const statTd = document.createElement("td"); statTd.innerHTML = m.available ? pill("on", "已安装", ICON.check) : pill("off", "未安装", ICON.cross);
-    const engTd = document.createElement("td"); engTd.textContent = m.detail;
+
     const actTd = document.createElement("td");
     const btn = document.createElement("button");
     btn.textContent = m.available ? "卸载" : "安装";
     btn.onclick = () => moduleAction(m.name, m.available ? "uninstall" : "install", btn, statTd);
     actTd.appendChild(btn);
-    tr.append(nameTd, statTd, engTd, actTd);
+
+    tr.append(nameTd, modelTd, statTd, actTd);
     t.appendChild(tr);
     if (m.available) checkModuleUpdate(m.name, actTd, statTd);
-    if (m.models && m.models.length) t.appendChild(modelRow(m));
   }
 }
 
-// A secondary row under a plugin that has selectable models: a label + <select>
-// + a status cell. Switching the model downloads (and warms) the new one.
-function modelRow(m) {
-  const tr = document.createElement("tr");
-  tr.className = "model-row";
-  const labelTd = document.createElement("td");
-  labelTd.textContent = _label("Select Model", "模型");
-  labelTd.className = "model-label";
-  const selTd = document.createElement("td");
-  selTd.colSpan = 2;
-  const sel = document.createElement("select");
-  sel.className = "model-select";
+// Open the model picker modal for a plugin: a radio list of available models
+// (current one preselected, each with its size/VRAM info as a muted hint).
+// On "切换" the chosen model is persisted + downloaded/warmed (polled), then
+// the plugin's chip text is updated and the modal closes.
+function openPluginModelModal(m, chip, chipText) {
+  $("plugin-model-title").textContent = m.name;
+  $("plugin-model-status").textContent = "";
+  const list = $("plugin-model-list");
+  list.innerHTML = "";
   for (const mdl of m.models) {
-    const o = document.createElement("option");
-    o.value = mdl.id;
-    o.textContent = mdl.info ? `${mdl.label} (${mdl.info})` : mdl.label;
-    if (mdl.id === m.current_model) o.selected = true;
-    sel.appendChild(o);
+    const row = document.createElement("label");
+    row.className = "model-radio";
+    const radio = document.createElement("input");
+    radio.type = "radio"; radio.name = "plugin-model-pick"; radio.value = mdl.id;
+    if (mdl.id === m.current_model) radio.checked = true;
+    const body = document.createElement("span"); body.className = "model-radio-body";
+    const lbl = document.createElement("span"); lbl.className = "model-radio-label"; lbl.textContent = mdl.label;
+    body.appendChild(lbl);
+    if (mdl.info) {
+      const info = document.createElement("span"); info.className = "model-radio-info"; info.textContent = mdl.info;
+      body.appendChild(info);
+    }
+    row.append(radio, body);
+    list.appendChild(row);
   }
-  selTd.appendChild(sel);
-  const statTd = document.createElement("td");
-  statTd.className = "model-status";
-  sel.onchange = () => setPluginModel(m.name, sel.value, sel, statTd);
-  tr.append(labelTd, selTd, statTd);
-  return tr;
+  const modal = $("plugin-model-modal");
+  const switchBtn = $("plugin-model-switch");
+  switchBtn.disabled = false;
+  const close = () => {
+    modal.hidden = true;
+    switchBtn.onclick = null; $("plugin-model-cancel").onclick = null; modal.onclick = null;
+  };
+  $("plugin-model-cancel").onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  switchBtn.onclick = () => {
+    const picked = list.querySelector('input[name="plugin-model-pick"]:checked');
+    if (!picked) return;
+    const modelId = picked.value;
+    if (modelId === m.current_model) { close(); return; }
+    switchPluginModel(m, modelId, { chip, chipText, switchBtn, close });
+  };
+  modal.hidden = false;
 }
 
-async function setPluginModel(name, modelId, sel, statTd) {
-  sel.disabled = true;
-  statTd.innerHTML = pill("busy", _label("Downloading Model", "正在下载模型…"), "");
+async function switchPluginModel(m, modelId, ui) {
+  const status = $("plugin-model-status");
+  ui.switchBtn.disabled = true;
+  status.innerHTML = pill("busy", _label("Downloading Model", "正在下载模型…"), "");
   try {
     await api("/api/modules/model", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, model_id: modelId }),
+      body: JSON.stringify({ name: m.name, model_id: modelId }),
     });
   } catch (e) {
-    sel.disabled = false;
-    statTd.innerHTML = pill("bad", "失败", ICON.cross);
-    $("modules-status").textContent = `${name}: ` + (e.message || "").slice(-300);
+    ui.switchBtn.disabled = false;
+    status.innerHTML = pill("bad", "失败", ICON.cross) + " " + (e.message || "").slice(-200);
     return;
   }
   const poll = setInterval(async () => {
-    const s = await api("/api/modules/status?name=" + encodeURIComponent(name));
+    const s = await api("/api/modules/status?name=" + encodeURIComponent(m.name));
     if (s.status === "running") return;
     clearInterval(poll);
-    sel.disabled = false;
     if (s.status === "done") {
-      statTd.innerHTML = pill("on", _label("Model Ready", "模型就绪"), ICON.check);
+      status.innerHTML = pill("on", _label("Model Ready", "模型就绪"), ICON.check);
+      m.current_model = modelId;
+      const chosen = m.models.find((x) => x.id === modelId);
+      ui.chipText.textContent = chosen ? chosen.label : modelId;
+      setTimeout(ui.close, 600);
     } else {
-      statTd.innerHTML = pill("bad", "失败", ICON.cross);
-      $("modules-status").textContent = `${name}: ` + (s.output || "").slice(-300);
+      ui.switchBtn.disabled = false;
+      status.innerHTML = pill("bad", "失败", ICON.cross) + " " + (s.output || "").slice(-200);
     }
   }, 1500);
 }
