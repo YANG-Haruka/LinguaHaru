@@ -17,6 +17,10 @@ from core.log_config import app_logger
 
 _ocr_engine = None
 
+# OCR recognition confidence below this is treated as noise: not translated and
+# left untouched on the image, rather than rendering a garbled translation.
+_MIN_OCR_CONFIDENCE = 0.6
+
 # CJK-capable fonts to try, in order
 _FONT_CANDIDATES = [
     r"C:\Windows\Fonts\msyh.ttc",        # Windows: Microsoft YaHei
@@ -95,6 +99,10 @@ def _find_font_path():
 def extract_image_content_to_json(file_path, temp_dir):
     """Run OCR on the image and save recognized text regions to src.json."""
     texts, boxes, scores = _run_ocr(file_path)
+    # Some engines/versions omit scores; zip() would then truncate to the
+    # shortest list and silently drop ALL text. Pad with 1.0 (treated confident).
+    if len(scores) < len(texts):
+        scores = list(scores) + [1.0] * (len(texts) - len(scores))
 
     content_data = []
     regions = []
@@ -113,13 +121,18 @@ def extract_image_content_to_json(file_path, temp_dir):
             x_max, y_max = points.max(axis=0)
         rect = [int(x_min), int(y_min), int(x_max), int(y_max)]
 
+        score_val = float(score) if score is not None else 0.0
         count += 1
+        # Low-confidence regions are likely OCR noise: keep them in regions.json
+        # (so the companion text file still lists them) but do not translate or
+        # erase them, leaving the original pixels intact.
+        confident = score_val >= _MIN_OCR_CONFIDENCE
         region = {
             "count_src": count,
             "value": text,
             "rect": rect,
-            "score": float(score) if score is not None else 0.0,
-            "needs_translation": should_translate(text),
+            "score": score_val,
+            "needs_translation": should_translate(text) and confident,
         }
         regions.append(region)
         if region["needs_translation"]:
@@ -190,7 +203,12 @@ def write_translated_content_to_image(file_path, original_json_path, translated_
 
     image = cv2.imdecode(np.fromfile(file_path, dtype=np.uint8), cv2.IMREAD_COLOR)
     if image is None:
-        raise RuntimeError(f"Failed to read image: {file_path}")
+        # OpenCV can't decode some formats (e.g. GIF); fall back to PIL.
+        try:
+            pil = Image.open(file_path).convert("RGB")
+            image = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read image: {file_path} ({e})")
 
     # Erase translated regions via inpainting
     mask = np.zeros(image.shape[:2], np.uint8)
