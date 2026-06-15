@@ -306,6 +306,17 @@ select {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%237287a2' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat; background-position: right 13px center;
 }
+/* The native dropdown popup ignores the <select>'s own colours, so its <option>
+   rows fall back to browser defaults (light text on a light popup) — invisible
+   in dark mode. Force themed colours so options are always legible. */
+option, optgroup {
+  background: var(--surface);
+  color: var(--text);
+}
+/* Placeholder text: keep it clearly readable (not the browser's faint default)
+   on the dark surface. */
+::placeholder { color: var(--muted); opacity: 1; }
+:-ms-input-placeholder { color: var(--muted); }
 select:hover, input:hover { border-color: var(--border-strong); }
 select:focus, input:focus {
   outline: none; border-color: var(--accent);

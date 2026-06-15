@@ -1075,7 +1075,11 @@ async function refreshLiveInputDevices() {
   }
   if (navigator.mediaDevices.getDisplayMedia) {
     const o = document.createElement("option");
-    o.value = "__system__"; o.textContent = _label("System Audio", "系统/标签页声音");
+    o.value = "__system__";
+    o.textContent = _label("System / Tab Audio (share)", "系统/标签页声音（需共享）");
+    o.title = _label(
+      "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').",
+      "浏览器只能通过“共享屏幕”捕获系统声音：请选「整个屏幕」并勾选「分享系统音频」（或共享某标签页并勾选「分享标签页音频」）。");
     sel.appendChild(o);
   }
   if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
@@ -1089,11 +1093,20 @@ if (navigator.mediaDevices) {
 async function acquireLiveStream() {
   const dev = $("live-input-dev") ? $("live-input-dev").value : "";
   if (dev === "__system__") {
-    const s = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    // Browsers expose system/tab audio ONLY through getDisplayMedia. Requesting
+    // video (entire-screen hint) + systemAudio:'include' makes Chrome offer the
+    // "share system audio" option; we keep only the audio track.
+    const s = await navigator.mediaDevices.getDisplayMedia({
+      video: { displaySurface: "monitor" },
+      audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      systemAudio: "include",
+      selfBrowserSurface: "exclude",
+      preferCurrentTab: false,
+    });
     s.getVideoTracks().forEach((t) => t.stop());   // keep audio only
     if (!s.getAudioTracks().length) {
       s.getTracks().forEach((t) => t.stop());
-      throw new Error("未捕获到系统/标签页音频（分享时请勾选“分享音频”）");
+      throw new Error("未捕获到系统/标签页音频：分享时请选「整个屏幕」并勾选「分享系统音频」，或共享某个标签页并勾选「分享标签页音频」。");
     }
     return s;
   }
@@ -1108,7 +1121,14 @@ function setLiveStatus(t) { $("live-status").textContent = t; }
 function setLiveBusy(b) { const g = $("live-go"); if (g) g.classList.toggle("running", b); }
 
 // Hot-switch input device mid-session; floating-caption (PiP) toggle.
-if ($("live-input-dev")) $("live-input-dev").onchange = switchLiveInput;
+function onLiveInputChange() {
+  const sel = $("live-input-dev");
+  if (sel && sel.value === "__system__") {
+    setLiveStatus("系统/标签页声音需通过浏览器“共享屏幕”捕获：开始后请选「整个屏幕」并勾选「分享系统音频」（或共享某标签页并勾选「分享标签页音频」）。");
+  }
+  switchLiveInput();
+}
+if ($("live-input-dev")) $("live-input-dev").onchange = onLiveInputChange;
 if ($("live-pip")) {
   $("live-pip").onclick = toggleLivePip;
   if (!("documentPictureInPicture" in window)) $("live-pip").style.display = "none";
@@ -1405,6 +1425,14 @@ function updatePipCaption() {
     it.style.fontSize = Math.round(pipFont * 0.7) + "px";
     it.style.opacity = "0.6"; it.textContent = pipInterim + " …";
     cap.appendChild(it);
+  }
+  // Empty state so the floating window isn't a blank, confusing box.
+  if (!cap.childNodes.length) {
+    const ph = d.createElement("div");
+    ph.style.cssText = "opacity:.5;font-size:14px;line-height:1.5;";
+    ph.textContent = _label("🎙 Live captions will appear here once you start speaking.",
+                            "🎙 开始说话后，实时字幕会显示在这里。");
+    cap.appendChild(ph);
   }
   cap.scrollTop = cap.scrollHeight;   // keep newest visible
 }
