@@ -97,6 +97,44 @@ class PdfTranslator(DocumentTranslator):
         self._paragraph_counter = 0
         self._failed_paragraphs = []
 
+    def _preflight_check(self):
+        """Catch the two silent-failure PDFs before the expensive BabelDOC run.
+
+        - Encrypted/password-protected: BabelDOC would fail with an opaque
+          error deep inside parsing.
+        - Scanned / image-only (no text layer): with skip_scanned_detection
+          BabelDOC produces an output with nothing translated. Surface a clear,
+          actionable error instead of a silently-empty result.
+        """
+        import pymupdf
+
+        try:
+            doc = pymupdf.open(self.input_file_path)
+        except Exception as e:
+            raise RuntimeError(f"Could not open the PDF (it may be corrupted): {e}")
+
+        try:
+            if getattr(doc, "needs_pass", False) or getattr(doc, "is_encrypted", False):
+                # An empty password unlocks many "encrypted" PDFs (owner-only
+                # restrictions); only fail when that does not work.
+                if not doc.authenticate(""):
+                    raise RuntimeError(
+                        "This PDF is password-protected. Remove the password and try again."
+                    )
+
+            # Sample the first pages for an extractable text layer. Scanned
+            # PDFs render as images and yield no text.
+            sample_pages = min(len(doc), 10)
+            has_text = any(doc[i].get_text().strip() for i in range(sample_pages))
+            if not has_text:
+                raise RuntimeError(
+                    "This PDF has no extractable text (it looks scanned or image-only). "
+                    "PDF translation needs a text layer; use the image translation feature "
+                    "for scanned documents."
+                )
+        finally:
+            doc.close()
+
     def _ensure_layout_model(self):
         """Lazily load the document layout model."""
         if self.doc_layout_model is None:
@@ -228,6 +266,10 @@ class PdfTranslator(DocumentTranslator):
         """Run the single-pass BabelDOC translation."""
         from datetime import datetime
         self.translation_start_time = datetime.now()
+
+        # Fail fast on encrypted / scanned PDFs instead of silently producing
+        # an empty or untranslated output.
+        self._preflight_check()
 
         if progress_callback:
             progress_callback(0.0, desc=f"{self._get_status_message('Extracting PDF content')}...")
