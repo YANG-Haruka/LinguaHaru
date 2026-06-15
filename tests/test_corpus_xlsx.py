@@ -216,5 +216,97 @@ def test_xlsx_textbox_openpyxl_path():
           T + "Standalone textbox caption" in drawing, drawing)
 
 
+_CHART_XML = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+              '<c:chartSpace xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart"'
+              ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><c:chart>'
+              '<c:title><c:tx><c:rich><a:p><a:r><a:t>Quarterly Revenue Title</a:t>'
+              '</a:r></a:p></c:rich></c:tx></c:title><c:plotArea><c:barChart><c:ser>'
+              '<c:cat><c:strRef><c:f>Sheet1!$A$1</c:f><c:strCache><c:ptCount val="1"/>'
+              '<c:pt idx="0"><c:v>Region Category Label</c:v></c:pt></c:strCache>'
+              '</c:strRef></c:cat></c:ser></c:barChart></c:plotArea></c:chart></c:chartSpace>')
+
+
+def _inject_chart(xlsx_path):
+    import shutil
+    import zipfile
+    tmp = xlsx_path + ".inj"
+    with zipfile.ZipFile(xlsx_path) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for n in zin.namelist():
+            data = zin.read(n)
+            if n == "[Content_Types].xml":
+                data = data.replace(
+                    b"</Types>",
+                    b'<Override PartName="/xl/charts/chart1.xml" ContentType='
+                    b'"application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/></Types>')
+            zout.writestr(n, data)
+        zout.writestr("xl/charts/chart1.xml", _CHART_XML)
+    shutil.move(tmp, xlsx_path)
+
+
+def test_xlsx_chart_openpyxl_path():
+    print("XLSX: chart title + category cache translated via the openpyxl path")
+    import zipfile
+    import openpyxl
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel)
+
+    src = os.path.join(WORK_DIR, "chart.xlsx")
+    wb = openpyxl.Workbook()
+    wb.active.title = "Sheet1"
+    wb.active["A1"] = "Region Category Label"
+    wb.save(src)
+    _inject_chart(src)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    import json
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f)]
+    check("chart title extracted", "Quarterly Revenue Title" in extracted, str(extracted))
+    check("chart category cache extracted", "Region Category Label" in extracted, str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_excel(src, src_json, dst_json, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+    with zipfile.ZipFile(out) as z:
+        check("chart part survived", "xl/charts/chart1.xml" in z.namelist(), str(z.namelist()))
+        chart = z.read("xl/charts/chart1.xml").decode("utf-8")
+    check("chart title translated", T + "Quarterly Revenue Title" in chart, chart)
+    check("chart category cache translated", T + "Region Category Label" in chart, chart)
+
+
+def test_xlsx_comment_openpyxl_path():
+    print("XLSX: cell comment text translated via the openpyxl path")
+    import zipfile
+    import openpyxl
+    from openpyxl.comments import Comment
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel)
+
+    src = os.path.join(WORK_DIR, "comment.xlsx")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws["A1"] = "Cell body text"
+    ws["A1"].comment = Comment("Reviewer remark to translate", "Rev")
+    wb.save(src)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    import json
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f)]
+    check("comment text extracted", any("Reviewer remark to translate" in v for v in extracted),
+          str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_excel(src, src_json, dst_json, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+    with zipfile.ZipFile(out) as z:
+        cfiles = [n for n in z.namelist() if "comment" in n.lower() and n.endswith(".xml")]
+        check("comment part present", bool(cfiles), str(z.namelist()))
+        comments = "".join(z.read(n).decode("utf-8") for n in cfiles)
+    check("comment text translated", T + "Reviewer remark to translate" in comments, comments)
+
+
 if __name__ == "__main__":
-    run([test_xlsx_structures, test_xlsx_textbox_openpyxl_path])
+    run([test_xlsx_structures, test_xlsx_textbox_openpyxl_path,
+         test_xlsx_chart_openpyxl_path, test_xlsx_comment_openpyxl_path])

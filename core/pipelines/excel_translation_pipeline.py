@@ -204,6 +204,14 @@ def _extract_with_openpyxl(file_path, temp_dir):
         count = _extract_drawing_content_from_excel(file_path, cell_data, count)
     except Exception as e:
         app_logger.error(f"Error extracting drawing content from Excel (openpyxl path): {str(e)}")
+    try:
+        count = _extract_excel_charts(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting charts from Excel (openpyxl path): {str(e)}")
+    try:
+        count = _extract_excel_comments(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting comments from Excel (openpyxl path): {str(e)}")
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
@@ -251,9 +259,12 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
                 else:
                     sheet_name_translations[original_sheet_name] = translated_sheet_name.replace("␊", "\n").replace("␍", "\r")
 
-    # Collect drawing / SmartArt items for ZIP-level write-back after save.
+    # Collect drawing / SmartArt / chart / comment items for ZIP-level
+    # write-back after save (openpyxl cannot touch these parts).
     smartart_items = [c for c in original_data if c.get("type") == "excel_smartart"]
     drawing_items = [c for c in original_data if c.get("type") == "excel_drawing"]
+    chart_items = [c for c in original_data if c.get("type") == "excel_chart"]
+    comment_items = [c for c in original_data if c.get("type") == "excel_comment"]
 
     # Second pass: Update cell contents
     for cell_info in original_data:
@@ -261,9 +272,10 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         if cell_info.get("is_sheet_name", False):
             continue
 
-        # Skip drawing / SmartArt entries: they have no row/column and are
-        # written back at the ZIP/XML level after the workbook is saved.
-        if cell_info.get("type") in ("excel_smartart", "excel_drawing"):
+        # Skip drawing / SmartArt / chart / comment entries: they have no
+        # row/column and are written back at the ZIP/XML level after saving.
+        if cell_info.get("type") in ("excel_smartart", "excel_drawing",
+                                     "excel_chart", "excel_comment"):
             continue
 
         count = str(cell_info["count_src"])  # Ensure count is a string
@@ -347,13 +359,25 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             raise
 
     # openpyxl silently DROPS DrawingML parts it cannot model (textboxes,
-    # shapes, SmartArt) when it saves. Restore those parts from the original
-    # file before patching, otherwise there is nothing left to translate.
-    if smartart_items or drawing_items:
+    # shapes, SmartArt, charts) when it saves. Restore those parts from the
+    # original file before patching, otherwise there is nothing left to edit.
+    if smartart_items or drawing_items or chart_items:
         try:
             _restore_drawingml_parts(file_path, result_path)
         except Exception as e:
             app_logger.error(f"Failed to restore DrawingML parts (openpyxl path): {str(e)}")
+    # Charts are also rewritten lossily even when kept; comments are
+    # regenerated. Force-restore the original bytes so the patch matches.
+    if chart_items:
+        try:
+            _force_restore_excel_parts(file_path, result_path, ("xl/charts/",))
+        except Exception as e:
+            app_logger.error(f"Failed to restore chart parts (openpyxl path): {str(e)}")
+    if comment_items:
+        try:
+            _force_restore_excel_parts(file_path, result_path, ("xl/comments",))
+        except Exception as e:
+            app_logger.error(f"Failed to restore comment parts (openpyxl path): {str(e)}")
 
     # Write back drawing/textbox and SmartArt text at the ZIP/XML level.
     # openpyxl cannot touch these parts, so they are patched on the saved file.
@@ -376,6 +400,20 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
                 result_path = _apply_excel_drawing_translations_to_file(result_path, drawing_items, translations)
         except Exception as e:
             app_logger.error(f"Failed to apply drawing translations (openpyxl path): {str(e)}")
+
+    if chart_items:
+        app_logger.info(f"Processing {len(chart_items)} chart translations (openpyxl path)")
+        try:
+            result_path = _apply_excel_chart_translations_to_file(result_path, chart_items, translations, bilingual_mode)
+        except Exception as e:
+            app_logger.error(f"Failed to apply chart translations (openpyxl path): {str(e)}")
+
+    if comment_items:
+        app_logger.info(f"Processing {len(comment_items)} comment translations (openpyxl path)")
+        try:
+            result_path = _apply_excel_comment_translations_to_file(result_path, comment_items, translations, bilingual_mode)
+        except Exception as e:
+            app_logger.error(f"Failed to apply comment translations (openpyxl path): {str(e)}")
 
     return result_path
 
@@ -1723,6 +1761,206 @@ def _write_with_xlwings(file_path, original_json_path, translated_json_path, res
 # ============================================================================
 # XLWINGS MODE - WRITING HELPERS (Drawing)
 # ============================================================================
+
+_CHART_NS = {
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+    "c": "http://schemas.openxmlformats.org/drawingml/2006/chart",
+}
+_COMMENT_NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+
+
+def _chart_translatable_nodes(tree):
+    """(node, kind) pairs for a chart: rich-text runs and string-cache values.
+
+    Numeric caches (c:numCache) are intentionally left out."""
+    nodes = []
+    for n in tree.xpath(".//a:t", namespaces=_CHART_NS):
+        nodes.append((n, "a_t"))
+    for n in tree.xpath(".//c:strCache/c:pt/c:v", namespaces=_CHART_NS):
+        nodes.append((n, "str_v"))
+    return nodes
+
+
+def _extract_excel_charts(file_path, content_data, count):
+    """Extract translatable text from xl/charts/chartN.xml (titles, axis/labels,
+    series & category cache values). openpyxl rewrites charts lossily, so these
+    are written back at the ZIP level after the original chart is restored."""
+    try:
+        with ZipFile(file_path, "r") as zf:
+            chart_files = sorted(n for n in zf.namelist()
+                                 if re.match(r"xl/charts/chart\d+\.xml$", n))
+            for chart_file in chart_files:
+                try:
+                    tree = etree.fromstring(zf.read(chart_file), parser=_SAFE_PARSER)
+                except etree.XMLSyntaxError as e:
+                    app_logger.warning(f"Failed to parse {chart_file}: {e}")
+                    continue
+                for node_index, (node, kind) in enumerate(_chart_translatable_nodes(tree)):
+                    text = (node.text or "").strip()
+                    if not text or not should_translate(text):
+                        continue
+                    count += 1
+                    content_data.append({
+                        "count_src": count, "type": "excel_chart", "value": node.text,
+                        "chart_file": chart_file, "node_kind": kind, "node_index": node_index,
+                    })
+    except Exception as e:
+        app_logger.error(f"Failed to extract Excel charts: {e}")
+    charts = sum(1 for i in content_data if i.get("type") == "excel_chart")
+    app_logger.info(f"Extracted {charts} chart text items from Excel")
+    return count
+
+
+def _comment_files(names):
+    return sorted(n for n in names
+                  if re.match(r"xl/comments\d+\.xml$", n)
+                  or re.match(r"xl/comments/comment\d+\.xml$", n))
+
+
+def _extract_excel_comments(file_path, content_data, count):
+    """Extract cell-comment text (legacy xl/comments*.xml: text/r/t runs)."""
+    try:
+        with ZipFile(file_path, "r") as zf:
+            for comment_file in _comment_files(zf.namelist()):
+                try:
+                    tree = etree.fromstring(zf.read(comment_file), parser=_SAFE_PARSER)
+                except etree.XMLSyntaxError as e:
+                    app_logger.warning(f"Failed to parse {comment_file}: {e}")
+                    continue
+                for node_index, node in enumerate(tree.xpath(".//s:t", namespaces=_COMMENT_NS)):
+                    text = (node.text or "").strip()
+                    if not text or not should_translate(text):
+                        continue
+                    count += 1
+                    content_data.append({
+                        "count_src": count, "type": "excel_comment", "value": node.text,
+                        "comment_file": comment_file, "node_index": node_index,
+                    })
+    except Exception as e:
+        app_logger.error(f"Failed to extract Excel comments: {e}")
+    comments = sum(1 for i in content_data if i.get("type") == "excel_comment")
+    app_logger.info(f"Extracted {comments} comment text items from Excel")
+    return count
+
+
+def _force_restore_excel_parts(original_path, result_path, prefixes):
+    """Overwrite result parts under `prefixes` with the original's bytes.
+
+    For charts (openpyxl rewrites them lossily, dropping caches/styling) and
+    comments (openpyxl regenerates the XML, which would break index-based
+    patching). Restoring the original bytes guarantees the ZIP-level patch edits
+    the exact structure extraction saw. Content_Types overrides are re-added."""
+    with ZipFile(original_path, "r") as z:
+        orig = {n: z.read(n) for n in z.namelist()}
+    with ZipFile(result_path, "r") as z:
+        res = {n: z.read(n) for n in z.namelist()}
+
+    touched = False
+    for n, b in orig.items():
+        if n.startswith(prefixes) and res.get(n) != b:
+            res[n] = b
+            touched = True
+    if not touched:
+        return
+
+    ct = "[Content_Types].xml"
+    if ct in orig and ct in res:
+        ctr = res[ct].decode("utf-8")
+        for ov in re.findall(r'<Override\b[^>]*?/>', orig[ct].decode("utf-8")):
+            part = re.search(r'PartName="([^"]+)"', ov)
+            if part and part.group(1).lstrip("/").startswith(prefixes) and part.group(1) not in ctr:
+                ctr = ctr.replace("</Types>", ov + "</Types>")
+        res[ct] = ctr.encode("utf-8")
+
+    tmp = result_path + ".force.tmp"
+    with ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+        for n, b in res.items():
+            zout.writestr(n, b)
+    shutil.move(tmp, result_path)
+
+
+def _apply_excel_chart_translations_to_file(file_path, chart_items, translations, bilingual_mode=False):
+    """Patch translated text into xl/charts/chartN.xml parts (ZIP level)."""
+    if not chart_items:
+        return file_path
+    by_file = {}
+    for item in chart_items:
+        by_file.setdefault(item["chart_file"], []).append(item)
+
+    tmp = file_path + ".chart.tmp"
+    try:
+        with ZipFile(file_path, "r") as zin, ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+            modified = set(by_file)
+            for info in zin.infolist():
+                if info.filename in modified:
+                    continue
+                zout.writestr(info, zin.read(info.filename))
+            for chart_file, items in by_file.items():
+                if chart_file not in zin.namelist():
+                    continue
+                tree = etree.fromstring(zin.read(chart_file), parser=_SAFE_PARSER)
+                nodes = _chart_translatable_nodes(tree)
+                for item in items:
+                    translated = translations.get(str(item["count_src"]))
+                    if not translated:
+                        continue
+                    idx = item["node_index"]
+                    if 0 <= idx < len(nodes):
+                        node, _ = nodes[idx]
+                        text = translated.replace("␊", "\n").replace("␍", "\r")
+                        if bilingual_mode:
+                            text = _format_bilingual_text(item["value"], translated, "cell")
+                        node.text = text
+                zout.writestr(chart_file, etree.tostring(tree, xml_declaration=True,
+                                                         encoding="UTF-8", standalone="yes"))
+        shutil.move(tmp, file_path)
+    except Exception as e:
+        app_logger.error(f"Failed to apply Excel chart translations: {e}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return file_path
+
+
+def _apply_excel_comment_translations_to_file(file_path, comment_items, translations, bilingual_mode=False):
+    """Patch translated text into xl/comments*.xml parts (ZIP level)."""
+    if not comment_items:
+        return file_path
+    by_file = {}
+    for item in comment_items:
+        by_file.setdefault(item["comment_file"], []).append(item)
+
+    tmp = file_path + ".comment.tmp"
+    try:
+        with ZipFile(file_path, "r") as zin, ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+            modified = set(by_file)
+            for info in zin.infolist():
+                if info.filename in modified:
+                    continue
+                zout.writestr(info, zin.read(info.filename))
+            for comment_file, items in by_file.items():
+                if comment_file not in zin.namelist():
+                    continue
+                tree = etree.fromstring(zin.read(comment_file), parser=_SAFE_PARSER)
+                nodes = tree.xpath(".//s:t", namespaces=_COMMENT_NS)
+                for item in items:
+                    translated = translations.get(str(item["count_src"]))
+                    if not translated:
+                        continue
+                    idx = item["node_index"]
+                    if 0 <= idx < len(nodes):
+                        text = translated.replace("␊", "\n").replace("␍", "\r")
+                        if bilingual_mode:
+                            text = _format_bilingual_text(item["value"], translated, "cell")
+                        nodes[idx].text = text
+                zout.writestr(comment_file, etree.tostring(tree, xml_declaration=True,
+                                                          encoding="UTF-8", standalone="yes"))
+        shutil.move(tmp, file_path)
+    except Exception as e:
+        app_logger.error(f"Failed to apply Excel comment translations: {e}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return file_path
+
 
 def _restore_drawingml_parts(original_path: str, result_path: str) -> None:
     """Restore DrawingML parts that openpyxl dropped when re-saving.
