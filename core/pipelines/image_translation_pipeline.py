@@ -17,6 +17,23 @@ from core.log_config import app_logger
 
 _ocr_engine = None
 
+# PaddleOCR PP-OCRv6 size variant (det+rec). "small" is the light default —
+# noticeably smaller/faster than "medium" with only a minor accuracy drop;
+# "tiny" is fastest, "medium" most accurate. Driven by config "ocr_model_size"
+# (the Image-OCR plugin's model selector sets this).
+_OCR_SIZES = ("tiny", "small", "medium")
+
+
+def _ocr_model_size():
+    try:
+        import json as _json
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            size = _json.load(f).get("ocr_model_size", "small")
+        return size if size in _OCR_SIZES else "small"
+    except Exception:  # noqa: BLE001
+        return "small"
+
 # OCR recognition confidence below this is treated as noise: not translated and
 # left untouched on the image, rather than rendering a garbled translation.
 _MIN_OCR_CONFIDENCE = 0.6
@@ -50,9 +67,11 @@ def _get_ocr_engine():
             except ImportError:
                 pass
             from paddleocr import PaddleOCR
-            app_logger.info("Loading PaddleOCR engine (PP-OCRv6)...")
+            size = _ocr_model_size()
+            app_logger.info(f"Loading PaddleOCR engine (PP-OCRv6_{size})...")
             _ocr_engine = ("paddle", PaddleOCR(
-                ocr_version="PP-OCRv6",
+                text_detection_model_name=f"PP-OCRv6_{size}_det",
+                text_recognition_model_name=f"PP-OCRv6_{size}_rec",
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=True,
