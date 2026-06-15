@@ -1,0 +1,10 @@
+{
+    "base_url": "http://localhost:11434/v1",
+    "model": "hunyuan-mt-7b",
+    "top_p": 0.95,
+    "temperature": 0.3,
+    "presence_penalty": 0.0,
+    "frequency_penalty": 0.0,
+    "rpm": 0,
+    "thread_count": 4
+}
