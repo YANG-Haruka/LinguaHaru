@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615h" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615i" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -429,13 +429,19 @@
         <div class="field" style="margin-top:10px"><label>局域网管理密码（可选；设置后，局域网用户需输入密码才能修改配置 / 密钥 / 安装插件）</label><input type="password" id="set-lan-admin" placeholder="留空则不启用" /></div>
         <label class="check" style="margin-top:10px"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
       </div>
+      <div class="card">
+        <h3 data-i18n="Model Management">模型管理</h3>
+        <div class="field"><label data-i18n="Model Location">模型位置</label><input type="text" id="models-dir" readonly /></div>
+        <div id="models-list" class="muted" style="margin-top:10px"></div>
+        <div class="muted" style="margin-top:6px" data-i18n="Per Model Hint">每个模型的 API 密钥、RPM、线程数、最大重试次数请在「接口管理」中双击对应接口单独设置；Google 实时语音密钥也在「接口管理」里。</div>
+      </div>
       <div id="settings-status" class="muted"></div>
     </section>
 
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615h"></script>
-  <script src="/static/app.js?v=20260615h"></script>
+  <script src="/static/background.js?v=20260615i"></script>
+  <script src="/static/app.js?v=20260615i"></script>
 </body>
 </html>

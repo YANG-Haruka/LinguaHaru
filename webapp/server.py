@@ -204,6 +204,15 @@ def bootstrap():
     }
 
 
+@app.get("/api/models")
+def list_models():
+    """Downloaded models + the unified location (Model Management view)."""
+    from core import model_store
+    return {"dir": model_store.current_dir(),
+            "models": [{"label": m["label"], "size": m["size_h"], "path": m["path"]}
+                       for m in model_store.list_models()]}
+
+
 @app.post("/api/config")
 async def update_config(payload: dict):
     """Persist arbitrary settings keys (whitelisted)."""

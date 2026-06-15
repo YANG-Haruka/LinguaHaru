@@ -5,11 +5,12 @@ import os
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog
 
 from qfluentwidgets import (
-    ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton,
-    CardWidget, PushButton, LineEdit, FluentIcon,
+    ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, CaptionLabel,
+    CardWidget, PushButton, LineEdit, FluentIcon, MessageBox,
 )
 
 from core import backend
+from core import model_store
 from qt_app.i18n import tr
 
 
@@ -86,7 +87,70 @@ class SettingsPage(ScrollArea):
         out_form.addRow(self.output_label, out_row)
         layout.addWidget(output_card)
 
+        # --- Model management: unified download location + downloaded list ---
+        self.section_models = StrongBodyLabel(tr("Model Management", lang))
+        layout.addWidget(self.section_models)
+        models_card = CardWidget()
+        mv = QVBoxLayout(models_card)
+        mv.setContentsMargins(20, 16, 20, 16)
+        mv.setSpacing(10)
+        loc_row = QHBoxLayout()
+        loc_row.setSpacing(8)
+        self.models_loc_label = BodyLabel(tr("Model Location", lang))
+        loc_row.addWidget(self.models_loc_label)
+        self.models_dir_edit = LineEdit()
+        self.models_dir_edit.setReadOnly(True)
+        loc_row.addWidget(self.models_dir_edit, 1)
+        self.models_browse = PushButton(FluentIcon.FOLDER, tr("Change Location", lang))
+        self.models_browse.clicked.connect(self._change_models_dir)
+        loc_row.addWidget(self.models_browse)
+        mv.addLayout(loc_row)
+        self.models_list_host = QVBoxLayout()
+        self.models_list_host.setSpacing(4)
+        mv.addLayout(self.models_list_host)
+        layout.addWidget(models_card)
+        self._refresh_models()
+
         layout.addStretch(1)
+
+    def _refresh_models(self):
+        self.models_dir_edit.setText(model_store.current_dir())
+        # Clear old rows.
+        while self.models_list_host.count():
+            item = self.models_list_host.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        models = model_store.list_models()
+        if not models:
+            self.models_list_host.addWidget(CaptionLabel(tr("No models downloaded", self._lang)))
+            return
+        for m in models:
+            self.models_list_host.addWidget(CaptionLabel(f"• {m['label']} — {m['size_h']}"))
+
+    def _change_models_dir(self):
+        path = QFileDialog.getExistingDirectory(
+            self, tr("Model Location", self._lang), model_store.current_dir())
+        if not path or os.path.abspath(path) == model_store.current_dir():
+            return
+        # Offer to move the already-downloaded models to the new location.
+        box = MessageBox(tr("Model Management", self._lang),
+                         tr("Move existing models to the new location?", self._lang), self)
+        move = box.exec()
+        ok, msg = model_store.set_models_dir(path, move=move)
+        if ok:
+            model_store.setup_model_env()
+            self._refresh_models()
+            self._info(tr("Model Management", self._lang),
+                       tr("Restart to apply", self._lang))
+        else:
+            self._info(tr("Model Management", self._lang), msg, error=True)
+
+    def _info(self, title, text, error=False):
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        bar = InfoBar.error if error else InfoBar.success
+        bar(title, text, orient=1, isClosable=True,
+            position=InfoBarPosition.TOP, duration=3000, parent=self)
 
     def _pick_output_dir(self):
         current = self.output_edit.text() or os.getcwd()
@@ -105,3 +169,7 @@ class SettingsPage(ScrollArea):
         self.section_output.setText(tr("Output Folder", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))
+        self.section_models.setText(tr("Model Management", lang))
+        self.models_loc_label.setText(tr("Model Location", lang))
+        self.models_browse.setText(tr("Change Location", lang))
+        self._refresh_models()

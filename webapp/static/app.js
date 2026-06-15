@@ -120,6 +120,21 @@ function useOnline() {
   return !!(BOOT.config && BOOT.config.default_online);
 }
 
+// Model Management: show the unified download location + downloaded models.
+async function refreshModels() {
+  if (!$("models-dir")) return;
+  try {
+    const d = await api("/api/models");
+    $("models-dir").value = d.dir || "";
+    const list = $("models-list");
+    if (!d.models || !d.models.length) {
+      list.textContent = "尚未下载任何模型";
+    } else {
+      list.innerHTML = d.models.map((m) => `• ${m.label} — ${m.size}`).join("<br>");
+    }
+  } catch (e) { /* server_mode or not available */ }
+}
+
 // ----- tabs -----
 document.querySelectorAll(".tab").forEach((t) => {
   t.onclick = () => {
@@ -317,6 +332,7 @@ async function boot() {
   updateLiveHint();
   if (BOOT.server_mode) applyServerMode();
   refreshApiKeyState();
+  refreshModels();
   refreshMediaNote();
   renderDropBg();
   initUiLang();
