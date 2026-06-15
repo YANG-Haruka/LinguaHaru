@@ -249,6 +249,18 @@ def _extract_with_openpyxl(file_path, temp_dir):
         count = _extract_excel_comments(file_path, cell_data, count)
     except Exception as e:
         app_logger.error(f"Error extracting comments from Excel (openpyxl path): {str(e)}")
+    try:
+        count = _extract_excel_drawing_alttext(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting drawing alt-text from Excel (openpyxl path): {str(e)}")
+    try:
+        count = _extract_excel_threaded_comments(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting threaded comments from Excel (openpyxl path): {str(e)}")
+    try:
+        count = _extract_excel_header_footer(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting header/footer from Excel (openpyxl path): {str(e)}")
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
@@ -302,6 +314,9 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
     drawing_items = [c for c in original_data if c.get("type") == "excel_drawing"]
     chart_items = [c for c in original_data if c.get("type") == "excel_chart"]
     comment_items = [c for c in original_data if c.get("type") == "excel_comment"]
+    alttext_items = [c for c in original_data if c.get("type") == "excel_alttext"]
+    threadedcomment_items = [c for c in original_data if c.get("type") == "excel_threadedcomment"]
+    headerfooter_items = [c for c in original_data if c.get("type") == "excel_headerfooter"]
 
     # Second pass: Update cell contents
     for cell_info in original_data:
@@ -314,7 +329,8 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         # Data-validation entries are written below via the openpyxl model.
         if cell_info.get("type") in ("excel_smartart", "excel_drawing",
                                      "excel_chart", "excel_comment",
-                                     "excel_datavalidation"):
+                                     "excel_datavalidation", "excel_alttext",
+                                     "excel_threadedcomment", "excel_headerfooter"):
             continue
 
         count = str(cell_info["count_src"])  # Ensure count is a string
@@ -417,7 +433,7 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
     # openpyxl silently DROPS DrawingML parts it cannot model (textboxes,
     # shapes, SmartArt, charts) when it saves. Restore dropped parts (and
     # re-wire the worksheet <drawing> reference) from the original first.
-    if smartart_items or drawing_items or chart_items:
+    if smartart_items or drawing_items or chart_items or alttext_items:
         try:
             _restore_drawingml_parts(file_path, result_path)
         except Exception as e:
@@ -428,7 +444,7 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
     # are regenerated. Force-restore the original bytes (drawings/media/charts/
     # diagrams/comments) so nothing is lost and the patch edits real structure.
     force_prefixes = ()
-    if drawing_items or smartart_items:
+    if drawing_items or smartart_items or alttext_items:
         force_prefixes += ("xl/drawings/", "xl/diagrams/", "xl/media/", "xl/embeddings/")
     if chart_items:
         force_prefixes += ("xl/charts/",)
@@ -442,6 +458,14 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             _force_restore_excel_parts(file_path, result_path, ("xl/comments",))
         except Exception as e:
             app_logger.error(f"Failed to restore comment parts (openpyxl path): {str(e)}")
+    if threadedcomment_items:
+        # openpyxl does not model threaded comments and drops the parts on save;
+        # restore the original bytes (+ their rels) so the patch has structure.
+        try:
+            _force_restore_excel_parts(file_path, result_path,
+                                       ("xl/threadedComments/", "xl/persons/"))
+        except Exception as e:
+            app_logger.error(f"Failed to restore threaded-comment parts (openpyxl path): {str(e)}")
 
     # Write back drawing/textbox and SmartArt text at the ZIP/XML level.
     # openpyxl cannot touch these parts, so they are patched on the saved file.
@@ -478,6 +502,27 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             result_path = _apply_excel_comment_translations_to_file(result_path, comment_items, translations, bilingual_mode)
         except Exception as e:
             app_logger.error(f"Failed to apply comment translations (openpyxl path): {str(e)}")
+
+    if alttext_items:
+        app_logger.info(f"Processing {len(alttext_items)} drawing alt-text translations (openpyxl path)")
+        try:
+            result_path = _apply_excel_alttext_translations_to_file(result_path, alttext_items, translations, bilingual_mode)
+        except Exception as e:
+            app_logger.error(f"Failed to apply alt-text translations (openpyxl path): {str(e)}")
+
+    if threadedcomment_items:
+        app_logger.info(f"Processing {len(threadedcomment_items)} threaded-comment translations (openpyxl path)")
+        try:
+            result_path = _apply_excel_threaded_comment_translations_to_file(result_path, threadedcomment_items, translations, bilingual_mode)
+        except Exception as e:
+            app_logger.error(f"Failed to apply threaded-comment translations (openpyxl path): {str(e)}")
+
+    if headerfooter_items:
+        app_logger.info(f"Processing {len(headerfooter_items)} header/footer translations (openpyxl path)")
+        try:
+            result_path = _apply_excel_header_footer_translations_to_file(result_path, headerfooter_items, translations, bilingual_mode)
+        except Exception as e:
+            app_logger.error(f"Failed to apply header/footer translations (openpyxl path): {str(e)}")
 
     return result_path
 
@@ -2021,6 +2066,353 @@ def _apply_excel_comment_translations_to_file(file_path, comment_items, translat
         shutil.move(tmp, file_path)
     except Exception as e:
         app_logger.error(f"Failed to apply Excel comment translations: {e}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return file_path
+
+
+# ============================================================================
+# ADDITIVE: DRAWING ALT-TEXT  (xdr:cNvPr @descr / @title attributes)
+# ============================================================================
+
+_XDR_NS = {
+    "xdr": "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing",
+    "a": "http://schemas.openxmlformats.org/drawingml/2006/main",
+}
+
+
+def _drawing_files(names):
+    return sorted(n for n in names
+                  if n.startswith("xl/drawings/drawing") and n.endswith(".xml"))
+
+
+def _extract_excel_drawing_alttext(file_path, content_data, count):
+    """Extract translatable alt-text ATTRIBUTES (descr/title) from shape
+    cNvPr elements in xl/drawings/*.xml. These are accessibility strings, not
+    element text, so they need their own attribute-based write-back. The
+    enumeration order of cNvPr nodes is the stable locator."""
+    try:
+        with ZipFile(file_path, "r") as zf:
+            for drawing_file in _drawing_files(zf.namelist()):
+                try:
+                    tree = etree.fromstring(zf.read(drawing_file), parser=_SAFE_PARSER)
+                except etree.XMLSyntaxError as e:
+                    app_logger.warning(f"Failed to parse {drawing_file}: {e}")
+                    continue
+                cnvprs = tree.xpath(".//xdr:cNvPr", namespaces=_XDR_NS)
+                for node_index, cnvpr in enumerate(cnvprs):
+                    for attr in ("descr", "title"):
+                        text = (cnvpr.get(attr) or "").strip()
+                        if not text or not should_translate(text):
+                            continue
+                        count += 1
+                        content_data.append({
+                            "count_src": count, "type": "excel_alttext",
+                            "value": cnvpr.get(attr),
+                            "drawing_file": drawing_file,
+                            "node_index": node_index, "attr": attr,
+                        })
+    except Exception as e:
+        app_logger.error(f"Failed to extract Excel drawing alt-text: {e}")
+    items = sum(1 for i in content_data if i.get("type") == "excel_alttext")
+    app_logger.info(f"Extracted {items} drawing alt-text items from Excel")
+    return count
+
+
+def _apply_excel_alttext_translations_to_file(file_path, alttext_items, translations, bilingual_mode=False):
+    """Patch translated alt-text into xdr:cNvPr @descr/@title (ZIP level)."""
+    if not alttext_items:
+        return file_path
+    by_file = {}
+    for item in alttext_items:
+        by_file.setdefault(item["drawing_file"], []).append(item)
+
+    tmp = file_path + ".alttext.tmp"
+    try:
+        with ZipFile(file_path, "r") as zin, ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+            modified = set(by_file)
+            for info in zin.infolist():
+                if info.filename in modified:
+                    continue
+                zout.writestr(info, zin.read(info.filename))
+            for drawing_file, items in by_file.items():
+                if drawing_file not in zin.namelist():
+                    continue
+                tree = etree.fromstring(zin.read(drawing_file), parser=_SAFE_PARSER)
+                cnvprs = tree.xpath(".//xdr:cNvPr", namespaces=_XDR_NS)
+                for item in items:
+                    translated = translations.get(str(item["count_src"]))
+                    if not translated:
+                        continue
+                    idx = item["node_index"]
+                    if 0 <= idx < len(cnvprs):
+                        text = translated.replace("␊", "\n").replace("␍", "\r")
+                        if bilingual_mode:
+                            text = _format_bilingual_text(item["value"], translated, "sheet_name")
+                        cnvprs[idx].set(item["attr"], text)
+                zout.writestr(drawing_file, etree.tostring(tree, xml_declaration=True,
+                                                           encoding="UTF-8", standalone="yes"))
+        shutil.move(tmp, file_path)
+    except Exception as e:
+        app_logger.error(f"Failed to apply Excel alt-text translations: {e}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return file_path
+
+
+# ============================================================================
+# ADDITIVE: THREADED COMMENTS  (xl/threadedComments/threadedComment*.xml)
+# ============================================================================
+
+_THREADEDCOMMENT_NS = {
+    "tc": "http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments",
+}
+
+
+def _threaded_comment_files(names):
+    return sorted(n for n in names
+                  if re.match(r"xl/threadedComments/threadedComment\d+\.xml$", n))
+
+
+def _extract_excel_threaded_comments(file_path, content_data, count):
+    """Extract modern threaded-comment text (xl/threadedComments/*.xml:
+    <tc:text> elements). Written back at the ZIP level like legacy comments."""
+    try:
+        with ZipFile(file_path, "r") as zf:
+            for tc_file in _threaded_comment_files(zf.namelist()):
+                try:
+                    tree = etree.fromstring(zf.read(tc_file), parser=_SAFE_PARSER)
+                except etree.XMLSyntaxError as e:
+                    app_logger.warning(f"Failed to parse {tc_file}: {e}")
+                    continue
+                for node_index, node in enumerate(tree.xpath(".//tc:text", namespaces=_THREADEDCOMMENT_NS)):
+                    text = (node.text or "").strip()
+                    if not text or not should_translate(text):
+                        continue
+                    count += 1
+                    content_data.append({
+                        "count_src": count, "type": "excel_threadedcomment",
+                        "value": node.text, "comment_file": tc_file,
+                        "node_index": node_index,
+                    })
+    except Exception as e:
+        app_logger.error(f"Failed to extract Excel threaded comments: {e}")
+    items = sum(1 for i in content_data if i.get("type") == "excel_threadedcomment")
+    app_logger.info(f"Extracted {items} threaded-comment text items from Excel")
+    return count
+
+
+def _apply_excel_threaded_comment_translations_to_file(file_path, tc_items, translations, bilingual_mode=False):
+    """Patch translated text into xl/threadedComments/*.xml (ZIP level)."""
+    if not tc_items:
+        return file_path
+    by_file = {}
+    for item in tc_items:
+        by_file.setdefault(item["comment_file"], []).append(item)
+
+    tmp = file_path + ".tcomment.tmp"
+    try:
+        with ZipFile(file_path, "r") as zin, ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+            modified = set(by_file)
+            for info in zin.infolist():
+                if info.filename in modified:
+                    continue
+                zout.writestr(info, zin.read(info.filename))
+            for tc_file, items in by_file.items():
+                if tc_file not in zin.namelist():
+                    continue
+                tree = etree.fromstring(zin.read(tc_file), parser=_SAFE_PARSER)
+                nodes = tree.xpath(".//tc:text", namespaces=_THREADEDCOMMENT_NS)
+                for item in items:
+                    translated = translations.get(str(item["count_src"]))
+                    if not translated:
+                        continue
+                    idx = item["node_index"]
+                    if 0 <= idx < len(nodes):
+                        text = translated.replace("␊", "\n").replace("␍", "\r")
+                        if bilingual_mode:
+                            text = _format_bilingual_text(item["value"], translated, "cell")
+                        nodes[idx].text = text
+                zout.writestr(tc_file, etree.tostring(tree, xml_declaration=True,
+                                                      encoding="UTF-8", standalone="yes"))
+        shutil.move(tmp, file_path)
+    except Exception as e:
+        app_logger.error(f"Failed to apply Excel threaded-comment translations: {e}")
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    return file_path
+
+
+# ============================================================================
+# ADDITIVE: SHEET HEADER / FOOTER  (xl/worksheets/sheetN.xml <headerFooter>)
+# ============================================================================
+
+_SSML_NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+_HF_FIELDS = ("oddHeader", "oddFooter", "evenHeader", "evenFooter",
+              "firstHeader", "firstFooter")
+
+# Header/footer strings interleave format codes with literal text. Codes:
+#   &&                     -> a literal ampersand
+#   &"Font,Style"          -> font selection (may contain spaces/commas)
+#   &NN                    -> font size (one or more digits)
+#   &<single letter/sym>   -> position/field codes (&L &C &R &P &N &D &T &Z
+#                             &F &A &G &B &I &U &E &S &X &Y &K... )
+# Anything else is literal text. We translate ONLY literal runs.
+_HF_CODE_RE = re.compile(r'&&|&"[^"]*"|&\d+|&.')
+
+
+def _split_header_footer(text):
+    """Split a header/footer string into ('code'|'text', value) segments,
+    preserving every &-code verbatim and in order."""
+    segments = []
+    pos = 0
+    for m in _HF_CODE_RE.finditer(text):
+        if m.start() > pos:
+            segments.append(("text", text[pos:m.start()]))
+        segments.append(("code", m.group(0)))
+        pos = m.end()
+    if pos < len(text):
+        segments.append(("text", text[pos:]))
+    return segments
+
+
+def _join_header_footer(segments):
+    return "".join(value for _, value in segments)
+
+
+def _sheet_path_map(zf):
+    """Map worksheet sheet name -> 'xl/worksheets/sheetN.xml' part path for the
+    given open ZipFile, resolved via workbook.xml + workbook rels."""
+    mapping = {}
+    try:
+        if "xl/workbook.xml" not in zf.namelist():
+            return mapping
+        wb_tree = etree.fromstring(zf.read("xl/workbook.xml"), parser=_SAFE_PARSER)
+        rels = {}
+        rels_path = "xl/_rels/workbook.xml.rels"
+        if rels_path in zf.namelist():
+            rel_tree = etree.fromstring(zf.read(rels_path), parser=_SAFE_PARSER)
+            for rel in rel_tree.xpath(
+                    ".//r:Relationship",
+                    namespaces={"r": "http://schemas.openxmlformats.org/package/2006/relationships"}):
+                rels[rel.get("Id")] = rel.get("Target")
+        r_ns = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+        for sheet in wb_tree.xpath(".//s:sheets/s:sheet", namespaces=_SSML_NS):
+            name = sheet.get("name")
+            rid = sheet.get(f"{{{r_ns}}}id")
+            target = rels.get(rid)
+            if not name or not target:
+                continue
+            target = target.lstrip("/")
+            if not target.startswith("xl/"):
+                target = "xl/" + target
+            mapping[name] = target
+    except Exception as e:
+        app_logger.warning(f"Failed to build sheet path map: {e}")
+    return mapping
+
+
+def _extract_excel_header_footer(file_path, content_data, count):
+    """Extract translatable literal text from each sheet's <headerFooter>
+    children. Format codes (&L/&C/&R/&P/&N/&D/&"font,style"/&12 ...) are split
+    out and preserved; only literal runs become translatable items, located by
+    (sheet name, field, segment index)."""
+    try:
+        with ZipFile(file_path, "r") as zf:
+            sheet_paths = _sheet_path_map(zf)
+            for sheet_name, sheet_path in sheet_paths.items():
+                if sheet_path not in zf.namelist():
+                    continue
+                try:
+                    tree = etree.fromstring(zf.read(sheet_path), parser=_SAFE_PARSER)
+                except etree.XMLSyntaxError as e:
+                    app_logger.warning(f"Failed to parse {sheet_path}: {e}")
+                    continue
+                hf = tree.xpath(".//s:headerFooter", namespaces=_SSML_NS)
+                if not hf:
+                    continue
+                for field in _HF_FIELDS:
+                    nodes = hf[0].xpath(f"./s:{field}", namespaces=_SSML_NS)
+                    if not nodes or not nodes[0].text:
+                        continue
+                    segments = _split_header_footer(nodes[0].text)
+                    for seg_index, (kind, value) in enumerate(segments):
+                        if kind != "text" or not value.strip() or not should_translate(value):
+                            continue
+                        count += 1
+                        content_data.append({
+                            "count_src": count, "type": "excel_headerfooter",
+                            "value": value, "sheet": sheet_name,
+                            "sheet_path": sheet_path, "field": field,
+                            "segment_index": seg_index,
+                        })
+    except Exception as e:
+        app_logger.error(f"Failed to extract Excel header/footer: {e}")
+    items = sum(1 for i in content_data if i.get("type") == "excel_headerfooter")
+    app_logger.info(f"Extracted {items} header/footer text items from Excel")
+    return count
+
+
+def _apply_excel_header_footer_translations_to_file(file_path, hf_items, translations, bilingual_mode=False):
+    """Patch translated literal segments back into each sheet's <headerFooter>,
+    re-splitting the (openpyxl-preserved) string and replacing only the located
+    literal segments while keeping every &-code intact and in order."""
+    if not hf_items:
+        return file_path
+
+    tmp = file_path + ".headerfooter.tmp"
+    try:
+        with ZipFile(file_path, "r") as zin:
+            names = set(zin.namelist())
+            sheet_paths = _sheet_path_map(zin)
+            # Group items by worksheet part path -> field -> {seg_index: item}.
+            # Prefer the stored part path (stable across sheet renames); fall
+            # back to resolving the current sheet name.
+            by_part = {}
+            for item in hf_items:
+                part = item.get("sheet_path")
+                if not part or part not in names:
+                    part = sheet_paths.get(item["sheet"])
+                if not part:
+                    continue
+                by_part.setdefault(part, {}).setdefault(item["field"], {})[item["segment_index"]] = item
+
+            with ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+                modified = set(by_part)
+                for info in zin.infolist():
+                    if info.filename in modified:
+                        continue
+                    zout.writestr(info, zin.read(info.filename))
+                for part, fields in by_part.items():
+                    if part not in zin.namelist():
+                        continue
+                    tree = etree.fromstring(zin.read(part), parser=_SAFE_PARSER)
+                    hf = tree.xpath(".//s:headerFooter", namespaces=_SSML_NS)
+                    if hf:
+                        for field, seg_map in fields.items():
+                            nodes = hf[0].xpath(f"./s:{field}", namespaces=_SSML_NS)
+                            if not nodes or not nodes[0].text:
+                                continue
+                            segments = _split_header_footer(nodes[0].text)
+                            for seg_index, item in seg_map.items():
+                                if not (0 <= seg_index < len(segments)):
+                                    continue
+                                kind, _value = segments[seg_index]
+                                if kind != "text":
+                                    continue
+                                translated = translations.get(str(item["count_src"]))
+                                if not translated:
+                                    continue
+                                text = translated.replace("␊", "\n").replace("␍", "\r")
+                                if bilingual_mode:
+                                    text = _format_bilingual_text(item["value"], translated, "sheet_name")
+                                segments[seg_index] = ("text", text)
+                            nodes[0].text = _join_header_footer(segments)
+                    zout.writestr(part, etree.tostring(tree, xml_declaration=True,
+                                                       encoding="UTF-8", standalone="yes"))
+        shutil.move(tmp, file_path)
+    except Exception as e:
+        app_logger.error(f"Failed to apply Excel header/footer translations: {e}")
         if os.path.exists(tmp):
             os.remove(tmp)
     return file_path

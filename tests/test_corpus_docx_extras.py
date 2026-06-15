@@ -71,6 +71,78 @@ def _build_docx_with_parts(path):
     os.remove(base)
 
 
+def _png_bytes():
+    import io
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", (2, 2), (200, 100, 50)).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _build_docx_with_alttext(path):
+    """A docx with one inline picture carrying descr/title alt text on wp:docPr.
+
+    python-docx authors the drawing; the accessibility attributes live as
+    attributes on the drawing property elements, which we set on the lxml tree.
+    """
+    import io
+    from docx import Document
+
+    doc = Document()
+    doc.add_paragraph("Body text before image.")
+    run = doc.add_paragraph().add_run()
+    run.add_picture(io.BytesIO(_png_bytes()))
+
+    WP = "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"
+    PIC = "http://schemas.openxmlformats.org/drawingml/2006/picture"
+    body = doc.element.body
+    docprs = body.findall(f".//{{{WP}}}docPr")
+    check("docx authored a wp:docPr", len(docprs) >= 1, str(len(docprs)))
+    docprs[0].set("descr", "Description alt text")
+    docprs[0].set("title", "Title alt text")
+    cnvprs = body.findall(f".//{{{PIC}}}cNvPr")
+    if cnvprs:
+        cnvprs[0].set("descr", "Pic description alt text")
+    doc.save(path)
+
+
+def test_docx_drawing_alttext():
+    print("DOCX: drawing alt-text (docPr/cNvPr descr & title) translated")
+    from core.pipelines.word_translation_pipeline import (
+        extract_word_content_to_json, write_translated_content_to_word)
+
+    src = os.path.join(WORK_DIR, "alttext.docx")
+    _build_docx_with_alttext(src)
+
+    src_json = extract_word_content_to_json(src, TEMP_DIR)
+    import json
+    with open(src_json, encoding="utf-8") as f:
+        items = json.load(f)
+    values = [i["value"] for i in items]
+    alttext_items = [i for i in items if i.get("type") == "word_alttext"]
+
+    check("docPr descr extracted", "Description alt text" in values, str(values))
+    check("docPr title extracted", "Title alt text" in values, str(values))
+    check("cNvPr descr extracted", "Pic description alt text" in values, str(values))
+    check("alttext items carry part/attr",
+          all("part" in i and "attr" in i and "elem_kind" in i for i in alttext_items),
+          str(alttext_items))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_word(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           bilingual_mode=False, src_lang="en", dst_lang="ja")
+
+    with zipfile.ZipFile(out) as z:
+        body = z.read("word/document.xml").decode("utf-8")
+
+    check("docPr descr translated", T + "Description alt text" in body, body)
+    check("docPr title translated", T + "Title alt text" in body, body)
+    check("cNvPr descr translated", T + "Pic description alt text" in body, body)
+    check("drawing element survived", "<w:drawing" in body, body)
+    check("image blip survived", "blip" in body, body)
+    check("body paragraph still translated", T + "Body text before image." in body, body)
+
+
 def test_docx_comments_endnotes_charts():
     print("DOCX: comments, endnotes and chart text translated")
     from core.pipelines.word_translation_pipeline import (
@@ -107,4 +179,4 @@ def test_docx_comments_endnotes_charts():
 
 
 if __name__ == "__main__":
-    run([test_docx_comments_endnotes_charts])
+    run([test_docx_drawing_alttext, test_docx_comments_endnotes_charts])

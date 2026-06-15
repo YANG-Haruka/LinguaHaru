@@ -207,5 +207,126 @@ def test_pptx_master_static_text():
           T + "Static footer text in master" in master, master)
 
 
+# --- ADDITIVE feature fixtures: alt text, comments, notes master -----------
+
+_P_NS = "http://schemas.openxmlformats.org/presentationml/2006/main"
+_A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
+_CT_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
+
+# Legacy comment part (ppt/comments/comment1.xml): body lives in <p:text>.
+_LEGACY_COMMENT_XML = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    f'<p:cmLst xmlns:p="{_P_NS}" xmlns:a="{_A_NS}">'
+    '<p:cm authorId="0" dt="2024-01-01T00:00:00" idx="1">'
+    '<p:pos x="100" y="100"/>'
+    '<p:text>Reviewer comment needs translation</p:text>'
+    "</p:cm></p:cmLst>")
+
+# notesMaster body text box (non-placeholder static text).
+_NOTES_MASTER_XML = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+    f'<p:notesMaster xmlns:p="{_P_NS}" xmlns:a="{_A_NS}"><p:cSld><p:spTree>'
+    '<p:sp><p:nvSpPr><p:cNvPr id="11" name="NotesStatic"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
+    '<p:spPr/><p:txBody><a:bodyPr/><a:p><a:r><a:t>Notes master footer line</a:t>'
+    "</a:r></a:p></p:txBody></p:sp>"
+    "</p:spTree></p:cSld></p:notesMaster>")
+
+
+def _set_shape_alt_text(pptx_path):
+    """Add a textbox with cNvPr descr/title alt text to slide 1 via python-pptx."""
+    from pptx import Presentation
+    from pptx.util import Inches
+    prs = Presentation(pptx_path)
+    slide1 = list(prs.slides)[0]
+    box = slide1.shapes.add_textbox(Inches(5), Inches(5), Inches(2), Inches(1))
+    box.text_frame.text = "Plain run text"
+    cnv = box._element.find(f".//{{{_P_NS}}}cNvPr")
+    cnv.set("descr", "Accessibility description of the picture")
+    cnv.set("title", "Picture alt title")
+    prs.save(pptx_path)
+
+
+def _inject_comments_and_notesmaster(pptx_path):
+    """Inject a legacy comments part and a notesMaster part via raw zip edits."""
+    import shutil
+    tmp = pptx_path + ".inj2"
+    comment_part = "ppt/comments/comment1.xml"
+    notes_master_part = "ppt/notesMasters/notesMaster1.xml"
+    with zipfile.ZipFile(pptx_path) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for n in zin.namelist():
+            data = zin.read(n)
+            if n == "[Content_Types].xml":
+                # Register the two new parts so PowerPoint considers them valid.
+                overrides = (
+                    f'<Override PartName="/{comment_part}" ContentType='
+                    '"application/vnd.openxmlformats-officedocument.presentationml.comments+xml"/>'
+                    f'<Override PartName="/{notes_master_part}" ContentType='
+                    '"application/vnd.openxmlformats-officedocument.presentationml.notesMaster+xml"/>'
+                ).encode("utf-8")
+                data = data.replace(b"</Types>", overrides + b"</Types>")
+            zout.writestr(n, data)
+        zout.writestr(comment_part, _LEGACY_COMMENT_XML)
+        zout.writestr(notes_master_part, _NOTES_MASTER_XML)
+    shutil.move(tmp, pptx_path)
+
+
+def test_pptx_additive_coverage():
+    print("PPTX additive: shape alt text, comments, notes master")
+    import json
+    from core.pipelines.ppt_translation_pipeline import (
+        extract_ppt_content_to_json, write_translated_content_to_ppt)
+
+    src = os.path.join(WORK_DIR, "additive.pptx")
+    build_pptx(src)
+    _set_shape_alt_text(src)
+    _inject_comments_and_notesmaster(src)
+
+    src_json = extract_ppt_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        items = json.load(f)
+    by_type = {}
+    for i in items:
+        by_type.setdefault(i["type"], []).append(i["value"])
+
+    check("alt-text descr extracted",
+          "Accessibility description of the picture" in by_type.get("ppt_alttext", []),
+          str(by_type.get("ppt_alttext")))
+    check("alt-text title extracted",
+          "Picture alt title" in by_type.get("ppt_alttext", []),
+          str(by_type.get("ppt_alttext")))
+    check("comment text extracted",
+          "Reviewer comment needs translation" in by_type.get("ppt_comment", []),
+          str(by_type.get("ppt_comment")))
+    check("notes master text extracted",
+          "Notes master footer line" in by_type.get("ppt_notesmaster", []),
+          str(by_type.get("ppt_notesmaster")))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_ppt(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+
+    with zipfile.ZipFile(out) as z:
+        slide1 = z.read("ppt/slides/slide1.xml").decode("utf-8")
+        comment = z.read("ppt/comments/comment1.xml").decode("utf-8")
+        notes_master = z.read("ppt/notesMasters/notesMaster1.xml").decode("utf-8")
+
+    check("alt-text descr translated in output",
+          f'descr="{T}Accessibility description of the picture"' in slide1, slide1[:1500])
+    check("alt-text title translated in output",
+          f'title="{T}Picture alt title"' in slide1, slide1[:1500])
+    check("comment translated in output",
+          T + "Reviewer comment needs translation" in comment, comment)
+    check("notes master text translated in output",
+          T + "Notes master footer line" in notes_master, notes_master)
+
+    # Regression: existing slide text still translated, structure intact.
+    from pptx import Presentation
+    prs = Presentation(out)
+    table = next(s for s in list(prs.slides)[0].shapes if s.has_table).table
+    check("existing table text still translated (no regression)",
+          table.cell(0, 0).text == T + "Merged header across columns",
+          repr(table.cell(0, 0).text))
+
+
 if __name__ == "__main__":
-    run([test_pptx_structures, test_pptx_master_static_text])
+    run([test_pptx_structures, test_pptx_master_static_text, test_pptx_additive_coverage])

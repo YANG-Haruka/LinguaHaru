@@ -190,17 +190,31 @@ def extract_word_content_to_json(file_path, save_temp_dir):
         item_id = process_document_content(
             document_tree, content_data, item_id, numbering_info, styles_info, namespaces
         )
-        
+
+        # Extract drawing alt text (descr/title) from the main document
+        for alttext_item in extract_alttext_from_part(document_tree, 'word/document.xml', namespaces):
+            item_id += 1
+            alttext_item["id"] = item_id
+            alttext_item["count_src"] = item_id
+            content_data.append(alttext_item)
+
         # Process headers and footers
         for hf_file, hf_xml in header_footer_files.items():
             hf_tree = etree.fromstring(hf_xml)
             hf_type = "header" if "header" in hf_file else "footer"
             hf_number = os.path.basename(hf_file).split('.')[0]
-            
+
             item_id = process_header_footer_content(
-                hf_tree, content_data, item_id, numbering_info, styles_info, 
+                hf_tree, content_data, item_id, numbering_info, styles_info,
                 namespaces, hf_type, hf_file, hf_number
             )
+
+            # Extract drawing alt text from this header/footer part
+            for alttext_item in extract_alttext_from_part(hf_tree, hf_file, namespaces):
+                item_id += 1
+                alttext_item["id"] = item_id
+                alttext_item["count_src"] = item_id
+                content_data.append(alttext_item)
 
         # Save extraction data and temp directory path
         filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -471,6 +485,87 @@ def update_word_charts(temp_dir, original_data, translations, namespaces, biling
                 f.write(etree.tostring(tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
         except Exception as e:
             app_logger.error(f"Failed to update Word chart {chart_file}: {e}")
+
+
+# --- Drawing alt-text (wp:docPr / pic:cNvPr descr & title attributes) ---------
+# Accessibility alt text lives as ATTRIBUTES on drawing property elements, not
+# as text nodes. Drawing runs are preserved verbatim by the run-rebuild path, so
+# alt text is handled in a separate pass: enumerate the property elements per
+# part in document order and address each translatable attribute by a stable
+# (element kind, element index, attr name) key.
+_ALTTEXT_NS = {
+    "wp": "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+    "pic": "http://schemas.openxmlformats.org/drawingml/2006/picture",
+}
+# (element kind -> xpath) enumerated independently so the index is stable even
+# when the two kinds interleave in document order.
+_ALTTEXT_KINDS = (
+    ("docPr", ".//wp:docPr"),
+    ("cNvPr", ".//pic:cNvPr"),
+)
+_ALTTEXT_ATTRS = ("descr", "title")
+
+
+def _alttext_elements(tree, kind):
+    """Return the property elements of a given kind in document order."""
+    xpath = dict(_ALTTEXT_KINDS)[kind]
+    return tree.xpath(xpath, namespaces=_ALTTEXT_NS)
+
+
+def extract_alttext_from_part(tree, part_name, namespaces):
+    """Extract translatable descr/title alt text from drawing property elements.
+
+    Yields one item per translatable attribute, keyed by (part, kind, index,
+    attr) so write-back can re-enumerate the same order and set() by index.
+    """
+    items = []
+    try:
+        for kind, _xpath in _ALTTEXT_KINDS:
+            for elem_index, elem in enumerate(_alttext_elements(tree, kind)):
+                for attr in _ALTTEXT_ATTRS:
+                    value = elem.get(attr)
+                    if value and value.strip() and should_translate_enhanced(value):
+                        items.append({
+                            "type": "word_alttext",
+                            "part": part_name,
+                            "elem_kind": kind,
+                            "elem_index": elem_index,
+                            "attr": attr,
+                            "value": value.replace("\n", "␊").replace("\r", "␍"),
+                        })
+    except Exception as e:
+        app_logger.error(f"Error extracting alt text from {part_name}: {e}")
+    return items
+
+
+def update_alttext_in_part(tree, part_name, original_data, translations, namespaces, bilingual_mode=False):
+    """Write translated alt text back onto the matching drawing property elements.
+
+    Re-enumerates the same property elements in the same order as extraction and
+    sets the translated attribute value by index for items belonging to this part.
+    """
+    cache = {}
+    for item in original_data:
+        if item.get("type") != "word_alttext" or item.get("part") != part_name:
+            continue
+        item_id = str(item.get("id", item.get("count_src")))
+        translated_text = translations.get(item_id)
+        if not translated_text:
+            continue
+        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+        if bilingual_mode:
+            original_text = item.get("value", "").replace("␊", "\n").replace("␍", "\r")
+            translated_text = create_bilingual_text(original_text, translated_text)
+
+        kind = item.get("elem_kind")
+        if kind not in cache:
+            cache[kind] = _alttext_elements(tree, kind)
+        elements = cache[kind]
+        idx = item.get("elem_index")
+        if idx is None or idx >= len(elements):
+            app_logger.error(f"Alt text element index {idx} out of bounds in {part_name} ({kind})")
+            continue
+        elements[idx].set(item.get("attr"), translated_text)
 
 
 def extract_smartart_content(docx, namespaces):
@@ -2927,9 +3022,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             if not translated_text:
                 continue
 
-            # Skip items handled separately (numbering, SmartArt, notes, comments, charts)
+            # Skip items handled separately (numbering, SmartArt, notes, comments, charts, alt text)
             if item["type"] in ["numbering_level_text", "numbering_text_node", "smartart",
-                                 "footnote", "endnote", "comment", "chart"]:
+                                 "footnote", "endnote", "comment", "chart", "word_alttext"]:
                 continue
 
             translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
@@ -2980,6 +3075,13 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 update_header_footer_table_cell_with_enhanced_preservation(
                     item, text_to_apply, header_footer_trees, namespaces
                 )
+
+        # Apply drawing alt-text translations (separate attribute pass)
+        update_alttext_in_part(document_tree, 'word/document.xml',
+                               original_data, translations, namespaces, bilingual_mode)
+        for hf_file, hf_tree in header_footer_trees.items():
+            update_alttext_in_part(hf_tree, hf_file,
+                                   original_data, translations, namespaces, bilingual_mode)
 
         # Save all modified files back to temp directory
         with open(document_xml_path, "wb") as f:

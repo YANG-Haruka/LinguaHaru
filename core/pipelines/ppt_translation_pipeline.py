@@ -74,6 +74,17 @@ def extract_ppt_content_to_json(file_path, temp_dir):
             # is skipped so it is never translated.
             count = _extract_master_layout_parts(pptx, namespaces, content_data, count)
 
+            # Extract shape/picture ALT TEXT (cNvPr descr/title accessibility
+            # attributes) from slides, masters and layouts.
+            count = _extract_alttext_parts(pptx, namespaces, content_data, count)
+
+            # Extract text from PPT comments (legacy ppt/comments/*.xml and
+            # modern threaded comments ppt/comments/modernComment_*.xml).
+            count = _extract_comment_parts(pptx, namespaces, content_data, count)
+
+            # Extract static text from notes/handout masters.
+            count = _extract_notes_handout_masters(pptx, namespaces, content_data, count)
+
     except Exception as e:
         app_logger.error(f"Failed to process PPTX content: {e}")
         raise
@@ -410,11 +421,20 @@ def _extract_master_layout_parts(pptx, namespaces: Dict, content_data: List, cou
 
 
 def _apply_master_layout_translations(pptx, ml_items: List[Dict], translations: Dict,
-                                      temp_folder: str, namespaces: Dict) -> List[str]:
-    """Apply translations to master/layout parts; return modified part paths."""
+                                      temp_folder: str, namespaces: Dict,
+                                      alttext_items: List[Dict] = None) -> List[str]:
+    """Apply translations to master/layout parts; return modified part paths.
+
+    alttext_items (ppt_alttext on master/layout parts) are applied on the same
+    tree so they share the write pass and do not clobber the text translations.
+    """
     by_part = {}
     for item in ml_items:
         by_part.setdefault(item["part_path"], []).append(item)
+    alt_by_part = {}
+    for item in (alttext_items or []):
+        alt_by_part.setdefault(item["part_path"], []).append(item)
+        by_part.setdefault(item["part_path"], [])  # ensure part is processed
 
     modified = []
     for part, items in by_part.items():
@@ -430,6 +450,8 @@ def _apply_master_layout_translations(pptx, ml_items: List[Dict], translations: 
                 if 0 <= idx < len(paragraphs):
                     paragraph, _ = paragraphs[idx]
                     _distribute_text_to_runs(paragraph, translated, item, namespaces)
+            if alt_by_part.get(part):
+                _apply_alttext_to_tree(tree, alt_by_part[part], translations, namespaces)
             out_path = os.path.join(temp_folder, part)
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             with open(out_path, "wb") as f:
@@ -437,6 +459,203 @@ def _apply_master_layout_translations(pptx, ml_items: List[Dict], translations: 
             modified.append(part)
         except Exception as e:
             app_logger.error(f"Failed to apply master/layout translations to {part}: {e}")
+    return modified
+
+
+# --- ADDITIVE: alt text, comments, notes/handout masters --------------------
+
+_ALTTEXT_PART_RE = re.compile(
+    r"ppt/(?:slides/slide|slideMasters/slideMaster|slideLayouts/slideLayout)\d+\.xml$")
+
+# Comment author/timestamp attributes are not translatable; only the body text.
+_LEGACY_COMMENTS_RE = re.compile(r"ppt/comments/comment\d+\.xml$")
+_MODERN_COMMENTS_RE = re.compile(r"ppt/comments/modernComment_.*\.xml$")
+
+_NOTES_HANDOUT_MASTER_RE = re.compile(
+    r"ppt/(?:notesMasters/notesMaster|handoutMasters/handoutMaster)\d+\.xml$")
+
+# Modern threaded comments namespace (text lives in p188:txBody//a:t).
+_PC_NS = "http://schemas.microsoft.com/office/powerpoint/2018/8/main"
+
+
+def _alttext_cnvpr_nodes(tree, namespaces: Dict):
+    """All p:cNvPr nodes in a part, in document order (stable structural index)."""
+    return tree.xpath('.//p:cNvPr', namespaces=namespaces)
+
+
+def _extract_alttext_parts(pptx, namespaces: Dict, content_data: List, count: int) -> int:
+    """Extract translatable alt text (cNvPr descr/title attributes)."""
+    parts = sorted(n for n in pptx.namelist() if _ALTTEXT_PART_RE.match(n))
+    for part in parts:
+        try:
+            tree = etree.fromstring(pptx.read(part), parser=_SAFE_PARSER)
+        except etree.XMLSyntaxError as e:
+            app_logger.warning(f"Failed to parse {part}: {e}")
+            continue
+        for node_index, cnvpr in enumerate(_alttext_cnvpr_nodes(tree, namespaces)):
+            for attr in ("descr", "title"):
+                text = cnvpr.get(attr)
+                if not text or not text.strip() or not should_translate(text):
+                    continue
+                count += 1
+                content_data.append({
+                    "count_src": count,
+                    "type": "ppt_alttext",
+                    "part_path": part,
+                    "node_index": node_index,
+                    "attr": attr,
+                    "value": text.replace("\n", "␊").replace("\r", "␍"),
+                })
+    return count
+
+
+def _apply_alttext_to_tree(tree, items: List[Dict], translations: Dict, namespaces: Dict):
+    """Write translated alt text into cNvPr descr/title attributes of a parsed tree.
+
+    Applied on the SAME tree already used for text translations so the two
+    passes do not clobber each other when sharing a part (e.g. slide XML)."""
+    nodes = _alttext_cnvpr_nodes(tree, namespaces)
+    for item in items:
+        translated = translations.get(str(item["count_src"]))
+        if not translated:
+            continue
+        translated = translated.replace("␊", "\n").replace("␍", "\r")
+        idx = item["node_index"]
+        if 0 <= idx < len(nodes):
+            nodes[idx].set(item["attr"], translated)
+
+
+def _comment_text_nodes(tree, part: str, namespaces: Dict):
+    """Translatable text nodes for a comment part, in document order.
+
+    Legacy ppt/comments/commentN.xml: text is the element text of p:text.
+    Modern threaded comments: text lives in a:t runs inside the body."""
+    if _MODERN_COMMENTS_RE.match(part):
+        ns = dict(namespaces)
+        ns["pc"] = _PC_NS
+        # Modern comment text is held in a:t runs (txBody); fall back to any a:t.
+        return tree.xpath('.//a:t', namespaces=ns)
+    # Legacy: p:text element holds the comment body.
+    return tree.xpath('.//p:text', namespaces=namespaces)
+
+
+def _extract_comment_parts(pptx, namespaces: Dict, content_data: List, count: int) -> int:
+    """Extract translatable text from PPT comment parts (legacy + modern)."""
+    parts = sorted(n for n in pptx.namelist()
+                   if _LEGACY_COMMENTS_RE.match(n) or _MODERN_COMMENTS_RE.match(n))
+    for part in parts:
+        try:
+            tree = etree.fromstring(pptx.read(part), parser=_SAFE_PARSER)
+        except etree.XMLSyntaxError as e:
+            app_logger.warning(f"Failed to parse {part}: {e}")
+            continue
+        for node_index, node in enumerate(_comment_text_nodes(tree, part, namespaces)):
+            text = (node.text or "").strip()
+            if not text or not should_translate(text):
+                continue
+            count += 1
+            content_data.append({
+                "count_src": count,
+                "type": "ppt_comment",
+                "part_path": part,
+                "node_index": node_index,
+                "value": (node.text or "").replace("\n", "␊").replace("\r", "␍"),
+            })
+    return count
+
+
+def _apply_comment_translations(pptx, items: List[Dict], translations: Dict,
+                                temp_folder: str, namespaces: Dict) -> List[str]:
+    """Write translated comment text back into comment parts."""
+    by_part = {}
+    for item in items:
+        by_part.setdefault(item["part_path"], []).append(item)
+
+    modified = []
+    for part, part_items in by_part.items():
+        try:
+            tree = etree.fromstring(pptx.read(part), parser=_SAFE_PARSER)
+            nodes = _comment_text_nodes(tree, part, namespaces)
+            for item in part_items:
+                translated = translations.get(str(item["count_src"]))
+                if not translated:
+                    continue
+                translated = translated.replace("␊", "\n").replace("␍", "\r")
+                idx = item["node_index"]
+                if 0 <= idx < len(nodes):
+                    nodes[idx].text = translated
+            out_path = os.path.join(temp_folder, part)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, "wb") as f:
+                f.write(etree.tostring(tree, xml_declaration=True,
+                                       encoding="UTF-8", standalone="yes"))
+            modified.append(part)
+        except Exception as e:
+            app_logger.error(f"Failed to apply comment translations to {part}: {e}")
+    return modified
+
+
+def _extract_notes_handout_masters(pptx, namespaces: Dict, content_data: List, count: int) -> int:
+    """Extract static (non-placeholder) text from notes/handout masters."""
+    parts = sorted(n for n in pptx.namelist() if _NOTES_HANDOUT_MASTER_RE.match(n))
+    for part in parts:
+        try:
+            tree = etree.fromstring(pptx.read(part), parser=_SAFE_PARSER)
+        except etree.XMLSyntaxError as e:
+            app_logger.warning(f"Failed to parse {part}: {e}")
+            continue
+        is_handout = "handoutMaster" in part
+        item_type = "ppt_handoutmaster" if is_handout else "ppt_notesmaster"
+        for para_index, (paragraph, runs) in enumerate(
+                _ml_translatable_paragraphs(tree, namespaces)):
+            if not runs:
+                continue
+            run_info = _process_text_runs(runs, namespaces)
+            if not run_info['merged_text'].strip() or not should_translate(run_info['merged_text']):
+                continue
+            count += 1
+            content_data.append({
+                "count_src": count,
+                "type": item_type,
+                "part_path": part,
+                "para_index": para_index,
+                "value": run_info['merged_text'].replace("\n", "␊").replace("\r", "␍"),
+                "run_texts": run_info['run_texts'],
+                "run_styles": run_info['run_styles'],
+                "run_lengths": run_info['run_lengths'],
+            })
+    return count
+
+
+def _apply_notes_handout_master_translations(pptx, items: List[Dict], translations: Dict,
+                                             temp_folder: str, namespaces: Dict) -> List[str]:
+    """Write translations back into notes/handout master parts."""
+    by_part = {}
+    for item in items:
+        by_part.setdefault(item["part_path"], []).append(item)
+
+    modified = []
+    for part, part_items in by_part.items():
+        try:
+            tree = etree.fromstring(pptx.read(part), parser=_SAFE_PARSER)
+            paragraphs = _ml_translatable_paragraphs(tree, namespaces)
+            for item in part_items:
+                translated = translations.get(str(item["count_src"]))
+                if not translated:
+                    continue
+                translated = translated.replace("␊", "\n").replace("␍", "\r")
+                idx = item["para_index"]
+                if 0 <= idx < len(paragraphs):
+                    paragraph, _ = paragraphs[idx]
+                    _distribute_text_to_runs(paragraph, translated, item, namespaces)
+            out_path = os.path.join(temp_folder, part)
+            os.makedirs(os.path.dirname(out_path), exist_ok=True)
+            with open(out_path, "wb") as f:
+                f.write(etree.tostring(tree, xml_declaration=True,
+                                       encoding="UTF-8", standalone="yes"))
+            modified.append(part)
+        except Exception as e:
+            app_logger.error(f"Failed to apply notes/handout master translations to {part}: {e}")
     return modified
 
 
@@ -634,7 +853,14 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                     
                     # Apply translations to slide
                     _apply_translations_to_slide(slide_tree, slide_items, translations, namespaces)
-                    
+
+                    # Apply alt-text (cNvPr descr/title) on the same slide tree
+                    slide_alttext = [item for item in original_data
+                                     if item.get('type') == 'ppt_alttext'
+                                     and item.get('part_path') == slide_path]
+                    if slide_alttext:
+                        _apply_alttext_to_tree(slide_tree, slide_alttext, translations, namespaces)
+
                     # Save modified slide
                     modified_slide_path = os.path.join(temp_folder, slide_path)
                     os.makedirs(os.path.dirname(modified_slide_path), exist_ok=True)
@@ -689,17 +915,42 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
                 _apply_chart_parts_translations(pptx, chart_items, translations, temp_folder, namespaces)
             chart_files = sorted({item['chart_file'] for item in chart_items})
 
-            # Process slide master/layout static text
+            # Alt-text items on master/layout parts are applied in the same pass
+            # as master/layout static text (slide alt-text was applied in the
+            # slide loop above, on the shared slide tree).
+            slide_set = set(slides)
+            ml_alttext = [item for item in original_data
+                          if item.get('type') == 'ppt_alttext'
+                          and item.get('part_path') not in slide_set]
+
+            # Process slide master/layout static text (+ master/layout alt-text)
             ml_items = [item for item in original_data if item.get('type') == 'master_layout']
             ml_files = []
-            if ml_items:
+            if ml_items or ml_alttext:
                 ml_files = _apply_master_layout_translations(pptx, ml_items, translations,
-                                                             temp_folder, namespaces)
+                                                             temp_folder, namespaces,
+                                                             alttext_items=ml_alttext)
 
-            # Create final PowerPoint file (chart/master/layout parts ride the
-            # same modified-or-original mechanism as diagram files)
+            # Process PPT comments (legacy + modern threaded)
+            comment_items = [item for item in original_data if item.get('type') == 'ppt_comment']
+            comment_files = []
+            if comment_items:
+                comment_files = _apply_comment_translations(pptx, comment_items, translations,
+                                                            temp_folder, namespaces)
+
+            # Process notes/handout masters
+            nhm_items = [item for item in original_data
+                         if item.get('type') in ('ppt_notesmaster', 'ppt_handoutmaster')]
+            nhm_files = []
+            if nhm_items:
+                nhm_files = _apply_notes_handout_master_translations(pptx, nhm_items, translations,
+                                                                     temp_folder, namespaces)
+
+            # Create final PowerPoint file (chart/master/layout/comment/master
+            # parts ride the same modified-or-original mechanism as diagram files)
             _create_final_pptx(file_path, result_path, temp_folder, slides, notes_slides,
-                               diagram_files + chart_files + ml_files)
+                               diagram_files + chart_files + ml_files
+                               + comment_files + nhm_files)
             
     except Exception as e:
         app_logger.error(f"Failed to write translated content: {e}")

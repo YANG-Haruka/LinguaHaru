@@ -470,8 +470,258 @@ def test_xlsx_data_validation():
           repr(ws2["A1"].value))
 
 
+_ALTTEXT_DRAWING_XML = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"'
+    ' xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+    '<xdr:twoCellAnchor>'
+    '<xdr:from><xdr:col>2</xdr:col><xdr:colOff>0</xdr:colOff>'
+    '<xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>'
+    '<xdr:to><xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff>'
+    '<xdr:row>6</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>'
+    '<xdr:sp><xdr:nvSpPr>'
+    '<xdr:cNvPr id="2" name="TextBox 1" title="Diagram alt title"'
+    ' descr="A descriptive caption for screen readers"/>'
+    '<xdr:cNvSpPr txBox="1"/></xdr:nvSpPr><xdr:spPr/>'
+    '<xdr:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-US"/>'
+    '<a:t>Shape body text</a:t></a:r></a:p></xdr:txBody></xdr:sp>'
+    '<xdr:clientData/></xdr:twoCellAnchor></xdr:wsDr>')
+
+
+def _inject_alttext_drawing(xlsx_path):
+    """Add a DrawingML shape carrying cNvPr @title/@descr alt-text attributes."""
+    import shutil
+    import zipfile
+    tmp = xlsx_path + ".inj"
+    with zipfile.ZipFile(xlsx_path) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for n in zin.namelist():
+            data = zin.read(n)
+            if n == "[Content_Types].xml":
+                data = data.replace(
+                    b"</Types>",
+                    b'<Override PartName="/xl/drawings/drawing1.xml" '
+                    b'ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/></Types>')
+            if n == "xl/worksheets/sheet1.xml":
+                if b"xmlns:r=" not in data.split(b">", 1)[0]:
+                    data = data.replace(
+                        b"<worksheet ",
+                        b'<worksheet xmlns:r="http://schemas.openxmlformats.org/'
+                        b'officeDocument/2006/relationships" ', 1)
+                data = data.replace(b"</worksheet>", b'<drawing r:id="rId1"/></worksheet>')
+            zout.writestr(n, data)
+        zout.writestr("xl/drawings/drawing1.xml", _ALTTEXT_DRAWING_XML)
+        zout.writestr(
+            "xl/worksheets/_rels/sheet1.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+            '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/'
+            '2006/relationships/drawing" Target="../drawings/drawing1.xml"/></Relationships>')
+    shutil.move(tmp, xlsx_path)
+
+
+def test_xlsx_drawing_alttext():
+    print("XLSX: drawing shape alt-text (cNvPr @descr/@title) translated as attributes")
+    import json
+    import zipfile
+    import openpyxl
+    from lxml import etree
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel)
+
+    src = os.path.join(WORK_DIR, "alttext.xlsx")
+    wb = openpyxl.Workbook()
+    wb.active.title = "Sheet1"
+    wb.active["A1"] = "Plain cell text"
+    wb.save(src)
+    _inject_alttext_drawing(src)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    with open(src_json, encoding="utf-8") as f:
+        data = json.load(f)
+    extracted = [i["value"] for i in data]
+    check("alt-text title extracted", "Diagram alt title" in extracted, str(extracted))
+    check("alt-text descr extracted",
+          "A descriptive caption for screen readers" in extracted, str(extracted))
+    check("alt-text items typed excel_alttext",
+          all(i.get("type") == "excel_alttext"
+              for i in data if i["value"] in ("Diagram alt title",
+                                              "A descriptive caption for screen readers")),
+          str([i.get("type") for i in data]))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_excel(src, src_json, dst_json, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+
+    with zipfile.ZipFile(out) as z:
+        names = z.namelist()
+        check("drawing part survived", "xl/drawings/drawing1.xml" in names,
+              str([n for n in names if "draw" in n]))
+        drawing = z.read("xl/drawings/drawing1.xml").decode("utf-8")
+    # attributes translated
+    check("alt-text title attribute translated",
+          T + "Diagram alt title" in drawing, drawing)
+    check("alt-text descr attribute translated",
+          T + "A descriptive caption for screen readers" in drawing, drawing)
+    # still a valid cNvPr structure with both attrs present
+    tree = etree.fromstring(drawing.encode("utf-8"))
+    ns = {"xdr": "http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing"}
+    cnvpr = tree.xpath(".//xdr:cNvPr", namespaces=ns)[0]
+    check("title/descr remain attributes (not element text)",
+          cnvpr.get("title") == T + "Diagram alt title"
+          and cnvpr.get("descr") == T + "A descriptive caption for screen readers",
+          f"{cnvpr.get('title')!r} / {cnvpr.get('descr')!r}")
+    check("shape body text also translated", T + "Shape body text" in drawing, drawing)
+
+
+_THREADED_COMMENT_XML = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<ThreadedComments xmlns="http://schemas.microsoft.com/office/spreadsheetml/2018/threadedcomments">'
+    '<threadedComment ref="A1" dT="2024-01-01T00:00:00.00" personId="{00000000-0000-0000-0000-000000000001}"'
+    ' id="{11111111-1111-1111-1111-111111111111}">'
+    '<text>Modern threaded comment to translate</text></threadedComment>'
+    '<threadedComment ref="A1" dT="2024-01-01T00:01:00.00" personId="{00000000-0000-0000-0000-000000000001}"'
+    ' id="{22222222-2222-2222-2222-222222222222}" parentId="{11111111-1111-1111-1111-111111111111}">'
+    '<text>A reply also needing translation</text></threadedComment>'
+    '</ThreadedComments>')
+
+
+def _inject_threaded_comments(xlsx_path):
+    """Add a modern threaded-comments part to an existing .xlsx."""
+    import shutil
+    import zipfile
+    tmp = xlsx_path + ".inj"
+    with zipfile.ZipFile(xlsx_path) as zin, zipfile.ZipFile(tmp, "w") as zout:
+        for n in zin.namelist():
+            data = zin.read(n)
+            if n == "[Content_Types].xml":
+                data = data.replace(
+                    b"</Types>",
+                    b'<Override PartName="/xl/threadedComments/threadedComment1.xml" '
+                    b'ContentType="application/vnd.ms-excel.threadedcomments+xml"/></Types>')
+            zout.writestr(n, data)
+        zout.writestr("xl/threadedComments/threadedComment1.xml", _THREADED_COMMENT_XML)
+    shutil.move(tmp, xlsx_path)
+
+
+def test_xlsx_threaded_comment():
+    print("XLSX: modern threaded comments translated at the ZIP level")
+    import json
+    import zipfile
+    import openpyxl
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel)
+
+    src = os.path.join(WORK_DIR, "threaded.xlsx")
+    wb = openpyxl.Workbook()
+    wb.active.title = "Sheet1"
+    wb.active["A1"] = "Cell with a threaded comment"
+    wb.save(src)
+    _inject_threaded_comments(src)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    with open(src_json, encoding="utf-8") as f:
+        data = json.load(f)
+    extracted = [i["value"] for i in data]
+    check("threaded comment extracted",
+          "Modern threaded comment to translate" in extracted, str(extracted))
+    check("threaded reply extracted",
+          "A reply also needing translation" in extracted, str(extracted))
+    check("threaded items typed excel_threadedcomment",
+          all(i.get("type") == "excel_threadedcomment"
+              for i in data if i["value"] in ("Modern threaded comment to translate",
+                                              "A reply also needing translation")),
+          str([i.get("type") for i in data]))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_excel(src, src_json, dst_json, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+
+    with zipfile.ZipFile(out) as z:
+        names = z.namelist()
+        check("threaded-comments part survived",
+              "xl/threadedComments/threadedComment1.xml" in names,
+              str([n for n in names if "hread" in n]))
+        tc = z.read("xl/threadedComments/threadedComment1.xml").decode("utf-8")
+    check("threaded comment translated",
+          T + "Modern threaded comment to translate" in tc, tc)
+    check("threaded reply translated",
+          T + "A reply also needing translation" in tc, tc)
+    # structure survived: reply still references its parent thread
+    check("thread structure preserved (parentId intact)",
+          'parentId="{11111111-1111-1111-1111-111111111111}"' in tc, tc)
+
+
+def test_xlsx_header_footer():
+    print("XLSX: header/footer literal text translated, &-format codes preserved")
+    import zipfile
+    import openpyxl
+    from core.pipelines.excel_translation_pipeline import (
+        extract_excel_content_to_json, write_translated_content_to_excel,
+        _split_header_footer)
+
+    src = os.path.join(WORK_DIR, "headerfooter.xlsx")
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"
+    ws["A1"] = "Body cell text"
+    # &P = page number, &N = total pages, &D = date, &L/&C/&R = position codes.
+    ws.oddHeader.center.text = "Confidential &P of &N"
+    ws.oddFooter.right.text = "Printed on &D"
+    wb.save(src)
+
+    src_json = extract_excel_content_to_json(src, TEMP_DIR, use_xlwings=False)
+    import json
+    with open(src_json, encoding="utf-8") as f:
+        data = json.load(f)
+    extracted = [i["value"] for i in data]
+    # The literal runs (not the &-codes) are what gets extracted.
+    check("header literal 'Confidential ' extracted",
+          any(v.strip() == "Confidential" for v in extracted) or "Confidential " in extracted,
+          str(extracted))
+    check("header literal ' of ' extracted", any(v == " of " for v in extracted),
+          str(extracted))
+    check("footer literal 'Printed on ' extracted",
+          any(v == "Printed on " for v in extracted), str(extracted))
+    # The &-codes must NOT be extracted as translatable items.
+    check("no &-code leaked into translatable items",
+          not any("&" in v for v in extracted), str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_excel(src, src_json, dst_json, RESULT_DIR,
+                                            src_lang="en", dst_lang="ja", use_xlwings=False)
+
+    # Re-read header/footer via openpyxl (it round-trips the strings).
+    wb2 = openpyxl.load_workbook(out)
+    ws2 = wb2.worksheets[0]
+    header = ws2.oddHeader.center.text
+    footer = ws2.oddFooter.right.text
+    check("header literal translated", T + "Confidential" in header, repr(header))
+    check("header ' of ' literal translated", T + " of " in header, repr(header))
+    # &-codes survive intact AND in order
+    check("header &P and &N codes survive in order",
+          "&P" in header and "&N" in header
+          and header.index("&P") < header.index("&N"),
+          repr(header))
+    check("footer literal translated and &D code survives",
+          T + "Printed on " in footer and "&D" in footer, repr(footer))
+
+    # The splitter itself: codes preserved, only literal runs are 'text'.
+    segs = _split_header_footer('&C&"Arial,Bold"&12Title &P/&N')
+    codes = [v for k, v in segs if k == "code"]
+    texts = [v for k, v in segs if k == "text"]
+    check("splitter isolates &-codes",
+          codes == ['&C', '&"Arial,Bold"', '&12', '&P', '&N'],
+          str(codes))
+    check("splitter keeps only literal runs as text",
+          texts == ['Title ', '/'], str(texts))
+    check("splitter is lossless (reassembles original)",
+          "".join(v for _, v in segs) == '&C&"Arial,Bold"&12Title &P/&N',
+          str(segs))
+
+
 if __name__ == "__main__":
     run([test_xlsx_structures, test_xlsx_textbox_openpyxl_path,
          test_xlsx_chart_openpyxl_path, test_xlsx_comment_openpyxl_path,
          test_xlsx_mixed_drawing_image_and_textbox, test_xlsx_cell_value_sanitized,
-         test_xlsx_data_validation])
+         test_xlsx_data_validation, test_xlsx_drawing_alttext,
+         test_xlsx_threaded_comment, test_xlsx_header_footer])
