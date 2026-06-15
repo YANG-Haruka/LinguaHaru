@@ -3050,6 +3050,8 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 update_paragraph_with_enhanced_preservation(
                     item, text_to_apply, all_main_elements, namespaces
                 )
+                if bilingual_mode:
+                    _style_bilingual_translation_runs(item, all_main_elements, namespaces)
 
             elif item["type"] == "table_cell":
                 update_table_cell_with_enhanced_preservation(
@@ -3644,6 +3646,42 @@ def update_sdt_nested_table_cell_with_enhanced_preservation(item, translated_tex
         app_logger.error(f"Error updating SDT nested table cell: {e}, table_index: {item.get('table_index')}")
         import traceback
         app_logger.error(f"Traceback: {traceback.format_exc()}")
+
+def _style_bilingual_translation_runs(item, all_main_elements, namespaces):
+    """Bold/color the translated half of a bilingual paragraph — the runs AFTER
+    the first line break (create_bilingual_text emits 'original\\ntranslated').
+    Defensive: no-op if styling is off or no break is found, so it can never
+    corrupt the document (worst case: no styling)."""
+    try:
+        from core.engine.bilingual_format import options
+        bold, color = options()
+        if not (bold or color):
+            return
+        idx = item.get("element_index")
+        if idx is None or idx >= len(all_main_elements):
+            return
+        paragraph = all_main_elements[idx]
+        w = namespaces["w"]
+        runs = paragraph.findall(f"{{{w}}}r")     # direct child runs only
+        br_at = next((i for i, r in enumerate(runs)
+                      if r.find(f"{{{w}}}br") is not None), None)
+        if br_at is None:
+            return
+        for r in runs[br_at + 1:]:
+            rPr = r.find(f"{{{w}}}rPr")
+            if rPr is None:
+                rPr = etree.SubElement(r, f"{{{w}}}rPr")
+                r.insert(0, rPr)
+            if bold and rPr.find(f"{{{w}}}b") is None:
+                etree.SubElement(rPr, f"{{{w}}}b")
+            if color and len(color) == 6:
+                c = rPr.find(f"{{{w}}}color")
+                if c is None:
+                    c = etree.SubElement(rPr, f"{{{w}}}color")
+                c.set(f"{{{w}}}val", color.upper())
+    except Exception:  # noqa: BLE001 — best-effort styling, never fatal
+        pass
+
 
 def update_paragraph_with_enhanced_preservation(item, translated_text, all_main_elements, namespaces):
     """Update paragraph with enhanced format preservation"""

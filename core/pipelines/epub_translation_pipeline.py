@@ -503,6 +503,8 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                             if (bilingual_mode and original_plain
                                     and translated.strip() != original_plain.strip()):
                                 _insert_original_sibling(el, original_plain)
+                                from core.engine.bilingual_format import style_html_element
+                                style_html_element(el)   # bold/color the translation
                     data = etree.tostring(root, xml_declaration=True, encoding="utf-8")
 
                 # mimetype must stay uncompressed (and it is first in

@@ -51,6 +51,22 @@ def style_markup(text, family):
     return text
 
 
+def style_html_element(el):
+    """Add bold/color inline CSS to the translated block element (lxml/etree) so
+    it stands out from the original sibling. No-op if styling is off. Safe: only
+    appends to the element's own style attribute."""
+    bold, color = options()
+    parts = []
+    if bold:
+        parts.append("font-weight:bold")
+    if color:
+        parts.append(f"color:#{color}")
+    if not parts:
+        return
+    cur = (el.get("style") or "").rstrip(";")
+    el.set("style", (cur + ";" + ";".join(parts)).lstrip(";"))
+
+
 def docx_color():
     """An RGBColor for the translated runs, or None. (python-docx import is lazy
     so importing this module never pulls docx in unrelated code paths.)"""

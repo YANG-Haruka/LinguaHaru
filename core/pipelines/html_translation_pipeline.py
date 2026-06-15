@@ -114,6 +114,8 @@ def write_translated_content_to_html(file_path, original_json_path, translated_j
             if (bilingual_mode and original_plain
                     and translated.strip() != original_plain.strip()):
                 _insert_original_sibling(el, original_plain)
+                from core.engine.bilingual_format import style_html_element
+                style_html_element(el)   # bold/color the translation
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
