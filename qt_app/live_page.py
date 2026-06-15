@@ -1073,7 +1073,15 @@ class LivePage(ScrollArea):
             self._vad_sil_ms = 0.0 if speech else self._vad_sil_ms + dt_ms
             dur_ms = len(self._vad_buf) / 2 / _IN_RATE * 1000.0
             self._partial_ms += dt_ms
-            ended = self._vad_sil_ms >= _VAD_HANG_MS or dur_ms >= _VAD_MAX_MS
+            # Progressive silence: the longer the utterance, the shorter the pause
+            # needed to end it — lower latency on long speech (LiveTranslate-style).
+            if dur_ms < 3000:
+                hang = _VAD_HANG_MS
+            elif dur_ms < 6000:
+                hang = _VAD_HANG_MS * 0.5
+            else:
+                hang = max(220.0, _VAD_HANG_MS * 0.34)
+            ended = self._vad_sil_ms >= hang or dur_ms >= _VAD_MAX_MS
             if ended:
                 utt = bytes(self._vad_buf)
                 self._vad_on = False

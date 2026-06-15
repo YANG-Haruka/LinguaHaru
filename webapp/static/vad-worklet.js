@@ -124,7 +124,12 @@ class VADProcessor extends AudioWorkletProcessor {
       if (level < this.segMin) this.segMin = level;
       if (level > this.segMax) this.segMax = level;
       const durMs = (this.segN / this.sr) * 1000;
-      if (this.silenceMs >= this.hangMs) { this._flush(durMs); }
+      // Progressive silence: longer utterances end on a shorter pause (lower
+      // latency on long speech). Mirrors the Qt side.
+      const hang = durMs < 3000 ? this.hangMs
+                 : durMs < 6000 ? this.hangMs * 0.5
+                 : Math.max(220, this.hangMs * 0.34);
+      if (this.silenceMs >= hang) { this._flush(durMs); }
       else if (durMs > this.noiseMaxMs && !this.segDip && (this.segMax <= 0 || (this.segMax - this.segMin) / this.segMax < 0.45)) {
         this.port.postMessage({ type: 'drop', reason: 'steady-noise' }); this._abort();
       } else if (durMs > this.maxSegMs) { this._flush(durMs); }

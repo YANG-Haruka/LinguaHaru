@@ -1280,7 +1280,7 @@ async function startLocal() {
   liveCtx = new AudioContext();
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   try {
-    await liveCtx.audioWorklet.addModule("/static/vad-worklet.js");
+    await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260615C");
     liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
       { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000,
                             onAbs: 0.006, offAbs: 0.004 } });
@@ -1776,7 +1776,7 @@ async function quickMic() {
   _quickRecCtx = new AudioContext();
   _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
   try {
-    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js");
+    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260615C");
     _quickRecNode = new AudioWorkletNode(_quickRecCtx, "vad-processor",
       { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000,
                             onAbs: 0.006, offAbs: 0.004 } });
