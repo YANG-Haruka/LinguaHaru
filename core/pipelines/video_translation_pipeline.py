@@ -16,20 +16,24 @@ from core.log_config import app_logger
 
 # --- STT model catalogue ----------------------------------------------------
 # Each entry: id (stored in config), label (UI), engine, size/model name.
+# Curated "friendly subset" of speech-to-text models. `disk` = approximate
+# download size, `vram` = approximate GPU peak (CPU mode uses RAM, not VRAM).
+# Real-time voice favors the smaller/faster ones (lower latency).
 STT_MODELS = [
-    {"id": "whisper-small",          "engine": "whisper",    "size": "small",
-     "label": "Whisper Small (fast)"},
-    {"id": "whisper-medium",         "engine": "whisper",    "size": "medium",
-     "label": "Whisper Medium"},
-    {"id": "whisper-large-v3",       "engine": "whisper",    "size": "large-v3",
-     "label": "Whisper Large-v3 (best)"},
-    {"id": "whisper-large-v3-turbo", "engine": "whisper",    "size": "large-v3-turbo",
-     "label": "Whisper Large-v3 Turbo"},
     {"id": "sensevoice-small",       "engine": "sensevoice", "size": "iic/SenseVoiceSmall",
-     "label": "SenseVoice Small (zh/en/ja/ko/yue)"},
+     "label": "SenseVoice Small (zh/en/ja/ko/yue · fast)", "disk": "~900MB", "vram": "~1–2GB"},
+    {"id": "whisper-tiny",           "engine": "whisper",    "size": "tiny",
+     "label": "Whisper Tiny (fastest)", "disk": "~75MB", "vram": "~1GB"},
+    {"id": "whisper-base",           "engine": "whisper",    "size": "base",
+     "label": "Whisper Base", "disk": "~145MB", "vram": "~1GB"},
+    {"id": "whisper-small",          "engine": "whisper",    "size": "small",
+     "label": "Whisper Small (balanced)", "disk": "~490MB", "vram": "~2GB"},
+    {"id": "whisper-large-v3-turbo", "engine": "whisper",    "size": "large-v3-turbo",
+     "label": "Whisper Large-v3 Turbo (accurate)", "disk": "~1.6GB", "vram": "~6GB"},
 ]
 
-DEFAULT_STT_MODEL = "whisper-small"
+# Default for video subtitles AND real-time voice: SenseVoice is small + fast.
+DEFAULT_STT_MODEL = "sensevoice-small"
 
 # Single source of truth mapping a UI language code (core.languages_config)
 # to the language SenseVoice's recognizer expects. SenseVoice recognizes
@@ -59,20 +63,33 @@ def get_stt_model(model_id):
     return STT_MODELS[0]
 
 
-def get_selected_stt_model():
-    """The STT model id chosen in the UI (config), env override, or default."""
+def _selected_model_for(config_key):
     try:
         with open(_SYSTEM_CONFIG, encoding="utf-8") as f:
-            cfg_id = json.load(f).get("stt_model")
+            cfg_id = json.load(f).get(config_key)
         if cfg_id and any(m["id"] == cfg_id for m in STT_MODELS):
             return cfg_id
     except Exception:
         pass
+    return None
+
+
+def get_selected_stt_model():
+    """STT model id for VIDEO/AUDIO subtitles (config 'stt_model')."""
+    cfg = _selected_model_for("stt_model")
+    if cfg:
+        return cfg
     env = os.environ.get("LINGUAHARU_WHISPER_MODEL")
     if env:
         # Back-compat: env held a bare whisper size like "small"
         return env if env in stt_model_ids() else f"whisper-{env}"
     return DEFAULT_STT_MODEL
+
+
+def get_selected_live_stt_model():
+    """STT model id for REAL-TIME VOICE (config 'live_stt_model'), independent
+    of the video-subtitle model so each plugin picks its own."""
+    return _selected_model_for("live_stt_model") or DEFAULT_STT_MODEL
 
 
 def _resolve_stt_engine(model_def):
@@ -270,17 +287,17 @@ def recognizer_ready():
     return bool(_whisper_models)
 
 
-def preload_recognizer(model_name="iic/SenseVoiceSmall"):
-    """Load the local STT model now (downloads on first use) so the first
-    utterance isn't blocked on a multi-second model load. Also runs a tiny
-    warm-up inference: the very first generate() lazily builds graphs/buffers and
-    is otherwise several times slower than steady state. Returns True on ready."""
-    import importlib.util
+def preload_recognizer(model_id=None):
+    """Load the real-time-voice STT model now (downloads on first use) + warm up,
+    so the first utterance isn't blocked. model_id defaults to the live-voice
+    selection; the engine degrades gracefully if its dep is missing. True=ready."""
     import time
     try:
-        if importlib.util.find_spec("funasr") is not None:
+        model_def = get_stt_model(model_id or get_selected_live_stt_model())
+        engine, size = _resolve_stt_engine(model_def)
+        if engine == "sensevoice":
             t0 = time.time()
-            _get_sensevoice(model_name)
+            _get_sensevoice(model_def["size"])
             app_logger.info(f"SenseVoice loaded in {time.time() - t0:.1f}s; warming up…")
             try:
                 import numpy as np
@@ -292,28 +309,22 @@ def preload_recognizer(model_name="iic/SenseVoiceSmall"):
             except Exception as e:  # noqa: BLE001
                 app_logger.warning(f"SenseVoice warm-up skipped: {e}")
             return True
-        if importlib.util.find_spec("faster_whisper") is not None:
-            model_def = get_stt_model(get_selected_stt_model())
-            size = model_def["size"] if model_def["engine"] == "whisper" else "small"
-            _get_whisper_model(size)
-            return True
+        _get_whisper_model(size)
+        return True
     except Exception as e:  # noqa: BLE001
         app_logger.error(f"Preload recognizer failed: {e}")
     return False
 
 
-def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000,
-                        model_name="iic/SenseVoiceSmall"):
-    """Recognize one short utterance (raw mono PCM16) with the available STT
-    engine.
+def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=None):
+    """Recognize one short utterance (raw mono PCM16) for real-time voice.
 
-    Prefers SenseVoice (funasr) when installed; otherwise falls back to
-    faster-whisper, so real-time local voice works with whichever engine the
-    Video/Audio plugin provided. Returns (text, detected_lang) — text is '' if
-    no speech.
+    Routes to the engine of the selected live model (model_id defaults to the
+    live-voice selection), degrading gracefully if that engine's dep is missing.
+    Returns (text, detected_lang) — text is '' if no speech.
 
-    Used by real-time *local* voice translation: the client does VAD and sends a
-    complete utterance, so no server-side segmentation is needed here."""
+    The client does VAD and sends a complete utterance, so no server-side
+    segmentation is needed here."""
     import importlib.util
     import time
     import numpy as np
@@ -329,17 +340,23 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000,
         audio = audio * min(12.0, 0.95 / peak)
     dur = audio.size / float(sample_rate or 16000)
     t0 = time.time()
-    if importlib.util.find_spec("funasr") is not None:
-        text, detected = _recognize_sensevoice(audio, src_lang, sample_rate, model_name)
+
+    has_funasr = importlib.util.find_spec("funasr") is not None
+    has_whisper = importlib.util.find_spec("faster_whisper") is not None
+    if not (has_funasr or has_whisper):
+        raise RuntimeError(
+            "No speech-to-text engine installed. Install the Real-Time Voice "
+            "plugin (faster-whisper or funasr).")
+
+    model_def = get_stt_model(model_id or get_selected_live_stt_model())
+    engine, size = _resolve_stt_engine(model_def)
+    if engine == "sensevoice":
+        text, detected = _recognize_sensevoice(audio, src_lang, sample_rate, model_def["size"])
         app_logger.info(f"STT(SenseVoice) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
-        return text, detected
-    if importlib.util.find_spec("faster_whisper") is not None:
-        text, detected = _recognize_whisper(audio, src_lang)
-        app_logger.info(f"STT(whisper) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
-        return text, detected
-    raise RuntimeError(
-        "No speech-to-text engine installed. Install the Video/Audio plugin "
-        "(faster-whisper or funasr).")
+    else:
+        text, detected = _recognize_whisper(audio, src_lang, size)
+        app_logger.info(f"STT(whisper:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+    return text, detected
 
 
 def _recognize_sensevoice(audio, src_lang, sample_rate, model_name):
@@ -358,12 +375,10 @@ def _recognize_sensevoice(audio, src_lang, sample_rate, model_name):
     return rich_transcription_postprocess(raw).strip(), detected
 
 
-def _recognize_whisper(audio, src_lang):
+def _recognize_whisper(audio, src_lang, size="small"):
     """Recognize a pre-VAD'd utterance (16 kHz float32) with faster-whisper.
     The client already segmented speech, so vad_filter is off (it can drop short
     clips); beam_size=1 keeps it responsive for real time."""
-    model_def = get_stt_model(get_selected_stt_model())
-    size = model_def["size"] if model_def["engine"] == "whisper" else "small"
     model = _get_whisper_model(size)
     language = (src_lang or "").split("-")[0] or None
     segments, info = model.transcribe(

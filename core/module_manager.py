@@ -17,12 +17,16 @@ from core.log_config import app_logger
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # UI module name -> (requirements file, [pip package names to uninstall])
+# "Video/Audio" and "Real-Time Voice" share the same STT stack (video.txt);
+# they are listed as separate plugins so each gets its own model selection, but
+# (un)installing either affects the shared speech packages.
 MODULE_SPECS = {
     "PDF": ("requirements/pdf.txt", ["babeldoc"]),
     "Image OCR": ("requirements/ocr.txt",
                   ["paddleocr", "paddlepaddle", "rapidocr", "onnxruntime",
                    "opencv-python-headless"]),
-    "Video/Audio": ("requirements/video.txt", ["faster-whisper", "funasr"]),
+    "Video/Audio": ("requirements/video.txt", ["faster-whisper", "funasr", "imageio-ffmpeg"]),
+    "Real-Time Voice": ("requirements/video.txt", ["faster-whisper", "funasr"]),
 }
 
 # Module -> the one PyPI package whose version we surface for "new version
