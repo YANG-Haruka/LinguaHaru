@@ -16,7 +16,7 @@ imported once on first use.
 import os
 import json
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
 from core.log_config import app_logger
@@ -37,10 +37,21 @@ def _file_type(input_file: str) -> str:
     return ext
 
 
+def _retention_limits():
+    """(max_records, max_age_days) from config (0 = unlimited / no age limit)."""
+    try:
+        from core import backend
+        cfg = backend.read_config()
+        return (int(cfg.get("history_max_records", 1000) or 0),
+                int(cfg.get("history_max_age_days", 0) or 0))
+    except Exception:  # noqa: BLE001
+        return (1000, 0)
+
+
 class TranslationHistoryManager:
     """Per-project translation history, stored in SQLite."""
 
-    MAX_RECORDS = 1000  # prune oldest beyond this
+    MAX_RECORDS = 1000  # default prune cap (overridden by config)
 
     def __init__(self, log_dir: str = "log"):
         self.log_dir = log_dir
@@ -109,14 +120,33 @@ class TranslationHistoryManager:
             cols = ",".join(_FIELDS)
             with self._connect() as conn:
                 conn.execute(f"INSERT OR REPLACE INTO records ({cols}) VALUES ({placeholders})", values)
-                # prune oldest beyond MAX_RECORDS
-                conn.execute(
-                    "DELETE FROM records WHERE id NOT IN "
-                    "(SELECT id FROM records ORDER BY start_time DESC LIMIT ?)",
-                    (self.MAX_RECORDS,))
+                self._prune(conn)
             return True
         except Exception as e:  # noqa: BLE001
             app_logger.error(f"Error adding translation record: {e}")
+            return False
+
+    def _prune(self, conn):
+        """Apply retention: drop records older than max_age_days and beyond
+        max_records (both from config; 0 = unlimited)."""
+        max_records, max_age_days = _retention_limits()
+        if max_age_days and max_age_days > 0:
+            cutoff = (datetime.now() - timedelta(days=max_age_days)).isoformat()
+            conn.execute("DELETE FROM records WHERE start_time < ?", (cutoff,))
+        if max_records and max_records > 0:
+            conn.execute(
+                "DELETE FROM records WHERE id NOT IN "
+                "(SELECT id FROM records ORDER BY start_time DESC LIMIT ?)",
+                (max_records,))
+
+    def prune_now(self) -> bool:
+        """Apply retention immediately (e.g. after the user changes the limits)."""
+        try:
+            with self._connect() as conn:
+                self._prune(conn)
+            return True
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"History prune failed: {e}")
             return False
 
     def get_all_records(self, limit: Optional[int] = None, file_type: Optional[str] = None,

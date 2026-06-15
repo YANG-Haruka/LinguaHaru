@@ -361,6 +361,9 @@ async function boot() {
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
+  if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
+  if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
+  if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
   // PDF options (Translate page; shown only when a PDF is selected)
   if ($("pdf-translate-table")) $("pdf-translate-table").checked = !!c.pdf_translate_table;
   if ($("pdf-ocr-scanned")) $("pdf-ocr-scanned").checked = !!c.pdf_ocr_scanned;
@@ -634,6 +637,17 @@ $("set-lan-admin").onchange = () => {
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
+if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
+if ($("set-hist-max")) $("set-hist-max").onchange = () => saveConfig({ history_max_records: Math.max(0, parseInt($("set-hist-max").value || "0", 10) || 0) });
+if ($("set-hist-age")) $("set-hist-age").onchange = () => saveConfig({ history_max_age_days: Math.max(0, parseInt($("set-hist-age").value || "0", 10) || 0) });
+if ($("set-hist-clear")) $("set-hist-clear").onclick = async () => {
+  if (!confirm("确定清空全部历史记录？此操作不可撤销。")) return;
+  try {
+    await api("/api/history/clear", { method: "POST" });
+    $("settings-status").textContent = "历史记录已清空。";
+    if (typeof loadHistory === "function") loadHistory();
+  } catch (e) { $("settings-status").textContent = "清空失败：" + e.message; }
+};
 // PDF options (Translate page) — persisted to config; backend reads them.
 if ($("pdf-translate-table")) $("pdf-translate-table").onchange = () => saveConfig({ pdf_translate_table: $("pdf-translate-table").checked });
 if ($("pdf-ocr-scanned")) $("pdf-ocr-scanned").onchange = () => saveConfig({ pdf_ocr_scanned: $("pdf-ocr-scanned").checked });

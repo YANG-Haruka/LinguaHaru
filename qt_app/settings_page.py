@@ -103,6 +103,26 @@ class SettingsPage(ScrollArea):
         out_form.addRow(self.output_label, out_row)
         layout.addWidget(output_card)
 
+        # History retention (auto-delete) + clear.
+        self.section_history = StrongBodyLabel(tr("History", lang))
+        layout.addWidget(self.section_history)
+        history_card = CardWidget()
+        hf = QFormLayout(history_card)
+        hf.setContentsMargins(20, 16, 20, 16)
+        hf.setSpacing(12)
+        self.hist_max_edit = LineEdit()
+        self.hist_max_edit.setText(str(config.get("history_max_records", 1000)))
+        self.hist_max_edit.editingFinished.connect(self._save_hist_max)
+        hf.addRow(BodyLabel(tr("Auto-delete by count", lang)), self.hist_max_edit)
+        self.hist_age_edit = LineEdit()
+        self.hist_age_edit.setText(str(config.get("history_max_age_days", 0)))
+        self.hist_age_edit.editingFinished.connect(self._save_hist_age)
+        hf.addRow(BodyLabel(tr("Auto-delete by age", lang)), self.hist_age_edit)
+        self.hist_clear_btn = PushButton(FluentIcon.DELETE, tr("Clear History", lang))
+        self.hist_clear_btn.clicked.connect(self._clear_history)
+        hf.addRow("", self.hist_clear_btn)
+        layout.addWidget(history_card)
+
         # --- Model management: unified download location + downloaded list ---
         self.section_models = StrongBodyLabel(tr("Model Management", lang))
         layout.addWidget(self.section_models)
@@ -150,6 +170,30 @@ class SettingsPage(ScrollArea):
         self._refresh_models()
 
         layout.addStretch(1)
+
+    def _save_hist_max(self):
+        try:
+            v = max(0, int(self.hist_max_edit.text().strip() or "0"))
+        except ValueError:
+            v = 1000
+            self.hist_max_edit.setText("1000")
+        backend.set_config("history_max_records", v)
+
+    def _save_hist_age(self):
+        try:
+            v = max(0, int(self.hist_age_edit.text().strip() or "0"))
+        except ValueError:
+            v = 0
+            self.hist_age_edit.setText("0")
+        backend.set_config("history_max_age_days", v)
+
+    def _clear_history(self):
+        box = MessageBox(tr("Clear History", self._lang),
+                         tr("Clear history confirm", self._lang), self.window())
+        if box.exec():
+            from core.translation_history import TranslationHistoryManager
+            _, _, log_dir = backend.get_custom_paths()
+            TranslationHistoryManager(log_dir=log_dir).clear_all_records()
 
     def _on_stt_changed(self, index):
         if 0 <= index < len(self._stt_models):

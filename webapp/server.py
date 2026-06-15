@@ -634,6 +634,15 @@ def history(request: Request, limit: int = 200, file_type: str = "",
     return {"records": records, "file_types": h.file_types()}
 
 
+@app.post("/api/history/clear")
+def history_clear(request: Request):
+    """Clear this session's translation history (incl. real-time-voice records)."""
+    from core.translation_history import TranslationHistoryManager
+    _, _, log_dir = sessions.session_paths(request.state.session_id)
+    ok = TranslationHistoryManager(log_dir=log_dir).clear_all_records()
+    return {"ok": bool(ok)}
+
+
 # --------------------------------------------------------------------------- #
 # Proofread (scoped to the caller's session; IDOR / traversal protected)
 # --------------------------------------------------------------------------- #

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615y" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615z" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -555,13 +555,20 @@
         <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model">语音转文字模型</label><select id="models-stt"></select></div>
         <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
       </div>
+      <div class="card">
+        <h3 data-i18n="History">历史记录</h3>
+        <div class="field"><label>结果保存位置（输出文件 / 实时语音字幕的保存目录）</label><input type="text" id="set-result-dir" placeholder="data/result" /></div>
+        <div class="field" style="margin-top:10px"><label>超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
+        <div class="field" style="margin-top:10px"><label>超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
+        <button id="set-hist-clear" class="danger" style="margin-top:12px" data-i18n="Clear History">清空历史记录</button>
+      </div>
       <div id="settings-status" class="muted"></div>
     </section>
 
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615y"></script>
-  <script src="/static/app.js?v=20260615y"></script>
+  <script src="/static/background.js?v=20260615z"></script>
+  <script src="/static/app.js?v=20260615z"></script>
 </body>
 </html>

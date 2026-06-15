@@ -263,7 +263,6 @@
   "Translating content": "正在翻译内容",
   "Translation History": "翻译记录",
   "Translation Coverage": "翻译覆盖",
-  "Translation Options": "翻译选项",
   "Translation Result": "翻译结果",
   "Translation completed": "翻译完成",
   "Translation stopped by user.": "翻译已被用户停止。",
@@ -288,5 +287,8 @@
   "Word Bilingual": "启用双语对照",
   "Working": "处理中",
   "lines/min": "行/分",
-  "threads": "线程"
+  "threads": "线程",
+  "Auto-delete by count": "超过多少条自动删除（0 = 不限）",
+  "Auto-delete by age": "超过多少天自动删除（0 = 不限）",
+  "Clear history confirm": "确定清空全部历史记录？此操作不可撤销。"
 }

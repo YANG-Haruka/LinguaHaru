@@ -175,6 +175,10 @@ _DEFAULT_CONFIG = {
     "temp_dir": "data/temp",
     "result_dir": "data/result",
     "log_dir": "data/log",
+    # History retention: prune beyond N records and/or older than D days
+    # (0 = unlimited / no age limit).
+    "history_max_records": 1000,
+    "history_max_age_days": 0,
 }
 
 
