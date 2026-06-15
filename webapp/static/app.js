@@ -367,6 +367,7 @@ async function boot() {
   if ($("set-bi-bold")) $("set-bi-bold").checked = c.bilingual_bold !== false;
   if ($("set-bi-color")) $("set-bi-color").value = c.bilingual_color || "";
   if ($("set-live-stream")) $("set-live-stream").checked = !!c.live_stream_translation;
+  if ($("set-web-vad")) $("set-web-vad").value = c.web_vad || "energy";
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
@@ -649,6 +650,11 @@ if ($("set-live-stream")) $("set-live-stream").onchange = () => {
   const v = $("set-live-stream").checked;
   if (BOOT.config) BOOT.config.live_stream_translation = v;   // applies without reload
   saveConfig({ live_stream_translation: v });
+};
+if ($("set-web-vad")) $("set-web-vad").onchange = () => {
+  const v = $("set-web-vad").value;
+  if (BOOT.config) BOOT.config.web_vad = v;   // applies on next live start
+  saveConfig({ web_vad: v });
 };
 if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
 if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
@@ -1289,30 +1295,96 @@ async function startLocal() {
   try { await api("/api/live-preload", { method: "POST" }); } catch (e) { /* load lazily */ }
   liveCtx = new AudioContext();
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
+  const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
   try {
-    await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260615C");
-    liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
-      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000,
-                            onAbs: 0.006, offAbs: 0.004 } });
-    liveNode.port.onmessage = onVadMessage;
-    liveNode.port.postMessage({ type: "mode", mode: "open" });
-    liveSrc.connect(liveNode); liveNode.connect(liveCtx.destination);
+    if (useSilero) await startSileroVad();
+    else await startWorkletVad();
   } catch (e) {
-    setLiveStatus("VAD 初始化失败：" + e.message); stopLocal(); return;
+    if (useSilero) {   // neural VAD failed (network/CDN?) -> fall back to energy
+      setLiveStatus("Silero VAD 不可用（" + e.message + "），回退能量 VAD…");
+      try { await startWorkletVad(); }
+      catch (e2) { setLiveStatus("VAD 初始化失败：" + e2.message); stopLocal(); return; }
+    } else { setLiveStatus("VAD 初始化失败：" + e.message); stopLocal(); return; }
   }
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   startMicMeter();
+}
+async function startWorkletVad() {
+  await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260615C");
+  liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
+    { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000,
+                          onAbs: 0.006, offAbs: 0.004 } });
+  liveNode.port.onmessage = onVadMessage;
+  liveNode.port.postMessage({ type: "mode", mode: "open" });
+  liveSrc.connect(liveNode); liveNode.connect(liveCtx.destination);
+}
+// Neural VAD (Silero via onnxruntime-web) — same robustness tier as Qt's TEN-VAD.
+// Uses AudioNodeVAD on our acquired stream so the input picker / system audio
+// still works; feeds growing partials via onFrameProcessed (stable-prefix).
+let liveSilero = null, liveSileroBuf = [], liveSileroLast = 0, liveSileroSpeaking = false;
+let _vadLibsP = null;
+function loadVadLibs() {
+  if (_vadLibsP) return _vadLibsP;
+  const L = (s) => new Promise((res, rej) => {
+    const e = document.createElement("script"); e.src = s; e.onload = res;
+    e.onerror = () => rej(new Error("加载失败")); document.head.appendChild(e);
+  });
+  _vadLibsP = (async () => {
+    // Self-hosted (same-origin) so the page's COEP:require-corp (needed for the
+    // in-browser ffmpeg.wasm) doesn't block the onnxruntime-web WASM/worker.
+    try { await api("/api/ensure-web-vad", { method: "POST" }); } catch (e) { /* assets may already exist */ }
+    if (!window.ort) await L("/static/vad/ort.min.js");
+    if (window.ort && window.ort.env) window.ort.env.wasm.wasmPaths = "/static/vad/";
+    if (!window.vad) await L("/static/vad/bundle.min.js");
+  })();
+  return _vadLibsP;
+}
+function floatToInt16(f32) {
+  const o = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) { const s = Math.max(-1, Math.min(1, f32[i] || 0)); o[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+  return o;
+}
+function floatsToInt16(chunks) {
+  let n = 0; for (const c of chunks) n += c.length;
+  const all = new Float32Array(n); let o = 0;
+  for (const c of chunks) { all.set(c, o); o += c.length; }
+  return floatToInt16(all);
+}
+async function startSileroVad() {
+  await loadVadLibs();
+  liveSileroBuf = []; liveSileroLast = 0; liveSileroSpeaking = false;
+  liveSilero = await window.vad.AudioNodeVAD.new(liveCtx, {
+    baseAssetPath: "/static/vad/", onnxWASMBasePath: "/static/vad/", model: "legacy",
+    onSpeechStart() {
+      liveSileroSpeaking = true; liveEmitted = 0; livePendingPcm = null; pipInterim = "";
+      liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus("识别中…");
+    },
+    onFrameProcessed(_probs, frame) {
+      if (!liveSileroSpeaking || !frame || !frame.length) return;
+      liveSileroBuf.push(new Float32Array(frame));
+      const now = performance.now();
+      if (now - liveSileroLast > 360) { liveSileroLast = now; streamPartial(floatsToInt16(liveSileroBuf)); }
+    },
+    onSpeechEnd(audio) {
+      liveSileroSpeaking = false;
+      finalizeUtterance(floatToInt16(audio)); liveSileroBuf = [];
+    },
+  });
+  liveSilero.receive(liveSrc);
+  liveSilero.start();
 }
 function stopLocal() {
   saveLiveHistory();
   stopMicMeter();
   try {
+    if (liveSilero) { liveSilero.pause(); liveSilero.destroy(); }
     if (liveNode) { if (liveNode.port) liveNode.port.postMessage({ type: "mode", mode: "block" }); liveNode.disconnect(); }
     if (liveSrc) liveSrc.disconnect();
   } catch (e) { /* */ }
   if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
   if (liveCtx) liveCtx.close();
-  liveNode = null; liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
+  liveSilero = null; liveSileroSpeaking = false; liveNode = null;
+  liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
 }
 // --- Streaming live recognition (Windows-Live-Captions style) ---------------
 // Within one VAD utterance the worklet sends growing `partial` audio; we re-run
@@ -1511,7 +1583,8 @@ async function switchLiveInput() {
     if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
     liveStream = newStream;
     liveSrc = liveCtx.createMediaStreamSource(liveStream);
-    liveSrc.connect(liveMode === "google" ? liveProc : liveNode);
+    if (liveSilero) liveSilero.receive(liveSrc);            // neural VAD
+    else liveSrc.connect(liveMode === "google" ? liveProc : liveNode);
     setLiveStatus("已切换输入 · 正在聆听…");
   } catch (e) { setLiveStatus("切换输入失败：" + e.message); }
 }

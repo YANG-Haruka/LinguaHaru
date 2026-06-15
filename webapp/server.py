@@ -179,6 +179,7 @@ def bootstrap():
             "bilingual_bold": config.get("bilingual_bold", True),
             "bilingual_color": config.get("bilingual_color", ""),
             "live_stream_translation": config.get("live_stream_translation", False),
+            "web_vad": config.get("web_vad", "energy"),
             "pdf_translate_table": config.get("pdf_translate_table", False),
             "pdf_ocr_scanned": config.get("pdf_ocr_scanned", False),
             "pdf_dual_alternating": config.get("pdf_dual_alternating", False),
@@ -216,7 +217,7 @@ async def update_config(payload: dict):
                "translate_subtitles", "max_retries", "rpm_limit",
                "auto_extract_glossary", "mask_placeholders", "dedup_context",
                "bilingual_bold", "bilingual_color", "live_stream_translation",
-               "lan_mode",
+               "web_vad", "lan_mode",
                "result_dir", "history_max_records", "history_max_age_days",
                "default_thread_count_online", "default_thread_count_offline",
                "max_api_concurrency",
@@ -956,6 +957,31 @@ async def live_translate_text(payload: dict):
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Translate failed: {e}")
     return {"translated": translated if ok else ""}
+
+
+@app.post("/api/ensure-web-vad")
+def ensure_web_vad():
+    """Download the heavy Web neural-VAD assets (onnxruntime WASM + Silero ONNX)
+    into static/vad on first use, so they're self-hosted (same-origin) and the
+    page's COEP:require-corp doesn't block them. Small JS loaders are shipped."""
+    import urllib.request
+    vad_dir = os.path.join(STATIC_DIR, "vad")
+    os.makedirs(vad_dir, exist_ok=True)
+    assets = {
+        "ort-wasm-simd-threaded.wasm":
+            "https://cdn.jsdelivr.net/npm/onnxruntime-web@1.19.2/dist/ort-wasm-simd-threaded.wasm",
+        "silero_vad_legacy.onnx":
+            "https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/silero_vad_legacy.onnx",
+    }
+    missing = []
+    for name, url in assets.items():
+        p = os.path.join(vad_dir, name)
+        if not (os.path.exists(p) and os.path.getsize(p) > 1000):
+            try:
+                urllib.request.urlretrieve(url, p)
+            except Exception:  # noqa: BLE001
+                missing.append(name)
+    return {"ok": not missing, "missing": missing}
 
 
 @app.post("/api/live-translate-stream")

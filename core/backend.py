@@ -185,6 +185,10 @@ _DEFAULT_CONFIG = {
     "bilingual_color": "",
     # Live captions: stream the translation token-by-token (online only). Opt-in.
     "live_stream_translation": False,
+    # Web real-time VAD engine: "energy" (worklet) or "silero" (neural, noise-
+    # robust, via onnxruntime-web). Qt uses TEN-VAD natively; this unifies the
+    # Web side onto a neural VAD too. Opt-in until smoke-tested with a real mic.
+    "web_vad": "energy",
 }
 
 

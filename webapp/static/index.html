@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615E" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615F" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -560,6 +560,12 @@
           </div>
           <div class="muted" style="margin-top:6px; font-size:0.8rem">仅在「双语对照」翻译时生效（字幕 SRT/VTT；Word/网页等格式后续支持）。</div>
           <label class="check" style="margin-top:12px"><input type="checkbox" id="set-live-stream" /> 实时语音：流式译文（译文逐字蹦出，仅在线模型）</label>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem">实时语音 VAD（与 Qt 统一）
+            <select id="set-web-vad" style="width:auto">
+              <option value="energy">能量（默认·快）</option>
+              <option value="silero">Silero 神经（抗噪·首次需联网加载）</option>
+            </select>
+          </label>
         </div>
       </details>
       <details class="card set-card">
@@ -591,7 +597,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615E"></script>
-  <script src="/static/app.js?v=20260615E"></script>
+  <script src="/static/background.js?v=20260615F"></script>
+  <script src="/static/app.js?v=20260615F"></script>
 </body>
 </html>
