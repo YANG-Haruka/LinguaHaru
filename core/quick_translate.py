@@ -11,9 +11,15 @@ import threading
 from core.paths import DATA_DIR
 from core.log_config import app_logger
 
-_HISTORY_PATH = os.path.join(DATA_DIR, "quick_history.json")
-MAX_HISTORY = 10
+MAX_HISTORY = 50
 _lock = threading.Lock()
+
+
+def _history_path(store_dir=None):
+    """Per-user history file. The Web app passes a per-session dir so users on a
+    shared/LAN deploy never see each other's history; Qt (single local user)
+    uses the default data dir."""
+    return os.path.join(store_dir or DATA_DIR, "quick_history.json")
 
 
 def translate(text, src_lang, dst_lang):
@@ -33,26 +39,28 @@ def translate(text, src_lang, dst_lang):
     return (translated if ok else ""), bool(ok)
 
 
-def get_history():
-    """Most-recent-first list of {src, translated, src_lang, dst_lang} (<= 10)."""
+def get_history(store_dir=None):
+    """Most-recent-first list of {src, translated, src_lang, dst_lang} (<=50)."""
+    path = _history_path(store_dir)
     with _lock:
         try:
-            with open(_HISTORY_PATH, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 items = json.load(f)
             return items[:MAX_HISTORY] if isinstance(items, list) else []
         except Exception:  # noqa: BLE001 — missing/corrupt file -> empty history
             return []
 
 
-def add_history(src, translated, src_lang, dst_lang):
-    """Prepend an entry (deduping an identical prior one), cap at 10, persist.
-    Returns the updated list."""
+def add_history(src, translated, src_lang, dst_lang, store_dir=None):
+    """Prepend an entry (deduping an identical prior one), cap at MAX_HISTORY,
+    persist to the per-user file. Returns the updated list."""
     src = (src or "").strip()
     if not src or not translated:
-        return get_history()
+        return get_history(store_dir)
+    path = _history_path(store_dir)
     with _lock:
         try:
-            with open(_HISTORY_PATH, encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 items = json.load(f)
             if not isinstance(items, list):
                 items = []
@@ -65,21 +73,22 @@ def add_history(src, translated, src_lang, dst_lang):
                          "src_lang": src_lang, "dst_lang": dst_lang})
         items = items[:MAX_HISTORY]
         try:
-            os.makedirs(DATA_DIR, exist_ok=True)
-            tmp = _HISTORY_PATH + ".tmp"
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(items, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, _HISTORY_PATH)
+            os.replace(tmp, path)
         except Exception as e:  # noqa: BLE001
             app_logger.warning(f"Could not save quick-translate history: {e}")
         return items
 
 
-def clear_history():
+def clear_history(store_dir=None):
+    path = _history_path(store_dir)
     with _lock:
         try:
-            if os.path.exists(_HISTORY_PATH):
-                os.remove(_HISTORY_PATH)
+            if os.path.exists(path):
+                os.remove(path)
         except Exception:  # noqa: BLE001
             pass
     return []

@@ -36,7 +36,7 @@ from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)
 from core.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
 from core.optional_modules import (
-    module_status, video_translation_available)
+    module_status, video_translation_available, quick_voice_available)
 from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, SENSEVOICE_SUPPORTED_CODES)
 from core.log_config import app_logger
@@ -180,6 +180,8 @@ def bootstrap():
         "modules": module_status(),
         "server_mode": server_mode_on(),
         "local_live_available": video_translation_available(),
+        # "翻译语音输入" plugin: gates the Quick-Translate mic (STT) + speaker (TTS).
+        "quick_voice_available": quick_voice_available(),
         "config": {
             "default_online": online,
             "default_online_model": config.get("default_online_model", ""),
@@ -939,10 +941,20 @@ async def live_translate_text(payload: dict):
 
 
 # --- quick (short-text) translate, Google-Translate-style -------------------
+def _quick_store_dir(request):
+    """Per-session history dir so users on a shared/LAN deploy never see each
+    other's quick-translate history (falls back to the global dir if no session)."""
+    try:
+        _, _, log_dir = sessions.session_paths(request.state.session_id)
+        return log_dir
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @app.post("/api/quick-translate")
-async def quick_translate_api(payload: dict):
-    """Translate a short text via the active interface; record recent history.
-    Voice input goes through /api/live-recognize first (same STT as live voice)."""
+async def quick_translate_api(payload: dict, request: Request):
+    """Translate a short text via the active interface; record recent history
+    (scoped to the caller's session). Voice input goes through /api/live-recognize."""
     text = (payload.get("text") or "").strip()
     if not text:
         return {"translated": "", "history": []}
@@ -958,23 +970,69 @@ async def quick_translate_api(payload: dict):
     history = []
     # Don't persist history on a public/shared deploy (cross-user privacy).
     if ok and translated and not server_mode_on():
-        history = quick_translate.add_history(text, translated, src_lang, dst_lang)
+        history = quick_translate.add_history(text, translated, src_lang, dst_lang,
+                                              store_dir=_quick_store_dir(request))
     return {"translated": translated, "history": history}
 
 
 @app.get("/api/quick-history")
-def quick_history_api():
+def quick_history_api(request: Request):
     if server_mode_on():
         return {"history": []}
     from core import quick_translate
-    return {"history": quick_translate.get_history()}
+    return {"history": quick_translate.get_history(store_dir=_quick_store_dir(request))}
 
 
 @app.post("/api/quick-history/clear")
-def quick_history_clear_api():
+def quick_history_clear_api(request: Request):
     _block_in_server_mode()
     from core import quick_translate
-    return {"history": quick_translate.clear_history()}
+    return {"history": quick_translate.clear_history(store_dir=_quick_store_dir(request))}
+
+
+@app.post("/api/quick-recognize")
+async def quick_recognize_api(payload: dict):
+    """Quick-Translate voice input: recognize one utterance using the plugin's
+    own STT model (quick_stt_model)."""
+    from core.optional_modules import realtime_voice_available
+    if not realtime_voice_available():
+        raise HTTPException(400, "需要「翻译语音输入」插件(STT)")
+    import base64
+    try:
+        pcm = base64.b64decode(payload.get("audio_b64", ""))
+    except Exception:
+        raise HTTPException(400, "Bad audio payload")
+    if not pcm:
+        return {"source": "", "detected": ""}
+    from core.pipelines.video_translation_pipeline import (
+        recognize_utterance, get_selected_quick_stt_model)
+    loop = asyncio.get_event_loop()
+
+    def _recognize():
+        with _STT_LOCK:
+            return recognize_utterance(pcm, sample_rate=16000,
+                                       model_id=get_selected_quick_stt_model())
+    source, detected = await loop.run_in_executor(None, _recognize)
+    return {"source": source or "", "detected": detected or ""}
+
+
+@app.post("/api/tts")
+async def tts_api(payload: dict):
+    """Read-aloud (TTS) for the Quick-Translate output. Returns MP3 bytes."""
+    from core.optional_modules import tts_available
+    if not tts_available():
+        raise HTTPException(400, "需要「翻译语音输入」插件(edge-tts)")
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(400, "Empty text")
+    lang = payload.get("lang", "en")
+    from core import tts
+    loop = asyncio.get_event_loop()
+    audio = await loop.run_in_executor(None, tts.synthesize, text, lang)
+    if not audio:
+        raise HTTPException(500, "TTS failed (network?)")
+    from fastapi import Response
+    return Response(content=audio, media_type="audio/mpeg")
 
 
 # --------------------------------------------------------------------------- #

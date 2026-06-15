@@ -27,6 +27,9 @@ MODULE_SPECS = {
                    "opencv-python-headless"]),
     "Video/Audio": ("requirements/video.txt", ["faster-whisper", "funasr", "imageio-ffmpeg"]),
     "Real-Time Voice": ("requirements/video.txt", ["faster-whisper", "funasr"]),
+    # Quick-Translate audio = read-aloud (edge-tts) + voice input (shared STT).
+    # Uninstall removes only edge-tts (keep the shared STT used by other plugins).
+    "翻译语音输入": ("requirements/speechio.txt", ["edge-tts"]),
 }
 
 # Module -> the one PyPI package whose version we surface for "new version

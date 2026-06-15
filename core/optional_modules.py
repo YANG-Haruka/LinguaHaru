@@ -55,6 +55,17 @@ def realtime_voice_available():
     return _has_stt()
 
 
+def tts_available():
+    return importlib.util.find_spec("edge_tts") is not None
+
+
+def quick_voice_available():
+    # The "翻译语音输入" plugin powers the Quick-Translate audio buttons:
+    # read-aloud (edge-tts TTS) AND voice input (STT). Both required so the two
+    # buttons enable together (per the single-plugin design).
+    return tts_available() and _has_stt()
+
+
 def available_optional_extensions():
     extensions = []
     if pdf_translation_available():
@@ -120,6 +131,8 @@ def _plugin_model_specs():
                             "models": _stt_catalog()},
         "Real-Time Voice": {"config_key": "live_stt_model", "default": _stt_default(),
                             "models": _stt_catalog()},
+        "翻译语音输入":      {"config_key": "quick_stt_model", "default": _stt_default(),
+                            "models": _stt_catalog()},
     }
 
 
@@ -153,7 +166,9 @@ def download_plugin_model(name, model_id=None):
             ip._ocr_engine = None          # force re-create with the new size
             ip._get_ocr_engine()           # constructs PaddleOCR -> downloads models
             return True
-        if name in ("Video/Audio", "Real-Time Voice"):
+        if name in ("Video/Audio", "Real-Time Voice", "翻译语音输入"):
+            # Download the default STT model so voice input is ready (TTS/edge-tts
+            # is online, needs no model).
             from core.pipelines.video_translation_pipeline import preload_recognizer
             return bool(preload_recognizer(plugin_current_model(name)))
         if name == "PDF":
@@ -194,4 +209,6 @@ def module_status():
                "faster-whisper / SenseVoice · ffmpeg 已内置 · 视频字幕", "requirements/video.txt"),
         _entry("Real-Time Voice", "live", realtime_voice_available(),
                "SenseVoice / faster-whisper · 麦克风即时口译", "requirements/video.txt"),
+        _entry("翻译语音输入", "speechio", quick_voice_available(),
+               "edge-tts 朗读 + 语音输入 · 速译", "requirements/speechio.txt"),
     ]

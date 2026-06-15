@@ -92,6 +92,12 @@ def get_selected_live_stt_model():
     return _selected_model_for("live_stt_model") or DEFAULT_STT_MODEL
 
 
+def get_selected_quick_stt_model():
+    """STT model id for QUICK-TRANSLATE voice input (config 'quick_stt_model'),
+    independent of the live/video models."""
+    return _selected_model_for("quick_stt_model") or DEFAULT_STT_MODEL
+
+
 def _resolve_stt_engine(model_def):
     """Resolve (engine, size) honoring which optional deps are actually
     installed, falling back across engines so a missing dependency degrades
