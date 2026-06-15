@@ -49,6 +49,9 @@ _VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
 _VAD_PREROLL_MS = 500
 # How often to re-recognize the growing utterance for streaming captions.
 _VAD_PARTIAL_MS = 360
+# Neural-VAD frame: TEN-VAD's hop (256 samples = 16 ms @ 16 kHz). The energy
+# fallback uses the same frame size so the segmentation timing is identical.
+_VAD_FRAME = 256
 
 
 # --------------------------------------------------------------------------- #
@@ -457,13 +460,13 @@ class LivePage(ScrollArea):
         self._play_io = None
         self._in_fmt = None
         self._out_fmt = None
-        # local-mode energy VAD state
+        # local-mode neural-VAD state (TEN-VAD, energy fallback)
         self._vad_on = False
         self._vad_buf = bytearray()
         self._vad_preroll = bytearray()
+        self._vad_carry = bytearray()
         self._vad_voice_ms = 0.0
         self._vad_sil_ms = 0.0
-        self._vad_floor = 0.003
         # streaming-recognition state (Windows-Live-Captions style)
         self._partial_ms = 0.0          # ms since the last partial dispatch
         self._stream_emitted = 0        # sentences committed in the current utterance
@@ -999,39 +1002,62 @@ class LivePage(ScrollArea):
         rms = math.sqrt(sum((v / 32768.0) ** 2 for v in a) / len(a))
         self.waveform.push(min(1.0, rms * 2.8))
 
-    # --- local mode: energy VAD over 16k PCM16, dispatch each utterance ---
+    # --- local mode: neural VAD (TEN-VAD) over 16k PCM16, per 16ms frame ---
     def _reset_vad(self):
         self._vad_on = False
         self._vad_buf = bytearray()
         self._vad_preroll = bytearray()
+        self._vad_carry = bytearray()     # leftover < one frame
         self._vad_voice_ms = 0.0
         self._vad_sil_ms = 0.0
-        self._vad_floor = 0.003
         self._partial_ms = 0.0
         self._stream_emitted = 0
         self._recog_pending = None
 
+    def _vad_model(self):
+        """Lazy TEN-VAD (neural, noise-robust, ~0.1ms/frame). None -> energy
+        fallback. Picked over Silero/WebRTC: fastest endpointing + tiny + holds
+        up in noise where the old energy VAD flagged everything as speech."""
+        if not hasattr(self, "_ten_vad"):
+            try:
+                from ten_vad import TenVad
+                self._ten_vad = TenVad(hop_size=_VAD_FRAME, threshold=0.5)
+            except Exception:  # noqa: BLE001 — lib missing -> energy fallback
+                self._ten_vad = None
+        return self._ten_vad
+
+    def _frame_is_speech(self, frame_np):
+        vad = self._vad_model()
+        if vad is not None:
+            try:
+                _prob, flag = vad.process(frame_np)
+                return bool(flag)
+            except Exception:  # noqa: BLE001 — disable on error, fall back
+                self._ten_vad = None
+        import numpy as np
+        lvl = float(np.sqrt(np.mean((frame_np.astype("float32") / 32768.0) ** 2)))
+        return lvl > _VAD_ON_ABS
+
     def _vad_feed(self, pcm):
-        import array
-        import math
-        a = array.array("h")
-        a.frombytes(pcm)
-        if not a:
-            return
-        level = math.sqrt(sum((v / 32768.0) ** 2 for v in a) / len(a))
-        dt_ms = len(a) / _IN_RATE * 1000.0
-        on_th = max(_VAD_ON_ABS, self._vad_floor * _VAD_ON_MUL)
-        off_th = max(_VAD_OFF_ABS, self._vad_floor * _VAD_OFF_MUL)
-        # Always keep a rolling pre-roll of the most recent audio so the lead-in
-        # before onset (often the first, key words) isn't lost.
-        self._vad_preroll += pcm
-        max_pre = int(_IN_RATE * _VAD_PREROLL_MS / 1000) * 2  # bytes (2/sample)
+        import numpy as np
+        self._vad_carry += pcm
+        fb = _VAD_FRAME * 2     # bytes per frame (int16)
+        while len(self._vad_carry) >= fb:
+            frame = bytes(self._vad_carry[:fb])
+            del self._vad_carry[:fb]
+            self._vad_step(frame, np.frombuffer(frame, dtype=np.int16))
+
+    def _vad_step(self, frame, frame_np):
+        """Run the onset/hang/segment state machine for one 16 ms frame."""
+        dt_ms = _VAD_FRAME / _IN_RATE * 1000.0       # 16 ms
+        speech = self._frame_is_speech(frame_np)
+        # Rolling pre-roll so the lead-in before onset (key first words) isn't lost.
+        self._vad_preroll += frame
+        max_pre = int(_IN_RATE * _VAD_PREROLL_MS / 1000) * 2
         if len(self._vad_preroll) > max_pre:
             del self._vad_preroll[:-max_pre]
         if not self._vad_on:
-            if level < on_th:
-                self._vad_floor = self._vad_floor * 0.99 + level * 0.01
-            if level > on_th:
+            if speech:
                 self._vad_voice_ms += dt_ms
                 if self._vad_voice_ms >= _VAD_ON_MS:
                     self._vad_on = True
@@ -1039,13 +1065,12 @@ class LivePage(ScrollArea):
                     self._partial_ms = 0.0
                     self._stream_emitted = 0       # new utterance
                     self._stream_detected = "auto"
-                    # Start from the pre-roll (includes this chunk + lead-in).
                     self._vad_buf = bytearray(self._vad_preroll)
             else:
                 self._vad_voice_ms = 0.0
         else:
-            self._vad_buf += pcm
-            self._vad_sil_ms = self._vad_sil_ms + dt_ms if level < off_th else 0.0
+            self._vad_buf += frame
+            self._vad_sil_ms = 0.0 if speech else self._vad_sil_ms + dt_ms
             dur_ms = len(self._vad_buf) / 2 / _IN_RATE * 1000.0
             self._partial_ms += dt_ms
             ended = self._vad_sil_ms >= _VAD_HANG_MS or dur_ms >= _VAD_MAX_MS
