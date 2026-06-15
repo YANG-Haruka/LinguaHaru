@@ -1532,10 +1532,23 @@ async function _doCommitSentence(source) {
 }
 
 function downsamplePCM16(input, srcRate) {
+  if (srcRate === 16000) {            // no resample needed
+    const out0 = new Int16Array(input.length);
+    for (let i = 0; i < input.length; i++) {
+      const s = Math.max(-1, Math.min(1, input[i] || 0));
+      out0[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return out0;
+  }
+  // Box-average each output sample over its source window (cheap anti-aliasing —
+  // nearest-neighbor at 48k->16k aliases and hurts VAD/STT accuracy).
   const ratio = srcRate / 16000, outLen = Math.floor(input.length / ratio);
   const out = new Int16Array(outLen);
   for (let i = 0; i < outLen; i++) {
-    const s = Math.max(-1, Math.min(1, input[Math.floor(i * ratio)] || 0));
+    const start = Math.floor(i * ratio), end = Math.min(input.length, Math.floor((i + 1) * ratio));
+    let sum = 0, n = 0;
+    for (let j = start; j < end; j++) { sum += input[j] || 0; n++; }
+    const s = Math.max(-1, Math.min(1, n ? sum / n : 0));
     out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
   }
   return out;
