@@ -122,6 +122,31 @@ class ModuleUpdateCheckWorker(QThread):
         self.result.emit(self.module_name, info)
 
 
+class QuickTranslateWorker(QThread):
+    """Translate one short text off the UI thread via core.quick_translate.
+
+    Signals:
+        done(str, bool) -- (translated, ok)
+    """
+    done = Signal(str, bool)
+
+    def __init__(self, text, src_lang, dst_lang, parent=None):
+        super().__init__(parent)
+        self.text = text
+        self.src_lang = src_lang
+        self.dst_lang = dst_lang
+
+    def run(self):
+        from core import quick_translate
+        try:
+            translated, ok = quick_translate.translate(
+                self.text, self.src_lang, self.dst_lang)
+        except Exception as e:  # noqa: BLE001 - surface as a failed translation
+            self.done.emit(f"Error: {e}", False)
+            return
+        self.done.emit(translated, ok)
+
+
 class _StopRequested(Exception):
     """Raised inside the worker thread when the user asked to stop."""
 

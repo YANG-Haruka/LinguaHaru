@@ -37,6 +37,7 @@ class _UpdateCheckWorker(QThread):
 from core import backend
 from qt_app.i18n import tr, UI_LANGS, lang_display_name
 from qt_app.translate_page import TranslatePage
+from qt_app.quick_page import QuickPage
 from qt_app.live_page import LivePage
 from qt_app.glossary_page import GlossaryPage
 from qt_app.proofread_page import ProofreadPage
@@ -101,6 +102,7 @@ class MainWindow(FluentWindow):
 
         self.interface_page = InterfacePage(self, lang=self._lang)
         self.translate_page = TranslatePage(self, lang=self._lang)
+        self.quick_page = QuickPage(self, lang=self._lang)
         self.live_page = LivePage(self, lang=self._lang)
         self.settings_page = SettingsPage(self, lang=self._lang)
         self.history_page = HistoryPage(self, lang=self._lang)
@@ -112,6 +114,7 @@ class MainWindow(FluentWindow):
         self._nav_keys = {
             "InterfacePage": "Interface Management",
             "TranslatePage": "Translate",
+            "QuickPage": "Quick Translate",
             "LivePage": "Real-Time Voice",
             "SettingsPage": "Settings",
             "HistoryPage": "History",
@@ -136,6 +139,8 @@ class MainWindow(FluentWindow):
         nav.addSeparator()
         self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
                              tr("Translate", self._lang))
+        self.addSubInterface(self.quick_page, FluentIcon.SEND,
+                             tr("Quick Translate", self._lang))
         self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
                              tr("Real-Time Voice", self._lang))
 
@@ -162,6 +167,7 @@ class MainWindow(FluentWindow):
         # interface button jumps to Interface Management.
         self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
         self.translate_page.on_open_interface = lambda: self.switchTo(self.interface_page)
+        self.quick_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
         self.live_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
 
         # Interface-language picker + theme toggle pinned at the bottom of the
@@ -289,6 +295,8 @@ class MainWindow(FluentWindow):
             self.translate_page.refresh_active_interface()
             # Reflect plugins that may have been installed since last view.
             self.translate_page._refresh_format_availability()
+        elif current is self.quick_page:
+            self.quick_page.reload_history()
 
     def on_lang_changed(self, lang):
         if lang not in UI_LANGS or lang == self._lang:
@@ -296,9 +304,9 @@ class MainWindow(FluentWindow):
         self._lang = lang
         backend.set_config("qt_ui_lang", lang)
         # Re-localize each page.
-        for page in (self.interface_page, self.translate_page, self.live_page,
-                     self.settings_page, self.history_page, self.proofread_page,
-                     self.glossary_page, self.plugins_page):
+        for page in (self.interface_page, self.translate_page, self.quick_page,
+                     self.live_page, self.settings_page, self.history_page,
+                     self.proofread_page, self.glossary_page, self.plugins_page):
             page.retranslate(lang)
         # Re-localize navigation labels.
         for route_key, label_key in self._nav_keys.items():

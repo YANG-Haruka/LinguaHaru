@@ -163,6 +163,7 @@ document.querySelectorAll(".tab").forEach((t) => {
     document.querySelector(`.panel[data-panel="${panelName}"]`).classList.add("active");
     if (tab === "live") showTranslateSub("live");
     else if (tab === "translate") showTranslateSub("doc");
+    if (tab === "quick") onQuickShow();
     if (tab === "interface") loadInterfaces();
     if (tab === "glossary") loadGlossaryTable($("glossary-edit-select").value);
     if (tab === "proofread") loadProofreadDocs();
@@ -268,6 +269,15 @@ function applyI18n(lang) {
     const k = el.dataset.i18n;
     el.textContent = L[k] || EN[k] || el.textContent;
   });
+  // Attribute-targeted i18n: placeholders + titles (used by the Quick page).
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+    const k = el.dataset.i18nPh;
+    el.placeholder = L[k] || EN[k] || el.placeholder;
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((el) => {
+    const k = el.dataset.i18nTitle;
+    el.title = L[k] || EN[k] || el.title;
+  });
   localStorage.setItem("lh-lang", lang);
 }
 function initUiLang() {
@@ -348,6 +358,7 @@ async function boot() {
   if ($("pdf-pages")) $("pdf-pages").value = c.pdf_pages || "";
   if ($("pdf-only-translated")) $("pdf-only-translated").checked = !!c.pdf_only_translated_pages;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
+  initQuick();
   renderModules();
   fillLiveTarget();
   refreshLiveModel();
@@ -1272,5 +1283,193 @@ async function loadHistory() {
 $("history-refresh").onclick = loadHistory;
 $("history-type").onchange = loadHistory;
 $("history-sort").onchange = loadHistory;
+
+// ----- quick translate (Google-Translate-style text box) -----
+// Source = "auto" (auto-detect) + the same display-name language list the
+// translate page uses; target = a concrete language. The backend takes display
+// names (or "auto") directly, so no code mapping is needed here.
+function initQuick() {
+  const src = $("quick-src"), dst = $("quick-dst");
+  if (!src || !dst) return;
+  // Auto option first, then the language display names. The Auto label is
+  // localized via applyI18n (it carries data-i18n="Auto Detect").
+  src.innerHTML = "";
+  const auto = document.createElement("option");
+  auto.value = "auto"; auto.textContent = "自动识别语言"; auto.dataset.i18n = "Auto Detect";
+  src.appendChild(auto);
+  for (const name of BOOT.languages) {
+    const o = document.createElement("option"); o.value = name; o.textContent = name; src.appendChild(o);
+  }
+  src.value = "auto";
+  fillSelect(dst, BOOT.languages, BOOT.config.default_dst_lang || "中文");
+
+  $("quick-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); quickTranslate(); }
+  });
+  $("quick-swap").onclick = quickSwap;
+  $("quick-copy").onclick = quickCopy;
+  $("quick-clear").onclick = quickClearHistory;
+  $("quick-mic").onclick = quickMic;
+
+  // Mic is only usable when the local STT (SenseVoice) plugin is available.
+  // When it isn't, keep the button clickable but visibly dimmed + a hint, and
+  // make a click jump to the Plugins page (quickMic handles the redirect).
+  if (!BOOT.local_live_available) {
+    const mic = $("quick-mic");
+    mic.title = "语音输入需要「语音」插件（SenseVoice），点此前往「插件」安装。";
+    mic.classList.add("quick-mic-off");
+  }
+}
+
+function onQuickShow() {
+  loadQuickHistory();
+  const inp = $("quick-input");
+  if (inp) inp.focus();
+}
+
+async function quickTranslate() {
+  const text = $("quick-input").value.trim();
+  if (!text) return;
+  $("quick-status").textContent = _label("Translate", "翻译") + "…";
+  try {
+    const r = await api("/api/quick-translate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text, src_lang: $("quick-src").value, dst_lang: $("quick-dst").value }) });
+    $("quick-output").textContent = r.translated || "";
+    $("quick-status").textContent = "";
+    renderQuickHistory(r.history || []);
+  } catch (e) {
+    $("quick-status").textContent = "错误: " + (e.message || "").slice(0, 120);
+  }
+}
+
+function quickSwap() {
+  const src = $("quick-src"), dst = $("quick-dst");
+  // If source is auto, there's no concrete language to move to the target;
+  // adopt the current target as the new source instead and keep target.
+  if (src.value === "auto") {
+    if ([...src.options].some((o) => o.value === dst.value)) src.value = dst.value;
+    else return;
+  } else {
+    const s = src.value; src.value = dst.value; dst.value = s;
+  }
+  if ($("quick-output").textContent.trim()) quickTranslate();
+}
+
+async function quickCopy() {
+  const text = $("quick-output").textContent;
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    const btn = $("quick-copy");
+    const prev = btn.textContent;
+    btn.textContent = _label("Copied", "已复制");
+    setTimeout(() => { btn.textContent = prev; }, 1200);
+  } catch (e) { $("quick-status").textContent = "复制失败"; }
+}
+
+async function loadQuickHistory() {
+  try {
+    const d = await api("/api/quick-history");
+    renderQuickHistory(d.history || []);
+  } catch (e) { renderQuickHistory([]); }
+}
+
+function renderQuickHistory(items) {
+  const box = $("quick-history-list");
+  if (!box) return;
+  box.replaceChildren();
+  if (!items.length) {
+    const e = document.createElement("div");
+    e.className = "quick-history-empty";
+    e.textContent = _label("History", "历史记录") + " —";
+    box.appendChild(e);
+    return;
+  }
+  for (const it of items) {
+    const row = document.createElement("button");
+    row.type = "button"; row.className = "quick-history-item";
+    // textContent only (no innerHTML of user text) — XSS-safe.
+    const s = document.createElement("span"); s.className = "qh-src"; s.textContent = it.src || "";
+    const a = document.createElement("span"); a.className = "qh-arrow"; a.textContent = "→";
+    const d = document.createElement("span"); d.className = "qh-dst"; d.textContent = it.translated || "";
+    row.append(s, a, d);
+    row.onclick = () => {
+      if (it.src_lang) $("quick-src").value =
+        [...$("quick-src").options].some((o) => o.value === it.src_lang) ? it.src_lang : "auto";
+      if (it.dst_lang && [...$("quick-dst").options].some((o) => o.value === it.dst_lang)) $("quick-dst").value = it.dst_lang;
+      $("quick-input").value = it.src || "";
+      $("quick-output").textContent = it.translated || "";
+    };
+    box.appendChild(row);
+  }
+}
+
+async function quickClearHistory() {
+  try { const d = await api("/api/quick-history/clear", { method: "POST" }); renderQuickHistory(d.history || []); }
+  catch (e) { /* server mode / unavailable */ }
+}
+
+// Voice input: reuse the live page's local capture path (VAD worklet -> one
+// utterance -> POST base64 PCM16 to /api/live-recognize). One press records one
+// utterance; the recognized source text is dropped into the input + translated.
+let _quickRecCtx = null, _quickRecStream = null, _quickRecSrc = null, _quickRecNode = null, _quickRecording = false;
+async function quickMic() {
+  if (!BOOT.local_live_available) {
+    const t = document.querySelector('.tab[data-tab="modules"]'); if (t) t.click();
+    return;
+  }
+  if (_quickRecording) { stopQuickMic(); return; }
+  try {
+    _quickRecStream = await navigator.mediaDevices.getUserMedia(
+      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  } catch (e) { $("quick-status").textContent = "无法访问麦克风：" + e.message; return; }
+  $("quick-status").textContent = "正在加载本地模型…";
+  try { await api("/api/live-preload", { method: "POST" }); } catch (e) { /* lazy load */ }
+  _quickRecCtx = new AudioContext();
+  _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
+  try {
+    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js");
+    _quickRecNode = new AudioWorkletNode(_quickRecCtx, "vad-processor",
+      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000,
+                            onAbs: 0.006, offAbs: 0.004 } });
+    _quickRecNode.port.onmessage = onQuickVad;
+    _quickRecNode.port.postMessage({ type: "mode", mode: "open" });
+    _quickRecSrc.connect(_quickRecNode); _quickRecNode.connect(_quickRecCtx.destination);
+  } catch (e) { $("quick-status").textContent = "VAD 初始化失败：" + e.message; stopQuickMic(); return; }
+  _quickRecording = true;
+  $("quick-mic").classList.add("recording");
+  $("quick-status").textContent = "正在聆听…（说完一句自动识别）";
+}
+function stopQuickMic() {
+  try {
+    if (_quickRecNode) { if (_quickRecNode.port) _quickRecNode.port.postMessage({ type: "mode", mode: "block" }); _quickRecNode.disconnect(); }
+    if (_quickRecSrc) _quickRecSrc.disconnect();
+  } catch (e) { /* */ }
+  if (_quickRecStream) _quickRecStream.getTracks().forEach((t) => t.stop());
+  if (_quickRecCtx) _quickRecCtx.close();
+  _quickRecNode = null; _quickRecording = false;
+  $("quick-mic").classList.remove("recording");
+}
+function onQuickVad(e) {
+  const m = e.data || {};
+  if (m.type === "segment") {
+    stopQuickMic();   // one utterance per press
+    quickRecognize(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
+  }
+}
+async function quickRecognize(int16) {
+  $("quick-status").textContent = "识别中…";
+  try {
+    const r = await api("/api/live-recognize", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ audio_b64: int16ToB64(int16) }) });
+    if (!r.source) { $("quick-status").textContent = "未识别到语音"; return; }
+    $("quick-input").value = r.source;
+    if (r.detected && [...$("quick-src").options].some((o) => o.value === r.detected)) $("quick-src").value = r.detected;
+    $("quick-status").textContent = "";
+    quickTranslate();
+  } catch (e) { $("quick-status").textContent = "识别失败：" + (e.message || "").slice(0, 120); }
+}
 
 boot().catch((e) => { document.body.innerHTML = "<pre style='padding:24px'>启动失败: " + e.message + "</pre>"; });

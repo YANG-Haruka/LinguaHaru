@@ -938,6 +938,45 @@ async def live_translate_text(payload: dict):
     return {"translated": translated if ok else ""}
 
 
+# --- quick (short-text) translate, Google-Translate-style -------------------
+@app.post("/api/quick-translate")
+async def quick_translate_api(payload: dict):
+    """Translate a short text via the active interface; record recent history.
+    Voice input goes through /api/live-recognize first (same STT as live voice)."""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"translated": "", "history": []}
+    src_lang = payload.get("src_lang") or "auto"
+    dst_lang = payload.get("dst_lang", "en")
+    from core import quick_translate
+    loop = asyncio.get_event_loop()
+    try:
+        translated, ok = await loop.run_in_executor(
+            None, quick_translate.translate, text, src_lang, dst_lang)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Translate failed: {e}")
+    history = []
+    # Don't persist history on a public/shared deploy (cross-user privacy).
+    if ok and translated and not server_mode_on():
+        history = quick_translate.add_history(text, translated, src_lang, dst_lang)
+    return {"translated": translated, "history": history}
+
+
+@app.get("/api/quick-history")
+def quick_history_api():
+    if server_mode_on():
+        return {"history": []}
+    from core import quick_translate
+    return {"history": quick_translate.get_history()}
+
+
+@app.post("/api/quick-history/clear")
+def quick_history_clear_api():
+    _block_in_server_mode()
+    from core import quick_translate
+    return {"history": quick_translate.clear_history()}
+
+
 # --------------------------------------------------------------------------- #
 # Update check (GitHub Releases, China-friendly mirrors). Cached 1h so it never
 # blocks page loads repeatedly; the frontend shows a dismissible banner.

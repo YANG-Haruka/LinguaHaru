@@ -733,6 +733,47 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
   transition: width .06s linear;
 }
 
+/* ============================ quick translate ============================ */
+.quick-pane { display: flex; flex-direction: column; gap: 10px; }
+.quick-area {
+  min-height: 220px; max-height: 420px; overflow-y: auto;
+  font-size: 1.05rem; line-height: 1.7; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+textarea.quick-area {
+  width: 100%; resize: vertical; border: none; background: transparent;
+  font-family: inherit; padding: 0; box-shadow: none;
+}
+textarea.quick-area:focus { outline: none; box-shadow: none; }
+.quick-output:empty::before {
+  content: "—"; color: var(--faint); font-size: 0.9rem; font-family: var(--font-mono);
+}
+.quick-foot {
+  display: flex; align-items: center; gap: 10px;
+  border-top: 1px solid var(--border); padding-top: 10px;
+}
+.quick-foot .muted { flex: 1; font-size: 0.78rem; }
+.quick-mic {
+  display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px;
+  border: 1px solid var(--border-2); border-radius: 999px; background: var(--surface-2);
+  color: var(--text); cursor: pointer;
+}
+.quick-mic svg { width: 18px; height: 18px; }
+.quick-mic.recording { background: #ef4444; border-color: #ef4444; color: #fff; }
+.quick-mic:disabled { opacity: 0.45; cursor: not-allowed; }
+.quick-mic.quick-mic-off { opacity: 0.5; }
+.quick-history { display: flex; flex-direction: column; gap: 6px; }
+.quick-history-item {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r);
+  background: var(--surface-2); color: var(--text); font-size: 0.86rem; line-height: 1.5;
+}
+.quick-history-item:hover { border-color: var(--accent); }
+.quick-history-item .qh-src { color: var(--text); }
+.quick-history-item .qh-arrow { color: var(--faint); margin: 0 6px; }
+.quick-history-item .qh-dst { color: var(--muted); }
+.quick-history-empty { color: var(--faint); font-size: 0.84rem; font-family: var(--font-mono); }
+
 /* ============================ segmented toggle ============================ */
 .segmented {
   display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 22px;

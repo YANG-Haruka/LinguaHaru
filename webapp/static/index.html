@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615p" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615q" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -48,6 +48,10 @@
         <button class="tab active" data-tab="translate" title="翻译">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18"/><path d="M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg></span>
           <span data-i18n="Translate">翻译</span>
+        </button>
+        <button class="tab" data-tab="quick" title="速译">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13H11l-1 9 8.5-11H12z"/></svg></span>
+          <span data-i18n="Quick Translate">速译</span>
         </button>
         <button class="tab" data-tab="live" title="实时语音">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></span>
@@ -367,6 +371,56 @@
       </div>
     </section>
 
+    <!-- Quick Translate (Google-Translate-style text box) -->
+    <section class="panel" data-panel="quick">
+      <div class="page-head">
+        <div class="kicker mono">Quick</div>
+        <h2 data-i18n="Quick Translate">速译</h2>
+        <p data-i18n="Quick Translate Subtitle">输入文字即时翻译，按回车翻译，Shift+回车换行。</p>
+      </div>
+
+      <div class="card lang-card">
+        <div class="field">
+          <label data-i18n="Source Language">源语言</label>
+          <select id="quick-src"></select>
+        </div>
+        <button id="quick-swap" class="swap" title="交换语言">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h12l-3-3"/><path d="M17 16H5l3 3"/></svg>
+        </button>
+        <div class="field">
+          <label data-i18n="Target Language">目标语言</label>
+          <select id="quick-dst"></select>
+        </div>
+      </div>
+
+      <div class="live-split quick-split">
+        <div class="card live-pane quick-pane">
+          <textarea id="quick-input" class="quick-area" data-i18n-ph="Enter Text" placeholder="输入文本"></textarea>
+          <div class="quick-foot">
+            <span class="muted" data-i18n="Enter To Translate">按回车翻译，Shift+回车换行</span>
+            <button id="quick-mic" class="quick-mic" data-i18n-title="Voice Input" title="语音输入">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="card live-pane quick-pane">
+          <div id="quick-output" class="quick-area quick-output"></div>
+          <div class="quick-foot">
+            <span class="muted" id="quick-status"></span>
+            <button id="quick-copy" class="quick-mic" data-i18n="Copy">复制</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="actions" style="margin-bottom:10px">
+          <h3 style="margin:0;flex:1" data-i18n="History">历史记录</h3>
+          <button id="quick-clear" data-i18n="Clear History">清除历史</button>
+        </div>
+        <div id="quick-history-list" class="quick-history"></div>
+      </div>
+    </section>
+
     <!-- Glossary -->
     <section class="panel" data-panel="glossary">
       <div class="page-head">
@@ -491,7 +545,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615p"></script>
-  <script src="/static/app.js?v=20260615p"></script>
+  <script src="/static/background.js?v=20260615q"></script>
+  <script src="/static/app.js?v=20260615q"></script>
 </body>
 </html>
