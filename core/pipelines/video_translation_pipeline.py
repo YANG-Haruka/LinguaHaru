@@ -52,6 +52,19 @@ _whisper_models = {}   # size -> WhisperModel
 _sensevoice = None     # (asr_model, vad_model)
 
 
+def _stt_device():
+    """Return 'cuda' if a CUDA-capable GPU + GPU torch build are present, else
+    'cpu'. STT is many times faster on GPU; this is auto-detected so a machine
+    with an NVIDIA GPU (and a CUDA torch build) uses it without any config."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return "cuda"
+    except Exception:  # noqa: BLE001 — torch missing or broken -> CPU
+        pass
+    return "cpu"
+
+
 def stt_model_ids():
     return [m["id"] for m in STT_MODELS]
 
@@ -155,9 +168,14 @@ def _get_whisper_model(size):
     if size not in _whisper_models:
         from faster_whisper import WhisperModel
         from core.model_store import whisper_dir
-        app_logger.info(f"Loading faster-whisper model '{size}' (downloads on first use)...")
+        dev = _stt_device()
+        # float16 on GPU is fast+accurate; int8 on CPU is ~4x faster than float32.
+        ctype = "float16" if dev == "cuda" else "int8"
+        app_logger.info(
+            f"Loading faster-whisper '{size}' on {dev} ({ctype})...")
         # download_root keeps whisper models in the unified data/models location.
-        _whisper_models[size] = WhisperModel(size, device="auto", download_root=whisper_dir())
+        _whisper_models[size] = WhisperModel(
+            size, device=dev, compute_type=ctype, download_root=whisper_dir())
     return _whisper_models[size]
 
 
@@ -236,15 +254,16 @@ def _get_sensevoice(model_name):
     global _sensevoice
     if _sensevoice is None:
         from funasr import AutoModel
-        app_logger.info("Loading SenseVoice + fsmn-vad (downloads on first use)...")
+        dev = _stt_device()
+        app_logger.info(f"Loading SenseVoice + fsmn-vad on {dev} (downloads on first use)...")
         local = _sensevoice_local_dir()
         if local:
             app_logger.info(f"SenseVoice from HF mirror: {local}")
-            asr = AutoModel(model=local, disable_update=True)
+            asr = AutoModel(model=local, disable_update=True, device=dev)
         else:  # mirror unreachable -> modelscope (may be slow)
             app_logger.warning("HF mirror unavailable; loading SenseVoice via modelscope.")
-            asr = AutoModel(model=model_name, disable_update=True)
-        vad = AutoModel(model="fsmn-vad", disable_update=True,
+            asr = AutoModel(model=model_name, disable_update=True, device=dev)
+        vad = AutoModel(model="fsmn-vad", disable_update=True, device=dev,
                         vad_kwargs={"max_single_segment_time": 30000})
         _sensevoice = (asr, vad)
     return _sensevoice
