@@ -40,9 +40,109 @@ def should_translate_enhanced(text):
     # First check if it's base64 image
     if is_base64_image(text):
         return False
-    
+
     # Then use original check logic
     return should_translate(text)
+
+
+# --- Inline machine-token protection ------------------------------------
+#
+# A markdown line can mix human prose with machine tokens that must NOT be
+# altered by the translator:
+#   * inline code  `code`  / ``code with ` backtick``  -> protect verbatim
+#   * link/image targets  [text](URL "title")  ![alt](URL "title")
+#                  -> protect the URL only; text/alt/title stay translatable
+#   * autolinks    <https://...>  and bare URLs http(s)://...  -> verbatim
+#
+# Each protected slice is swapped for a Private-Use-Area sentinel
+# (U+E000 <index> U+E001), the same neutral delimiter scheme used by
+# core/engine/placeholder_mask.py. PUA codepoints carry no linguistic
+# meaning so the model leaves them alone, and they can never collide with the
+# reserved pipeline markers ({{HLINK_n}}, {{INLINE_n}}, [formula_n], ␊, ␍).
+# The {index -> original-text} map is persisted per line in structure.json and
+# restored on write-back, so the round-trip is lossless.
+
+_MD_SENT_OPEN = ""
+_MD_SENT_CLOSE = ""
+
+
+def _md_sentinel(i):
+    return f"{_MD_SENT_OPEN}{i}{_MD_SENT_CLOSE}"
+
+
+_MD_SENTINEL_RE = re.compile(re.escape(_MD_SENT_OPEN) + r"(\d+)" + re.escape(_MD_SENT_CLOSE))
+
+# Inline code: one or more backticks, then the shortest run up to the SAME
+# number of backticks (CommonMark code-span rule). Whole span is verbatim.
+_MD_INLINE_CODE_RE = re.compile(r"(`+)(?:.+?)\1", re.DOTALL)
+
+# Autolink <scheme:...> and bare http(s) URLs: kept verbatim.
+_MD_AUTOLINK_RE = re.compile(r"<(?:https?|ftp|mailto):[^>\s]+>", re.IGNORECASE)
+_MD_BARE_URL_RE = re.compile(r"(?<![\w@])(?:https?|ftp)://[^\s)\]<>\"']+", re.IGNORECASE)
+
+# Link/image target: the (URL "optional title") that follows ]. Captures the
+# leading paren + URL so only the machine part is protected; the link/image
+# TEXT and the optional title stay outside the sentinel and remain translatable.
+#   group 1: '(' + URL (+ trailing space before a title, trimmed below)
+# We match the URL up to whitespace or the closing paren so a title survives.
+_MD_LINK_TARGET_RE = re.compile(
+    r"(?<=\])"                       # must follow a ] (link/image text close)
+    r"\("                            # opening paren
+    r"\s*"                           # optional inner space
+    r"(?:<[^>]*>|[^\s)]+)"           # URL: <bracketed> or run of non-space
+)
+
+
+def _protect_inline_md(text):
+    """Mask inline code, link/image URLs and autolinks with sentinels.
+
+    Returns ``(masked_text, mapping)`` where mapping is ``{index: original}``.
+    Fast path: a line with none of these returns unchanged + empty map.
+    """
+    if not text or (("`" not in text) and ("](" not in text)
+                    and ("![" not in text) and ("://" not in text) and ("<" not in text)):
+        return text, {}
+
+    mapping = {}
+    spans = []  # (start, end) of every protected slice
+
+    for rx in (_MD_INLINE_CODE_RE, _MD_AUTOLINK_RE, _MD_LINK_TARGET_RE, _MD_BARE_URL_RE):
+        for m in rx.finditer(text):
+            spans.append((m.start(), m.end()))
+
+    if not spans:
+        return text, {}
+
+    # Non-overlapping, left-to-right; inline code (added first) wins ties so a
+    # URL printed inside `code` is not double-masked.
+    spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
+    chosen = []
+    last_end = -1
+    for start, end in spans:
+        if start >= last_end:
+            chosen.append((start, end))
+            last_end = end
+
+    out = []
+    cursor = 0
+    for idx, (start, end) in enumerate(chosen):
+        out.append(text[cursor:start])
+        out.append(_md_sentinel(idx))
+        mapping[str(idx)] = text[start:end]
+        cursor = end
+    out.append(text[cursor:])
+    return "".join(out), mapping
+
+
+def _restore_inline_md(text, mapping):
+    """Replace sentinels with their original slices. Unknown indices kept as-is."""
+    if not mapping or not isinstance(text, str) or _MD_SENT_OPEN not in text:
+        return text
+
+    def _sub(m):
+        return mapping.get(m.group(1), m.group(0))
+
+    return _MD_SENTINEL_RE.sub(_sub, text)
 
 def extract_md_content_to_json(file_path, temp_dir):
     """
@@ -344,19 +444,24 @@ def extract_md_content_to_json(file_path, temp_dir):
         # Handle regular text (with base64 check)
         if should_translate_enhanced(line):
             count += 1
+            # Protect inline code / link-image URLs / autolinks before the line
+            # is handed to the translator. masked_line carries sentinels in place
+            # of those machine tokens; inline_map restores them on write-back.
+            masked_line, inline_map = _protect_inline_md(line)
             structure_items.append({
                 "index": position_index,
                 "type": "text",
                 "value": line,
                 "translate": True,
-                "count_src": count
+                "count_src": count,
+                "inline_map": inline_map
             })
-            
+
             content_data.append({
                 "count_src": count,
                 "index": position_index,
                 "type": "text",
-                "value": line
+                "value": masked_line
             })
         else:
             # Other non-translatable content
@@ -484,7 +589,9 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                 # Regular text
                 count = item.get("count_src")
                 if count in translations:
-                    translated_line = translations[count]
+                    # Restore inline code / URLs masked out before translation.
+                    translated_line = _restore_inline_md(
+                        translations[count], item.get("inline_map") or {})
                     final_lines.append(translated_line)
                     original_line = item["value"]
                     # Bilingual: append the original as a blockquote, but only

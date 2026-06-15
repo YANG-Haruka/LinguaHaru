@@ -51,7 +51,89 @@ def setup_model_env():
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", os.path.join(md, "paddlex"))
     # China-friendly mirror for huggingface (kept consistent with SenseVoice).
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    # One-time pull-in of models already downloaded to the OLD default caches.
+    try:
+        migrate_legacy_caches()
+    except Exception as e:  # noqa: BLE001 — never let migration break startup
+        app_logger.warning(f"Legacy cache migration skipped: {e}")
     return md
+
+
+def _move_tree_contents(old, new, summary):
+    """Move every top-level entry from `old` into `new`, entry-by-entry.
+
+    Skips (does not clobber) any entry that already exists in `new`. Best-effort:
+    per-entry errors are caught and recorded, never raised. Records relocations
+    in `summary['moved']` and skips in `summary['skipped']`."""
+    try:
+        entries = os.listdir(old)
+    except OSError as e:
+        summary["skipped"].append(f"{old} (listdir failed: {e})")
+        return
+    os.makedirs(new, exist_ok=True)
+    for entry in entries:
+        src = os.path.join(old, entry)
+        dst = os.path.join(new, entry)
+        if os.path.exists(dst):
+            summary["skipped"].append(dst + " (exists)")
+            continue
+        try:
+            shutil.move(src, dst)
+            summary["moved"].append(dst)
+        except Exception as e:  # noqa: BLE001
+            summary["skipped"].append(f"{src} (move failed: {e})")
+
+
+def migrate_legacy_caches():
+    """One-time, idempotent, best-effort move of models from the OLD default
+    cache locations into the unified models dir, so they aren't re-downloaded.
+
+    Pairs migrated:
+      ~/.paddlex        -> <md>/paddlex
+      ~/.cache/babeldoc -> <md>/babeldoc
+
+    Guarded by a marker file (`<md>/.legacy_migrated`) so it runs at most once.
+    Moves entry-by-entry; never clobbers existing files in the destination and
+    never raises. Returns a summary dict {moved: [...], skipped: [...]}.
+    """
+    summary = {"moved": [], "skipped": []}
+    md = current_dir()
+    marker = os.path.join(md, ".legacy_migrated")
+    if os.path.exists(marker):
+        summary["skipped"].append(marker + " (already migrated)")
+        return summary
+
+    home = os.path.expanduser("~")
+    pairs = [
+        (os.path.join(home, ".paddlex"), os.path.join(md, "paddlex")),
+        (os.path.join(home, ".cache", "babeldoc"), os.path.join(md, "babeldoc")),
+    ]
+
+    os.makedirs(md, exist_ok=True)
+    for old, new in pairs:
+        try:
+            # Old must be a real directory (skip missing, files, and symlinks).
+            if not os.path.isdir(old) or os.path.islink(old):
+                summary["skipped"].append(old + " (absent or not a real dir)")
+                continue
+            if os.path.abspath(old) == os.path.abspath(new):
+                summary["skipped"].append(old + " (same as destination)")
+                continue
+            _move_tree_contents(old, new, summary)
+        except Exception as e:  # noqa: BLE001 — best-effort, per-pair guard
+            summary["skipped"].append(f"{old} (error: {e})")
+
+    # Mark done even if some entries were skipped, so we don't retry every start.
+    try:
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write("legacy caches migrated\n")
+    except Exception as e:  # noqa: BLE001
+        app_logger.warning(f"Could not write migration marker {marker}: {e}")
+
+    if summary["moved"]:
+        app_logger.info(
+            f"Migrated {len(summary['moved'])} legacy model entrie(s) into {md}")
+    return summary
 
 
 def redirect_babeldoc_cache():

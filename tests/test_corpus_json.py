@@ -85,6 +85,55 @@ def test_json_deep_and_arrays():
           T not in json.dumps(list(_all_keys(result)), ensure_ascii=False), str(result))
 
 
+def test_json_key_exclusion():
+    print("JSON: key/path exclusion (skip identifiers by key, keep real content)")
+    from core.pipelines.json_translation_pipeline import (
+        extract_json_content_to_json, write_translated_content_to_json)
+
+    src = os.path.join(WORK_DIR, "exclusion.json")
+    payload = {
+        "title": "Welcome message",          # translate
+        "id": "user-1234",                    # skip (key)
+        "url": "Click here to continue",      # skip by key even though it looks translatable
+        "items": ["First item", "Second item"],  # translate (list inherits "items")
+        "regex": "^\\d+$",                    # skip (key)
+        "nested": {
+            "name": "Display name",           # translate
+            "key": "ctrl+s",                  # skip (key)
+        },
+    }
+    with open(src, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+    src_json = extract_json_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        extracted = [i["value"] for i in json.load(f)]
+
+    check("skip-key values not extracted",
+          all(v not in extracted for v in ("user-1234", "Click here to continue",
+                                           "^\\d+$", "ctrl+s")), str(extracted))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_json(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                           src_lang="en", dst_lang="ja")
+    with open(out, encoding="utf-8") as f:
+        result = json.load(f)
+
+    # Translate-keys: T-prefixed
+    check("title translated", result["title"] == T + "Welcome message", str(result))
+    check("array items translated",
+          result["items"] == [T + "First item", T + "Second item"], str(result))
+    check("nested name translated", result["nested"]["name"] == T + "Display name", str(result))
+
+    # Skip-keys: byte-identical to source
+    check("id untouched", result["id"] == "user-1234", repr(result["id"]))
+    check("url (translatable-looking) untouched by key",
+          result["url"] == "Click here to continue", repr(result["url"]))
+    check("regex untouched", result["regex"] == "^\\d+$", repr(result["regex"]))
+    check("nested key (keybinding) untouched",
+          result["nested"]["key"] == "ctrl+s", repr(result["nested"]["key"]))
+
+
 def _all_keys(node):
     if isinstance(node, dict):
         for k, v in node.items():
@@ -96,4 +145,4 @@ def _all_keys(node):
 
 
 if __name__ == "__main__":
-    run([test_json_deep_and_arrays])
+    run([test_json_deep_and_arrays, test_json_key_exclusion])

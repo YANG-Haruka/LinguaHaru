@@ -156,5 +156,51 @@ def test_md_frontmatter_and_tilde_fence():
     check("paragraph translated", T + "Normal paragraph to translate." in result, result)
 
 
+INLINE_PROTECT_SRC = """Run `make build` then read the [official docs](https://example.com/docs) carefully.
+
+Here is the project logo: ![logo alt](img.png) shown above.
+
+See the mirror at <https://example.org> for backups.
+"""
+
+
+def test_md_inline_code_link_image_protection():
+    print("MD: inline code / link URL / image URL / autolink protected; prose translated")
+    from core.pipelines.md_translation_pipeline import (
+        extract_md_content_to_json, write_translated_content_to_md)
+
+    src = os.path.join(WORK_DIR, "inline_protect.md")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write(INLINE_PROTECT_SRC)
+
+    src_json = extract_md_content_to_json(src, TEMP_DIR)
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_md(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                         src_lang="en", dst_lang="ja")
+    with open(out, encoding="utf-8") as f:
+        result = f.read()
+
+    # --- machine parts protected (verbatim, NOT T-prefixed) ---
+    check("inline code content unchanged and NOT translated",
+          "`make build`" in result and T + "make build" not in result
+          and "`" + T not in result, result)
+    check("link URL unchanged", "(https://example.com/docs)" in result, result)
+    check("image URL unchanged", "(img.png)" in result, result)
+    check("autolink URL unchanged", "<https://example.org>" in result, result)
+
+    # --- human parts translated ---
+    check("link/prose line translated (T-prefixed) with inline code + URL intact",
+          T + "Run `make build` then read the [official docs](https://example.com/docs) carefully."
+          in result, result)
+    check("image line translated, alt kept, image path untouched",
+          T + "Here is the project logo: ![logo alt](img.png) shown above." in result, result)
+    check("autolink line translated, autolink untouched",
+          T + "See the mirror at <https://example.org> for backups." in result, result)
+
+    # --- no sentinel leakage into the output ---
+    check("no PUA sentinel leaked", "" not in result and "" not in result, result)
+
+
 if __name__ == "__main__":
-    run([test_md_structures, test_md_frontmatter_and_tilde_fence])
+    run([test_md_structures, test_md_frontmatter_and_tilde_fence,
+         test_md_inline_code_link_image_protection])
