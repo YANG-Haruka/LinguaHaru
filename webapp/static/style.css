@@ -592,6 +592,21 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
 #modules-table td:first-child { font-weight: 600; color: var(--text); }
 #modules-status { margin-top: 14px; font-family: var(--font-mono); font-size: 0.78rem; }
 
+/* per-plugin model selector row (sits under its plugin's row) */
+#modules-table tr.model-row td { padding-top: 4px; border-bottom: 1px solid var(--border); }
+#modules-table tr.model-row .model-label {
+  font-weight: 400; color: var(--muted); font-family: var(--font-mono);
+  font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.6px; padding-left: 28px;
+}
+#modules-table .model-select {
+  width: 100%; max-width: 420px; height: 32px; padding: 0 10px;
+  background: var(--surface-2); color: var(--text-2);
+  border: 1px solid var(--border-2); border-radius: var(--r-sm);
+  font-family: var(--font-sans); font-size: 0.82rem; cursor: pointer;
+}
+#modules-table .model-select:hover { border-color: var(--border-strong); color: var(--text); }
+#modules-table .model-select:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); outline: none; }
+
 #glossary-table { width: max-content; min-width: 100%; }
 #glossary-table th { white-space: nowrap; }
 #glossary-table td { min-width: 116px; }

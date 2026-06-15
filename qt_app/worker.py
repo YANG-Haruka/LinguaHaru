@@ -71,6 +71,34 @@ class InstallWorker(QThread):
             self.finished_ok.emit(False, f"pip exited with code {proc.returncode}")
 
 
+class ModelDownloadWorker(QThread):
+    """Downloads (and warms) a plugin's model off the UI thread, by calling
+    ``optional_modules.download_plugin_model(name, model_id)``. Heavy + blocking.
+
+    If ``model_id`` is given it is persisted first (inside the backend call);
+    pass None to download the plugin's currently-selected/default model (used
+    right after a fresh install).
+
+    Signal:
+        finished_ok(bool) -- True if the model is ready
+    """
+
+    finished_ok = Signal(bool)
+
+    def __init__(self, module_name, model_id=None, parent=None):
+        super().__init__(parent)
+        self.module_name = module_name
+        self.model_id = model_id
+
+    def run(self):
+        from core.optional_modules import download_plugin_model
+        try:
+            ok = bool(download_plugin_model(self.module_name, self.model_id))
+        except Exception:  # noqa: BLE001 - a failed download just reports not-ready
+            ok = False
+        self.finished_ok.emit(ok)
+
+
 class ModuleUpdateCheckWorker(QThread):
     """Checks PyPI for a newer version of an installed module's package, off the
     UI thread (the network call can block for seconds).

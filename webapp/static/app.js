@@ -626,7 +626,63 @@ function renderModules() {
     tr.append(nameTd, statTd, engTd, actTd);
     t.appendChild(tr);
     if (m.available) checkModuleUpdate(m.name, actTd, statTd);
+    if (m.models && m.models.length) t.appendChild(modelRow(m));
   }
+}
+
+// A secondary row under a plugin that has selectable models: a label + <select>
+// + a status cell. Switching the model downloads (and warms) the new one.
+function modelRow(m) {
+  const tr = document.createElement("tr");
+  tr.className = "model-row";
+  const labelTd = document.createElement("td");
+  labelTd.textContent = _label("Select Model", "模型");
+  labelTd.className = "model-label";
+  const selTd = document.createElement("td");
+  selTd.colSpan = 2;
+  const sel = document.createElement("select");
+  sel.className = "model-select";
+  for (const mdl of m.models) {
+    const o = document.createElement("option");
+    o.value = mdl.id;
+    o.textContent = mdl.info ? `${mdl.label} (${mdl.info})` : mdl.label;
+    if (mdl.id === m.current_model) o.selected = true;
+    sel.appendChild(o);
+  }
+  selTd.appendChild(sel);
+  const statTd = document.createElement("td");
+  statTd.className = "model-status";
+  sel.onchange = () => setPluginModel(m.name, sel.value, sel, statTd);
+  tr.append(labelTd, selTd, statTd);
+  return tr;
+}
+
+async function setPluginModel(name, modelId, sel, statTd) {
+  sel.disabled = true;
+  statTd.innerHTML = pill("busy", _label("Downloading Model", "正在下载模型…"), "");
+  try {
+    await api("/api/modules/model", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, model_id: modelId }),
+    });
+  } catch (e) {
+    sel.disabled = false;
+    statTd.innerHTML = pill("bad", "失败", ICON.cross);
+    $("modules-status").textContent = `${name}: ` + (e.message || "").slice(-300);
+    return;
+  }
+  const poll = setInterval(async () => {
+    const s = await api("/api/modules/status?name=" + encodeURIComponent(name));
+    if (s.status === "running") return;
+    clearInterval(poll);
+    sel.disabled = false;
+    if (s.status === "done") {
+      statTd.innerHTML = pill("on", _label("Model Ready", "模型就绪"), ICON.check);
+    } else {
+      statTd.innerHTML = pill("bad", "失败", ICON.cross);
+      $("modules-status").textContent = `${name}: ` + (s.output || "").slice(-300);
+    }
+  }, 1500);
 }
 
 // For an installed module, ask PyPI (server-side) whether a newer version
@@ -659,7 +715,9 @@ async function moduleAction(name, action, btn, statTd) {
     btn.disabled = false;
     if (s.status === "done") {
       statTd.innerHTML = pill("on", "完成", ICON.check);
-      $("modules-status").textContent = `${name} ${verb}完成 —— 请重启程序以生效。`;
+      let msg = `${name} ${verb}完成 —— 请重启程序以生效。`;
+      if (action === "install") msg += " " + _label("Downloading Model", "正在下载模型…");
+      $("modules-status").textContent = msg;
     } else {
       statTd.innerHTML = pill("bad", "失败", ICON.cross);
       $("modules-status").textContent = `${name} 操作失败：` + (s.output || "").slice(-300);

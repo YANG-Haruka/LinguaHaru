@@ -704,8 +704,27 @@ def _run_module_job(name, action):
     fn = {"install": install_module, "uninstall": uninstall_module,
           "upgrade": upgrade_module}[action]
     ok, out = fn(name)
+    # On a successful install, best-effort warm the plugin's DEFAULT model so the
+    # user doesn't pay the download cost on first use. A just-pip-installed
+    # package often can't be imported until restart, so swallow any failure —
+    # the model will simply lazy-download on first real use instead.
+    if ok and action == "install":
+        try:
+            from core.optional_modules import download_plugin_model
+            download_plugin_model(name)
+        except Exception:  # noqa: BLE001 — needs restart / import not ready yet
+            pass
     with _TASKS_LOCK:
         MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": out}
+
+
+def _run_model_job(name, model_id):
+    """Persist the chosen model id, then download+warm it (heavy/blocking)."""
+    from core.optional_modules import set_plugin_model, download_plugin_model
+    set_plugin_model(name, model_id)
+    ok = download_plugin_model(name, model_id)
+    with _TASKS_LOCK:
+        MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": ""}
 
 
 @app.post("/api/modules/{action}")
@@ -720,6 +739,23 @@ async def module_action(action: str, payload: dict):
     with _TASKS_LOCK:
         MODULE_JOBS[name] = {"status": "running", "output": ""}
     threading.Thread(target=_run_module_job, args=(name, action), daemon=True).start()
+    return {"started": True}
+
+
+@app.post("/api/modules/model")
+async def module_set_model(payload: dict):
+    """Persist a plugin's model choice and download+warm it in the background.
+    Poll GET /api/modules/status?name=... for completion (same job channel)."""
+    _block_in_server_mode()
+    name = payload.get("name")
+    model_id = payload.get("model_id")
+    from core.optional_modules import set_plugin_model
+    if not name or not model_id or not set_plugin_model(name, model_id):
+        raise HTTPException(400, "name and a valid model_id are required")
+    with _TASKS_LOCK:
+        MODULE_JOBS[name] = {"status": "running", "output": ""}
+    threading.Thread(target=_run_model_job, args=(name, model_id),
+                     daemon=True).start()
     return {"started": True}
 
 

@@ -17,11 +17,11 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, StrongBodyLabel,
     SimpleCardWidget, CardWidget, IconWidget, FluentIcon, FlowLayout,
-    PushButton, InfoBadge, InfoBar, InfoBarPosition,
+    PushButton, InfoBadge, InfoBar, InfoBarPosition, ComboBox,
 )
 
 from qt_app.i18n import tr
-from qt_app.worker import InstallWorker, ModuleUpdateCheckWorker
+from qt_app.worker import InstallWorker, ModuleUpdateCheckWorker, ModelDownloadWorker
 
 # Built-in format plugins (always available). (label, FluentIcon)
 _BUILTIN_FORMATS = [
@@ -39,6 +39,7 @@ _OPTIONAL_ICONS = {
     "PDF": FluentIcon.DOCUMENT,
     "Image OCR": FluentIcon.PHOTO,
     "Video/Audio": FluentIcon.MOVIE,
+    "Real-Time Voice": FluentIcon.MICROPHONE,
 }
 
 
@@ -64,16 +65,21 @@ class _BuiltinChip(SimpleCardWidget):
 class OptionalPluginCard(CardWidget):
     """A downloadable optional plugin (PDF / Image OCR / Video)."""
 
-    def __init__(self, mod, lang="en", on_install=None, parent=None):
+    def __init__(self, mod, lang="en", on_install=None, on_select_model=None, parent=None):
         super().__init__(parent)
         self._mod = mod
         self._lang = lang
         self._on_install = on_install
+        self._on_select_model = on_select_model
         self._upgrade_info = None  # (current, latest) when an upgrade is offered
+        self.model_combo = None
+        self.model_caption = None
+        self._models = mod.get("models") or []
         # Fixed width so exactly three cards fit per row (FlowLayout sizes to
-        # content otherwise, which only fit two).
+        # content otherwise, which only fit two). Cards with a model selector
+        # are taller to fit the combo + status caption.
         self.setFixedWidth(258)
-        self.setFixedHeight(166)
+        self.setFixedHeight(236 if self._models else 166)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 14, 18, 14)
@@ -102,6 +108,28 @@ class OptionalPluginCard(CardWidget):
             note.setWordWrap(True)
             layout.addWidget(note)
 
+        # Per-plugin model selector (only for plugins that expose models).
+        if self._models:
+            self.model_label = CaptionLabel(tr("Select Model", lang), self)
+            layout.addWidget(self.model_label)
+            self.model_combo = ComboBox(self)
+            for m in self._models:
+                text = m.get("label", m.get("id", ""))
+                info = m.get("info")
+                if info:
+                    text = f"{text} · {info}"
+                self.model_combo.addItem(text, userData=m.get("id"))
+            cur = mod.get("current_model")
+            if cur is not None:
+                idx = self.model_combo.findData(cur)
+                if idx >= 0:
+                    self.model_combo.setCurrentIndex(idx)
+            self.model_combo.currentIndexChanged.connect(self._model_changed)
+            layout.addWidget(self.model_combo)
+            self.model_caption = CaptionLabel("", self)
+            self.model_caption.setWordWrap(True)
+            layout.addWidget(self.model_caption)
+
         layout.addStretch(1)
 
         btn_row = QHBoxLayout()
@@ -126,6 +154,29 @@ class OptionalPluginCard(CardWidget):
     def _clicked_upgrade(self):
         if callable(self._on_install):
             self._on_install(self, "upgrade")
+
+    def _model_changed(self, index):
+        if self.model_combo is None or not callable(self._on_select_model):
+            return
+        model_id = self.model_combo.itemData(index)
+        if model_id:
+            self._on_select_model(self, model_id)
+
+    def set_download_busy(self, busy):
+        """Disable the combo and show a downloading/ready caption."""
+        if self.model_combo is None:
+            return
+        self.model_combo.setEnabled(not busy)
+        if self.model_caption is not None:
+            self.model_caption.setText(
+                tr("Downloading Model", self._lang) if busy else "")
+
+    def set_model_ready(self, ok):
+        if self.model_combo is not None:
+            self.model_combo.setEnabled(True)
+        if self.model_caption is not None:
+            self.model_caption.setText(
+                tr("Model Ready", self._lang) if ok else "")
 
     def show_upgrade(self, current, latest):
         """Reveal the Upgrade button with the available version transition."""
@@ -194,8 +245,11 @@ class PluginsPage(ScrollArea):
         self.opt_flow.setVerticalSpacing(14)
         self._opt_cards = []
         self._check_workers = []
+        self._dl_workers = []
         for mod in backend_module_status():
-            card = OptionalPluginCard(mod, lang, on_install=self._start_install)
+            card = OptionalPluginCard(
+                mod, lang, on_install=self._start_install,
+                on_select_model=self._start_model_download)
             self._opt_cards.append(card)
             self.opt_flow.addWidget(card)
             if mod["available"]:
@@ -231,6 +285,8 @@ class PluginsPage(ScrollArea):
             card.set_state(card._mod["available"])
             if card._upgrade_info:  # set_state doesn't touch a visible upgrade btn
                 card.show_upgrade(*card._upgrade_info)
+            if getattr(card, "model_label", None) is not None:
+                card.model_label.setText(tr("Select Model", lang))
 
     def _start_update_check(self, card):
         """Ask PyPI (off the UI thread) whether this installed plugin has a
@@ -243,6 +299,21 @@ class PluginsPage(ScrollArea):
     def _update_check_done(self, card, info):
         if info.get("update"):
             card.show_upgrade(info.get("current", "?"), info.get("latest", "?"))
+
+    def _start_model_download(self, card, model_id=None):
+        """Download a plugin model off the UI thread. model_id=None downloads the
+        plugin's current/default model (used right after a fresh install)."""
+        card.set_download_busy(True)
+        worker = ModelDownloadWorker(card._mod["name"], model_id)
+        self._dl_workers.append(worker)
+        worker.finished_ok.connect(
+            lambda ok, c=card, w=worker: self._model_download_done(c, ok, w))
+        worker.start()
+
+    def _model_download_done(self, card, ok, worker):
+        card.set_model_ready(ok)
+        if worker in self._dl_workers:
+            self._dl_workers.remove(worker)
 
     def _start_install(self, card, action="install"):
         if self._worker is not None and self._worker.isRunning():
@@ -275,6 +346,11 @@ class PluginsPage(ScrollArea):
             finished = tr("Upgrade finished", self._lang) if action == "upgrade" \
                 else tr("Install finished", self._lang)
             self._info(card._mod["name"], finished)
+            # Unified UX: a fresh install auto-downloads the default model.
+            # Best-effort — a just-pip-installed package may need a restart to
+            # import; failure is quiet (the model lazy-downloads on first use).
+            if action == "install" and mod.get("models"):
+                self._start_model_download(card)
         else:
             self._info(card._mod["name"],
                        f"{tr('Install failed', self._lang)}: {msg}", error=True)
