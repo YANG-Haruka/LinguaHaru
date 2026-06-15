@@ -24,8 +24,8 @@ _COLUMN_KEYS = ["Status", "Time", "File Type", "Tokens", "Cost",
                 "Source Language", "Model", "Upload File"]
 # (sort_by, descending) per sort option, aligned with _SORT_KEYS
 _SORT_OPTIONS = [("start_time", True), ("start_time", False),
-                 ("file_type", False), ("input_file", False)]
-_SORT_KEYS = ["Newest", "Oldest", "By Type", "By Name"]
+                 ("file_type", False), ("input_file", False), ("total_tokens", True)]
+_SORT_KEYS = ["Newest", "Oldest", "By Type", "By Name", "By Tokens"]
 
 
 def open_folder(path):
