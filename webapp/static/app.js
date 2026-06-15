@@ -761,6 +761,41 @@ $("proofread-export").onclick = async () => {
 let liveWS = null, liveCtx = null, liveSrc = null, liveProc = null, liveStream = null;
 let playCtx = null, playTime = 0;
 let liveMode = "local", liveNode = null, liveRunning = false;
+let liveAnalyser = null, liveLevelRAF = null;
+
+// Mic level feedback: drive the bar + icon from live mic volume so you can see
+// you're actually being heard (and whether you're loud enough).
+function startMicMeter() {
+  if (!liveCtx || !liveSrc) return;
+  try {
+    liveAnalyser = liveCtx.createAnalyser();
+    liveAnalyser.fftSize = 1024;
+    liveSrc.connect(liveAnalyser);     // tap only; not connected to destination
+  } catch (e) { return; }
+  const buf = new Float32Array(liveAnalyser.fftSize);
+  const fill = $("mic-level"), icon = $("mic-icon");
+  const tick = () => {
+    if (!liveAnalyser) return;
+    liveAnalyser.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+    const rms = Math.sqrt(sum / buf.length);
+    const pct = Math.min(100, Math.round(rms * 280));   // ~speech RMS -> 0..100
+    if (fill) fill.style.width = pct + "%";
+    if (icon) icon.classList.toggle("speaking", pct > 12);
+    liveLevelRAF = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function stopMicMeter() {
+  if (liveLevelRAF) cancelAnimationFrame(liveLevelRAF);
+  liveLevelRAF = null;
+  try { if (liveAnalyser) liveAnalyser.disconnect(); } catch (e) { /* */ }
+  liveAnalyser = null;
+  const fill = $("mic-level"), icon = $("mic-icon");
+  if (fill) fill.style.width = "0%";
+  if (icon) icon.classList.remove("speaking");
+}
 
 function fillLiveTarget() {
   const sel = $("live-target");
@@ -833,9 +868,10 @@ async function startGoogle() {
     liveWS.send(JSON.stringify({ audio: int16ToB64(downsamplePCM16(e.inputBuffer.getChannelData(0), srcRate)) }));
   };
   liveSrc.connect(liveProc); liveProc.connect(liveCtx.destination);
-  liveRunning = true; setLiveBusy(true);
+  liveRunning = true; setLiveBusy(true); startMicMeter();
 }
 function stopGoogle() {
+  stopMicMeter();
   try { if (liveProc) liveProc.disconnect(); if (liveSrc) liveSrc.disconnect(); } catch (e) { /* */ }
   if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
   if (liveWS && liveWS.readyState === 1) { try { liveWS.send(JSON.stringify({ end: true })); } catch (e) {} liveWS.close(); }
@@ -866,8 +902,10 @@ async function startLocal() {
     setLiveStatus("VAD 初始化失败：" + e.message); stopLocal(); return;
   }
   liveRunning = true; setLiveBusy(true); setLiveStatus("正在聆听…（对着麦克风说话）");
+  startMicMeter();
 }
 function stopLocal() {
+  stopMicMeter();
   try {
     if (liveNode) { if (liveNode.port) liveNode.port.postMessage({ type: "mode", mode: "block" }); liveNode.disconnect(); }
     if (liveSrc) liveSrc.disconnect();

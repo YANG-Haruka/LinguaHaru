@@ -303,8 +303,9 @@ def fix_json_format(text):
         objects = re.findall(r'(\{.*?\})', text, re.DOTALL)
         
         if not objects:
-            # Fall back to simply wrapping everything in {}
-            app_logger.warning("No JSON objects found in response, wrapping text")
+            # Plain-text reply (e.g. the simple/live translation prompt asks for
+            # exactly that) -> wrap it. Debug, not warning: it's normal + noisy.
+            app_logger.debug("No JSON objects found in response, wrapping text")
             return json.dumps({"translated_text": text}, ensure_ascii=False)
             
         # Parse each object and merge them

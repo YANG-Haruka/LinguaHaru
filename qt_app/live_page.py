@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
     PrimaryPushButton, PushButton, CardWidget, TextEdit, FluentIcon, InfoBar,
-    InfoBarPosition,
+    InfoBarPosition, ProgressBar, IconWidget,
 )
 
 from core import backend
@@ -182,6 +182,22 @@ class LivePage(ScrollArea):
         self.hint_label = CaptionLabel("")
         self.hint_label.setWordWrap(True)
         layout.addWidget(self.hint_label)
+
+        # Mic level meter: shows you're actually being heard (and loud enough).
+        mic_row = QHBoxLayout()
+        mic_row.setSpacing(10)
+        self.mic_icon = IconWidget(FluentIcon.MICROPHONE, self)
+        self.mic_icon.setFixedSize(18, 18)
+        mic_row.addWidget(self.mic_icon)
+        self.level_bar = ProgressBar()
+        self.level_bar.setRange(0, 100)
+        self.level_bar.setValue(0)
+        self.level_bar.setFixedHeight(8)
+        self.level_bar.setMaximumWidth(340)
+        mic_row.addWidget(self.level_bar)
+        mic_row.addStretch(1)
+        layout.addLayout(mic_row)
+
         self.status_label = CaptionLabel("")
         layout.addWidget(self.status_label)
 
@@ -393,6 +409,7 @@ class LivePage(ScrollArea):
             self._sink = None
             self._play_io = None
         self._reset_vad()
+        self.level_bar.setValue(0)
         self.start_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         self.target_combo.setEnabled(True)
@@ -421,11 +438,23 @@ class LivePage(ScrollArea):
             samples = _decode_to_mono_float(data, fmt.sampleFormat(), fmt.channelCount())
             samples = _resample(samples, fmt.sampleRate(), _IN_RATE)
             pcm = _encode_from_mono_float(samples, QAudioFormat.SampleFormat.Int16, 1)
+        self._update_level(pcm)
         if self._mode == "google":
             if self._worker is not None:
                 self._worker.send_audio(pcm)
         else:
             self._vad_feed(pcm)
+
+    def _update_level(self, pcm):
+        """Drive the mic level bar from the chunk's RMS (visual 'I hear you')."""
+        import array
+        import math
+        a = array.array("h")
+        a.frombytes(pcm)
+        if not a:
+            return
+        rms = math.sqrt(sum((v / 32768.0) ** 2 for v in a) / len(a))
+        self.level_bar.setValue(max(0, min(100, int(rms * 280))))
 
     # --- local mode: energy VAD over 16k PCM16, dispatch each utterance ---
     def _reset_vad(self):

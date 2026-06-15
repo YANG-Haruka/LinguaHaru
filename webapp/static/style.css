@@ -608,6 +608,21 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
   font-size: 0.72rem; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 14px;
 }
 
+/* Mic level feedback: icon pulses + bar fills with your speaking volume, so you
+   can tell the mic is actually picking up sound. */
+.mic-row { display: flex; align-items: center; gap: 10px; margin: 2px 0 10px; }
+.mic-icon { width: 20px; height: 20px; color: var(--muted); flex: none; transition: color .1s, transform .08s; }
+.mic-icon.speaking { color: var(--accent); }
+.mic-meter {
+  flex: 1; max-width: 320px; height: 8px; border-radius: 5px;
+  background: var(--surface-2); border: 1px solid var(--border-2); overflow: hidden;
+}
+.mic-meter-fill {
+  height: 100%; width: 0%; border-radius: 5px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2, var(--accent)));
+  transition: width .06s linear;
+}
+
 /* ============================ segmented toggle ============================ */
 .segmented {
   display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 22px;
