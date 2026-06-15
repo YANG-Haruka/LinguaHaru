@@ -29,5 +29,6 @@
     "pdf_bilingual_mode": true,
     "qt_ui_lang": "zh",
     "qt_theme": "dark",
-    "stt_model": "sensevoice-small"
+    "stt_model": "sensevoice-small",
+    "mask_placeholders": true
 }

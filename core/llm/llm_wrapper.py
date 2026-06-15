@@ -1,8 +1,78 @@
 from core.log_config import app_logger
 from core.llm.online_translation import translate_online, HardApiError
 from core.llm.offline_translation import translate_offline
+from core.engine.placeholder_mask import mask as _mask, unmask as _unmask
 import json
+import re
 import time
+
+
+def _strip_json_fence(s):
+    """Return the JSON body of a ```json ...``` block (or the string itself)."""
+    s = (s or "").strip().lstrip("﻿")
+    s = re.sub(r'^```json\s*\n?|\n?```$', '', s, flags=re.MULTILINE).strip()
+    return s
+
+
+def _mask_segment(segment):
+    """Mask machine tokens in each value of a {count: text} segment.
+
+    Returns (masked_segment_str, mapping) where mapping is {count: {idx: tok}}.
+    The segment normally arrives as a ```json {...}``` block string; when it is
+    not parseable as that, masking is skipped (mapping empty) and the original
+    is sent through unchanged."""
+    if not isinstance(segment, str):
+        return segment, {}
+    try:
+        data = json.loads(_strip_json_fence(segment))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return segment, {}
+    if not isinstance(data, dict):
+        return segment, {}
+
+    mapping = {}
+    changed = False
+    masked = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            masked_value, m = _mask(value)
+            masked[key] = masked_value
+            if m:
+                mapping[key] = m
+                changed = True
+        else:
+            masked[key] = value
+    if not changed:
+        return segment, {}
+    masked_str = f"```json\n{json.dumps(masked, ensure_ascii=False, indent=4)}\n```"
+    return masked_str, mapping
+
+
+def _unmask_reply(reply, mapping):
+    """Restore masked tokens in the model's reply using the per-key mapping.
+
+    Best-effort: if the reply is not parseable JSON, restore sentinels found in
+    the raw string against the union of all per-key maps (robust to dropped /
+    duplicated sentinels). Returns the unmasked reply string."""
+    if not mapping or not isinstance(reply, str):
+        return reply
+    try:
+        data = json.loads(_strip_json_fence(reply))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        data = None
+
+    if isinstance(data, dict):
+        for key, value in list(data.items()):
+            if isinstance(value, str) and key in mapping:
+                data[key] = _unmask(value, mapping[key])
+        return json.dumps(data, ensure_ascii=False)
+
+    # Fallback: unmask against the merged map (last index wins on collision,
+    # which is fine since indices are per-key and identical tokens restore same).
+    merged = {}
+    for m in mapping.values():
+        merged.update(m)
+    return _unmask(reply, merged)
 
 
 def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None, check_stop_callback=None):
@@ -16,11 +86,17 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
     # Set 1-hour time limit (3600 seconds)
     max_retry_time = 3600
     start_time = time.time()
-    
+
     # Track attempts for logging
     current_attempt = 0
     wait_time = 1
-    
+
+    # PRE-LLM placeholder masking: protect machine tokens (printf specifiers,
+    # ${vars}, single-brace ICU placeholders) from being translated/altered.
+    # Mapping survives this whole call; replies are unmasked before returning.
+    # No-op fast path when no value contains a detectable token.
+    segments, _ph_mapping = _mask_segment(segments)
+
     while (time.time() - start_time) < max_retry_time:
         # Check for stop request at the beginning of each iteration
         if check_stop_callback:
@@ -98,6 +174,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             if api_success:
                 if current_attempt > 1:
                     app_logger.info(f"Translation succeeded on attempt {current_attempt} after {int(elapsed_time)}s")
+                if _ph_mapping:
+                    translation_result = _unmask_reply(translation_result, _ph_mapping)
                 return translation_result, True, token_usage
 
             # API call failed (network error, service down, etc.)
