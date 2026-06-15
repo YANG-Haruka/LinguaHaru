@@ -781,8 +781,10 @@ function startMicMeter() {
     for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
     const rms = Math.sqrt(sum / buf.length);
     const pct = Math.min(100, Math.round(rms * 280));   // ~speech RMS -> 0..100
-    if (fill) fill.style.width = pct + "%";
-    if (icon) icon.classList.toggle("speaking", pct > 12);
+    // Color feedback: too quiet (gray-blue) -> good (green) -> too loud (red).
+    const color = pct < 10 ? "#6b7a90" : (pct < 88 ? "#22c55e" : "#ef4444");
+    if (fill) { fill.style.width = pct + "%"; fill.style.background = color; }
+    if (icon) icon.classList.toggle("speaking", pct >= 10);
     liveLevelRAF = requestAnimationFrame(tick);
   };
   tick();
@@ -847,7 +849,7 @@ $("live-stop").onclick = () => { if (liveMode === "google") stopGoogle(); else s
 async function startGoogle() {
   try {
     liveStream = await navigator.mediaDevices.getUserMedia(
-      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (e) { setLiveStatus("无法访问麦克风：" + e.message); return; }
   $("live-input").textContent = ""; $("live-output").textContent = "";
   liveCtx = new AudioContext();
@@ -883,7 +885,7 @@ function stopGoogle() {
 async function startLocal() {
   try {
     liveStream = await navigator.mediaDevices.getUserMedia(
-      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+      { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (e) { setLiveStatus("无法访问麦克风：" + e.message); return; }
   $("live-input").textContent = ""; $("live-output").textContent = "";
   // Preload the local model so the first sentence isn't blocked on a slow load.
@@ -894,7 +896,8 @@ async function startLocal() {
   try {
     await liveCtx.audioWorklet.addModule("/static/vad-worklet.js");
     liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
-      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000 } });
+      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 600, minSegMs: 280, maxSegMs: 30000,
+                            onAbs: 0.006, offAbs: 0.004 } });
     liveNode.port.onmessage = onVadMessage;
     liveNode.port.postMessage({ type: "mode", mode: "open" });
     liveSrc.connect(liveNode); liveNode.connect(liveCtx.destination);

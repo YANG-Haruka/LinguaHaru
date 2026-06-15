@@ -311,6 +311,12 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000,
     audio = np.frombuffer(pcm16_bytes, dtype=np.int16).astype(np.float32) / 32768.0
     if audio.size == 0:
         return "", None
+    # Boost quiet speech so the recognizer can hear it: peak-normalize toward
+    # ~0.95, but cap the gain (≤12x) so near-silence/noise isn't blown up into
+    # garbage. This is why a soft voice still gets recognized.
+    peak = float(np.max(np.abs(audio)))
+    if 0.0 < peak < 0.95:
+        audio = audio * min(12.0, 0.95 / peak)
     dur = audio.size / float(sample_rate or 16000)
     t0 = time.time()
     if importlib.util.find_spec("funasr") is not None:

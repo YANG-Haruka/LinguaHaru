@@ -34,8 +34,9 @@ _IN_RATE = 16000   # Gemini input / SenseVoice input
 _OUT_RATE = 24000  # Gemini output
 
 # Energy-VAD thresholds for the local mode (mirror the Web vad-worklet).
-_VAD_ON_ABS, _VAD_ON_MUL = 0.009, 2.5
-_VAD_OFF_ABS, _VAD_OFF_MUL = 0.006, 1.7
+# Lowered so a soft voice still trips onset (the adaptive floor guards noise).
+_VAD_ON_ABS, _VAD_ON_MUL = 0.006, 2.2
+_VAD_OFF_ABS, _VAD_OFF_MUL = 0.004, 1.6
 _VAD_ON_MS, _VAD_HANG_MS = 90, 600
 _VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
 # Lead-in kept before speech onset is confirmed, so the first words (often the
@@ -446,15 +447,24 @@ class LivePage(ScrollArea):
             self._vad_feed(pcm)
 
     def _update_level(self, pcm):
-        """Drive the mic level bar from the chunk's RMS (visual 'I hear you')."""
+        """Drive the mic level bar from the chunk's RMS (visual 'I hear you').
+        Color: too quiet (gray-blue) -> good (green) -> too loud (red)."""
         import array
         import math
+        from PySide6.QtGui import QColor
         a = array.array("h")
         a.frombytes(pcm)
         if not a:
             return
         rms = math.sqrt(sum((v / 32768.0) ** 2 for v in a) / len(a))
-        self.level_bar.setValue(max(0, min(100, int(rms * 280))))
+        pct = max(0, min(100, int(rms * 280)))
+        color = QColor("#6b7a90") if pct < 10 else (
+            QColor("#22c55e") if pct < 88 else QColor("#ef4444"))
+        try:
+            self.level_bar.setCustomBarColor(color, color)
+        except Exception:  # noqa: BLE001 - older qfluentwidgets
+            pass
+        self.level_bar.setValue(pct)
 
     # --- local mode: energy VAD over 16k PCM16, dispatch each utterance ---
     def _reset_vad(self):
