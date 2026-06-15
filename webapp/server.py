@@ -33,8 +33,8 @@ from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)
 from core.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
 from core.optional_modules import (
-    module_status, video_translation_available, quick_voice_available,
-    ocr_models, get_selected_ocr_model)
+    module_status, realtime_voice_available,
+    quick_voice_available, ocr_models, get_selected_ocr_model)
 from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, SENSEVOICE_SUPPORTED_CODES)
 from core.log_config import app_logger
@@ -157,7 +157,7 @@ def bootstrap():
         "language_map": LANGUAGE_MAP,
         "modules": module_status(),
         "server_mode": server_mode_on(),
-        "local_live_available": video_translation_available(),
+        "local_live_available": realtime_voice_available(),
         # "翻译语音输入" plugin: gates the Quick-Translate mic (STT) + speaker (TTS).
         "quick_voice_available": quick_voice_available(),
         "config": {
@@ -832,17 +832,30 @@ async def live_translate(ws: WebSocket):
         await ws.close(code=1008)
         return
     await ws.accept()
+    # Concurrency cap — refuse if too many live sessions already spend the key.
+    global _live_ws_count
+    with _live_ws_count_lock:
+        if _live_ws_count >= _LIVE_WS_MAX:
+            await ws.send_json({"type": "error",
+                                "message": f"实时语音并发已满（最多 {_LIVE_WS_MAX} 路），请稍后再试。"})
+            await ws.close(code=1013)
+            return
+        _live_ws_count += 1
     target = ws.query_params.get("target", "zh")
     key = load_api_key_for_model("(Google) Live Translate")  # provider "Google"
     if not key:
         await ws.send_json({"type": "error", "message": "Google API key not set (Settings)."})
         await ws.close()
+        with _live_ws_count_lock:
+            _live_ws_count -= 1
         return
     try:
         import websockets
     except Exception:
         await ws.send_json({"type": "error", "message": "websockets package missing."})
         await ws.close()
+        with _live_ws_count_lock:
+            _live_ws_count -= 1
         return
 
     try:
@@ -873,13 +886,24 @@ async def live_translate(ws: WebSocket):
                 async for raw in gws:
                     await ws.send_text(raw if isinstance(raw, str) else raw.decode("utf-8", "replace"))
 
-            await asyncio.gather(client_to_gemini(), gemini_to_client())
+            # Hard cap the session length so a forgotten tab can't stream (and
+            # spend the key) indefinitely.
+            await asyncio.wait_for(
+                asyncio.gather(client_to_gemini(), gemini_to_client()),
+                timeout=_LIVE_WS_MAX_SECONDS)
+    except asyncio.TimeoutError:
+        try:
+            await ws.send_json({"type": "error", "message": "实时语音会话已达最长时长，请重新开始。"})
+        except Exception:
+            pass
     except Exception as e:  # noqa: BLE001
         try:
             await ws.send_json({"type": "error", "message": str(e)[:300]})
         except Exception:
             pass
     finally:
+        with _live_ws_count_lock:
+            _live_ws_count -= 1
         try:
             await ws.close()
         except Exception:
@@ -894,19 +918,33 @@ async def live_translate(ws: WebSocket):
 # --------------------------------------------------------------------------- #
 _STT_LOCK = threading.Lock()  # funasr is not thread-safe — serialize recognition
 
+# Google Live WS guards: this endpoint spends the server-side Google key, so cap
+# concurrent sessions and the max session length (esp. for LAN deploys where one
+# user could open many tabs and stream forever).
+_LIVE_WS_MAX = 3
+_LIVE_WS_MAX_SECONDS = 1800   # 30 min hard cap per session
+_live_ws_count = 0
+_live_ws_count_lock = threading.Lock()
+
 
 @app.post("/api/live-preload")
-async def live_preload():
-    """Load the local STT model up front so the first utterance isn't blocked on
-    a multi-second model load. The Live page calls this on Start."""
-    if not video_translation_available():
-        raise HTTPException(400, "Local STT needs the Video/Audio plugin (funasr).")
+async def live_preload(payload: dict = None):
+    """Load the STT model up front so the first utterance isn't blocked on a
+    multi-second model load. scope='live' (default) preloads the live-voice
+    model; scope='quick' preloads the Quick-Translate voice model (they can be
+    different). Real-time voice needs only an STT engine — NO ffmpeg."""
+    if not realtime_voice_available():
+        raise HTTPException(400, "实时语音需要语音(STT)插件。")
     from core.pipelines.video_translation_pipeline import (
-        preload_recognizer, recognizer_ready)
-    if recognizer_ready():
+        preload_recognizer, recognizer_ready,
+        get_selected_live_stt_model, get_selected_quick_stt_model)
+    scope = (payload or {}).get("scope", "live")
+    model_id = (get_selected_quick_stt_model() if scope == "quick"
+                else get_selected_live_stt_model())
+    if scope == "live" and recognizer_ready():
         return {"ready": True}
     loop = asyncio.get_event_loop()
-    ready = await loop.run_in_executor(None, preload_recognizer)
+    ready = await loop.run_in_executor(None, lambda: preload_recognizer(model_id))
     return {"ready": bool(ready)}
 
 
@@ -914,8 +952,8 @@ async def live_preload():
 async def live_recognize(payload: dict):
     """Step 1 of local live voice: recognize one utterance -> source text.
     Split from translation so the UI can show the source line immediately."""
-    if not video_translation_available():
-        raise HTTPException(400, "Local STT needs the Video/Audio plugin (funasr).")
+    if not realtime_voice_available():
+        raise HTTPException(400, "实时语音需要语音(STT)插件。")
     import base64
     try:
         pcm = base64.b64decode(payload.get("audio_b64", ""))
@@ -923,13 +961,30 @@ async def live_recognize(payload: dict):
         raise HTTPException(400, "Bad audio payload")
     if not pcm:
         return {"source": "", "detected": ""}
+    # Bound STT cost: cap to the most recent ~32s (matches the client's max
+    # utterance) so a runaway/huge body can't blow up CPU/memory.
+    _MAX_BYTES = 16000 * 2 * 32
+    if len(pcm) > _MAX_BYTES:
+        pcm = pcm[-_MAX_BYTES:]
+    is_final = bool(payload.get("final", False))
     from core.pipelines.video_translation_pipeline import recognize_utterance
     loop = asyncio.get_event_loop()
 
     def _recognize():
-        with _STT_LOCK:
+        # _STT_LOCK serializes recognition (funasr isn't thread-safe). Under LAN
+        # contention, DROP partials (latest-wins — the next partial retries) but
+        # let finals wait, so concurrent speakers can't pile up an unbounded queue.
+        timeout = 8.0 if is_final else 0.25
+        if not _STT_LOCK.acquire(timeout=timeout):
+            return None
+        try:
             return recognize_utterance(pcm, sample_rate=16000)
-    source, detected = await loop.run_in_executor(None, _recognize)
+        finally:
+            _STT_LOCK.release()
+    res = await loop.run_in_executor(None, _recognize)
+    if res is None:
+        return {"source": "", "detected": "", "busy": True}
+    source, detected = res
     return {"source": source or "", "detected": detected or ""}
 
 

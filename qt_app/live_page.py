@@ -33,7 +33,7 @@ from qt_app.live_worker import (
     LiveTranslateStreamWorker, PreloadWorker)
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP
-from core.optional_modules import video_translation_available
+from core.optional_modules import realtime_voice_available
 
 _GOOGLE_PROVIDER = "(Google) Live Translate"
 _IN_RATE = 16000   # Gemini input / SenseVoice input
@@ -640,7 +640,7 @@ class LivePage(ScrollArea):
         msg = ""
         need_plugin = False
         if self._mode == "local":
-            if not video_translation_available():
+            if not realtime_voice_available():
                 msg = tr("Local Voice Needs Plugin", self._lang)
                 need_plugin = True
         else:
@@ -757,7 +757,7 @@ class LivePage(ScrollArea):
         if self._mode == "google" and not load_api_key_for_model(_GOOGLE_PROVIDER):
             self._info(tr("Google key not set", self._lang), error=True)
             return
-        if self._mode == "local" and not video_translation_available():
+        if self._mode == "local" and not realtime_voice_available():
             self._info(tr("Local Voice Needs Plugin", self._lang), error=True)
             return
 

@@ -477,10 +477,11 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=
 
     has_funasr = importlib.util.find_spec("funasr") is not None
     has_whisper = importlib.util.find_spec("faster_whisper") is not None
-    if not (has_funasr or has_whisper):
+    has_qwen = importlib.util.find_spec("qwen_asr") is not None
+    if not (has_funasr or has_whisper or has_qwen):
         raise RuntimeError(
             "No speech-to-text engine installed. Install the Real-Time Voice "
-            "plugin (faster-whisper or funasr).")
+            "plugin (faster-whisper / funasr / qwen-asr).")
 
     model_def = get_stt_model(model_id or get_selected_live_stt_model())
     engine, size = _resolve_stt_engine(model_def)

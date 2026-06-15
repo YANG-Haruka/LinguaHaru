@@ -39,8 +39,8 @@ def image_translation_available():
 
 
 def _has_stt():
-    return (importlib.util.find_spec("faster_whisper") is not None
-            or importlib.util.find_spec("funasr") is not None)
+    return any(importlib.util.find_spec(m) is not None
+               for m in ("faster_whisper", "funasr", "qwen_asr"))
 
 
 def video_translation_available():

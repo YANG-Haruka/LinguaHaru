@@ -1292,7 +1292,7 @@ async function startLocal() {
   $("live-input").textContent = ""; $("live-output").textContent = "";
   // Preload the local model so the first sentence isn't blocked on a slow load.
   setLiveStatus("正在加载本地模型…（首次需下载/加载，请稍候）");
-  try { await api("/api/live-preload", { method: "POST" }); } catch (e) { /* load lazily */ }
+  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "live" }) }); } catch (e) { /* load lazily */ }
   liveCtx = new AudioContext();
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
@@ -1432,17 +1432,18 @@ function splitSentences(text) {
   }
   return { sents: units.filter(Boolean), tail: cur.trim() };
 }
-async function recognizeInt16(int16) {
+async function recognizeInt16(int16, final) {
   const r = await api("/api/live-recognize", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ audio_b64: int16ToB64(int16) }) });
+    body: JSON.stringify({ audio_b64: int16ToB64(int16), final: !!final }) });
   return r;
 }
 async function streamPartial(int16) {
   if (livePartialBusy) { livePendingPcm = int16; return; }   // latest-wins
   livePartialBusy = true;
   try {
-    const r = await recognizeInt16(int16);
+    const r = await recognizeInt16(int16, false);
+    if (r.busy) return;   // server dropped this partial under load — keep state, retry next
     liveLastDetected = r.detected || liveLastDetected;
     const { sents, tail } = splitSentences(r.source || "");
     const confirmable = tail ? sents.length : Math.max(0, sents.length - 1);
@@ -1461,7 +1462,7 @@ async function streamPartial(int16) {
 async function finalizeUtterance(int16) {
   livePendingPcm = null;
   try {
-    const r = await recognizeInt16(int16);
+    const r = await recognizeInt16(int16, true);
     const { sents, tail } = splitSentences(r.source || "");
     const rest = sents.slice(liveEmitted);
     if (tail) rest.push(tail);
@@ -1585,6 +1586,7 @@ async function switchLiveInput() {
     liveSrc = liveCtx.createMediaStreamSource(liveStream);
     if (liveSilero) liveSilero.receive(liveSrc);            // neural VAD
     else liveSrc.connect(liveMode === "google" ? liveProc : liveNode);
+    stopMicMeter(); startMicMeter();   // re-bind the level meter to the new stream
     setLiveStatus("已切换输入 · 正在聆听…");
   } catch (e) { setLiveStatus("切换输入失败：" + e.message); }
 }
@@ -1899,7 +1901,8 @@ async function quickMic() {
       { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   } catch (e) { $("quick-status").textContent = "无法访问麦克风：" + e.message; return; }
   $("quick-status").textContent = "正在加载本地模型…";
-  try { await api("/api/live-preload", { method: "POST" }); } catch (e) { /* lazy load */ }
+  // Quick voice uses its own STT model (quick_stt_model) — preload THAT, not live.
+  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "quick" }) }); } catch (e) { /* lazy load */ }
   _quickRecCtx = new AudioContext();
   _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
   try {
