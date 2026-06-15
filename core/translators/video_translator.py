@@ -13,7 +13,13 @@ from core.engine.base_translator import DocumentTranslator
 class VideoTranslator(DocumentTranslator):
     """Transcribes the audio track with faster-whisper, then feeds the result
     through the existing SRT translation pipeline. Output is a translated
-    .srt file (plus the raw transcript for reference)."""
+    .srt file (plus the raw transcript for reference).
+
+    bilingual_mode puts the translation and the original line in each cue."""
+
+    def __init__(self, *args, bilingual_mode=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.bilingual_mode = bilingual_mode
 
     @property
     def _generated_srt_path(self):
@@ -32,7 +38,8 @@ class VideoTranslator(DocumentTranslator):
     def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
         self._result_srt_path = write_translated_content_to_srt(
             self._generated_srt_path, json_path, translated_json_path,
-            self.result_dir, self.src_lang, self.dst_lang)
+            self.result_dir, self.src_lang, self.dst_lang,
+            bilingual_mode=self.bilingual_mode)
 
     @staticmethod
     def _translate_subtitles_enabled():

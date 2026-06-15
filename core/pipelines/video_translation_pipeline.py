@@ -31,9 +31,16 @@ STT_MODELS = [
 
 DEFAULT_STT_MODEL = "whisper-small"
 
-# Language codes (core.languages_config) that SenseVoice can transcribe.
-# Everything else must be disabled in the UI when SenseVoice is selected.
-SENSEVOICE_SUPPORTED_CODES = {"zh", "zh-Hant", "en", "ja", "ko"}
+# Single source of truth mapping a UI language code (core.languages_config)
+# to the language SenseVoice's recognizer expects. SenseVoice recognizes
+# Mandarin and Cantonese; Traditional-Chinese audio is Mandarin, so zh-Hant
+# maps to "zh". Cantonese ("yue") is recognized via auto-detect and normalized
+# back to "zh" on output (see _recognize_sensevoice) since it has no UI code.
+_SENSEVOICE_LANG_MAP = {"zh": "zh", "zh-Hant": "zh", "en": "en", "ja": "ja", "ko": "ko"}
+
+# Language codes that SenseVoice can transcribe; everything else is disabled in
+# the UI when SenseVoice is selected. Derived from the map above (no drift).
+SENSEVOICE_SUPPORTED_CODES = set(_SENSEVOICE_LANG_MAP)
 
 _SYSTEM_CONFIG = os.path.join("config", "system_config.json")
 
@@ -143,8 +150,17 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback):
 
 # --- SenseVoice engine (funasr) --------------------------------------------
 def _sensevoice_lang(src_lang):
-    code = (src_lang or "").split("-")[0]
-    return code if code in {"zh", "en", "ja", "ko", "yue"} else "auto"
+    """Map a UI language code to SenseVoice's recognizer code (or 'auto').
+
+    Tries the full code first (so zh-Hant resolves), then the base subtag.
+    SenseVoice also accepts 'yue' (Cantonese) directly if ever passed."""
+    code = src_lang or ""
+    if code in _SENSEVOICE_LANG_MAP:
+        return _SENSEVOICE_LANG_MAP[code]
+    base = code.split("-")[0]
+    if base == "yue":
+        return "yue"
+    return _SENSEVOICE_LANG_MAP.get(base, "auto")
 
 
 # SenseVoice on the HF mirror, downloaded file-by-file. modelscope's link

@@ -96,6 +96,9 @@ def get_translator_class(
         return partial(translator_class, bilingual_mode=epub_bilingual_mode)
     if ext in (".html", ".htm"):
         return partial(translator_class, bilingual_mode=html_bilingual_mode)
+    if ext in MEDIA_EXTENSIONS:
+        # Video/audio output is a subtitle file -> reuse the subtitle toggle
+        return partial(translator_class, bilingual_mode=subtitle_bilingual_mode)
     return translator_class
 
 
@@ -113,6 +116,9 @@ BILINGUAL_KEY_BY_EXT = {
     ".html": "html_bilingual_mode",
     ".htm": "html_bilingual_mode",
 }
+# Video/audio produce subtitle output, so they share the subtitle toggle.
+for _media_ext in MEDIA_EXTENSIONS:
+    BILINGUAL_KEY_BY_EXT[_media_ext] = "subtitle_bilingual_mode"
 
 # Human label for each bilingual config key (English; for the SwitchButton text).
 BILINGUAL_LABEL = {
