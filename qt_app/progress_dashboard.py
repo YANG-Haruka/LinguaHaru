@@ -109,6 +109,13 @@ class ProgressDashboard(QWidget):
         self.status = CaptionLabel("")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+
+        # Coverage line (shown only after completion): what got translated by
+        # content category + how many segments fell back to the original.
+        self.coverage = CaptionLabel("")
+        self.coverage.setWordWrap(True)
+        self.coverage.hide()
+        layout.addWidget(self.coverage)
         layout.addStretch(1)
 
         self._cards = {
@@ -147,7 +154,7 @@ class ProgressDashboard(QWidget):
         self.back_btn.hide()
         self._clock.start()
 
-    def show_done(self, summary, can_open):
+    def show_done(self, summary, can_open, coverage=None):
         """Finished: keep all metrics on screen, swap Stop for Open/New."""
         self._clock.stop()
         self.stop_btn.hide()
@@ -155,6 +162,18 @@ class ProgressDashboard(QWidget):
         self.back_btn.show()
         if summary:
             self.status.setText("✓ " + summary)
+        self._show_coverage(coverage)
+
+    def _show_coverage(self, coverage):
+        """Compact coverage line: '翻译覆盖：正文 80 · 表格 20 · 0 未翻译'."""
+        if not coverage or not coverage.get("total"):
+            self.coverage.hide()
+            return
+        parts = [f"{cat} {n}" for cat, n in coverage.get("by_category", {}).items() if n]
+        parts.append(f"{coverage.get('fallback', 0)} {tr('Untranslated', self._lang)}")
+        self.coverage.setText(
+            f"{tr('Translation Coverage', self._lang)}: " + " · ".join(parts))
+        self.coverage.show()
 
     def stop_clock(self):
         self._clock.stop()

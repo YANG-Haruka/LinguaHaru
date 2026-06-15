@@ -12,6 +12,7 @@ actionable message (mirrors app.translate_files).
 """
 
 import os
+import json
 import subprocess
 
 from PySide6.QtCore import QThread, Signal
@@ -125,6 +126,8 @@ class TranslationWorker(QThread):
         # from temp_dir/<basename>). None means use the shared dirs.
         self.isolation_subdir = isolation_subdir
         self._stop = False
+        # Coverage report for this file (filled after process(); read by the page)
+        self.coverage = None
 
     def request_stop(self):
         self._stop = True
@@ -196,6 +199,16 @@ class TranslationWorker(QThread):
         output_path, missing_counts = translator.process(
             file_stem, file_extension, progress_callback=progress_callback
         )
+
+        # Translation coverage (best-effort): base_translator drops coverage.json
+        # in the result dir; stash it on the worker for the page to display.
+        try:
+            cov_path = os.path.join(result_dir, "coverage.json")
+            if os.path.exists(cov_path):
+                with open(cov_path, "r", encoding="utf-8") as f:
+                    self.coverage = json.load(f)
+        except Exception:  # noqa: BLE001 — coverage is non-essential
+            pass
 
         total_tokens = getattr(translator, "total_tokens", 0)
         final_stats = getattr(translator, "final_stats", "")

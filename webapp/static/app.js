@@ -549,6 +549,7 @@ function listenProgress(taskId) {
       es.close(); setBusy(false);
       $("download-link").href = "/api/download/" + taskId;
       $("result").hidden = false; setStatus("翻译完成");
+      renderCoverage(d.coverage);
     } else if (d.status === "error") {
       es.close(); setBusy(false); setStatus("错误: " + (d.error || "未知错误"));
     } else if (d.status === "stopped") {
@@ -556,6 +557,27 @@ function listenProgress(taskId) {
     }
   };
   es.onerror = () => { es.close(); setBusy(false); };
+}
+
+function _label(key, fallback) {
+  const lang = localStorage.getItem("lh-lang") || "zh";
+  const L = (BOOT.labels && BOOT.labels[lang]) || {};
+  const EN = (BOOT.labels && BOOT.labels.en) || {};
+  return L[key] || EN[key] || fallback;
+}
+
+// Compact coverage panel: "正文 80 · 表格 20 · 批注 10 · 0 未翻译".
+function renderCoverage(cov) {
+  const box = $("coverage");
+  if (!box) return;
+  if (!cov || !cov.total) { box.hidden = true; return; }
+  const parts = [];
+  for (const [cat, n] of Object.entries(cov.by_category || {})) {
+    if (n) parts.push(`${cat} ${n}`);
+  }
+  parts.push(`${cov.fallback || 0} ${_label("Untranslated", "未翻译")}`);
+  $("coverage-body").textContent = parts.join(" · ");
+  box.hidden = false;
 }
 
 function setBusy(b) {

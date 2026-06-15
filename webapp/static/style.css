@@ -553,6 +553,10 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   letter-spacing: 0.3px; color: var(--text-2);
 }
 .result { margin-top: 18px; }
+.coverage { margin-top: 12px; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: var(--r); border: 1px solid var(--border); background: var(--surface); }
+.coverage .cov-label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.coverage .cov-body { font-size: 0.82rem; font-family: var(--font-mono); }
 #status { margin-top: 12px; font-family: var(--font-mono); font-size: 0.78rem; }
 
 /* ============================ tables ============================ */

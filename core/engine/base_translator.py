@@ -1132,7 +1132,28 @@ class DocumentTranslator:
         # (matters on case-sensitive filesystems when the upload was .DOCX etc.)
         final_output_path = os.path.join(result_folder, f"{base_name}_{lang_suffix}{file_extension.lower()}")
 
+        # Translation coverage report (best-effort; must never break a run)
+        self._write_coverage_report()
+
         # Save translation summary
         self._save_translation_summary(status="success", output_file_path=final_output_path)
 
         return final_output_path, missing_counts
+
+    def _write_coverage_report(self):
+        """Compute the coverage breakdown from this run's src.json /
+        dst_translated.json, log a one-line summary, and drop coverage.json into
+        the result dir so a frontend can read it. Fully guarded — coverage MUST
+        NEVER break a translation."""
+        try:
+            from core import coverage
+            report = coverage.summarize(self.src_json_path, self.result_json_path)
+            app_logger.info("Coverage: " + coverage.format_line(report))
+            os.makedirs(self.result_dir, exist_ok=True)
+            out_path = os.path.join(self.result_dir, "coverage.json")
+            tmp_path = out_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(report, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, out_path)
+        except Exception as e:  # noqa: BLE001 — coverage is non-essential
+            app_logger.warning(f"Could not write coverage report: {e}")

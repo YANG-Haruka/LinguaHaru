@@ -445,6 +445,17 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     translator.check_stop_requested = check_stop
     output_path, _missing = translator.process(
         stem, ext, progress_callback=lambda v, desc=None: (check_stop(), on_progress(v, desc)))
+
+    # Translation coverage (best-effort): base_translator drops coverage.json in
+    # the result dir; stash it on the task so the SSE 'done' event can carry it.
+    try:
+        cov_path = os.path.join(result_dir, "coverage.json")
+        if os.path.exists(cov_path):
+            with open(cov_path, "r", encoding="utf-8") as f:
+                with _TASKS_LOCK:
+                    TASKS[task_id]["coverage"] = json.load(f)
+    except Exception:  # noqa: BLE001
+        pass
     return output_path
 
 
@@ -565,7 +576,10 @@ def progress(task_id: str, request: Request):
                         state.get("status"))
             if snapshot != last:
                 last = snapshot
-                yield f"data: {json.dumps({k: state.get(k) for k in ('progress','desc','status','error')})}\n\n"
+                payload = {k: state.get(k) for k in ('progress', 'desc', 'status', 'error')}
+                if state.get("coverage") is not None:
+                    payload["coverage"] = state.get("coverage")
+                yield f"data: {json.dumps(payload)}\n\n"
             if state.get("status") in ("done", "error", "stopped"):
                 break
             import time

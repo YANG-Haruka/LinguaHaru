@@ -56,6 +56,7 @@ class TranslatePage(QStackedWidget):
         self._queue = []
         self._results = []          # successful output paths
         self._file_results = []     # (name, status, detail)
+        self._coverage = []         # per-file coverage reports
         self._run_subdir = None
         self._running = False
         self._total = 0
@@ -407,6 +408,7 @@ class TranslatePage(QStackedWidget):
         self._total = len(self._files)
         self._results = []
         self._file_results = []
+        self._coverage = []         # per-file coverage reports
         self._workers = []
         self._progress = {}
         self._tokens = 0
@@ -509,6 +511,9 @@ class TranslatePage(QStackedWidget):
         name = os.path.basename(getattr(worker, "_lh_file", output_path))
         self._results.append(output_path)
         self._last_output_dir = os.path.dirname(output_path)
+        cov = getattr(worker, "coverage", None)
+        if cov:
+            self._coverage.append(cov)
         detail = ""
         if missing:
             tmpl = tr("Missing Segments", self._lang)
@@ -555,8 +560,25 @@ class TranslatePage(QStackedWidget):
         self._refresh_dashboard()
         # Stay on the dashboard so the metrics (speed/tokens/time) remain visible;
         # just show a "done" banner + Open-folder / New-translation buttons.
-        self.dashboard.show_done(summary, can_open=bool(self._results))
+        self.dashboard.show_done(summary, can_open=bool(self._results),
+                                 coverage=self._aggregate_coverage())
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
+
+    def _aggregate_coverage(self):
+        """Merge per-file coverage reports into one (summed totals + categories).
+        Returns None when no coverage was produced."""
+        if not self._coverage:
+            return None
+        total = translated = fallback = 0
+        by_category = {}
+        for rep in self._coverage:
+            total += rep.get("total", 0)
+            translated += rep.get("translated", 0)
+            fallback += rep.get("fallback", 0)
+            for cat, n in (rep.get("by_category") or {}).items():
+                by_category[cat] = by_category.get(cat, 0) + n
+        return {"total": total, "translated": translated,
+                "fallback": fallback, "by_category": by_category}
 
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
