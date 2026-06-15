@@ -15,13 +15,42 @@ from rapidocr import RapidOCR
 from .skip_pipeline import should_translate
 from core.log_config import app_logger
 
-_ocr_engine = None
+_ocr_engines = {}   # (size, ocr_lang) -> (kind, engine)
 
 # PaddleOCR PP-OCRv6 size variant (det+rec). "small" is the light default —
 # noticeably smaller/faster than "medium" with only a minor accuracy drop;
 # "tiny" is fastest, "medium" most accurate. Driven by config "ocr_model_size"
 # (the Image-OCR plugin's model selector sets this).
 _OCR_SIZES = ("tiny", "small", "medium")
+
+# Translation source language -> (RapidOCR Rec.lang_type, PaddleOCR lang). Only
+# the non-Chinese/English scripts are listed; everything else (zh/zh-Hant/en/th/
+# auto/unknown) maps to None = the default Chinese+English model (current
+# behaviour, unchanged). Recognizing e.g. Japanese/Korean with the matching
+# model is far more accurate than the default. The OCR language auto-follows the
+# translation source language (no UI).
+_OCR_LANG = {
+    "ja": ("japan", "japan"),
+    "ko": ("korean", "korean"),
+    "ru": ("cyrillic", "cyrillic"),
+    "fr": ("latin", "latin"), "de": ("latin", "latin"), "es": ("latin", "latin"),
+    "it": ("latin", "latin"), "pt": ("latin", "latin"), "vi": ("latin", "latin"),
+}
+
+
+def _normalize_ocr_lang(src_lang):
+    """Map a translation source language (display name or code) to an OCR-engine
+    language pair, or None for the default Chinese+English model."""
+    if not src_lang:
+        return None
+    code = src_lang
+    try:
+        from core.languages_config import LANGUAGE_MAP
+        if src_lang in LANGUAGE_MAP:
+            code = LANGUAGE_MAP[src_lang]
+    except Exception:  # noqa: BLE001
+        pass
+    return _OCR_LANG.get(code.split("-")[0].lower())
 
 
 def _ocr_model_size():
@@ -49,51 +78,63 @@ _FONT_CANDIDATES = [
 ]
 
 
-def _get_ocr_engine():
-    """Best available OCR engine.
+def _get_ocr_engine(src_lang=None):
+    """Best available OCR engine, recognition-language aware.
 
-    If the heavy optional paddleocr package is installed, use PP-OCRv6
-    (paddlepaddle runtime); otherwise the lightweight default is RapidOCR
-    pinned to PP-OCRv5 ONNX models (v6 has no ONNX conversion yet).
+    `src_lang` (the translation source language) auto-selects the recognition
+    model: Japanese/Korean/Cyrillic/Latin get their matching model, everything
+    else uses the default Chinese+English model. Engines are cached per
+    (size, language). If the heavy optional paddleocr package is installed, use
+    PP-OCRv6 (paddlepaddle); otherwise the lightweight RapidOCR (PP-OCRv5 ONNX).
     Returns (kind, engine) with kind in {"paddle", "rapid"}."""
-    global _ocr_engine
-    if _ocr_engine is None:
+    lang = _normalize_ocr_lang(src_lang)            # (rapid_rec, paddle_lang) or None
+    size = _ocr_model_size()
+    key = (size, lang[0] if lang else None)
+    if key in _ocr_engines:
+        return _ocr_engines[key]
+    try:
+        # DLL load-order fix: paddle's oneDNN/MKL DLLs break ctranslate2
+        # (faster-whisper) if paddle loads first; the reverse order works.
+        # Pre-import faster_whisper when both optional modules are present.
         try:
-            # DLL load-order fix: paddle's oneDNN/MKL DLLs break ctranslate2
-            # (faster-whisper) if paddle loads first; the reverse order works.
-            # Pre-import faster_whisper when both optional modules are present.
-            try:
-                import faster_whisper  # noqa: F401
-            except ImportError:
-                pass
-            from paddleocr import PaddleOCR
-            size = _ocr_model_size()
+            import faster_whisper  # noqa: F401
+        except ImportError:
+            pass
+        from paddleocr import PaddleOCR
+        common = dict(use_doc_orientation_classify=False, use_doc_unwarping=False,
+                      use_textline_orientation=True,
+                      # paddle 3.3.1 oneDNN hits an unimplemented PIR op on
+                      # Windows CPU (ConvertPirAttribute2RuntimeAttribute)
+                      enable_mkldnn=False)
+        if lang:
+            # Language-specific model: let PaddleOCR pick det/rec for that lang.
+            app_logger.info(f"Loading PaddleOCR engine (lang={lang[1]})...")
+            engine = ("paddle", PaddleOCR(lang=lang[1], **common))
+        else:
             app_logger.info(f"Loading PaddleOCR engine (PP-OCRv6_{size})...")
-            _ocr_engine = ("paddle", PaddleOCR(
+            engine = ("paddle", PaddleOCR(
                 text_detection_model_name=f"PP-OCRv6_{size}_det",
                 text_recognition_model_name=f"PP-OCRv6_{size}_rec",
-                use_doc_orientation_classify=False,
-                use_doc_unwarping=False,
-                use_textline_orientation=True,
-                # paddle 3.3.1 oneDNN hits an unimplemented PIR op on
-                # Windows CPU (ConvertPirAttribute2RuntimeAttribute)
-                enable_mkldnn=False,
-            ))
-        except Exception as e:
-            if not isinstance(e, ImportError):
-                app_logger.warning(f"PaddleOCR unavailable ({e}), falling back to RapidOCR")
+                **common))
+    except Exception as e:
+        if not isinstance(e, ImportError):
+            app_logger.warning(f"PaddleOCR unavailable ({e}), falling back to RapidOCR")
+        from rapidocr.utils.typings import OCRVersion
+        params = {"Det.ocr_version": OCRVersion.PPOCRV5,
+                  "Rec.ocr_version": OCRVersion.PPOCRV5}
+        if lang:
+            params["Rec.lang_type"] = lang[0]
+            app_logger.info(f"Loading RapidOCR engine (rec lang={lang[0]})...")
+        else:
             app_logger.info("Loading RapidOCR engine (PP-OCRv5)...")
-            from rapidocr.utils.typings import OCRVersion
-            _ocr_engine = ("rapid", RapidOCR(params={
-                "Det.ocr_version": OCRVersion.PPOCRV5,
-                "Rec.ocr_version": OCRVersion.PPOCRV5,
-            }))
-    return _ocr_engine
+        engine = ("rapid", RapidOCR(params=params))
+    _ocr_engines[key] = engine
+    return engine
 
 
-def _run_ocr(file_path):
+def _run_ocr(file_path, src_lang=None):
     """Run OCR and normalize results to a list of (text, quad_points, score)."""
-    kind, engine = _get_ocr_engine()
+    kind, engine = _get_ocr_engine(src_lang)
     if kind == "paddle":
         result = engine.predict(file_path)[0]
         texts = list(result.get("rec_texts") or [])
@@ -115,9 +156,11 @@ def _find_font_path():
     return None
 
 
-def extract_image_content_to_json(file_path, temp_dir):
-    """Run OCR on the image and save recognized text regions to src.json."""
-    texts, boxes, scores = _run_ocr(file_path)
+def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
+    """Run OCR on the image and save recognized text regions to src.json.
+
+    `src_lang` auto-selects the OCR recognition language (Japanese/Korean/etc.)."""
+    texts, boxes, scores = _run_ocr(file_path, src_lang)
     # Some engines/versions omit scores; zip() would then truncate to the
     # shortest list and silently drop ALL text. Pad with 1.0 (treated confident).
     if len(scores) < len(texts):
