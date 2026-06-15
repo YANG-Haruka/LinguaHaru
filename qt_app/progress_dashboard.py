@@ -7,6 +7,7 @@ speed are computed here from a monotonic start time + completed-line count.
 
 import time
 
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QGridLayout, QHBoxLayout
 
 from qfluentwidgets import TitleLabel, PushButton, FluentIcon, CaptionLabel
@@ -39,6 +40,12 @@ class ProgressDashboard(QWidget):
         self._lang = lang
         self._on_stop = on_stop
         self._start_time = None
+        self._last_percent = 0.0
+        # Tick the clock every second so Elapsed/ETA keep moving even during the
+        # long opaque transcription phase (which emits no progress events).
+        self._clock = QTimer(self)
+        self._clock.setInterval(1000)
+        self._clock.timeout.connect(self._tick_clock)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 22, 30, 22)
@@ -118,13 +125,32 @@ class ProgressDashboard(QWidget):
 
     def start(self):
         self._start_time = time.monotonic()
+        self._last_percent = 0.0
         self.ring_card.set_value(0)
         self.status.setText("")
+        self._clock.start()
+
+    def stop_clock(self):
+        self._clock.stop()
+
+    def _tick_clock(self):
+        """1 Hz refresh of Elapsed (+ ETA from the last known percent), so the
+        dashboard never looks frozen during phases with no progress events."""
+        if not self._start_time:
+            return
+        elapsed = time.monotonic() - self._start_time
+        self.elapsed_card.set_value(_fmt_dur(elapsed))
+        frac = self._last_percent / 100.0
+        if frac > 0.01:
+            self.eta_card.set_value(_fmt_dur(elapsed * (1 - frac) / frac))
 
     def update_metrics(self, percent, total_files, done_files, live_tasks,
                        failed, total_tokens):
         """Refresh all cards. Speed/ETA/elapsed are derived from the start time
         and the fraction complete (files act as the 'line' unit at this layer)."""
+        self._last_percent = percent
+        if percent >= 100:
+            self._clock.stop()
         self.ring_card.set_value(percent)
         self.lines_card.set_value(
             f"{done_files}/{total_files}",

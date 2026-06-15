@@ -29,12 +29,18 @@ _SORT_KEYS = ["Newest", "Oldest", "By Type", "By Name"]
 
 
 def open_folder(path):
-    if not path or not os.path.exists(path):
+    if not path:
+        return
+    # Normalize to an absolute, OS-native path. The saved paths can be relative
+    # or have mixed slashes (e.g. "...\data/result"); Windows Explorer silently
+    # falls back to the Documents folder when given such a malformed argument.
+    path = os.path.abspath(path)
+    if not os.path.exists(path):
         return
     system = platform.system()
     try:
         if system == "Windows":
-            subprocess.run(["explorer", path], check=False)
+            os.startfile(path)  # noqa: S606 - canonical "open this folder" on Windows
         elif system == "Darwin":
             subprocess.run(["open", path], check=False)
         else:

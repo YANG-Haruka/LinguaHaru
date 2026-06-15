@@ -550,6 +550,7 @@ class TranslatePage(QStackedWidget):
 
     def _finish_all(self):
         self._running = False
+        self.dashboard.stop_clock()
         self.translate_btn.setEnabled(True)
         self.stop_btn.setEnabled(False)
         ok = [r for r in self._file_results if r[1] == "ok"]

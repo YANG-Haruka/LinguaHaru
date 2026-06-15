@@ -373,8 +373,8 @@ class DocumentTranslator:
                                 app_logger.warning(f"Failed to process results {max_empty_retries} times")
                                 self._mark_segment_as_failed(segment)
                                 return None
-                            
-                            app_logger.warning("Failed to process translation results")
+                            # Per-attempt retry (usually succeeds next try): debug, not warning.
+                            app_logger.debug("Empty result, retrying segment")
                             interruptible_sleep(1, self.check_for_stop)
                             continue
                 
@@ -610,13 +610,12 @@ class DocumentTranslator:
                             return translation_results
                         else:
                             empty_result_count += 1
-                            app_logger.warning("Failed to process translation results")
-                            
                             if empty_result_count > max_empty_retries:
                                 app_logger.warning("Failed to process results")
                                 self._mark_segment_as_failed(segment)
                                 return None
-                            
+                            # Per-attempt retry (usually succeeds next try): debug, not warning.
+                            app_logger.debug("Empty result, retrying segment")
                             interruptible_sleep(1, self.check_for_stop)
                             continue
                 
