@@ -71,6 +71,29 @@ try:
 except Exception:
     imageio_ffmpeg_collect = ([], [], [])
 
+# Optional ML engines bundled so the packaged app works out of the box:
+#   - Image OCR: RapidOCR (pure ONNX; onnxruntime collected above). PaddleOCR is
+#     intentionally NOT bundled — paddlepaddle is huge and hostile to PyInstaller;
+#     RapidOCR is the lightweight packaged engine (run from source for Paddle).
+#   - Speech (video subtitles + real-time voice): faster-whisper (ctranslate2) and
+#     SenseVoice (funasr/torch). Models themselves are NOT bundled — they live in
+#     the writable data/models next to the exe (downloaded / dropped in by the user).
+def _safe_collect(name):
+    try:
+        return collect_all(name)
+    except Exception:
+        return ([], [], [])
+
+rapidocr_collect = _safe_collect("rapidocr")
+faster_whisper_collect = _safe_collect("faster_whisper")
+ctranslate2_collect = _safe_collect("ctranslate2")
+funasr_collect = _safe_collect("funasr")
+torch_collect = _safe_collect("torch")
+torchaudio_collect = _safe_collect("torchaudio")
+modelscope_collect = _safe_collect("modelscope")
+_ENGINE_COLLECTS = [rapidocr_collect, faster_whisper_collect, ctranslate2_collect,
+                    funasr_collect, torch_collect, torchaudio_collect, modelscope_collect]
+
 translator_modules = [
     "core.translators.excel_translator",
     "core.translators.word_translator",
@@ -108,6 +131,7 @@ all_hiddenimports = filter_strings(
     + babeldoc_collect[1]
     + onnxruntime_collect[1]
     + imageio_ffmpeg_collect[1]
+    + sum((c[1] for c in _ENGINE_COLLECTS), [])
     + translator_modules
     + webapp_modules
     + uvicorn_runtime
@@ -128,6 +152,7 @@ all_binaries = filter_binaries(
     babeldoc_collect[2]
     + onnxruntime_collect[2]
     + imageio_ffmpeg_collect[2]
+    + sum((c[2] for c in _ENGINE_COLLECTS), [])
 ) + conda_dll_binaries
 
 all_datas = filter_datas(
@@ -140,6 +165,7 @@ all_datas = filter_datas(
     + babeldoc_collect[0]
     + onnxruntime_collect[0]
     + imageio_ffmpeg_collect[0]
+    + sum((c[0] for c in _ENGINE_COLLECTS), [])
 ) + [('assets/models/', 'assets/models/'), ('assets/img/', 'assets/img/'),
      ('assets/icons/', 'assets/icons/'), ('webapp/static/', 'webapp/static/'),
      ('config/', 'config/'), ('data/glossary/', 'data/glossary/')]
@@ -164,14 +190,25 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# ONEDIR build (folder, not single exe): required for the heavy ML stack
+# (torch/ctranslate2 etc.) — onefile would unpack ~GBs to a temp dir on every
+# launch (30-60s cold start). Distribute the dist/LinguaHaru/ folder (zip it).
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
+    [],
+    exclude_binaries=True,
     name="LinguaHaru",
     debug=False,
     upx=True,
     console=True,
     icon="assets/img/ico.ico",
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    upx=True,
+    name="LinguaHaru",
 )
