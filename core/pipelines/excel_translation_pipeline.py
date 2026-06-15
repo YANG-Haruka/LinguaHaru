@@ -5,7 +5,7 @@ import json
 import re
 import shutil
 from datetime import datetime
-from zipfile import ZipFile
+from zipfile import ZipFile, ZIP_DEFLATED
 from lxml import etree
 
 # User-supplied XML: disable entity resolution / DTD / network access (XXE)
@@ -192,6 +192,19 @@ def _extract_with_openpyxl(file_path, temp_dir):
                 }
                 cell_data.append(cell_info)
 
+    # openpyxl's object model exposes only worksheet cells -- it cannot see the
+    # DrawingML parts (xl/drawings, xl/diagrams) that hold textboxes, shapes and
+    # SmartArt. Without this, any such text is silently dropped. The helpers read
+    # the .xlsx ZIP directly, so they work without Excel/xlwings installed.
+    try:
+        count = _extract_smartart_from_excel(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting SmartArt from Excel (openpyxl path): {str(e)}")
+    try:
+        count = _extract_drawing_content_from_excel(file_path, cell_data, count)
+    except Exception as e:
+        app_logger.error(f"Error extracting drawing content from Excel (openpyxl path): {str(e)}")
+
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
     os.makedirs(temp_folder, exist_ok=True)
@@ -238,10 +251,19 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
                 else:
                     sheet_name_translations[original_sheet_name] = translated_sheet_name.replace("␊", "\n").replace("␍", "\r")
 
+    # Collect drawing / SmartArt items for ZIP-level write-back after save.
+    smartart_items = [c for c in original_data if c.get("type") == "excel_smartart"]
+    drawing_items = [c for c in original_data if c.get("type") == "excel_drawing"]
+
     # Second pass: Update cell contents
     for cell_info in original_data:
         # Skip sheet name entries as they are handled separately
         if cell_info.get("is_sheet_name", False):
+            continue
+
+        # Skip drawing / SmartArt entries: they have no row/column and are
+        # written back at the ZIP/XML level after the workbook is saved.
+        if cell_info.get("type") in ("excel_smartart", "excel_drawing"):
             continue
 
         count = str(cell_info["count_src"])  # Ensure count is a string
@@ -323,6 +345,37 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         except Exception as e2:
             app_logger.error(f"Failed to save translated Excel to fallback path: {str(e2)}")
             raise
+
+    # openpyxl silently DROPS DrawingML parts it cannot model (textboxes,
+    # shapes, SmartArt) when it saves. Restore those parts from the original
+    # file before patching, otherwise there is nothing left to translate.
+    if smartart_items or drawing_items:
+        try:
+            _restore_drawingml_parts(file_path, result_path)
+        except Exception as e:
+            app_logger.error(f"Failed to restore DrawingML parts (openpyxl path): {str(e)}")
+
+    # Write back drawing/textbox and SmartArt text at the ZIP/XML level.
+    # openpyxl cannot touch these parts, so they are patched on the saved file.
+    if smartart_items:
+        app_logger.info(f"Processing {len(smartart_items)} SmartArt translations (openpyxl path)")
+        try:
+            if bilingual_mode:
+                result_path = _apply_excel_smartart_bilingual_translations_to_file(result_path, smartart_items, translations)
+            else:
+                result_path = _apply_excel_smartart_translations_to_file(result_path, smartart_items, translations)
+        except Exception as e:
+            app_logger.error(f"Failed to apply SmartArt translations (openpyxl path): {str(e)}")
+
+    if drawing_items:
+        app_logger.info(f"Processing {len(drawing_items)} drawing translations (openpyxl path)")
+        try:
+            if bilingual_mode:
+                result_path = _apply_excel_drawing_bilingual_translations_to_file(result_path, drawing_items, translations)
+            else:
+                result_path = _apply_excel_drawing_translations_to_file(result_path, drawing_items, translations)
+        except Exception as e:
+            app_logger.error(f"Failed to apply drawing translations (openpyxl path): {str(e)}")
 
     return result_path
 
@@ -1670,6 +1723,85 @@ def _write_with_xlwings(file_path, original_json_path, translated_json_path, res
 # ============================================================================
 # XLWINGS MODE - WRITING HELPERS (Drawing)
 # ============================================================================
+
+def _restore_drawingml_parts(original_path: str, result_path: str) -> None:
+    """Restore DrawingML parts that openpyxl dropped when re-saving.
+
+    openpyxl's object model does not understand textboxes/shapes/SmartArt, so
+    ``Workbook.save`` strips ``xl/drawings``/``xl/diagrams``/``xl/charts``, the
+    worksheet ``<drawing>`` references, the worksheet rels and the matching
+    Content_Types overrides. This grafts those parts back from the original file
+    (verbatim) so the later ZIP-level translation patch has something to edit.
+    The result stays a valid workbook that openpyxl can reopen.
+    """
+    draw_prefixes = ("xl/drawings/", "xl/diagrams/", "xl/charts/")
+
+    def is_drawingish(name):
+        return name.startswith(draw_prefixes)
+
+    with ZipFile(original_path, "r") as z:
+        orig_names = z.namelist()
+        orig_blobs = {n: z.read(n) for n in orig_names}
+    with ZipFile(result_path, "r") as z:
+        res_blobs = {n: z.read(n) for n in z.namelist()}
+
+    dropped = [n for n in orig_names if is_drawingish(n) and n not in res_blobs]
+    if not dropped:
+        return  # openpyxl kept everything (e.g. only charts it can model)
+
+    # 1) restore the dropped drawing/diagram/chart parts (and their rels) verbatim
+    for n in dropped:
+        res_blobs[n] = orig_blobs[n]
+
+    # 2) restore drawing relationships into each worksheet's .rels
+    for n in orig_names:
+        if not re.match(r"xl/worksheets/_rels/sheet\d+\.xml\.rels$", n):
+            continue
+        draw_rels = re.findall(r'<Relationship\b[^>]*?/drawing"[^>]*?/>',
+                               orig_blobs[n].decode("utf-8"))
+        if not draw_rels:
+            continue
+        if n in res_blobs:
+            cur = res_blobs[n].decode("utf-8")
+            if "/drawing" not in cur:  # don't double-add
+                cur = cur.replace("</Relationships>", "".join(draw_rels) + "</Relationships>")
+                res_blobs[n] = cur.encode("utf-8")
+        else:
+            res_blobs[n] = orig_blobs[n]
+
+    # 3) restore the <drawing r:id> element inside each worksheet xml
+    for sheet_xml in [x for x in orig_names if re.match(r"xl/worksheets/sheet\d+\.xml$", x)]:
+        match = re.search(r"<drawing\b[^>]*/>", orig_blobs[sheet_xml].decode("utf-8"))
+        if not match or sheet_xml not in res_blobs:
+            continue
+        cur = res_blobs[sheet_xml].decode("utf-8")
+        if "<drawing" in cur:
+            continue
+        if "xmlns:r=" not in cur.split(">", 1)[0]:
+            cur = cur.replace(
+                "<worksheet ",
+                '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ',
+                1)
+        cur = cur.replace("</worksheet>", match.group(0) + "</worksheet>")
+        res_blobs[sheet_xml] = cur.encode("utf-8")
+
+    # 4) restore Content_Types overrides for the restored parts
+    ct = "[Content_Types].xml"
+    if ct in orig_blobs and ct in res_blobs:
+        ctr = res_blobs[ct].decode("utf-8")
+        for ov in re.findall(r'<Override\b[^>]*?/>', orig_blobs[ct].decode("utf-8")):
+            part = re.search(r'PartName="([^"]+)"', ov)
+            if part and is_drawingish(part.group(1).lstrip("/")) and part.group(1) not in ctr:
+                ctr = ctr.replace("</Types>", ov + "</Types>")
+        res_blobs[ct] = ctr.encode("utf-8")
+
+    tmp = result_path + ".restore.tmp"
+    with ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+        for n, b in res_blobs.items():
+            zout.writestr(n, b)
+    shutil.move(tmp, result_path)
+    app_logger.info(f"Restored {len(dropped)} DrawingML part(s) openpyxl had dropped")
+
 
 def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: List[Dict], translations: Dict) -> str:
     """Apply translations to Excel drawing textboxes."""
