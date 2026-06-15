@@ -127,10 +127,17 @@ async function refreshModels() {
     const d = await api("/api/models");
     $("models-dir").value = d.dir || "";
     const list = $("models-list");
+    list.replaceChildren();
     if (!d.models || !d.models.length) {
       list.textContent = "尚未下载任何模型";
     } else {
-      list.innerHTML = d.models.map((m) => `• ${m.label} — ${m.size}`).join("<br>");
+      // textContent (not innerHTML): labels derive from folder names on disk.
+      d.models.forEach((m, i) => {
+        if (i) list.appendChild(document.createElement("br"));
+        const span = document.createElement("span");
+        span.textContent = `• ${m.label} — ${m.size}`;
+        list.appendChild(span);
+      });
     }
   } catch (e) { /* server_mode or not available */ }
 }
