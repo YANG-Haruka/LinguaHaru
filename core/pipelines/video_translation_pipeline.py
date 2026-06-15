@@ -173,8 +173,15 @@ _SENSEVOICE_FILES = ["model.pt", "config.yaml", "configuration.json", "am.mvn",
 
 def _sensevoice_local_dir():
     """Fetch SenseVoice from the HF mirror (per-file) and return its local dir,
-    or None if the mirror is unreachable (caller falls back to modelscope)."""
+    or None if the mirror is unreachable (caller falls back to modelscope).
+
+    Downloads into a stable, project-local cache (data/models) instead of the
+    user's global HF cache, so the model lives in a predictable place and is
+    downloaded only once (hf_hub_download reuses cached files)."""
+    from core.paths import DATA_DIR
     os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    cache_dir = os.path.join(DATA_DIR, "models")
+    os.makedirs(cache_dir, exist_ok=True)
     try:
         from huggingface_hub import hf_hub_download
     except ImportError:
@@ -184,7 +191,7 @@ def _sensevoice_local_dir():
         last = None
         for _ in range(4):
             try:
-                last = hf_hub_download(_SENSEVOICE_HF_REPO, fname)
+                last = hf_hub_download(_SENSEVOICE_HF_REPO, fname, cache_dir=cache_dir)
                 break
             except Exception:  # noqa: BLE001 - transient mirror hiccup, retry
                 last = None

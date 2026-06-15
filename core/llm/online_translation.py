@@ -328,6 +328,43 @@ def fix_json_format(text):
         # Last resort: wrap everything in a JSON object
         return json.dumps({"translated_text": text}, ensure_ascii=False)
     
+def _disable_thinking_default():
+    """Whether to turn off model 'thinking'/reasoning for translation by default.
+    Translation never needs chain-of-thought; it only adds latency + cost.
+    Set system_config "disable_thinking": false to opt out."""
+    try:
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("disable_thinking", True))
+    except Exception:
+        return True
+
+
+def _looks_like_param_error(err):
+    msg = str(err).lower()
+    return any(m in msg for m in (
+        "thinking", "unexpected", "unrecognized", "unknown", "invalid_request",
+        "invalid request", "extra_body", "not supported", "unsupported", "400"))
+
+
+def _create_completion(client, params):
+    """Call the chat API. If a speculative 'thinking'-disable param is rejected
+    by this provider, retry once without it so translation still works."""
+    try:
+        return client.chat.completions.create(**params)
+    except Exception as e:
+        eb = params.get("extra_body") or {}
+        if "thinking" in eb and _looks_like_param_error(e):
+            eb2 = {k: v for k, v in eb.items() if k != "thinking"}
+            retry = dict(params)
+            if eb2:
+                retry["extra_body"] = eb2
+            else:
+                retry.pop("extra_body", None)
+            app_logger.warning("Provider rejected thinking-disable param; retrying without it")
+            return client.chat.completions.create(**retry)
+        raise
+
+
 def translate_online(api_key, messages, model):
     """
     Perform translation using an online API with config from a JSON file.
@@ -393,10 +430,15 @@ def translate_online(api_key, messages, model):
         if frequency_penalty is not None:
             params["frequency_penalty"] = frequency_penalty
             
-        # Add non-standard parameters to extra_body
+        # Thinking/reasoning control. A per-model "thinking_type" is passed
+        # through verbatim; otherwise translation disables thinking by default
+        # (faster + cheaper; the answer is unaffected). _create_completion falls
+        # back to a plain call if the provider rejects the param.
         if thinking_type is not None:
             extra_body["thinking_type"] = thinking_type
-        
+        elif _disable_thinking_default():
+            extra_body["thinking"] = {"type": "disabled"}
+
         # Add extra_body if there are non-standard parameters
         if extra_body:
             params["extra_body"] = extra_body
@@ -405,8 +447,8 @@ def translate_online(api_key, messages, model):
         app_logger.debug(f"Sending messages to API: {json.dumps(messages, ensure_ascii=False, indent=2)}")
         app_logger.debug(f"API parameters: {json.dumps(params, ensure_ascii=False, indent=2)}")
 
-        # Send request
-        response = client.chat.completions.create(**params)
+        # Send request (with thinking-disable fallback)
+        response = _create_completion(client, params)
 
     except HardApiError:
         raise
