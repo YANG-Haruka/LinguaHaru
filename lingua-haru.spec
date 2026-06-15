@@ -64,6 +64,13 @@ tiktoken_collect = collect_all("tiktoken")
 babeldoc_collect = collect_all("babeldoc")
 onnxruntime_collect = collect_all("onnxruntime")
 
+# Bundle the ffmpeg binary so the packaged app needs NO system/PATH ffmpeg.
+# imageio-ffmpeg ships the executable under imageio_ffmpeg/binaries/.
+try:
+    imageio_ffmpeg_collect = collect_all("imageio_ffmpeg")
+except Exception:
+    imageio_ffmpeg_collect = ([], [], [])
+
 translator_modules = [
     "core.translators.excel_translator",
     "core.translators.word_translator",
@@ -100,6 +107,7 @@ all_hiddenimports = filter_strings(
     + tiktoken_collect[1]
     + babeldoc_collect[1]
     + onnxruntime_collect[1]
+    + imageio_ffmpeg_collect[1]
     + translator_modules
     + webapp_modules
     + uvicorn_runtime
@@ -119,6 +127,7 @@ all_hiddenimports = filter_strings(
 all_binaries = filter_binaries(
     babeldoc_collect[2]
     + onnxruntime_collect[2]
+    + imageio_ffmpeg_collect[2]
 ) + conda_dll_binaries
 
 all_datas = filter_datas(
@@ -130,6 +139,7 @@ all_datas = filter_datas(
     + tiktoken_collect[0]
     + babeldoc_collect[0]
     + onnxruntime_collect[0]
+    + imageio_ffmpeg_collect[0]
 ) + [('assets/models/', 'assets/models/'), ('assets/img/', 'assets/img/'),
      ('assets/icons/', 'assets/icons/'), ('webapp/static/', 'webapp/static/'),
      ('config/', 'config/'), ('data/glossary/', 'data/glossary/')]

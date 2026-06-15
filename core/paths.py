@@ -9,14 +9,47 @@ started from another cwd, or a packaged build. Mutable runtime dirs
 """
 
 import os
+import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_FROZEN = getattr(sys, "frozen", False)
 
-CONFIG_DIR = os.path.join(REPO_ROOT, "config")
+# In a PyInstaller build, bundled resources are unpacked to a read-only, EPHEMERAL
+# temp dir (sys._MEIPASS) that is deleted on exit. So we split two roots:
+#   BUNDLE_ROOT  — read-only shipped resources (config templates, assets, static)
+#   RUNTIME_ROOT — persistent, writable, next to the executable (models, data,
+#                  user-edited system_config) so downloads/settings survive restarts.
+# When running from source both are just the repository root.
+if _FROZEN:
+    BUNDLE_ROOT = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    RUNTIME_ROOT = os.path.dirname(sys.executable)
+else:
+    BUNDLE_ROOT = RUNTIME_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Back-compat alias (was the repo root); used for bundled, read-only reads.
+REPO_ROOT = BUNDLE_ROOT
+
+CONFIG_DIR = os.path.join(BUNDLE_ROOT, "config")          # bundled prompts/locales/api_config
 PROMPTS_DIR = os.path.join(CONFIG_DIR, "prompts")
 API_CONFIG_DIR = os.path.join(CONFIG_DIR, "api_config")
 LOCALES_DIR = os.path.join(CONFIG_DIR, "locales")
-SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")
 
-ASSETS_DIR = os.path.join(REPO_ROOT, "assets")
-DATA_DIR = os.path.join(REPO_ROOT, "data")
+ASSETS_DIR = os.path.join(BUNDLE_ROOT, "assets")
+DATA_DIR = os.path.join(RUNTIME_ROOT, "data")             # WRITABLE — models/temp/result/log
+
+# system_config.json must be writable (model choices, settings). In a frozen
+# build keep it next to the exe (persists) and seed it from the bundled default
+# on first run; from source it stays in the repo's config/.
+if _FROZEN:
+    _WRITABLE_CONFIG_DIR = os.path.join(RUNTIME_ROOT, "config")
+    SYSTEM_CONFIG = os.path.join(_WRITABLE_CONFIG_DIR, "system_config.json")
+    try:
+        os.makedirs(_WRITABLE_CONFIG_DIR, exist_ok=True)
+        if not os.path.exists(SYSTEM_CONFIG):
+            _seed = os.path.join(CONFIG_DIR, "system_config.json")
+            if os.path.exists(_seed):
+                import shutil
+                shutil.copyfile(_seed, SYSTEM_CONFIG)
+    except Exception:  # noqa: BLE001 — fall back to bundled path if seeding fails
+        SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")
+else:
+    SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")

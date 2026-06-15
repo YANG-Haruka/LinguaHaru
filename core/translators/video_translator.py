@@ -49,7 +49,8 @@ class VideoTranslator(DocumentTranslator):
     def _translate_subtitles_enabled():
         """When the user unticks 'translate subtitles', we only transcribe."""
         try:
-            with open(os.path.join("config", "system_config.json"), encoding="utf-8") as f:
+            from core.paths import SYSTEM_CONFIG
+            with open(SYSTEM_CONFIG, encoding="utf-8") as f:
                 return bool(json.load(f).get("translate_subtitles", True))
         except Exception:
             return True

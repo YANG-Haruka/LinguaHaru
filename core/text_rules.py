@@ -11,7 +11,10 @@ import json
 import os
 import threading
 
-RULES_PATH = os.path.join("config", "text_rules.json")
+# Writable, next to system_config.json (repo config/ from source; the persistent
+# config dir next to the exe in a frozen build).
+from core.paths import SYSTEM_CONFIG as _SYSTEM_CONFIG
+RULES_PATH = os.path.join(os.path.dirname(_SYSTEM_CONFIG), "text_rules.json")
 
 _lock = threading.Lock()
 _cache = {"mtime": None, "rules": None}

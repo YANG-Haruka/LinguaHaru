@@ -742,7 +742,8 @@ class DocumentTranslator:
         """If enabled in system config, AI-extract terms from the document and
         merge them with the user glossary for this run (user terms win)."""
         try:
-            with open(os.path.join("config", "system_config.json"), encoding="utf-8") as f:
+            from core.paths import SYSTEM_CONFIG
+            with open(SYSTEM_CONFIG, encoding="utf-8") as f:
                 enabled = bool(json.load(f).get("auto_extract_glossary", False))
         except Exception:
             enabled = False

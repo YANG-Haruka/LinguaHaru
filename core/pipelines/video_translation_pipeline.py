@@ -46,7 +46,7 @@ _SENSEVOICE_LANG_MAP = {"zh": "zh", "zh-Hant": "zh", "en": "en", "ja": "ja", "ko
 # the UI when SenseVoice is selected. Derived from the map above (no drift).
 SENSEVOICE_SUPPORTED_CODES = set(_SENSEVOICE_LANG_MAP)
 
-_SYSTEM_CONFIG = os.path.join("config", "system_config.json")
+from core.paths import SYSTEM_CONFIG as _SYSTEM_CONFIG  # absolute; frozen-safe
 
 _whisper_models = {}   # size -> WhisperModel
 _sensevoice = None     # (asr_model, vad_model)
