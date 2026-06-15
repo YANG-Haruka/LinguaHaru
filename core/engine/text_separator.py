@@ -546,38 +546,56 @@ def split_by_sentences_and_combine(text, max_tokens):
     
     return chunks
 
+def _dedup_use_context():
+    """Whether dedup keys include the item type (config "dedup_context").
+
+    Default False = legacy value-only dedup (maximum sharing, lowest cost).
+    True keeps identical text of DIFFERENT types separate so each can receive a
+    context-specific translation (e.g. a short word used as both a button label
+    and a month name). Costs more tokens, so it is opt-in."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("dedup_context", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def deduplicate_translation_content(src_json_path):
     """Deduplicate content and maintain mapping"""
     with open(src_json_path, 'r', encoding='utf-8') as f:
         json_data = json.load(f)
-    
+
+    use_context = _dedup_use_context()
     # Track unique content
-    content_to_deduped_count = {}  # content -> first count_deduped
+    content_to_deduped_count = {}  # content (or (type, content)) -> count_deduped
     count_src_to_deduped_map = {}  # count_src -> count_deduped
     deduped_data = []
     next_count_deduped = 1
-    
-    app_logger.info(f"Deduplicating {len(json_data)} items")
-    
+
+    app_logger.info(f"Deduplicating {len(json_data)} items"
+                    + (" (context-aware)" if use_context else ""))
+
     for item in json_data:
         if not isinstance(item, dict):
             continue
-            
+
         count_src = item.get("count_src", item.get("count"))
         value = item.get("value", "")
         item_type = item.get("type", "text")
-        
+
         if count_src is None:
             continue
-        
+
+        key = (item_type, value) if use_context else value
         # Check if content exists
-        if value in content_to_deduped_count:
+        if key in content_to_deduped_count:
             # Use existing count_deduped
-            count_deduped = content_to_deduped_count[value]
+            count_deduped = content_to_deduped_count[key]
         else:
             # New unique content
             count_deduped = next_count_deduped
-            content_to_deduped_count[value] = count_deduped
+            content_to_deduped_count[key] = count_deduped
             next_count_deduped += 1
             
             # Add to deduped data
