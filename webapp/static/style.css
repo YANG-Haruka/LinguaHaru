@@ -270,7 +270,7 @@ html[data-theme="light"] .card { box-shadow: var(--shadow-1), var(--shadow-2); }
   text-transform: uppercase; letter-spacing: 1px;
 }
 
-select, input[type="text"], input[type="password"], input[type="number"] {
+select, input[type="text"], input[type="password"], input[type="number"], input:not([type]) {
   width: 100%; height: 42px; padding: 0 13px;
   border: 1px solid var(--border-2); border-radius: var(--r);
   background: var(--surface-2); color: var(--text);
@@ -355,9 +355,16 @@ select:focus, input:focus {
 }
 .iface-card:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: 0 8px 20px rgba(0,0,0,.10); }
 .iface-card.active { border-color: var(--accent); background: var(--accent-soft); }
-.iface-card .if-name { font-weight: 600; color: var(--text); }
+.iface-card .if-name { font-weight: 600; color: var(--text); padding-right: 26px; }
 .iface-card .if-sub { font-size: .8rem; color: var(--muted); margin-top: 2px; }
-.iface-card .if-badge { position: absolute; top: 10px; right: 12px; color: var(--accent); font-weight: 700; }
+.iface-card .if-badge {
+  position: absolute; top: 10px; right: 10px;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: grid; place-items: center;
+  font-size: 0.72rem; font-weight: 700; line-height: 1;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
 
 /* ----- modal dialog ----- */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
@@ -365,6 +372,20 @@ select:focus, input:focus {
 .modal h3 { margin: 0 0 16px; }
 .modal .field { margin-bottom: 12px; }
 .modal-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
+/* Cohesive modal button set: same shape/height/font; only the color differs. */
+.modal-actions button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  height: 42px; padding: 0 20px; border-radius: var(--r);
+  font-family: var(--font-sans); font-weight: 600; font-size: 0.9rem; cursor: pointer;
+  background: var(--surface-2); color: var(--text-2); border: 1px solid var(--border-2);
+  transition: background .2s, border-color .2s, color .2s, box-shadow .2s, transform .1s;
+}
+.modal-actions button:hover { background: var(--hover); border-color: var(--border-strong); color: var(--text); }
+.modal-actions button:active { transform: translateY(1px); }
+.modal-actions button.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; box-shadow: var(--glow); }
+.modal-actions button.primary:hover { background: var(--accent-2); box-shadow: 0 0 22px var(--accent-ring); }
+.modal-actions button.danger { background: #ef4444; color: #fff; border-color: transparent; }
+.modal-actions button.danger:hover { background: #dc2626; color: #fff; }
 button.danger { color: #fff; background: #ef4444; border: none; }
 
 /* ----- interface language selector (sidebar bottom) ----- */
