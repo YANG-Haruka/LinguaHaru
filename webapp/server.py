@@ -279,7 +279,10 @@ def get_interface_config(name: str):
     cfg = backend.read_api_config(name) or {}
     return {"name": name, "base_url": cfg.get("base_url", ""),
             "model": cfg.get("model", ""), "temperature": cfg.get("temperature"),
-            "top_p": cfg.get("top_p"), "has_key": bool(load_api_key_for_model(name))}
+            "top_p": cfg.get("top_p"),
+            "rpm": cfg.get("rpm"), "thread_count": cfg.get("thread_count"),
+            "max_retries": cfg.get("max_retries"),
+            "has_key": bool(load_api_key_for_model(name))}
 
 
 @app.post("/api/interface/save")
@@ -293,11 +296,19 @@ def save_interface(payload: dict):
             return float(v)
         except (TypeError, ValueError):
             return None
+    def _int(v):
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return None
     backend.write_api_config(name, {
         "base_url": (payload.get("base_url") or "").strip(),
         "model": (payload.get("model") or "").strip(),
         "temperature": _num(payload.get("temperature")),
         "top_p": _num(payload.get("top_p")),
+        "rpm": _int(payload.get("rpm")),
+        "thread_count": _int(payload.get("thread_count")),
+        "max_retries": _int(payload.get("max_retries")),
     })
     key = payload.get("api_key")
     if key:  # only overwrite the stored key when a new one is supplied
@@ -406,7 +417,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     translator = translator_class(
         file_path, model, use_online, api_key, src_code, dst_code, False,
         max_token=config.get("max_token", 768),
-        max_retries=config.get("max_retries", 4),
+        max_retries=backend.max_retries_for_model(model if use_online else None),
         thread_count=backend.thread_count_for_mode(use_online, model),
         glossary_path=gpath, temp_dir=temp_dir, result_dir=result_dir,
         session_lang="en", log_dir=log_dir,

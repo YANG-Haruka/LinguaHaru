@@ -152,6 +152,7 @@ async function loadInterfaces() {
   renderIfaceGroup("iface-local", (d.local || []).map((n) => ({ name: n, sub: "Ollama / LM Studio", online: false })));
   renderIfaceGroup("iface-official", (d.online || []).filter((i) => i.official).map((i) => ({ name: i.name, sub: i.model, online: true })));
   renderIfaceGroup("iface-custom", (d.online || []).filter((i) => !i.official).map((i) => ({ name: i.name, sub: i.model, online: true })));
+  refreshGoogleKeyPlaceholder();
 }
 function renderIfaceGroup(id, items) {
   const box = $(id);
@@ -164,7 +165,9 @@ function renderIfaceGroup(id, items) {
     card.innerHTML = `<div class="if-name">${it.name}</div><div class="if-sub mono">${it.sub || ""}</div>` +
       (it.name === _ifaceActive ? '<span class="if-badge">✓</span>' : "");
     card.onclick = () => activateIface(it.name, it.online);
-    if (it.online) card.ondblclick = () => openIfaceConfig(it.name);
+    // Online: full config. Offline/local: open config too so its thread count
+    // can be set (default 4); other fields are harmless for local models.
+    card.ondblclick = () => openIfaceConfig(it.name);
     box.appendChild(card);
   }
 }
@@ -186,11 +189,14 @@ async function openIfaceConfig(name) {
   $("if-delete").hidden = !name;
   $("if-base").value = ""; $("if-model").value = ""; $("if-key").value = "";
   $("if-temp").value = ""; $("if-topp").value = ""; $("if-key").placeholder = "在此输入 API 密钥";
+  $("if-rpm").value = ""; $("if-thread").value = ""; $("if-retries").value = "";
   if (name) {
     try {
       const c = await api("/api/interface/config?name=" + encodeURIComponent(name));
       $("if-base").value = c.base_url || ""; $("if-model").value = c.model || "";
       $("if-temp").value = c.temperature ?? ""; $("if-topp").value = c.top_p ?? "";
+      $("if-rpm").value = c.rpm ?? ""; $("if-thread").value = c.thread_count ?? "";
+      $("if-retries").value = c.max_retries ?? "";
       $("if-key").placeholder = c.has_key ? "已设置（留空则不修改）" : "在此输入 API 密钥";
     } catch {}
   }
@@ -202,7 +208,9 @@ async function saveIfaceConfig() {
   if (!name) return;
   await api("/api/interface/save", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, base_url: $("if-base").value.trim(), model: $("if-model").value.trim(),
-      temperature: $("if-temp").value.trim(), top_p: $("if-topp").value.trim(), api_key: $("if-key").value }) });
+      temperature: $("if-temp").value.trim(), top_p: $("if-topp").value.trim(), api_key: $("if-key").value,
+      rpm: $("if-rpm").value.trim(), thread_count: $("if-thread").value.trim(),
+      max_retries: $("if-retries").value.trim() }) });
   closeIfaceConfig(); loadInterfaces();
 }
 async function deleteIface() {
@@ -292,23 +300,17 @@ async function boot() {
   fillSelect($("stt-model"), BOOT.stt_models, c.stt_model);
   $("translate-subs").checked = c.translate_subtitles;
 
-  // settings
+  // settings (per-model key/RPM/thread/retries now live in Interface Management)
   $("set-online").checked = c.default_online;
   $("set-lan").checked = !!c.lan_mode;
   $("set-lan-admin").placeholder = c.has_lan_admin ? "已设置（留空则不修改）" : "留空则不启用";
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
-  fillSelect($("set-model"), BOOT.online_models, c.default_online_model);
-  $("set-retries").value = c.max_retries;
-  $("set-rpm").value = c.rpm_limit != null ? c.rpm_limit : 0;
-  $("set-thread-online").value = c.default_thread_count_online != null ? c.default_thread_count_online : 8;
-  $("set-thread-offline").value = c.default_thread_count_offline != null ? c.default_thread_count_offline : 4;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   renderModules();
   fillLiveTarget();
   updateLiveHint();
   if (BOOT.server_mode) applyServerMode();
   refreshApiKeyState();
-  refreshSettingsApiKeyPlaceholder();
   refreshMediaNote();
   renderDropBg();
   initUiLang();
@@ -383,15 +385,6 @@ async function refreshApiKeyState() {
   $("apikey-warning").hidden = st.has_key;
 }
 
-// Settings tab: reflect whether the selected model already has a saved key.
-// Called on load (where fillSelect sets the value without firing onchange) and
-// whenever the Settings model dropdown changes.
-async function refreshSettingsApiKeyPlaceholder() {
-  if (BOOT.server_mode) return;
-  const st = await api("/api/apikey?model=" + encodeURIComponent($("set-model").value));
-  $("set-apikey").value = "";
-  $("set-apikey").placeholder = st.has_key ? "已设置（留空则不修改）" : "在此输入您的 API 密钥";
-}
 
 // ----- model/lang/online wiring -----
 $("model").onchange = refreshApiKeyState;
@@ -554,24 +547,9 @@ $("set-lan-admin").onchange = () => {
   $("set-lan-admin").placeholder = "已设置（留空则不修改）";
   $("settings-status").textContent = "局域网管理密码已更新。";
 };
-$("set-retries").onchange = () => saveConfig({ max_retries: parseInt($("set-retries").value || "4", 10) });
-$("set-rpm").onchange = () => {
-  saveConfig({ rpm_limit: parseInt($("set-rpm").value || "0", 10) });
-  $("settings-status").textContent = "RPM 限制已更新 —— 重启程序后生效。";
-};
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
-$("set-thread-online").onchange = () => saveConfig({ default_thread_count_online: parseInt($("set-thread-online").value || "8", 10) });
-$("set-thread-offline").onchange = () => saveConfig({ default_thread_count_offline: parseInt($("set-thread-offline").value || "4", 10) });
-$("set-model").onchange = refreshSettingsApiKeyPlaceholder;
-$("set-apikey").onchange = async () => {
-  const key = $("set-apikey").value;
-  if (!key) return;
-  await api("/api/apikey", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: $("set-model").value, api_key: key }) });
-  $("settings-status").textContent = "API 密钥已保存。";
-  refreshApiKeyState();
-  refreshSettingsApiKeyPlaceholder();
-};
+// Per-model key/RPM/thread/retries moved to Interface Management; their old
+// Settings controls were removed.
 
 function renderModules() {
   const t = $("modules-table");
@@ -950,12 +928,23 @@ function playPCM24k(b64) {
   node.start(playTime); playTime += buf.duration;
 }
 
-$("set-google-key").onchange = async () => {
-  const key = $("set-google-key").value;
+// Google realtime-voice key now lives on the Interface Management page.
+async function refreshGoogleKeyPlaceholder() {
+  if (BOOT.server_mode || !$("iface-google-key")) return;
+  try {
+    const st = await api("/api/apikey?model=" + encodeURIComponent("(Google) Live Translate"));
+    $("iface-google-key").value = "";
+    $("iface-google-key").placeholder = st.has_key ? "已设置（留空则不修改）" : "AQ... / AIza...";
+  } catch {}
+}
+if ($("iface-google-key")) $("iface-google-key").onchange = async () => {
+  const key = $("iface-google-key").value;
   if (!key) return;
   await api("/api/apikey", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: "(Google) Live Translate", api_key: key }) });
-  $("settings-status").textContent = "Google 密钥已保存。";
+  $("iface-google-key").value = "";
+  $("iface-google-key").placeholder = "已设置（留空则不修改）";
+  updateLiveHint && updateLiveHint();
 };
 
 // ----- history -----

@@ -226,17 +226,33 @@ def thread_count_for_mode(use_online, model=None):
     default_thread_count_online/offline when the model sets nothing.
     """
     config = read_config()
+    # Per-model thread_count (set in the interface config) wins for both online
+    # and offline models; local models get an api_config json once configured.
+    if model:
+        mc = read_api_config(model) or {}
+        tc = mc.get("thread_count")
+        if tc:
+            try:
+                return max(1, int(tc))
+            except (TypeError, ValueError):
+                pass
     if use_online:
-        if model:
-            mc = read_api_config(model) or {}
-            tc = mc.get("thread_count")
-            if tc:
-                try:
-                    return max(1, int(tc))
-                except (TypeError, ValueError):
-                    pass
         return config.get("default_thread_count_online", 8)
     return config.get("default_thread_count_offline", 4)
+
+
+def max_retries_for_model(model=None):
+    """Max translation retries. A per-model "max_retries" in the interface
+    config overrides the global default (so a flaky model can retry more)."""
+    if model:
+        mc = read_api_config(model) or {}
+        mr = mc.get("max_retries")
+        if mr:
+            try:
+                return max(1, int(mr))
+            except (TypeError, ValueError):
+                pass
+    return read_config().get("max_retries", 4)
 
 
 # --- Model list discovery (mirrors app.py startup logic) ---------------------
@@ -315,15 +331,21 @@ def read_api_config(name):
 
 
 def write_api_config(name, data):
-    """Create/overwrite an api_config/<name>.json with the given dict."""
+    """Merge the given keys into api_config/<name>.json (create if absent).
+
+    MERGE (not overwrite) so saving from the config modal — which only sends a
+    subset of fields — never wipes other per-model keys (rpm, thread_count,
+    max_retries, presence/frequency_penalty). Empty/None values are ignored."""
     if not name:
         raise ValueError("Interface name is required.")
     os.makedirs(API_CONFIG_DIR, exist_ok=True)
     safe = os.path.basename(f"{name}.json")
     path = os.path.join(API_CONFIG_DIR, safe)
+    existing = read_api_config(name) or {}
     cleaned = {k: v for k, v in data.items() if v not in ("", None)}
+    existing.update(cleaned)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(cleaned, f, indent=4, ensure_ascii=False)
+        json.dump(existing, f, indent=4, ensure_ascii=False)
     return path
 
 

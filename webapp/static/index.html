@@ -115,6 +115,15 @@
       <div class="iface-group"><h3 data-i18n="Local Interfaces">本地接口</h3><div class="iface-cards" id="iface-local"></div></div>
       <div class="iface-group"><h3 data-i18n="Official Interfaces">官方接口</h3><div class="iface-cards" id="iface-official"></div></div>
       <div class="iface-group"><h3 data-i18n="Custom Interfaces">自定义接口</h3><div class="iface-cards" id="iface-custom"></div></div>
+      <div class="iface-group">
+        <h3 data-i18n="Realtime Voice">实时语音</h3>
+        <div class="card" style="max-width:520px">
+          <div class="if-name" style="font-weight:600">Google Gemini · <span data-i18n="Realtime Voice">实时语音</span></div>
+          <div class="if-sub mono" style="color:var(--muted);margin:2px 0 12px">gemini-live-translate</div>
+          <div class="field"><label data-i18n="Google API Key">Google API 密钥</label><input type="password" id="iface-google-key" placeholder="AQ... / AIza..." /></div>
+          <div class="muted" style="margin-top:8px" data-i18n="Google API Key Hint">用于「实时语音」的 Gemini Live Translate。</div>
+        </div>
+      </div>
     </section>
 
     <!-- Interface config dialog -->
@@ -126,8 +135,16 @@
         <div class="field"><label data-i18n="Model ID">模型 ID</label><input id="if-model" placeholder="gpt-4o" /></div>
         <div class="field"><label data-i18n="API Key">API 密钥</label><input id="if-key" type="password" placeholder="留空则不修改" /></div>
         <div class="row-2">
-          <div class="field"><label data-i18n="Temperature">Temperature</label><input id="if-temp" placeholder="1.3" /></div>
-          <div class="field"><label data-i18n="Top P">Top P</label><input id="if-topp" placeholder="0.95" /></div>
+          <div class="field"><label data-i18n="Temperature">Temperature</label><input id="if-temp" type="text" placeholder="1.3" /></div>
+          <div class="field"><label data-i18n="Top P">Top P</label><input id="if-topp" type="text" placeholder="0.95" /></div>
+        </div>
+        <div class="row-2">
+          <div class="field"><label data-i18n="RPM Limit">RPM 限制</label><input id="if-rpm" type="number" min="0" max="100000" placeholder="0 = 不限制" /></div>
+          <div class="field"><label data-i18n="Thread Count">线程数</label><input id="if-thread" type="number" min="1" max="64" placeholder="留空用默认" /></div>
+        </div>
+        <div class="row-2">
+          <div class="field"><label data-i18n="Max Retries">最大重试次数</label><input id="if-retries" type="number" min="1" max="10" placeholder="4" /></div>
+          <div class="field"></div>
         </div>
         <div class="modal-actions">
           <button id="if-delete" class="danger" hidden data-i18n="Delete">删除</button>
@@ -410,23 +427,7 @@
         <label class="check" style="margin-top:10px"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
       </div>
       <div class="card">
-        <h3>模型密钥</h3>
-        <div class="row-2">
-          <div class="field"><label>模型（密钥所属）</label><select id="set-model"></select></div>
-          <div class="field"><label>API 密钥</label><input type="password" id="set-apikey" placeholder="在此输入您的 API 密钥" /></div>
-        </div>
-        <div class="row-2" style="margin-top:18px">
-          <div class="field"><label>Google 密钥 · Gemini Live</label><input type="password" id="set-google-key" placeholder="AQ... / AIza..." /></div>
-          <div class="field"><label>最大重试次数</label><input type="number" id="set-retries" min="1" max="10" /></div>
-        </div>
-        <div class="row-2" style="margin-top:18px">
-          <div class="field"><label>RPM 限制（每分钟请求数，0 = 不限制，重启后生效）</label><input type="number" id="set-rpm" min="0" max="100000" /></div>
-          <div class="field"><label>线程数 · 在线（每模型可在接口里单独设置）</label><input type="number" id="set-thread-online" min="1" max="64" /></div>
-        </div>
-        <div class="row-2" style="margin-top:18px">
-          <div class="field"><label>线程数 · 离线（本地模型）</label><input type="number" id="set-thread-offline" min="1" max="64" /></div>
-        </div>
-        <div class="muted" style="margin-top:14px">Google 密钥用于「实时语音」的 Gemini 3.5 Live Translate。</div>
+        <div class="muted" data-i18n="Per Model Hint">每个模型的 API 密钥、RPM、线程数、最大重试次数请在「接口管理」中双击对应接口单独设置；Google 实时语音密钥也在「接口管理」里。</div>
       </div>
       <div id="settings-status" class="muted"></div>
     </section>
