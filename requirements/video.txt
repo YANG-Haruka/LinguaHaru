@@ -13,3 +13,6 @@ imageio-ffmpeg>=0.5.1
 torch>=2.0
 torchaudio>=2.0
 funasr>=1.1.0
+# Optional: capture system audio (speaker loopback) as a live input source.
+# If absent, the Real-Time Voice page silently falls back to microphones only.
+soundcard>=0.4.2

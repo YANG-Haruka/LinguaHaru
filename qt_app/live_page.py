@@ -12,13 +12,14 @@ the small pure-Python helpers below decode/resample/re-encode with the stdlib
 
 import array
 
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton,
+    QWidget, QVBoxLayout, QHBoxLayout, QSizePolicy, QPushButton, QLabel,
 )
 
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
-    CardWidget, TextEdit, FluentIcon, InfoBar, PushButton,
+    CardWidget, TextEdit, FluentIcon, InfoBar, PushButton, ToggleButton,
     InfoBarPosition, IconWidget,
 )
 
@@ -152,6 +153,163 @@ class _Waveform(QWidget):
         p.end()
 
 
+class _CaptionBar(QWidget):
+    """Always-on-top, frameless, draggable floating caption window (like
+    Windows Live Captions). Shows the latest source line and the translated
+    line (translated emphasized) over whatever else is on screen."""
+
+    def __init__(self, parent=None):
+        # No parent: a top-level Tool window that floats above other apps.
+        super().__init__(None)
+        self.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setMinimumWidth(420)
+        self.setMaximumWidth(900)
+        self._drag_pos = None
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        self._panel = QWidget(self)
+        self._panel.setObjectName("captionPanel")
+        self._panel.setStyleSheet(
+            "#captionPanel{background-color: rgba(18,20,26,0.86);"
+            "border-radius: 14px;}")
+        root.addWidget(self._panel)
+
+        inner = QVBoxLayout(self._panel)
+        inner.setContentsMargins(18, 12, 18, 14)
+        inner.setSpacing(4)
+
+        top = QHBoxLayout()
+        top.setContentsMargins(0, 0, 0, 0)
+        top.addStretch(1)
+        self._close_btn = QPushButton("×", self._panel)
+        self._close_btn.setFixedSize(22, 22)
+        self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.setStyleSheet(
+            "QPushButton{background:transparent;color:#cbd5e1;border:none;"
+            "font-size:18px;font-weight:600;}"
+            "QPushButton:hover{color:#ffffff;}")
+        self._close_btn.clicked.connect(self.hide)
+        top.addWidget(self._close_btn)
+        inner.addLayout(top)
+
+        self._source_lbl = QLabel("", self._panel)
+        self._source_lbl.setWordWrap(True)
+        self._source_lbl.setStyleSheet(
+            "color:#9aa6b2; font-size:13px; background:transparent;")
+        inner.addWidget(self._source_lbl)
+
+        self._trans_lbl = QLabel("", self._panel)
+        self._trans_lbl.setWordWrap(True)
+        self._trans_lbl.setStyleSheet(
+            "color:#f1f5f9; font-size:20px; font-weight:700;"
+            "background:transparent;")
+        inner.addWidget(self._trans_lbl)
+
+    def set_source(self, text):
+        self._source_lbl.setText(text or "")
+
+    def set_translated(self, text):
+        self._trans_lbl.setText(text or "")
+
+    def show_centered(self):
+        """Place near the bottom-center of the primary screen, then show."""
+        from PySide6.QtWidgets import QApplication
+        self.show()
+        self.adjustSize()
+        screen = QApplication.primaryScreen()
+        if screen is not None:
+            geo = screen.availableGeometry()
+            x = geo.x() + (geo.width() - self.width()) // 2
+            y = geo.y() + geo.height() - self.height() - 80
+            self.move(max(geo.x(), x), max(geo.y(), y))
+        self.raise_()
+
+    # Drag the frameless window by pressing anywhere on it.
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._drag_pos = (event.globalPosition().toPoint()
+                              - self.frameGeometry().topLeft())
+            event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and (event.buttons() & Qt.LeftButton):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+            event.accept()
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
+        super().mouseReleaseEvent(event)
+
+
+class _LoopbackWorker(QThread):
+    """Capture system audio (speaker loopback) via the optional ``soundcard``
+    package and emit 16 kHz mono int16 PCM chunks. Each chunk is delivered on
+    the UI thread via the ``pcm`` signal (mirroring the mic ``readyRead`` flow).
+
+    Fails safe: any record/import error is reported via ``failed`` and the
+    thread exits cleanly without taking the page down."""
+
+    pcm = Signal(bytes)
+    failed = Signal(str)
+
+    _BLOCK_SEC = 0.1  # ~100 ms blocks, like a mic readyRead cadence
+
+    def __init__(self, loopback_id, parent=None):
+        super().__init__(parent)
+        self._loopback_id = loopback_id
+        self._running = False
+
+    def stop(self):
+        self._running = False
+
+    def run(self):
+        try:
+            import soundcard  # noqa: WPS433
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(f"soundcard unavailable: {e}")
+            return
+        try:
+            mic = soundcard.get_microphone(
+                self._loopback_id, include_loopback=True)
+            rate = 48000  # device rate; resampled to 16 kHz below
+            self._running = True
+            with mic.recorder(samplerate=rate, channels=1) as rec:
+                frames = int(rate * self._BLOCK_SEC)
+                while self._running:
+                    data = rec.record(numframes=frames)  # float32 [-1,1], (n, ch)
+                    if data is None or len(data) == 0:
+                        continue
+                    samples = self._to_mono_floats(data)
+                    samples = _resample(samples, rate, _IN_RATE)
+                    if not samples:
+                        continue
+                    from PySide6.QtMultimedia import QAudioFormat
+                    pcm = _encode_from_mono_float(
+                        samples, QAudioFormat.SampleFormat.Int16, 1)
+                    if pcm:
+                        self.pcm.emit(pcm)
+        except Exception as e:  # noqa: BLE001
+            if self._running:
+                self.failed.emit(f"loopback capture failed: {e}")
+        finally:
+            self._running = False
+
+    @staticmethod
+    def _to_mono_floats(data):
+        """soundcard returns a numpy float32 array shaped (frames, channels).
+        Average channels to mono and return a plain Python float list."""
+        try:
+            if hasattr(data, "ndim") and data.ndim > 1:
+                data = data.mean(axis=1)
+            return [float(v) for v in data]
+        except Exception:  # noqa: BLE001
+            return []
+
+
 class LivePage(ScrollArea):
     def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
@@ -164,6 +322,8 @@ class LivePage(ScrollArea):
         self._local_workers = []
         self._source = None     # QAudioSource (mic)
         self._mic_io = None
+        self._loopback = None    # _LoopbackWorker (system-audio capture)
+        self._caption_bar = None  # _CaptionBar (floating subtitles)
         self._sink = None       # QAudioSink (playback)
         self._play_io = None
         self._in_fmt = None
@@ -211,10 +371,13 @@ class LivePage(ScrollArea):
         self.mode_combo.addItems([tr("Local Voice Mode", lang), tr("Google Voice Mode", lang)])
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         row1.addWidget(self.mode_combo, 1)
-        self.mic_label = BodyLabel(tr("Microphone", lang))
+        self.mic_label = BodyLabel(tr("Input", lang))
         row1.addWidget(self.mic_label)
         self.mic_combo = ComboBox()
         self._mic_devices = []
+        # Per combo entry: None = real mic (QAudioDevice), else a loopback id
+        # string for soundcard system-audio capture.
+        self._mic_loopback_ids = []
         self._populate_mics()
         row1.addWidget(self.mic_combo, 1)
         ctrl.addLayout(row1)
@@ -239,6 +402,15 @@ class LivePage(ScrollArea):
         self._style_go(False)
         row2.addWidget(self.go_btn)
         ctrl.addLayout(row2)
+
+        # Floating-captions toggle: pops out an always-on-top subtitle window.
+        cap_row = QHBoxLayout()
+        cap_row.setSpacing(8)
+        self.caption_btn = ToggleButton(FluentIcon.VIEW, tr("Floating Captions", lang))
+        self.caption_btn.toggled.connect(self._on_caption_toggled)
+        cap_row.addWidget(self.caption_btn)
+        cap_row.addStretch(1)
+        ctrl.addLayout(cap_row)
         layout.addWidget(ctrl_card)
 
         hint_row = QHBoxLayout()
@@ -303,7 +475,8 @@ class LivePage(ScrollArea):
         self.mode_combo.setCurrentIndex(max(0, cur))
         self.mode_combo.blockSignals(False)
         self.target_label.setText(tr("Target Language", lang))
-        self.mic_label.setText(tr("Microphone", lang))
+        self.mic_label.setText(tr("Input", lang))
+        self.caption_btn.setText(tr("Floating Captions", lang))
         self._populate_mics()
         self.input_header.setText(tr("Recognized Speech", lang))
         self.input_sub.setText(tr("Auto Detect", lang))
@@ -349,22 +522,59 @@ class LivePage(ScrollArea):
         self.mic_combo.blockSignals(True)
         self.mic_combo.clear()
         self._mic_devices = list(QMediaDevices.audioInputs())
+        self._mic_loopback_ids = []
+        # Mic entries first (default + each real input device).
         self.mic_combo.addItem(tr("Default Microphone", self._lang))
+        self._mic_loopback_ids.append(None)
         for dev in self._mic_devices:
             self.mic_combo.addItem(dev.description())
+            self._mic_loopback_ids.append(None)
+        # System-audio (speaker loopback) entries, only if soundcard is present.
+        for sid, name in self._loopback_sources():
+            self.mic_combo.addItem(f"{tr('System Audio', self._lang)}: {name}")
+            self._mic_loopback_ids.append(sid)
         idx = self.mic_combo.findText(prev)
         self.mic_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.mic_combo.blockSignals(False)
+
+    @staticmethod
+    def _loopback_sources():
+        """List system-audio loopback sources as (id, name) tuples. Empty when
+        the optional ``soundcard`` package isn't installed — mics-only then."""
+        try:
+            import soundcard  # noqa: WPS433
+        except Exception:  # noqa: BLE001
+            return []
+        try:
+            out = []
+            for m in soundcard.all_microphones(include_loopback=True):
+                if getattr(m, "isloopback", False):
+                    out.append((m.id, m.name))
+            return out
+        except Exception:  # noqa: BLE001
+            return []
 
     def _refresh_model_sub(self):
         online = backend.get_config("default_online", True)
         model = backend.get_active_model(online)
         self.model_sub.setText(f"{tr('Current Model', self._lang)}: {model or '-'}")
 
-    def _selected_mic(self):
-        """The chosen QAudioDevice, or None to mean the system default."""
+    def _selected_loopback_id(self):
+        """The soundcard loopback id if a System Audio entry is selected, else
+        None (meaning: use the normal QAudioSource mic path)."""
         i = self.mic_combo.currentIndex()
-        if i > 0 and (i - 1) < len(self._mic_devices):
+        if 0 <= i < len(self._mic_loopback_ids):
+            return self._mic_loopback_ids[i]
+        return None
+
+    def _selected_mic(self):
+        """The chosen QAudioDevice, or None to mean the system default.
+
+        Index 0 is the default mic; indices 1..len(mics) are real devices; any
+        further indices are loopback entries (handled separately) and map to
+        the default here (never reached for loopback selections)."""
+        i = self.mic_combo.currentIndex()
+        if 0 < i <= len(self._mic_devices):
             return self._mic_devices[i - 1]
         return None
 
@@ -385,14 +595,19 @@ class LivePage(ScrollArea):
             "font-size:17px;font-weight:600;}"
             "QPushButton:hover{background:%s;}" % (color, hover))
 
+    def _is_listening(self):
+        """True while either the mic (QAudioSource) or the system-audio
+        loopback worker is active."""
+        return self._source is not None or self._loopback is not None
+
     def _toggle_listen(self):
-        if self._source is not None:
+        if self._is_listening():
             self.on_stop()
         else:
             self.on_start()
 
     def on_start(self):
-        if self._source is not None:
+        if self._is_listening():
             return
         if self._mode == "google" and not load_api_key_for_model(_GOOGLE_PROVIDER):
             self._info(tr("Google key not set", self._lang), error=True)
@@ -450,6 +665,23 @@ class LivePage(ScrollArea):
             f.setSampleFormat(QAudioFormat.SampleFormat.Int16)
             return f
 
+        # System-audio (loopback) input: capture via the soundcard thread
+        # instead of QAudioSource. The mic path below is left 100% unchanged.
+        loopback_id = self._selected_loopback_id()
+        if loopback_id is not None:
+            self._loopback = _LoopbackWorker(loopback_id, self)
+            self._loopback.pcm.connect(self._on_loopback_pcm)
+            self._loopback.failed.connect(self._on_loopback_failed)
+            self._loopback.start()
+            if with_playback:
+                out_dev = QMediaDevices.defaultAudioOutput()
+                want_out = _fmt(_OUT_RATE)
+                self._out_fmt = (want_out if out_dev.isFormatSupported(want_out)
+                                 else out_dev.preferredFormat())
+                self._sink = QAudioSink(out_dev, self._out_fmt)
+                self._play_io = self._sink.start()
+            return True
+
         in_dev = self._selected_mic() or QMediaDevices.defaultAudioInput()
         if in_dev is None or in_dev.isNull():
             self._info(tr("No microphone found", self._lang), error=True)
@@ -488,6 +720,10 @@ class LivePage(ScrollArea):
             self._source.stop()
             self._source = None
             self._mic_io = None
+        if self._loopback is not None:
+            self._loopback.stop()
+            self._loopback.wait(2000)
+            self._loopback = None
         if self._sink is not None:
             self._sink.stop()
             self._sink = None
@@ -500,9 +736,16 @@ class LivePage(ScrollArea):
         self.status_label.setText(tr("Connection closed", self._lang))
 
     def hideEvent(self, event):
-        # Leaving the page must not keep the mic hot.
-        if self._source is not None:
+        # Leaving the page must not keep the mic/loopback hot or the bar open.
+        if self._is_listening():
             self.on_stop()
+        if self._caption_bar is not None:
+            self._caption_bar.close()
+            self._caption_bar = None
+        if self.caption_btn.isChecked():
+            self.caption_btn.blockSignals(True)
+            self.caption_btn.setChecked(False)
+            self.caption_btn.blockSignals(False)
         super().hideEvent(event)
 
     # --- audio I/O ---
@@ -527,6 +770,25 @@ class LivePage(ScrollArea):
                 self._worker.send_audio(pcm)
         else:
             self._vad_feed(pcm)
+
+    def _on_loopback_pcm(self, pcm):
+        """System-audio loopback chunk (already 16 kHz mono PCM16). Feeds the
+        SAME downstream pipeline the mic uses. Runs on the UI thread (queued
+        signal), mirroring ``_on_mic_ready``."""
+        if self._loopback is None or not pcm:
+            return
+        self._update_level(pcm)
+        if self._mode == "google":
+            if self._worker is not None:
+                self._worker.send_audio(pcm)
+        else:
+            self._vad_feed(pcm)
+
+    def _on_loopback_failed(self, msg):
+        """Fail safe: report the error and stop cleanly (no crash)."""
+        self.status_label.setText("error: " + msg)
+        if self._is_listening():
+            self.on_stop()
 
     def _update_level(self, pcm):
         """Feed the waveform from the chunk's RMS (visual 'I hear you')."""
@@ -607,7 +869,7 @@ class LivePage(ScrollArea):
             self._local_workers.remove(w)
 
     def _on_preload_done(self, ready):
-        if self._source is not None:
+        if self._is_listening():
             self.status_label.setText(tr("Listening", self._lang))
 
     def _on_local_recognized(self, ts, source):
@@ -615,14 +877,16 @@ class LivePage(ScrollArea):
         if source:
             self.input_text.insertPlainText(f"[{ts}] {source}\n")
             self.input_text.ensureCursorVisible()
-            if self._source is not None:
+            self._push_caption(source=source)
+            if self._is_listening():
                 self.status_label.setText(tr("Translating", self._lang))
 
     def _on_local_result(self, ts, translated):
         if translated:
             self.output_text.insertPlainText(f"[{ts}] {translated}\n")
             self.output_text.ensureCursorVisible()
-        if self._source is not None:
+            self._push_caption(translated=translated)
+        if self._is_listening():
             self.status_label.setText(tr("Listening", self._lang))
 
     def _play_audio(self, data):
@@ -644,10 +908,18 @@ class LivePage(ScrollArea):
     def _append_input(self, text):
         self.input_text.insertPlainText(text)
         self.input_text.ensureCursorVisible()
+        # Google fragments are incremental: mirror the panel's last line.
+        self._push_caption(source=self._last_line(self.input_text))
 
     def _append_output(self, text):
         self.output_text.insertPlainText(text)
         self.output_text.ensureCursorVisible()
+        self._push_caption(translated=self._last_line(self.output_text))
+
+    @staticmethod
+    def _last_line(text_edit):
+        lines = [ln for ln in text_edit.toPlainText().splitlines() if ln.strip()]
+        return lines[-1] if lines else ""
 
     def _on_status(self, status):
         if status == "listening":
@@ -657,6 +929,29 @@ class LivePage(ScrollArea):
         elif status.startswith("error:"):
             self.status_label.setText(status)
             self._info(status, error=True)
+
+    # --- floating captions ---
+    def _on_caption_toggled(self, checked):
+        if checked:
+            if self._caption_bar is None:
+                self._caption_bar = _CaptionBar()
+                self._caption_bar.destroyed.connect(self._on_caption_destroyed)
+            self._caption_bar.show_centered()
+        elif self._caption_bar is not None:
+            self._caption_bar.hide()
+
+    def _on_caption_destroyed(self, *args):
+        self._caption_bar = None
+
+    def _push_caption(self, source=None, translated=None):
+        """Update the floating caption bar (if open) with the latest lines."""
+        bar = self._caption_bar
+        if bar is None:
+            return
+        if source is not None:
+            bar.set_source(source)
+        if translated is not None:
+            bar.set_translated(translated)
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
