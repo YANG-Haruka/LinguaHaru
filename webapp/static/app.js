@@ -126,9 +126,12 @@ if ($("models-stt")) $("models-stt").onchange = () => {
   saveConfig({ stt_model: $("models-stt").value });
   if ($("stt-model")) $("stt-model").value = $("models-stt").value;
 };
+// Model Management: image-OCR model picker.
+if ($("models-ocr")) $("models-ocr").onchange = () => saveConfig({ ocr_model_size: $("models-ocr").value });
 // Model Management: show the unified download location + downloaded models.
 async function refreshModels() {
   if ($("models-stt") && BOOT) fillSelect($("models-stt"), BOOT.stt_models, BOOT.config.stt_model);
+  if ($("models-ocr") && BOOT && BOOT.ocr_models) fillSelect($("models-ocr"), BOOT.ocr_models, BOOT.config.ocr_model_size);
   if (!$("models-dir")) return;
   try {
     const d = await api("/api/models");
@@ -1326,12 +1329,26 @@ function liveTimeStamp() {
   const p = (n) => String(n).padStart(2, "0");
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
-// Split text into finished sentences (kept with their terminator) + a trailing
-// unfinished fragment.
+// Split text into committable units + a trailing unfinished fragment. A unit
+// ends at sentence-final punctuation, OR — for run-on speech with no full stop —
+// at a clause separator (、，,;) once the clause is long enough. This keeps long
+// pause-less monologues flowing (idea borrowed from LiveTranslate's pysbd +
+// comma-fallback) instead of waiting for the end of the whole utterance.
+const _SENT_END = "。！？!?.";
+const _CLAUSE = "、，,；;";
+const _CJK_MAX = 24, _LAT_MAX = 60;   // min clause length before a comma-split
 function splitSentences(text) {
-  const sents = (text.match(/[^。！？!?.]*[。！？!?.]/g) || []).map((s) => s.trim()).filter(Boolean);
-  const tail = text.replace(/[^。！？!?.]*[。！？!?.]/g, "").trim();
-  return { sents, tail };
+  const units = [];
+  let cur = "";
+  for (const ch of (text || "")) {
+    cur += ch;
+    if (_SENT_END.includes(ch)) { if (cur.trim()) units.push(cur.trim()); cur = ""; continue; }
+    if (_CLAUSE.includes(ch)) {
+      const lim = /[　-鿿]/.test(cur) ? _CJK_MAX : _LAT_MAX;
+      if (cur.trim().length >= lim) { units.push(cur.trim()); cur = ""; }
+    }
+  }
+  return { sents: units.filter(Boolean), tail: cur.trim() };
 }
 async function recognizeInt16(int16) {
   const r = await api("/api/live-recognize", {

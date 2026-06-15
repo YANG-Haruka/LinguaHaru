@@ -296,5 +296,6 @@
   "LAN admin password": "LAN admin password (optional)",
   "LAN access hint": "When on, this device runs the web app for your LAN — others open the URL below in a browser.",
   "LAN starting": "Starting… (a few seconds)",
-  "LAN stopped": "Stopped"
+  "LAN stopped": "Stopped",
+  "Image OCR Model": "Image OCR Model"
 }

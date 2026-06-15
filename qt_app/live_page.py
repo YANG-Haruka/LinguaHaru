@@ -1086,11 +1086,27 @@ class LivePage(ScrollArea):
 
     @staticmethod
     def _split_sents(text):
-        """Finished sentences (kept with terminator) + trailing unfinished tail."""
-        sents = [s.strip() for s in re.findall(r"[^。！？!?.]*[。！？!?.]", text or "")]
-        sents = [s for s in sents if s]
-        tail = re.sub(r"[^。！？!?.]*[。！？!?.]", "", text or "").strip()
-        return sents, tail
+        """Committable units + trailing unfinished tail. A unit ends at sentence-
+        final punctuation, OR — for run-on speech with no full stop — at a clause
+        separator (、，,;) once the clause is long enough, so long pause-less
+        monologues keep flowing instead of waiting for the utterance to end."""
+        SENT_END = "。！？!?."
+        CLAUSE = "、，,；;"
+        CJK_MAX, LAT_MAX = 24, 60
+        units, cur = [], ""
+        for ch in (text or ""):
+            cur += ch
+            if ch in SENT_END:
+                if cur.strip():
+                    units.append(cur.strip())
+                cur = ""
+                continue
+            if ch in CLAUSE:
+                lim = CJK_MAX if re.search(r"[　-鿿]", cur) else LAT_MAX
+                if len(cur.strip()) >= lim:
+                    units.append(cur.strip())
+                    cur = ""
+        return [u for u in units if u], cur.strip()
 
     def _on_recognized_stream(self, text, detected, is_final):
         """Stable-prefix commit: a sentence is finalized (and translated) the

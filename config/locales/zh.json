@@ -296,5 +296,6 @@
   "LAN admin password": "局域网管理密码（可选）",
   "LAN access hint": "开启后，本机会启动 Web 服务；局域网内的其他设备可用下面的网址在浏览器中访问。",
   "LAN starting": "启动中…（需几秒）",
-  "LAN stopped": "已停止"
+  "LAN stopped": "已停止",
+  "Image OCR Model": "图片识别模型"
 }

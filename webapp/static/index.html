@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615A" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615B" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -570,6 +570,7 @@
         <div class="set-card-body">
           <div class="field"><label data-i18n="Model Location">模型位置</label><input type="text" id="models-dir" readonly /></div>
           <div id="models-list" class="muted" style="margin-top:10px"></div>
+          <div class="field" style="margin-top:14px"><label data-i18n="Image OCR Model">图片识别模型</label><select id="models-ocr"></select></div>
           <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model">语音转文字模型</label><select id="models-stt"></select></div>
           <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
         </div>
@@ -580,7 +581,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615A"></script>
-  <script src="/static/app.js?v=20260615A"></script>
+  <script src="/static/background.js?v=20260615B"></script>
+  <script src="/static/app.js?v=20260615B"></script>
 </body>
 </html>

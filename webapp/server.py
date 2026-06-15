@@ -33,7 +33,8 @@ from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)
 from core.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
 from core.optional_modules import (
-    module_status, video_translation_available, quick_voice_available)
+    module_status, video_translation_available, quick_voice_available,
+    ocr_models, get_selected_ocr_model)
 from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, SENSEVOICE_SUPPORTED_CODES)
 from core.log_config import app_logger
@@ -151,6 +152,7 @@ def bootstrap():
         "local_models": backend.scan_local_models(),
         "glossaries": backend.get_glossary_files(),
         "stt_models": [{"id": m["id"], "label": m["label"]} for m in STT_MODELS],
+        "ocr_models": [{"id": m["id"], "label": m["label"]} for m in ocr_models()],
         "sensevoice_codes": sorted(SENSEVOICE_SUPPORTED_CODES),
         "language_map": LANGUAGE_MAP,
         "modules": module_status(),
@@ -165,6 +167,7 @@ def bootstrap():
             "default_dst_lang": config.get("default_dst_lang", "中文"),
             "default_glossary": config.get("default_glossary", "Default"),
             "stt_model": get_selected_stt_model(),
+            "ocr_model_size": get_selected_ocr_model(),
             "translate_subtitles": config.get("translate_subtitles", True),
             "max_retries": config.get("max_retries", 4),
             # Show the RPM that's actually in effect: an explicit user value, or
@@ -180,6 +183,9 @@ def bootstrap():
             "pdf_only_translated_pages": config.get("pdf_only_translated_pages", False),
             "lan_mode": config.get("lan_mode", False),
             "has_lan_admin": bool(config.get("lan_admin_password_hash")),  # never expose the value
+            "result_dir": config.get("result_dir", "data/result"),
+            "history_max_records": config.get("history_max_records", 1000),
+            "history_max_age_days": config.get("history_max_age_days", 0),
             "default_thread_count_online": config.get("default_thread_count_online", 8),
             "default_thread_count_offline": config.get("default_thread_count_offline", 4),
             "thread_count": backend.thread_count_for_mode(
@@ -203,10 +209,11 @@ async def update_config(payload: dict):
     """Persist arbitrary settings keys (whitelisted)."""
     _block_in_server_mode()
     allowed = {"default_online", "default_online_model", "default_src_lang",
-               "default_dst_lang", "default_glossary", "stt_model",
+               "default_dst_lang", "default_glossary", "stt_model", "ocr_model_size",
                "translate_subtitles", "max_retries", "rpm_limit",
                "auto_extract_glossary", "mask_placeholders", "dedup_context",
                "lan_mode",
+               "result_dir", "history_max_records", "history_max_age_days",
                "default_thread_count_online", "default_thread_count_offline",
                "max_api_concurrency",
                "pdf_translate_table", "pdf_ocr_scanned", "pdf_dual_alternating",

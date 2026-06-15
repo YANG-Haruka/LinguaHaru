@@ -110,6 +110,16 @@ _OCR_MODELS = [
 ]
 
 
+def ocr_models():
+    """The selectable image-OCR (PP-OCRv6) models, for the Model Management UI."""
+    return list(_OCR_MODELS)
+
+
+def get_selected_ocr_model():
+    from core import backend
+    return backend.get_config("ocr_model_size", "small")
+
+
 def _stt_catalog():
     from core.pipelines.video_translation_pipeline import STT_MODELS
     return [{"id": m["id"], "label": m["label"],

@@ -198,6 +198,24 @@ class SettingsPage(ScrollArea):
         self.models_list_host = QVBoxLayout()
         self.models_list_host.setSpacing(4)
         self.card_models.body.addLayout(self.models_list_host)
+        # Image-OCR model picker.
+        from core.optional_modules import ocr_models, get_selected_ocr_model
+        self._ocr_models = ocr_models()
+        ocr_row = QHBoxLayout()
+        ocr_row.setSpacing(8)
+        self.ocr_mm_label = BodyLabel(tr("Image OCR Model", self._lang))
+        ocr_row.addWidget(self.ocr_mm_label)
+        self.ocr_mm_combo = ComboBox()
+        for m in self._ocr_models:
+            self.ocr_mm_combo.addItem(m["label"])
+        cur_ocr = get_selected_ocr_model()
+        for i, m in enumerate(self._ocr_models):
+            if m["id"] == cur_ocr:
+                self.ocr_mm_combo.setCurrentIndex(i)
+                break
+        self.ocr_mm_combo.currentIndexChanged.connect(self._on_ocr_changed)
+        ocr_row.addWidget(self.ocr_mm_combo, 1)
+        self.card_models.body.addLayout(ocr_row)
         from core.pipelines.video_translation_pipeline import (
             STT_MODELS, get_selected_stt_model)
         self._stt_models = STT_MODELS
@@ -342,6 +360,10 @@ class SettingsPage(ScrollArea):
         if 0 <= index < len(self._stt_models):
             backend.set_config("stt_model", self._stt_models[index]["id"])
 
+    def _on_ocr_changed(self, index):
+        if 0 <= index < len(self._ocr_models):
+            backend.set_config("ocr_model_size", self._ocr_models[index]["id"])
+
     def _refresh_models(self):
         self.models_dir_edit.setText(model_store.current_dir())
         while self.models_list_host.count():
@@ -400,5 +422,6 @@ class SettingsPage(ScrollArea):
         self.card_models.set_title(tr("Model Management", lang))
         self.models_loc_label.setText(tr("Model Location", lang))
         self.models_browse.setText(tr("Change Location", lang))
+        self.ocr_mm_label.setText(tr("Image OCR Model", lang))
         self.stt_mm_label.setText(tr("Speech-to-Text Model", lang))
         self.stt_hint.setText(tr("Whisper Hint", lang))
