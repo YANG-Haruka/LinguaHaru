@@ -378,7 +378,20 @@ def _recognize_sensevoice(audio, src_lang, sample_rate, model_name):
     detected = m.group(1) if m else None
     if detected == "yue":
         detected = "zh"
-    return rich_transcription_postprocess(raw).strip(), detected
+    return _strip_sensevoice_marks(rich_transcription_postprocess(raw)), detected
+
+
+# SenseVoice's rich_transcription_postprocess injects emotion/event emojis
+# (<|HAPPY|>→😊, <|BGM|>→🎼, <|Applause|>→👏, …). We want plain text for
+# translation/captioning, so strip those markers (and any leftover <|tag|>).
+_SENSEVOICE_EMOJIS = set("😊😔😡😐🤢😱🎼👏😀😄😭🤧😷🤔🥱🎤🎶❓")
+
+
+def _strip_sensevoice_marks(text):
+    import re
+    text = re.sub(r"<\|[^|]*\|>", "", text or "")
+    text = "".join(ch for ch in text if ch not in _SENSEVOICE_EMOJIS)
+    return re.sub(r"\s{2,}", " ", text).strip()
 
 
 def _recognize_whisper(audio, src_lang, size="small"):

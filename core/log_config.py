@@ -36,8 +36,13 @@ class FileLogger:
         self.file_level = file_level
         self.logger = logging.getLogger(name)
         self.logger.setLevel(min(console_level, file_level))
+        # Don't bubble to the root logger: funasr/modelscope call
+        # logging.basicConfig() at import, which adds a DEBUG root handler that
+        # would otherwise re-print every app_logger line (incl. DEBUG API
+        # request/response dumps) in the ugly default format + duplicate INFO.
+        self.logger.propagate = False
         self.file_handler = None
-        
+
         # Set up console handler (only once)
         if not self.logger.hasHandlers():
             console_handler = logging.StreamHandler(sys.stdout)
@@ -45,6 +50,12 @@ class FileLogger:
             console_formatter = SimpleColoredFormatter(fmt='%(message)s')
             console_handler.setFormatter(console_formatter)
             self.logger.addHandler(console_handler)
+
+        # Quiet noisy third-party loggers (some get pulled to DEBUG by the
+        # speech stack's root basicConfig) so the console stays readable.
+        for _noisy in ("httpx", "httpcore", "openai", "urllib3", "asyncio",
+                       "modelscope", "funasr", "matplotlib", "numba"):
+            logging.getLogger(_noisy).setLevel(logging.WARNING)
     
     def create_file_log(self, filename, log_dir):
         """
