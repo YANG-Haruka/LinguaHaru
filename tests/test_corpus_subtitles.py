@@ -202,6 +202,41 @@ def test_srt_bom_and_optional_index():
           and T + "Second cue without any index" in content, content)
 
 
+def test_vtt_multiline_cue_grouping():
+    print("VTT: a wrapped multi-line (non-voice) cue groups into ONE unit")
+    from core.pipelines.subtitle_formats_pipeline import (
+        extract_vtt_content_to_json, write_translated_content_to_vtt)
+    import json
+
+    src = os.path.join(WORK_DIR, "wrapped.vtt")
+    with open(src, "w", encoding="utf-8") as f:
+        f.write("WEBVTT\n\n"
+                "00:00:01.000 --> 00:00:05.000\n"
+                "This is a long sentence that\n"
+                "wraps onto a second line here\n\n"
+                "00:00:06.000 --> 00:00:08.000\n"
+                "A short standalone cue\n")
+
+    src_json = extract_vtt_content_to_json(src, TEMP_DIR)
+    with open(src_json, encoding="utf-8") as f:
+        extracted = json.load(f)
+    check("wrapped cue extracted as ONE grouped unit (2 units total)",
+          len(extracted) == 2, str(extracted))
+    check("wrapped cue lines joined with marker",
+          "␊" in extracted[0]["value"], str(extracted[0]))
+
+    dst_json = fake_translate(src_json)
+    out = write_translated_content_to_vtt(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
+                                          src_lang="en", dst_lang="ja")
+    with open(out, encoding="utf-8") as f:
+        result = f.read()
+    check("timestamps preserved", "00:00:01.000 --> 00:00:05.000" in result, result)
+    check("both wrapped lines present and translated",
+          T + "This is a long sentence that\nwraps onto a second line here" in result, result)
+    check("standalone cue translated", T + "A short standalone cue" in result, result)
+    check("cue count unchanged", result.count("-->") == 2, result)
+
+
 def test_ass_hard_space():
     print(r"ASS: \h hard space round-trips, not sent literally to translator")
     import json
@@ -233,6 +268,6 @@ def test_ass_hard_space():
 
 if __name__ == "__main__":
     run([test_srt_long_multiline_cues, test_vtt_voice_spans,
-         test_vtt_no_hours_timestamps,
+         test_vtt_no_hours_timestamps, test_vtt_multiline_cue_grouping,
          test_srt_bom_and_optional_index, test_ass_hard_space,
          test_ass_karaoke_tags, test_lrc_repeated_timestamps])

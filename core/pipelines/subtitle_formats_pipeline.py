@@ -56,13 +56,40 @@ def extract_vtt_content_to_json(file_path, temp_dir):
 
     content_data = []
     count = 0
-    line_map = {}  # output line index -> count_src
+    line_map = {}      # output line index -> count_src (first/only line of a unit)
+    drop_lines = []    # extra cue lines merged into the first line's unit
     in_cue = False
     in_note = False
+    cue_lines = []     # text line indices of the current cue
+
+    def flush_cue():
+        nonlocal count
+        if not cue_lines:
+            return
+        translatable = [i for i in cue_lines if should_translate(lines[i].strip())]
+        # Voice spans (<v Name>) mark distinct speakers -> keep per line so two
+        # speakers are never merged. A single line is also kept as-is.
+        has_voice = any(lines[i].strip().startswith("<v") for i in cue_lines)
+        if has_voice or len(translatable) <= 1:
+            for i in translatable:
+                count += 1
+                content_data.append({"count_src": count, "type": "text", "value": lines[i]})
+                line_map[str(i)] = count
+        else:
+            # Group a wrapped multi-line cue into ONE unit (joined with ␊),
+            # matching the SRT pipeline; tail lines are dropped on write-back.
+            first = translatable[0]
+            joined = "␊".join(lines[i] for i in translatable)
+            count += 1
+            content_data.append({"count_src": count, "type": "text", "value": joined})
+            line_map[str(first)] = count
+            drop_lines.extend(translatable[1:])
+        cue_lines.clear()
 
     for i, line in enumerate(lines):
         stripped = line.strip()
         if not stripped:
+            flush_cue()
             in_cue = False
             in_note = False
             continue
@@ -70,40 +97,47 @@ def extract_vtt_content_to_json(file_path, temp_dir):
             in_note = True
             continue
         if _VTT_TIMESTAMP.match(stripped):
+            flush_cue()
             in_cue = True
             continue
         if in_cue and not in_note:
-            if should_translate(stripped):
-                count += 1
-                content_data.append({"count_src": count, "type": "text", "value": line})
-                line_map[str(i)] = count
+            cue_lines.append(i)
+    flush_cue()
 
     json_path = _save_extraction(file_path, temp_dir, content_data,
-                                 {"lines": lines, "line_map": line_map})
-    app_logger.info(f"VTT: extracted {count} cue lines")
+                                 {"lines": lines, "line_map": line_map, "drop_lines": drop_lines})
+    app_logger.info(f"VTT: extracted {count} cue units")
     return json_path
 
 
 def write_translated_content_to_vtt(file_path, original_json_path, translated_json_path,
                                     temp_dir, result_dir, src_lang=None, dst_lang=None,
                                     bilingual_mode=False):
-    layout, _, translations = _load_for_writeback(
+    layout, original_data, translations = _load_for_writeback(
         file_path, temp_dir, original_json_path, translated_json_path)
 
+    # Original (joined) text per unit, for bilingual layout
+    originals = {item["count_src"]: item["value"] for item in original_data}
+
     lines = layout["lines"]
+    drop = set(layout.get("drop_lines", []))
     for line_index, count in layout["line_map"].items():
         translated = translations.get(count)
-        if translated:
-            translated = translated.replace("␊", "\n").replace("␍", "")
-            original = lines[int(line_index)]
-            if bilingual_mode and translated.strip() != original.strip():
-                # Bilingual cue: translation first, original below
+        if not translated:
+            continue
+        translated = translated.replace("␊", "\n").replace("␍", "")
+        if bilingual_mode:
+            original = originals.get(count, lines[int(line_index)]).replace("␊", "\n").replace("␍", "")
+            if translated.strip() != original.strip():
                 translated = f"{translated}\n{original}"
-            lines[int(line_index)] = translated
+        lines[int(line_index)] = translated
+
+    # Remove tail lines that were merged into a grouped unit
+    out_lines = [ln for idx, ln in enumerate(lines) if idx not in drop]
 
     result_path = _result_path(file_path, result_dir, src_lang, dst_lang)
     with open(result_path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write("\n".join(out_lines) + "\n")
     app_logger.info(f"Translated VTT saved to: {result_path}")
     return result_path
 
