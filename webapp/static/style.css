@@ -229,7 +229,31 @@ html[data-theme="light"] .footer {
 .icon-btn:hover { border-color: var(--border-strong); background: var(--hover); color: var(--text); }
 
 /* ============================ content ============================ */
-.content { flex: 1; min-width: 0; max-width: 1060px; margin: 0 auto; padding: 46px 40px 72px; width: 100%; }
+.content { flex: 1; min-width: 0; max-width: min(1560px, 95vw); margin: 0 auto; padding: 46px 40px 72px; width: 100%; }
+
+/* ---- Responsive width tiers --------------------------------------------
+   The content column can grow to ~1560px on large monitors, but each *zone*
+   picks its own comfortable width so forms stay readable while the live
+   transcript and data tables use the extra room (user-chosen "分区差异化").
+     Tier 1 (read)  — forms / prose / controls : centered reading width.
+     Tier 2 (wide)  — the real-time voice pane  : wider, centered.
+     Tier 3 (full)  — data tables              : fill the whole column.   */
+:root { --w-read: 1060px; --w-wide: 1340px; }
+
+/* Tier 1 default: every stacked page block sits at reading width, centered. */
+.panel > *,
+.subpane > * { max-width: var(--w-read); margin-left: auto; margin-right: auto; }
+
+/* Tier 2: the live-voice subpane (and everything in it) gets more room. */
+.subpane[data-sub="live"] { max-width: var(--w-wide); }
+.subpane[data-sub="live"] > * { max-width: 100%; }
+
+/* Tier 3: data-table cards fill the column; their sibling form cards stay
+   at reading width (the default above). */
+[data-panel="glossary"] > .card:has(.table-scroll),
+[data-panel="proofread"] > .card:has(.table-scroll),
+[data-panel="history"] > .card:has(.table-scroll),
+[data-panel="modules"] > .card:has(table) { max-width: none; }
 .panel { display: none; }
 .panel.active { display: block; animation: rise .4s cubic-bezier(.2,.7,.3,1); }
 @keyframes rise { from { opacity: 0.2; transform: translateY(10px); } to { opacity: 1; transform: none; } }
