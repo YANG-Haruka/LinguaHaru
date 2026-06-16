@@ -64,6 +64,14 @@ def server_mode_on():
 # Carries the per-request admin token (set by the middleware) so the sync admin
 # endpoints can check it without each taking a `request` parameter.
 _admin_token = contextvars.ContextVar("admin_token", default="")
+# Whether the request came from the local machine (loopback). The host's owner
+# may always administer; remote LAN peers must authenticate.
+_client_is_local = contextvars.ContextVar("client_is_local", default=True)
+
+
+def _is_loopback(host):
+    return host in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1") or (
+        host or "").startswith("127.")
 
 
 # Password hashing lives in core.backend so the Qt LAN toggle shares it.
@@ -73,16 +81,26 @@ _verify_pw = backend.verify_lan_password
 
 def _block_in_server_mode():
     """Guard admin-only endpoints (changing the server's model/key, RPM, modules,
-    interfaces). Always blocked in public server mode. In LAN mode, if an admin
-    password is configured, callers must supply it (X-Admin-Token header) — so an
-    untrusted LAN user can't change keys/models/config/modules."""
+    interfaces). Always blocked in public server mode.
+
+    In LAN mode the server binds 0.0.0.0, so it is reachable by other machines.
+    The host's owner (loopback / localhost) may always administer. A REMOTE LAN
+    peer must supply a valid admin password (X-Admin-Token) — and if no password
+    has been configured at all, remote administration is refused outright (rather
+    than left wide open). Outside LAN mode the bind is 127.0.0.1 only, so every
+    caller is local and unrestricted."""
     if server_mode_on():
         raise HTTPException(403, "Disabled in server mode")
+    if not backend.get_config("lan_mode", False):
+        return  # bound to localhost; only the local user can reach this
+    if _client_is_local.get():
+        return  # the host machine's owner may always administer
     pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
-    if pw_hash and backend.get_config("lan_mode", False):
-        token = _admin_token.get()
-        if not (token and _verify_pw(token, pw_hash)):
-            raise HTTPException(401, "Admin password required")
+    if not pw_hash:
+        raise HTTPException(403, "Remote administration disabled (no admin password set)")
+    token = _admin_token.get()
+    if not (token and _verify_pw(token, pw_hash)):
+        raise HTTPException(401, "Admin password required")
 
 
 @app.middleware("http")
@@ -97,6 +115,7 @@ async def _session_and_isolation(request, call_next):
         sid = sessions.new_session_id()
     request.state.session_id = sid
     _admin_token.set(request.headers.get("X-Admin-Token", ""))
+    _client_is_local.set(_is_loopback(request.client.host if request.client else ""))
     resp = await call_next(request)
     if issue:
         resp.set_cookie(sessions.SESSION_COOKIE, sid, httponly=True,
@@ -113,6 +132,21 @@ _TASKS_LOCK = threading.Lock()
 # ceiling many LAN users (or repeated clicks) could pile up unbounded workers.
 MAX_ACTIVE_TASKS = 6              # global across all sessions
 MAX_ACTIVE_TASKS_PER_SESSION = 2  # per browser/session
+
+# Input caps for the short-text / voice endpoints, so one oversized request can't
+# tie up a translate worker, the STT lock, or memory for an unbounded time.
+_MAX_LIVE_AUDIO_BYTES = 16000 * 2 * 32   # ~32s of 16kHz mono PCM16
+_MAX_QUICK_TEXT_CHARS = 5000             # quick-translate / TTS / live captions
+
+
+def _capped_text(payload, field="text", limit=_MAX_QUICK_TEXT_CHARS):
+    """Return payload[field].strip(), or raise 413 if it exceeds `limit`. These
+    endpoints serve short text (a phrase / one caption line), so a huge body is
+    abuse, not a real use case."""
+    text = (payload.get(field) or "").strip()
+    if len(text) > limit:
+        raise HTTPException(413, f"Text too long (max {limit} chars)")
+    return text
 
 
 def _prune_tasks(ttl=1800):
@@ -970,9 +1004,8 @@ async def live_recognize(payload: dict):
         return {"source": "", "detected": ""}
     # Bound STT cost: cap to the most recent ~32s (matches the client's max
     # utterance) so a runaway/huge body can't blow up CPU/memory.
-    _MAX_BYTES = 16000 * 2 * 32
-    if len(pcm) > _MAX_BYTES:
-        pcm = pcm[-_MAX_BYTES:]
+    if len(pcm) > _MAX_LIVE_AUDIO_BYTES:
+        pcm = pcm[-_MAX_LIVE_AUDIO_BYTES:]
     is_final = bool(payload.get("final", False))
     from core.pipelines.video_translation_pipeline import recognize_utterance
     loop = asyncio.get_event_loop()
@@ -999,7 +1032,7 @@ async def live_recognize(payload: dict):
 async def live_translate_text(payload: dict):
     """Step 2 of local live voice: translate a recognized line. Model/online are
     taken from the ACTIVE interface (no Settings checkbox)."""
-    source = (payload.get("source") or "").strip()
+    source = _capped_text(payload, "source")
     if not source:
         return {"translated": ""}
     dst_lang = payload.get("dst_lang", "en")
@@ -1053,7 +1086,7 @@ def live_translate_stream(payload: dict):
     falls back to a single chunk offline/on failure."""
     import json as _json
     from fastapi.responses import StreamingResponse
-    source = (payload.get("source") or "").strip()
+    source = _capped_text(payload, "source")
     dst_lang = payload.get("dst_lang", "en")
     src_code = payload.get("src_lang") or "auto"
     cfg = backend.read_config()
@@ -1111,7 +1144,7 @@ def _quick_store_dir(request):
 async def quick_translate_api(payload: dict, request: Request):
     """Translate a short text via the active interface; record recent history
     (scoped to the caller's session). Voice input goes through /api/live-recognize."""
-    text = (payload.get("text") or "").strip()
+    text = _capped_text(payload, "text")
     if not text:
         return {"translated": "", "history": []}
     src_lang = payload.get("src_lang") or "auto"
@@ -1160,6 +1193,8 @@ async def quick_recognize_api(payload: dict):
         raise HTTPException(400, "Bad audio payload")
     if not pcm:
         return {"source": "", "detected": ""}
+    if len(pcm) > _MAX_LIVE_AUDIO_BYTES:
+        pcm = pcm[-_MAX_LIVE_AUDIO_BYTES:]
     from core.pipelines.video_translation_pipeline import (
         recognize_utterance, get_selected_quick_stt_model)
     loop = asyncio.get_event_loop()
@@ -1178,7 +1213,7 @@ async def tts_api(payload: dict):
     from core.optional_modules import tts_available
     if not tts_available():
         raise HTTPException(400, "需要「翻译语音输入」插件(edge-tts)")
-    text = (payload.get("text") or "").strip()
+    text = _capped_text(payload, "text")
     if not text:
         raise HTTPException(400, "Empty text")
     lang = payload.get("lang", "en")

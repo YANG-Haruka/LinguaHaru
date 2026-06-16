@@ -541,7 +541,7 @@
         <summary><span class="set-card-title" data-i18n="Run Mode">运行模式</span><span class="set-card-sub">局域网模式 · 管理密码</span></summary>
         <div class="set-card-body">
           <label class="check"><input type="checkbox" id="set-lan" /> 局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</label>
-          <div class="field" style="margin-top:10px"><label>局域网管理密码（可选；设置后，局域网用户需输入密码才能修改配置 / 密钥 / 安装插件）</label><input type="password" id="set-lan-admin" placeholder="留空则不启用" /></div>
+          <div class="field" style="margin-top:10px"><label>局域网管理密码（不设密码时，<b>只有本机</b>可修改配置 / 密钥 / 插件，其他设备无法管理；设置后其他设备需输入此密码才能管理）</label><input type="password" id="set-lan-admin" placeholder="留空 = 仅本机可管理" /></div>
         </div>
       </details>
       <details class="card set-card">

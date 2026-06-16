@@ -16,6 +16,7 @@ imported once on first use.
 import os
 import json
 import sqlite3
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional, Dict, Any
 
@@ -62,11 +63,24 @@ class TranslationHistoryManager:
         self._init_db()
         self._migrate_json_once()
 
+    @contextmanager
     def _connect(self):
+        # sqlite3.Connection's own `with` only commits/rolls back — it does NOT
+        # close. On Windows that leaves the .db file locked (WinError 32) and
+        # WAL -wal/-shm files lingering. This wrapper commits on success, rolls
+        # back on error, and ALWAYS closes, so `with self._connect() as conn:`
+        # call sites are unchanged.
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")        # safe concurrent reads
-        return conn
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _init_db(self):
         try:
