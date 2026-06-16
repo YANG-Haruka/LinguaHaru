@@ -46,7 +46,7 @@
         pip install -r requirements/ocr.txt
 
         # 视频/音频字幕翻译（.mp4/.mp3 等）：Whisper 转写后翻译
-        # 还需要 ffmpeg 在 PATH 中（https://ffmpeg.org/）
+        # 已内置 ffmpeg（imageio-ffmpeg），无需在 PATH 安装；若 PATH 中有 ffmpeg 则优先使用
         pip install -r requirements/video.txt
         ```
 

@@ -46,7 +46,7 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
         pip install -r requirements/ocr.txt
 
         # Video/audio subtitle translation (.mp4/.mp3/...): transcribe with Whisper, then translate
-        # Also requires ffmpeg on PATH (https://ffmpeg.org/)
+        # ffmpeg is bundled (imageio-ffmpeg) — no PATH install needed; a PATH ffmpeg is used if present
         pip install -r requirements/video.txt
         ```
 
