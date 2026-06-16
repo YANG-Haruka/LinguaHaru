@@ -43,7 +43,7 @@ def install_fake_llm():
 
     def fake(segments, previous_text, model, use_online, api_key, system_prompt,
              user_prompt, previous_prompt, glossary_prompt, glossary_terms=None,
-             check_stop_callback=None):
+             check_stop_callback=None, **kwargs):
         if check_stop_callback:
             check_stop_callback()
         data = json.loads(clean_json(segments if isinstance(segments, str)

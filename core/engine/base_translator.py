@@ -33,7 +33,7 @@ RESULT_JSON_PATH = "dst_translated.json"
 MAX_PREVIOUS_TOKENS = 128
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir, session_lang="en", log_dir="log"):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir, session_lang="en", log_dir="log", history_dir=None):
         self.input_file_path = input_file_path
         self.model = model
         self.src_lang = src_lang
@@ -53,6 +53,10 @@ class DocumentTranslator:
         self.result_dir = result_dir
         self.session_lang = session_lang
         self.log_dir = log_dir
+        # Where the translation-history DB lives; defaults to log_dir. The web
+        # frontend overrides this so local single-user mode shares ONE history
+        # with the Qt desktop app, while LAN/server mode stays per-session.
+        self.history_dir = history_dir or log_dir
 
         # Translation history tracking
         self.translation_id = str(uuid.uuid4())
@@ -192,7 +196,7 @@ class DocumentTranslator:
             )
 
             # Save to history
-            history_manager = TranslationHistoryManager(log_dir=self.log_dir)
+            history_manager = TranslationHistoryManager(log_dir=self.history_dir)
             history_manager.add_record(record)
 
             app_logger.info(f"Translation summary saved: {status}, tokens: {self.total_tokens}")
@@ -533,8 +537,9 @@ class DocumentTranslator:
             processed_segments = []
             total_lines = 0
             
-            # Count total lines
-            for segment, _, _ in all_failed_segments:
+            # Count total lines (segments are 4-tuples: output, progress,
+            # glossary_terms, segment_types — tolerate the trailing element)
+            for segment, _, _, *_ in all_failed_segments:
                 try:
                     segment_content = clean_json(segment)
                     segment_json = json.loads(segment_content)
@@ -547,7 +552,7 @@ class DocumentTranslator:
             current_line = 0
             
             # Split segments into individual lines
-            for segment, segment_progress, current_glossary_terms in all_failed_segments:
+            for segment, segment_progress, current_glossary_terms, *_ in all_failed_segments:
                 try:
                     segment_content = clean_json(segment)
                     segment_json = json.loads(segment_content)

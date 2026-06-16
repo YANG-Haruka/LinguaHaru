@@ -61,6 +61,19 @@ def server_mode_on():
     return bool(backend.get_config("server_mode", False)) or bool(os.environ.get("RENDER"))
 
 
+def history_log_dir(session_id):
+    """Where the translation-history DB lives for this request.
+
+    Local single-user mode shares ONE global history DB with the Qt desktop app
+    (data/log), so both frontends show the same records. LAN / server / deploy
+    mode keeps history per browser session, so users on a shared host can't see
+    each other's translations."""
+    external = backend.get_config("lan_mode", False) or server_mode_on()
+    if external:
+        return sessions.session_paths(session_id)[2]
+    return backend.get_custom_paths()[2]
+
+
 # Carries the per-request admin token (set by the middleware) so the sync admin
 # endpoints can check it without each taking a `request` parameter.
 _admin_token = contextvars.ContextVar("admin_token", default="")
@@ -497,6 +510,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
         thread_count=backend.thread_count_for_mode(use_online, model),
         glossary_path=gpath, temp_dir=temp_dir, result_dir=result_dir,
         session_lang="en", log_dir=log_dir,
+        history_dir=history_log_dir(session_id),
     )
 
     def check_stop():
@@ -729,8 +743,7 @@ def download(task_id: str, request: Request):
 def history(request: Request, limit: int = 200, file_type: str = "",
             sort_by: str = "start_time", desc: bool = True):
     from core.translation_history import TranslationHistoryManager
-    _, _, log_dir = sessions.session_paths(request.state.session_id)
-    h = TranslationHistoryManager(log_dir=log_dir)
+    h = TranslationHistoryManager(log_dir=history_log_dir(request.state.session_id))
     records = h.get_all_records(limit=limit, file_type=(file_type or None),
                                 sort_by=sort_by, descending=desc)
     return {"records": records, "file_types": h.file_types()}
@@ -742,8 +755,7 @@ def history_clear(request: Request, payload: dict = None):
     With {"with_files": true} also delete the OUTPUT/LOG files those records
     produced (never the user's original input files)."""
     from core.translation_history import TranslationHistoryManager
-    _, _, log_dir = sessions.session_paths(request.state.session_id)
-    h = TranslationHistoryManager(log_dir=log_dir)
+    h = TranslationHistoryManager(log_dir=history_log_dir(request.state.session_id))
     if payload and payload.get("with_files"):
         info = h.clear_all_records_and_files()
         return {"ok": True, "files_deleted": info.get("files_deleted", 0)}
@@ -1206,7 +1218,8 @@ def live_save_history(payload: dict, request: Request):
     dst = payload.get("translated_lines") or []
     if not src and not dst:
         return {"saved": False}
-    _, result_dir, log_dir = sessions.session_paths(request.state.session_id)
+    _, result_dir, _ = sessions.session_paths(request.state.session_id)
+    log_dir = history_log_dir(request.state.session_id)
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)

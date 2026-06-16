@@ -76,11 +76,11 @@ class PdfTranslator(DocumentTranslator):
     def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang,
                  continue_mode, max_token, max_retries, thread_count, glossary_path,
                  temp_dir, result_dir, session_lang="en", log_dir="log",
-                 word_bilingual_mode=False):
+                 word_bilingual_mode=False, history_dir=None):
         super().__init__(
             input_file_path, model, use_online, api_key, src_lang, dst_lang,
             continue_mode, max_token, max_retries, thread_count, glossary_path,
-            temp_dir, result_dir, session_lang, log_dir
+            temp_dir, result_dir, session_lang, log_dir, history_dir=history_dir
         )
 
         self.word_bilingual_mode = word_bilingual_mode
