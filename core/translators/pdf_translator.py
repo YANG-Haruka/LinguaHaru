@@ -102,6 +102,8 @@ class PdfTranslator(DocumentTranslator):
         # Failed-paragraph tracking (returned as missing_counts)
         self._paragraph_counter = 0
         self._failed_paragraphs = []
+        # (original, translated) pairs for the post-run QA report
+        self._qa_pairs = []
 
     def _preflight_check(self):
         """Catch the two silent-failure PDFs before the expensive BabelDOC run.
@@ -147,6 +149,73 @@ class PdfTranslator(DocumentTranslator):
             app_logger.info("Loading document layout model...")
             self.doc_layout_model = DocLayoutModel.load_onnx()
         return self.doc_layout_model
+
+    def _maybe_extract_glossary(self, progress_callback=None):
+        """If enabled, pull the PDF's text layer (pymupdf) BEFORE the BabelDOC run
+        and AI-extract terms, merging them into the glossary used per paragraph —
+        so PDF gets the same auto-glossary as documents."""
+        try:
+            from core.paths import SYSTEM_CONFIG
+            with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+                if not json.load(f).get("auto_extract_glossary", False):
+                    return
+        except Exception:  # noqa: BLE001
+            return
+        self.check_for_stop()
+        try:
+            import pymupdf
+            from core.engine.glossary_extractor import extract_glossary_terms, write_merged_glossary
+            from core.engine.text_separator import load_glossary
+            if progress_callback:
+                progress_callback(0.0, desc=f"{self._get_status_message('Extracting glossary')}...")
+            doc = pymupdf.open(self.input_file_path)
+            try:
+                values = [doc[i].get_text().strip() for i in range(len(doc))]
+            finally:
+                doc.close()
+            values = [v for v in values if v]
+            terms = extract_glossary_terms(
+                values, self.model, self.use_online, self.api_key,
+                self.src_lang, self.dst_lang, check_stop=self.check_for_stop,
+                mode_params=self.topts.get("params"))
+            if not terms:
+                return
+            user_entries = list(self._glossary_entries)
+            merged_path = os.path.join(self.file_dir, "auto_glossary.csv")
+            write_merged_glossary(terms, user_entries, merged_path, self.src_lang, self.dst_lang)
+            self.glossary_path = merged_path
+            self._glossary_entries = load_glossary(merged_path, self.src_lang, self.dst_lang)
+            review = os.path.splitext(os.path.basename(self.input_file_path))[0] + "_glossary.csv"
+            try:
+                shutil.copyfile(merged_path, os.path.join(self.result_dir, review))
+            except OSError:
+                pass
+            app_logger.info(f"PDF: using merged glossary with {len(terms)} AI-extracted terms")
+        except Exception as e:  # noqa: BLE001 — glossary is best-effort
+            app_logger.warning(f"PDF glossary extraction skipped: {e}")
+
+    def _write_qa_report(self):
+        """Run the active mode's QA checks over this PDF's (original, translated)
+        pairs and write qa.json. Best-effort, never raises."""
+        try:
+            qa_list = self.topts.get("params", {}).get("qa", [])
+            if not qa_list or not self._qa_pairs:
+                return
+            from core.engine import translation_qa
+            dst_items = [{"count_src": i, "original": src, "translated": dst}
+                         for i, (src, dst) in enumerate(self._qa_pairs)]
+            warns = translation_qa.run(qa_list, dst_items, self._glossary_entries)
+            if warns:
+                app_logger.info("QA warnings (" + ", ".join(
+                    f"{k}: {len(v)}" for k, v in warns.items()) + ")")
+            os.makedirs(self.result_dir, exist_ok=True)
+            out_path = os.path.join(self.result_dir, "qa.json")
+            tmp = out_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(warns, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, out_path)
+        except Exception as e:  # noqa: BLE001 — QA is advisory
+            app_logger.warning(f"PDF QA report skipped: {e}")
 
     def _translate_paragraph(self, text):
         """Translate one paragraph with LinguaHaru prompts, glossary and retry.
@@ -194,6 +263,22 @@ class PdfTranslator(DocumentTranslator):
 
             result = self._parse_single_translation(translated_text)
             if result:
+                # Optional polish second pass (same gating as the document path).
+                if self.topts.get("params", {}).get("second_pass"):
+                    try:
+                        from core.llm.llm_wrapper import polish_translation
+                        polished, pol_usage = polish_translation(
+                            json.dumps({"1": result}, ensure_ascii=False),
+                            self.dst_lang, self.model, self.use_online, self.api_key,
+                            check_stop=self._check_stop_and_signal_cancel, options=self.topts)
+                        self._add_token_usage(pol_usage)
+                        pv = self._parse_single_translation(polished)
+                        if pv:
+                            result = pv
+                    except Exception as e:  # noqa: BLE001 — never break on polish
+                        app_logger.warning(f"PDF polish skipped: {e}")
+                with self.lock:
+                    self._qa_pairs.append((stripped, result))
                 return result
             app_logger.warning(
                 f"Unparseable translation output for paragraph {paragraph_index} "
@@ -323,6 +408,10 @@ class PdfTranslator(DocumentTranslator):
         # an empty or untranslated output.
         self._preflight_check()
 
+        # Optional: AI-extract a glossary from the PDF's text layer first, so the
+        # per-paragraph translation below uses it (same as the document path).
+        self._maybe_extract_glossary(progress_callback)
+
         if progress_callback:
             progress_callback(0.0, desc=f"{self._get_status_message('Extracting PDF content')}...")
 
@@ -388,6 +477,7 @@ class PdfTranslator(DocumentTranslator):
             raise RuntimeError("BabelDOC did not produce an output PDF")
 
         self._save_translation_summary(status="success", output_file_path=output_path)
+        self._write_qa_report()   # mode-aware QA over the translated paragraphs
 
         if progress_callback:
             progress_callback(1.0, desc=self._get_status_message('Translation completed'))
