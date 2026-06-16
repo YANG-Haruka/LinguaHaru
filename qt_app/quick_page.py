@@ -53,6 +53,7 @@ class QuickPage(ScrollArea):
         self._mic_io = None
         self._in_fmt = None
         self._rec_buf = bytearray()
+        self._overlay = None     # LoadingOverlay (model-loading glass lock)
 
         self.setWidgetResizable(True)
         self.enableTransparentBackground()
@@ -517,11 +518,31 @@ class QuickPage(ScrollArea):
 
     def _recognize(self, utt):
         self.input_hint.setText(tr("Recognizing", self._lang) + "...")
+        # First recognition loads the quick STT model (seconds) — glass-lock the
+        # window so the user sees progress instead of a frozen UI.
+        try:
+            from core.pipelines.video_translation_pipeline import (
+                recognizer_ready, get_selected_quick_stt_model)
+            if not recognizer_ready(get_selected_quick_stt_model):
+                self._show_loading()
+        except Exception:  # noqa: BLE001
+            pass
         self._stt = _RecognizeWorker(utt, _IN_RATE)
         self._stt.done.connect(self._on_recognized)
         self._stt.start()
 
+    def _show_loading(self, text=None):
+        if self._overlay is None:
+            from qt_app.loading_overlay import LoadingOverlay
+            self._overlay = LoadingOverlay(self.window(), self._lang)
+        self._overlay.show_with(text)
+
+    def _hide_loading(self):
+        if self._overlay is not None:
+            self._overlay.hide()
+
     def _on_recognized(self, text):
+        self._hide_loading()
         self.input_hint.setText(tr("Enter To Translate", self._lang))
         if not text:
             return

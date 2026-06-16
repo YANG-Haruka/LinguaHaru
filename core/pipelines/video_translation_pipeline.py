@@ -447,11 +447,13 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
     return out
 
 
-def recognizer_ready():
-    """True if the selected real-time STT model is already loaded (no first-use
-    load delay)."""
+def recognizer_ready(getter=None):
+    """True if the selected STT model is already loaded (no first-use load
+    delay). Defaults to the real-time model; pass get_selected_quick_stt_model
+    (etc.) to check another feature's model."""
+    getter = getter or get_selected_live_stt_model
     try:
-        engine, size = _resolve_stt_engine(get_stt_model(get_selected_live_stt_model()))
+        engine, size = _resolve_stt_engine(get_stt_model(getter()))
         if engine == "qwen3asr":
             return size in _qwen_models
         if engine == "sensevoice":

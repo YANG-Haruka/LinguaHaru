@@ -177,11 +177,15 @@ class _CaptionBar(QWidget):
     _MODES = ("bilingual", "translation", "source")
 
     def __init__(self, parent=None, lang="en"):
-        # No parent: a top-level Tool window that floats above other apps.
+        # No parent + Qt.Window (NOT Qt.Tool): an INDEPENDENT top-level window.
+        # A Qt.Tool window is owned by the app's main window and Windows hides it
+        # automatically when the main window is minimized — which defeats the
+        # whole point of a floating caption (you minimize the app to watch the
+        # captions). Qt.Window keeps it visible on its own.
         super().__init__(None)
         self._lang = lang
         self.setWindowFlags(
-            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
         self.setMinimumWidth(320)
         self.setMaximumWidth(1600)
@@ -457,6 +461,7 @@ class LivePage(ScrollArea):
         self._mic_io = None
         self._loopback = None    # _LoopbackWorker (system-audio capture)
         self._caption_bar = None  # _CaptionBar (floating subtitles)
+        self._overlay = None     # LoadingOverlay (model-loading glass lock)
         self._sink = None       # QAudioSink (playback)
         self._play_io = None
         self._in_fmt = None
@@ -786,6 +791,7 @@ class LivePage(ScrollArea):
                 self.status_label.setText(tr("Listening", self._lang))
             else:
                 self.status_label.setText(tr("Loading model", self._lang))
+                self._show_loading()
                 self._preloader = PreloadWorker(self)
                 self._preloader.done.connect(self._on_preload_done)
                 self._preloader.start()
@@ -1116,8 +1122,20 @@ class LivePage(ScrollArea):
             self._local_workers.remove(w)
 
     def _on_preload_done(self, ready):
+        self._hide_loading()
         if self._is_listening():
             self.status_label.setText(tr("Listening", self._lang))
+
+    def _show_loading(self, text=None):
+        """Glass-lock the whole window while the STT model loads."""
+        if self._overlay is None:
+            from qt_app.loading_overlay import LoadingOverlay
+            self._overlay = LoadingOverlay(self.window(), self._lang)
+        self._overlay.show_with(text)
+
+    def _hide_loading(self):
+        if self._overlay is not None:
+            self._overlay.hide()
 
     @staticmethod
     def _split_sents(text):
