@@ -377,19 +377,21 @@ def polish_translation(translated_json, dst_lang, model, use_online, api_key, ch
     already-translated JSON object's values, in the TARGET language, without
     changing meaning, keys, or non-text tokens.
 
-    SAFE: returns the original first-pass JSON unchanged unless the polish output
-    is valid JSON with exactly the same keys — so a bad second pass never
-    corrupts or drops a translation."""
+    Returns (text, token_usage). SAFE: returns the ORIGINAL first-pass JSON
+    unchanged (with the polish call's token usage, if any) unless the polish
+    output is valid JSON with EXACTLY the same keys AND the same placeholders per
+    value — so a bad second pass never corrupts/drops a translation or mangles a
+    %s / ${var} / {name}."""
     import json as _json
     import re as _re
     if not translated_json or not str(translated_json).strip():
-        return translated_json
+        return translated_json, None
     try:
         orig = _json.loads(translated_json)
         if not isinstance(orig, dict):
-            return translated_json
+            return translated_json, None
     except (ValueError, TypeError):
-        return translated_json   # not a JSON object we can validate -> skip
+        return translated_json, None   # not a JSON object we can validate -> skip
 
     from core.load_prompt import _lang_name
     dst = _lang_name(dst_lang)
@@ -407,22 +409,29 @@ def polish_translation(translated_json, dst_lang, model, use_online, api_key, ch
     try:
         if use_online:
             from core.llm.online_translation import translate_online
-            raw, ok, _ = translate_online(api_key, messages, model)
+            raw, ok, usage = translate_online(api_key, messages, model)
         else:
             from core.llm.offline_translation import translate_offline
-            raw, ok, _ = translate_offline(messages, model)
+            raw, ok, usage = translate_offline(messages, model)
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"Polish pass failed ({e}); keeping first-pass translation.")
-        return translated_json
+        return translated_json, None
     if not ok or not raw:
-        return translated_json
+        return translated_json, usage
     m = _re.search(r"\{.*\}", raw, _re.DOTALL)
     if not m:
-        return translated_json
+        return translated_json, usage
     try:
         polished = _json.loads(m.group(0))
     except ValueError:
-        return translated_json
+        return translated_json, usage
     if not isinstance(polished, dict) or set(polished.keys()) != set(orig.keys()):
-        return translated_json   # key drift -> keep the safe first pass
-    return _json.dumps(polished, ensure_ascii=False)
+        return translated_json, usage   # key drift -> keep the safe first pass
+    # Placeholder integrity: the polish must not add/drop/alter any placeholder
+    # in any value (it runs after unmasking, so %s/${var}/{name} are live text).
+    from core.engine.translation_qa import _placeholders
+    for k in orig:
+        if _placeholders(orig[k]) != _placeholders(polished.get(k, "")):
+            app_logger.warning("Polish pass changed placeholders; keeping first-pass translation.")
+            return translated_json, usage
+    return _json.dumps(polished, ensure_ascii=False), usage

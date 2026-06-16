@@ -379,10 +379,11 @@ class DocumentTranslator:
                         from core.translation_modes import active_second_pass
                         if active_second_pass():
                             from core.llm.llm_wrapper import polish_translation
-                            translated_text = polish_translation(
+                            translated_text, _polish_usage = polish_translation(
                                 translated_text, self.dst_lang, self.model,
                                 self.use_online, self.api_key,
                                 check_stop=self.check_for_stop)
+                            self._add_token_usage(_polish_usage)
                     except Exception as e:  # noqa: BLE001 — never break on polish
                         app_logger.warning(f"Second pass skipped: {e}")
 
@@ -644,10 +645,11 @@ class DocumentTranslator:
                         from core.translation_modes import active_second_pass
                         if active_second_pass():
                             from core.llm.llm_wrapper import polish_translation
-                            translated_text = polish_translation(
+                            translated_text, _polish_usage = polish_translation(
                                 translated_text, self.dst_lang, self.model,
                                 self.use_online, self.api_key,
                                 check_stop=self.check_for_stop)
+                            self._add_token_usage(_polish_usage)
                     except Exception as e:  # noqa: BLE001 — never break on polish
                         app_logger.warning(f"Second pass skipped: {e}")
 
