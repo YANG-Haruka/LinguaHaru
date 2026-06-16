@@ -32,6 +32,35 @@ def current_dir():
     return os.path.abspath(d)
 
 
+def pick_hf_endpoint():
+    """Choose the huggingface endpoint for model downloads.
+
+    Order: explicit HF_ENDPOINT env  ->  config "hf_endpoint"  ->  probe: prefer
+    the official endpoint when reachable, fall back to the China mirror
+    (hf-mirror.com) only when it isn't. The blind mirror default used to stall
+    EVERY download whenever hf-mirror was flaky/down (and slowed users who can
+    reach huggingface.co directly). Probed once; hf libs read HF_ENDPOINT at
+    import, so this must run before they're imported."""
+    explicit = os.environ.get("HF_ENDPOINT")
+    if explicit:
+        return explicit
+    try:
+        configured = _read_cfg().get("hf_endpoint")
+        if configured:
+            return configured
+    except Exception:  # noqa: BLE001
+        pass
+    import urllib.request
+    for ep in ("https://huggingface.co", "https://hf-mirror.com"):
+        try:
+            urllib.request.urlopen(urllib.request.Request(ep, method="HEAD"), timeout=3)
+            app_logger.info(f"HF endpoint: {ep}")
+            return ep
+        except Exception:  # noqa: BLE001 — unreachable, try the next
+            continue
+    return "https://hf-mirror.com"
+
+
 def setup_model_env():
     """Point every model library's cache at the unified dir. Idempotent; uses
     setdefault so an explicit user env var still wins. Call at app startup,
@@ -49,8 +78,9 @@ def setup_model_env():
     os.environ.setdefault("MODELSCOPE_CACHE", os.path.join(md, "modelscope"))
     # PaddleOCR / PaddleX official models (PP-OCRv6 etc.) -> md/paddlex/official_models
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", os.path.join(md, "paddlex"))
-    # China-friendly mirror for huggingface (kept consistent with SenseVoice).
-    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    # Pick the huggingface endpoint once (hf libs read HF_ENDPOINT at import).
+    if "HF_ENDPOINT" not in os.environ:
+        os.environ["HF_ENDPOINT"] = pick_hf_endpoint()
     # One-time pull-in of models already downloaded to the OLD default caches.
     try:
         migrate_legacy_caches()

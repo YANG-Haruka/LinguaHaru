@@ -307,8 +307,9 @@ def _sensevoice_local_dir():
     Downloads into a stable, project-local cache (data/models) instead of the
     user's global HF cache, so the model lives in a predictable place and is
     downloaded only once (hf_hub_download reuses cached files)."""
-    from core.model_store import current_dir
-    os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
+    from core.model_store import current_dir, pick_hf_endpoint
+    if "HF_ENDPOINT" not in os.environ:
+        os.environ["HF_ENDPOINT"] = pick_hf_endpoint()
     cache_dir = current_dir()
     os.makedirs(cache_dir, exist_ok=True)
     try:
@@ -630,12 +631,20 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
         if progress_callback:
             progress_callback(0.03, desc=f"Transcribing ({engine})...")
 
-        if engine == "sensevoice":
-            triples = _transcribe_sensevoice(wav_path, size, src_lang, progress_callback)
-        elif engine == "qwen3asr":
-            triples = _transcribe_qwen(wav_path, size, src_lang, progress_callback)
-        else:
-            triples = _transcribe_whisper(wav_path, size, src_lang, progress_callback)
+        try:
+            if engine == "sensevoice":
+                triples = _transcribe_sensevoice(wav_path, size, src_lang, progress_callback)
+            elif engine == "qwen3asr":
+                triples = _transcribe_qwen(wav_path, size, src_lang, progress_callback)
+            else:
+                triples = _transcribe_whisper(wav_path, size, src_lang, progress_callback)
+        except Exception as e:  # noqa: BLE001 — log WHY (e.g. model download
+            # failed) into the per-file log instead of failing silently, then
+            # re-raise so the job is still marked failed.
+            app_logger.error(
+                f"STT transcription failed (engine={engine}, model={model_id}): "
+                f"{type(e).__name__}: {e}")
+            raise
 
     if not triples:
         raise RuntimeError("Transcription produced no speech segments")
