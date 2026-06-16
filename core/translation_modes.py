@@ -82,3 +82,10 @@ def resolve_sampling(model_config, cfg_temp, cfg_top_p):
 def offline_temperature(default=0.3):
     """Sampling temperature for local (Ollama / LM Studio) translation."""
     return active_params().get("temperature", default)
+
+
+def active_prompt_hint():
+    """A one-line instruction for the active mode, appended to the system prompt
+    so the mode actually changes translation behavior (not just sampling). Kept
+    short so it never dominates the target-language system prompt."""
+    return str(active_params().get("prompt_hint", "")).strip()

@@ -42,4 +42,15 @@ def load_prompt(src_lang, dst_lang):
                          .replace("{Text_Target_Language}", _lang_name(dst_lang))
                          .replace("{Text_Source_Language}", _lang_name(src_lang, source=True)))
 
+        # Append the active translation mode's one-line behavior hint (precise /
+        # natural / polish / subtitle), so the chosen mode actually shapes the
+        # output beyond sampling params.
+        try:
+            from core.translation_modes import active_prompt_hint
+            hint = active_prompt_hint()
+            if hint:
+                system_prompt = f"{system_prompt}\n\n{hint}"
+        except Exception:  # noqa: BLE001
+            pass
+
         return system_prompt, user_prompt, previous_prompt, previous_text_default, glossary_prompt

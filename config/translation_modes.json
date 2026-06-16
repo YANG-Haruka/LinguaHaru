@@ -4,6 +4,7 @@
         "label_en": "Precise",
         "temperature": 0.1,
         "top_p": 0.9,
+        "prompt_hint": "Translation mode: PRECISE. Translate accurately and faithfully, preserve the structure and tone of the source, apply glossary terms strictly, and do not paraphrase or embellish.",
         "rules": ["preserve_structure", "strict_glossary", "no_paraphrase"],
         "qa": ["json_keys", "placeholders", "glossary_terms", "length_ratio"]
     },
@@ -12,6 +13,7 @@
         "label_en": "Natural",
         "temperature": 0.4,
         "top_p": 0.95,
+        "prompt_hint": "Translation mode: NATURAL. Translate so it reads naturally and fluently in the target language while fully preserving the original meaning.",
         "rules": ["natural_target_language", "preserve_meaning"],
         "qa": ["json_keys", "placeholders"]
     },
@@ -20,6 +22,7 @@
         "label_en": "Polish",
         "temperature": 0.6,
         "top_p": 0.95,
+        "prompt_hint": "Translation mode: POLISH. Produce polished, idiomatic, well-written target-language prose while preserving the original meaning; improve flow and word choice.",
         "rules": ["natural_target_language", "preserve_meaning"],
         "qa": ["json_keys", "placeholders"],
         "second_pass": "polish_target"
@@ -29,6 +32,7 @@
         "label_en": "Subtitle",
         "temperature": 0.25,
         "top_p": 0.9,
+        "prompt_hint": "Translation mode: SUBTITLE. Translate concisely in a natural spoken style; keep each value short and easy to read at a glance, as a subtitle line, without dropping meaning.",
         "rules": ["concise", "spoken_style"],
         "qa": ["subtitle_length", "placeholders"]
     }
