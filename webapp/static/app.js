@@ -576,6 +576,7 @@ $("translate-btn").onclick = async () => {
   fd.append("use_online", online);
   fd.append("glossary", $("glossary").value);
   fd.append("bilingual", $("translate-bilingual").checked);
+  fd.append("ui_lang", _uiLang);
 
   try {
     const { task_id } = await api("/api/translate", { method: "POST", body: fd });
@@ -610,6 +611,7 @@ function listenProgress(taskId) {
       $("download-link").href = "/api/download/" + taskId;
       $("result").hidden = false; setStatus("翻译完成");
       renderCoverage(d.coverage);
+      showThanks(d.tokens, d.cost);
     } else if (d.status === "error") {
       es.close(); setBusy(false); setStatus("错误: " + (d.error || "未知错误"));
     } else if (d.status === "stopped") {
@@ -1207,7 +1209,10 @@ function saveLiveHistory() {
   api("/api/live-save-history", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source_lines: src, translated_lines: dst,
-      src_display: "Auto", dst_display: dstDisplay }) }).catch(() => {});
+      src_display: "Auto", dst_display: dstDisplay,
+      tokens: liveSessionTokens, ui_lang: _uiLang }) })
+    .then((r) => { if (r) showThanks(r.tokens, r.cost); })
+    .catch(() => {});
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
 // "Listening" wording adapts to the input (mic vs shared system/tab audio).
@@ -1318,6 +1323,31 @@ function stopGoogle() {
 }
 
 // --- Local (SenseVoice + LLM): audio-thread VAD segments -> POST per utterance ---
+// A friendly "thanks for using LinguaHaru" card shown when an experience
+// finishes (document translation done, real-time voice stopped), summarizing
+// the tokens used + estimated cost. `cost` is {amount, symbol, currency} or null.
+function showThanks(tokens, cost) {
+  if (!tokens) return;   // nothing meaningful to report (e.g. fully cached/offline)
+  const old = document.getElementById("thanks-overlay");
+  if (old) old.remove();
+  const fmtTokens = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "K" : String(n));
+  const ov = document.createElement("div");
+  ov.id = "thanks-overlay"; ov.className = "thanks-overlay";
+  const costLine = cost
+    ? `<div class="thanks-stat"><span>${_label("Thanks Cost Label", "预计花费")}</span><b>${cost.symbol}${cost.amount} ${cost.currency}</b></div>`
+    : "";
+  ov.innerHTML =
+    `<div class="thanks-card">
+       <div class="thanks-flower">✿</div>
+       <h3>${_label("Thanks Title", "感谢使用 LinguaHaru")}</h3>
+       <div class="thanks-stat"><span>${_label("Thanks Tokens Label", "本次消耗")}</span><b>${fmtTokens(tokens)} tokens</b></div>
+       ${costLine}
+       <button id="thanks-ok">${_label("OK", "好的")}</button>
+     </div>`;
+  ov.addEventListener("click", (e) => { if (e.target === ov || e.target.id === "thanks-ok") ov.remove(); });
+  document.body.appendChild(ov);
+}
+
 // Glass lock shown while an STT model loads (first use can download + warm for
 // seconds). Blocks mis-clicks and tells the user what's happening.
 function showModelLoading(text) {
@@ -1330,6 +1360,7 @@ function hideModelLoading() {
 }
 
 async function startLocal() {
+  liveSessionTokens = 0;
   try {
     liveStream = await acquireLiveStream();
   } catch (e) { setLiveStatus("无法访问输入设备：" + e.message); return; }
@@ -1440,6 +1471,7 @@ function stopLocal() {
 // appear — so sentence 1 is translated while you're already saying sentence 2.
 let liveCommittedText = "";  // raw text prefix already committed this utterance
 let liveLastText = "";       // previous partial (for LocalAgreement-2 stable prefix)
+let liveSessionTokens = 0;   // accumulated tokens this live session (for the thanks card)
 let livePartialBusy = false, livePendingPcm = null;
 let liveLastDetected = "auto";
 
@@ -1597,6 +1629,7 @@ async function _doCommitSentence(source) {
       const t = await api("/api/live-translate-text", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst }) });
+      liveSessionTokens += (t.tokens || 0);
       if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`);
     } catch (e) { /* leave source line; translation failed */ }
     return;

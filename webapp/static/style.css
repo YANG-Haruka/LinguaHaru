@@ -997,3 +997,20 @@ html[data-theme="dark"] .seg.active { background: var(--surface-3); border-color
 .quick-context{width:100%;margin-bottom:8px;padding:7px 10px;border-radius:8px;font-size:0.85rem;
   border:1px solid var(--border);background:var(--panel-2,transparent);color:var(--text)}
 .quick-context::placeholder{color:var(--muted)}
+
+/* "Thanks for using" summary card (shown when an experience finishes). */
+.thanks-overlay{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;
+  background:color-mix(in srgb, var(--bg) 50%, transparent);
+  backdrop-filter:saturate(120%) blur(6px);-webkit-backdrop-filter:saturate(120%) blur(6px);
+  animation:mlo-fade .15s ease}
+.thanks-card{min-width:280px;max-width:360px;padding:26px 30px 22px;text-align:center;border-radius:18px;
+  border:1px solid var(--border);background:color-mix(in srgb, var(--panel) 92%, transparent);
+  box-shadow:0 16px 50px rgba(0,0,0,.22);animation:mlo-fade .2s ease}
+.thanks-flower{font-size:30px;color:var(--accent);line-height:1}
+.thanks-card h3{margin:8px 0 16px;font-size:1.05rem;color:var(--text)}
+.thanks-stat{display:flex;justify-content:space-between;gap:18px;padding:7px 2px;font-size:0.92rem;
+  color:var(--text-2);border-top:1px dashed var(--border)}
+.thanks-stat b{color:var(--text);font-variant-numeric:tabular-nums}
+.thanks-card button{margin-top:18px;padding:8px 28px;border:none;border-radius:10px;cursor:pointer;
+  background:var(--accent);color:#fff;font-size:0.95rem;font-weight:600}
+.thanks-card button:hover{filter:brightness(1.06)}

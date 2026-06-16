@@ -506,6 +506,15 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     output_path, _missing = translator.process(
         stem, ext, progress_callback=lambda v, desc=None: (check_stop(), on_progress(v, desc)))
 
+    # Accumulate this file's token usage onto the task (summed across files) so
+    # the 'done' event can show a thank-you with total tokens + cost.
+    with _TASKS_LOCK:
+        t = TASKS.get(task_id)
+        if t is not None:
+            t["tok_prompt"] = t.get("tok_prompt", 0) + getattr(translator, "total_prompt_tokens", 0)
+            t["tok_completion"] = t.get("tok_completion", 0) + getattr(translator, "total_completion_tokens", 0)
+            t["tokens"] = t.get("tokens", 0) + getattr(translator, "total_tokens", 0)
+
     # Translation coverage (best-effort): base_translator drops coverage.json in
     # the result dir; stash it on the task so the SSE 'done' event can carry it.
     try:
@@ -520,13 +529,28 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
 
 
 def _run_translation(task_id, session_id, file_paths, model, use_online,
-                     src_lang, dst_lang, glossary_name, bilingual_flags):
+                     src_lang, dst_lang, glossary_name, bilingual_flags, ui_lang="en"):
     """Background worker: translate one or more files; zip when more than one."""
     def set_state(**kw):
         with _TASKS_LOCK:
             TASKS[task_id].update(kw)
             if kw.get("status") in ("done", "error", "stopped"):
                 TASKS[task_id]["ended_at"] = time.time()
+
+    def _usage_summary():
+        """{"tokens", "cost":{amount,symbol,currency}} from accumulated usage."""
+        with _TASKS_LOCK:
+            t = TASKS.get(task_id, {})
+            tp, tc, tt = t.get("tok_prompt", 0), t.get("tok_completion", 0), t.get("tokens", 0)
+        out = {"tokens": tt, "cost": None}
+        if use_online and tt > 0:
+            try:
+                from core.pricing import estimate_cost
+                amt, sym, ccy = estimate_cost(model, tp, tc, ui_lang)
+                out["cost"] = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
+            except Exception:  # noqa: BLE001
+                pass
+        return out
 
     total = len(file_paths)
     outputs, file_results = [], []
@@ -555,13 +579,16 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
         if not outputs:
             set_state(status="error", error="All files failed. See log.")
         elif total == 1:
+            u = _usage_summary()
             set_state(status="done", progress=1.0, desc="Translation completed",
-                      output=outputs[0])
+                      output=outputs[0], tokens=u["tokens"], cost=u["cost"])
         else:
             zip_path = backend.zip_results(outputs, file_results)
             ok = sum(1 for _, s, _ in file_results if s == "success")
+            u = _usage_summary()
             set_state(status="done", progress=1.0,
-                      desc=f"Translation completed ({ok}/{total})", output=zip_path)
+                      desc=f"Translation completed ({ok}/{total})", output=zip_path,
+                      tokens=u["tokens"], cost=u["cost"])
     except RuntimeError as e:
         if "__stopped__" in str(e):
             set_state(status="stopped", desc="Stopped")
@@ -580,6 +607,7 @@ async def translate(
     use_online: bool = Form(True),
     glossary: str = Form(""),
     bilingual: bool = Form(False),
+    ui_lang: str = Form("en"),
 ):
     session_id = request.state.session_id
     _prune_tasks()  # drop stale finished tasks before accounting
@@ -616,7 +644,7 @@ async def translate(
         "epub_bilingual_mode", "html_bilingual_mode")}
     threading.Thread(target=_run_translation, args=(
         task_id, session_id, dests, model, use_online, src_lang, dst_lang,
-        glossary, flags), daemon=True).start()
+        glossary, flags, ui_lang), daemon=True).start()
     return {"task_id": task_id}
 
 
@@ -639,6 +667,9 @@ def progress(task_id: str, request: Request):
                 payload = {k: state.get(k) for k in ('progress', 'desc', 'status', 'error')}
                 if state.get("coverage") is not None:
                     payload["coverage"] = state.get("coverage")
+                if state.get("status") == "done":
+                    payload["tokens"] = state.get("tokens", 0)
+                    payload["cost"] = state.get("cost")
                 yield f"data: {json.dumps(payload)}\n\n"
             if state.get("status") in ("done", "error", "stopped"):
                 break
@@ -1075,10 +1106,11 @@ async def live_translate_text(payload: dict):
     def _translate():
         return translate_text_simple(source, src_code, dst_lang, model, use_online, api_key)
     try:
-        translated, ok, _usage = await loop.run_in_executor(None, _translate)
+        translated, ok, usage = await loop.run_in_executor(None, _translate)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Translate failed: {e}")
-    return {"translated": translated if ok else ""}
+    tokens = int((usage or {}).get("total_tokens", 0) or 0)
+    return {"translated": translated if ok else "", "tokens": tokens}
 
 
 @app.post("/api/ensure-web-vad")
@@ -1149,11 +1181,25 @@ def live_save_history(payload: dict, request: Request):
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)
+    tokens = int(payload.get("tokens", 0) or 0)
+    # Estimate cost from the session's tokens (output-heavy, but we only have the
+    # total — split is unknown, so attribute it all to completion = upper bound).
+    cost_amount = cost_currency = cost_symbol = None
+    if use_online and tokens > 0:
+        try:
+            from core.pricing import estimate_cost
+            amt, sym, ccy = estimate_cost(model, 0, tokens, payload.get("ui_lang", "en"))
+            cost_amount, cost_symbol, cost_currency = round(amt, 4), sym, ccy
+        except Exception:  # noqa: BLE001
+            pass
     from core.translation_history import save_live_session
     rec = save_live_session(
         src, dst, payload.get("src_display", "Auto"),
-        payload.get("dst_display", ""), model, use_online, result_dir, log_dir)
-    return {"saved": bool(rec)}
+        payload.get("dst_display", ""), model, use_online, result_dir, log_dir,
+        total_tokens=tokens, cost_amount=cost_amount, cost_currency=cost_currency)
+    return {"saved": bool(rec), "tokens": tokens,
+            "cost": ({"amount": cost_amount, "symbol": cost_symbol, "currency": cost_currency}
+                     if cost_amount is not None else None)}
 
 
 # --- quick (short-text) translate, Google-Translate-style -------------------

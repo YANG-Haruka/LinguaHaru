@@ -317,6 +317,9 @@ def save_live_session(
     log_dir: str,
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
+    total_tokens: int = 0,
+    cost_amount: Optional[float] = None,
+    cost_currency: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Persist a real-time-voice session: write a bilingual transcript file and
     add a history record (file_type 'realtime'). Source/translated lines are the
@@ -367,12 +370,12 @@ def save_live_session(
 
     rec = create_translation_record(
         translation_id=uuid.uuid4().hex[:12],
-        start_time=start_time, end_time=end_time, total_tokens=0,
+        start_time=start_time, end_time=end_time, total_tokens=total_tokens,
         src_lang="", src_lang_display=src_display,
         dst_lang="", dst_lang_display=dst_display,
         model=model, use_online=use_online,
         input_file=name, output_file_path=out_path, log_file_path="",
-        status="success",
+        status="success", cost_amount=cost_amount, cost_currency=cost_currency,
     )
     rec["file_type"] = "realtime"     # group under its own type in the browse UI
     TranslationHistoryManager(log_dir=log_dir).add_record(rec)
