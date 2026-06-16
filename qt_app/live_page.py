@@ -477,6 +477,7 @@ class LivePage(ScrollArea):
         self._partial_ms = 0.0          # ms since the last partial dispatch
         self._stream_committed = ""     # raw text prefix committed this utterance
         self._stream_last = ""          # previous partial (LocalAgreement-2)
+        self._session_tokens = 0        # tokens used this session (for the thanks card)
         self._recog_busy = False        # one STT worker in flight at a time
         self._recog_pending = None      # (pcm, is_final) — latest-wins while busy
         self._stream_detected = "auto"
@@ -769,6 +770,7 @@ class LivePage(ScrollArea):
 
         self.input_text.clear()
         self.output_text.clear()
+        self._session_tokens = 0
         self._reset_vad()
 
         # Google mode needs playback (it returns spoken audio); local mode is
@@ -939,9 +941,21 @@ class LivePage(ScrollArea):
             _, result_dir, log_dir = backend.get_custom_paths()
             online = backend.get_config("default_online", True)
             model = backend.get_active_model(online)
+            tokens = int(self._session_tokens or 0)
+            cost_amount = cost_currency = cost_symbol = None
+            if online and tokens > 0:
+                try:
+                    from core.pricing import estimate_cost
+                    amt, cost_symbol, cost_currency = estimate_cost(model, 0, tokens, self._lang)
+                    cost_amount = round(amt, 4)
+                except Exception:  # noqa: BLE001
+                    pass
             save_live_session(src, dst, "Auto",
                               self.target_combo.currentText(), model, online,
-                              result_dir, log_dir)
+                              result_dir, log_dir, total_tokens=tokens,
+                              cost_amount=cost_amount, cost_currency=cost_currency)
+            from qt_app.thanks import show_thanks
+            show_thanks(self.window(), self._lang, tokens, cost_amount, cost_symbol, cost_currency)
         except Exception:  # noqa: BLE001 — history is best-effort
             pass
 
@@ -1296,7 +1310,8 @@ class LivePage(ScrollArea):
         self._local_workers.append(w)
         w.start()
 
-    def _on_translated_stream(self, ts, translated):
+    def _on_translated_stream(self, ts, translated, tokens=0):
+        self._session_tokens += int(tokens or 0)
         if translated:
             self.output_text.insertPlainText(f"[{ts}] {translated}\n")
             self.output_text.ensureCursorVisible()

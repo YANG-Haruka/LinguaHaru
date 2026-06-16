@@ -60,7 +60,7 @@ class LiveRecognizeWorker(QThread):
 class LiveTranslateWorker(QThread):
     """Translate one finalized sentence (LLM). Emits done(timestamp, translated)
     so the matching source/translation lines line up by timestamp."""
-    done = Signal(str, str)
+    done = Signal(str, str, int)   # (timestamp, translated, total_tokens)
 
     def __init__(self, ts, source, src_code, dst_code, model, use_online,
                  api_key, parent=None):
@@ -76,12 +76,13 @@ class LiveTranslateWorker(QThread):
     def run(self):
         try:
             from core.llm.llm_wrapper import translate_text_simple
-            translated, ok, _usage = translate_text_simple(
+            translated, ok, usage = translate_text_simple(
                 self._source, self._src or "auto", self._dst, self._model,
                 self._online, self._key)
-            self.done.emit(self._ts, translated if ok else "")
+            tokens = int((usage or {}).get("total_tokens", 0) or 0)
+            self.done.emit(self._ts, translated if ok else "", tokens)
         except Exception:  # noqa: BLE001
-            self.done.emit(self._ts, "")
+            self.done.emit(self._ts, "", 0)
 
 
 class LiveTranslateStreamWorker(QThread):

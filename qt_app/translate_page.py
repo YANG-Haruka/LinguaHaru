@@ -489,6 +489,11 @@ class TranslatePage(QStackedWidget):
         self._workers = []
         self._progress = {}
         self._tokens = 0
+        self._exact_tokens = 0      # summed exact usage for the thanks/cost card
+        self._prompt_tokens = 0
+        self._completion_tokens = 0
+        self._run_model = ""
+        self._run_online = False
         self._running = True
         self.translate_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -591,6 +596,11 @@ class TranslatePage(QStackedWidget):
         cov = getattr(worker, "coverage", None)
         if cov:
             self._coverage.append(cov)
+        self._exact_tokens += getattr(worker, "total_tokens", 0) or 0
+        self._prompt_tokens += getattr(worker, "prompt_tokens", 0) or 0
+        self._completion_tokens += getattr(worker, "completion_tokens", 0) or 0
+        self._run_model = getattr(worker, "model", "") or self._run_model
+        self._run_online = getattr(worker, "use_online", False) or self._run_online
         detail = ""
         if missing:
             tmpl = tr("Missing Segments", self._lang)
@@ -640,6 +650,20 @@ class TranslatePage(QStackedWidget):
         self.dashboard.show_done(summary, can_open=bool(self._results),
                                  coverage=self._aggregate_coverage())
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
+        # Thank-you + token/cost summary (only when something was actually translated).
+        if ok and self._exact_tokens:
+            cost_amount = cost_symbol = cost_currency = None
+            if self._run_online:
+                try:
+                    from core.pricing import estimate_cost
+                    amt, cost_symbol, cost_currency = estimate_cost(
+                        self._run_model, self._prompt_tokens, self._completion_tokens, self._lang)
+                    cost_amount = round(amt, 4)
+                except Exception:  # noqa: BLE001
+                    pass
+            from qt_app.thanks import show_thanks
+            show_thanks(self.window(), self._lang, self._exact_tokens,
+                        cost_amount, cost_symbol, cost_currency)
 
     def _aggregate_coverage(self):
         """Merge per-file coverage reports into one (summed totals + categories).

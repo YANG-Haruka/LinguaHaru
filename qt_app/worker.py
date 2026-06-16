@@ -287,6 +287,10 @@ class TranslationWorker(QThread):
             pass
 
         total_tokens = getattr(translator, "total_tokens", 0)
+        # Stash exact usage for the page's thank-you / cost summary.
+        self.total_tokens = total_tokens
+        self.prompt_tokens = getattr(translator, "total_prompt_tokens", 0)
+        self.completion_tokens = getattr(translator, "total_completion_tokens", 0)
         final_stats = getattr(translator, "final_stats", "")
         desc = "Translation completed"
         if final_stats:
