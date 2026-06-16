@@ -1183,12 +1183,15 @@ def live_translate_stream(payload: dict):
     def gen():
         if source:
             from core.llm.llm_wrapper import translate_text_simple_stream
+            sink = {}
             try:
                 for partial in translate_text_simple_stream(
-                        source, src_code, dst_lang, model, use_online, api_key):
+                        source, src_code, dst_lang, model, use_online, api_key, usage_sink=sink):
                     yield f"data: {_json.dumps(partial)}\n\n"
             except Exception:  # noqa: BLE001
                 yield f"data: {_json.dumps('')}\n\n"
+            if sink.get("total_tokens"):   # tell the client this line's token cost
+                yield f"data: {_json.dumps({'__usage__': sink['total_tokens']})}\n\n"
         yield "data: [DONE]\n\n"
     return StreamingResponse(gen(), media_type="text/event-stream")
 

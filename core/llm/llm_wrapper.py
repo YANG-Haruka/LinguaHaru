@@ -331,17 +331,27 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, 
         return text, False, None
 
 
-def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key):
+def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key,
+                                 usage_sink=None):
     """Like translate_text_simple but a GENERATOR yielding the translation
     progressively (cumulative string), for live captions' optional stream mode.
 
     Online only streams; offline or any failure yields the final result once.
-    Isolated from the batch document path (which stays stream=False)."""
+    Isolated from the batch document path (which stays stream=False).
+
+    If `usage_sink` (a dict) is given, the total token count is written to
+    usage_sink["total_tokens"] once available (streamed via stream_options, or
+    from the fallback call) so the caller can bill streamed live captions."""
+    def _sink(u):
+        if usage_sink is not None and u:
+            usage_sink["total_tokens"] = int(u.get("total_tokens", 0) or 0)
+
     if not text or not text.strip():
         yield text
         return
     if not use_online:
-        result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        _sink(u)
         yield result
         return
     system_prompt = (f"You are a professional translator. Translate the following text "
@@ -354,10 +364,13 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         cfg = load_model_config(model) or {}
         base_url, api_model = cfg.get("base_url"), cfg.get("model")
         if not (base_url and api_model and api_key):
-            result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            _sink(u)
             yield result
             return
-        params = {"model": api_model, "messages": messages, "stream": True}
+        # include_usage -> the final stream chunk carries a usage object.
+        params = {"model": api_model, "messages": messages, "stream": True,
+                  "stream_options": {"include_usage": True}}
         # Apply the active mode's sampling (+ provider capability gate) like the
         # batch path — so e.g. precise pins temperature low for live captions too.
         try:
@@ -372,17 +385,22 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         client = OpenAI(api_key=api_key, base_url=base_url)
         acc = ""
         for chunk in client.chat.completions.create(**params):
+            usage = getattr(chunk, "usage", None)
+            if usage is not None:   # final chunk: usage present, choices empty
+                _sink({"total_tokens": getattr(usage, "total_tokens", 0) or 0})
             choices = getattr(chunk, "choices", None)
             delta = choices[0].delta.content if choices else None
             if delta:
                 acc += delta
                 yield _plain_translation(acc)
         if not acc:        # nothing streamed -> fall back to a normal call
-            result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            _sink(u)
             yield result
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"Stream translate failed ({e}); falling back.")
-        result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        _sink(u)
         yield result
 
 

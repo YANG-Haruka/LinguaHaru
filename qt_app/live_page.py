@@ -1347,7 +1347,8 @@ class LivePage(ScrollArea):
         self._set_out_line_for_ts(ts, text)
         self._set_caption_interim(text)        # show the growing translation live
 
-    def _on_stream_done(self, ts):
+    def _on_stream_done(self, ts, tokens=0):
+        self._session_tokens += int(tokens or 0)   # streamed line's token cost
         final = self._stream_text.pop(ts, "")
         if final:
             self._push_caption(translated=final)

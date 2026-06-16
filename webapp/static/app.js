@@ -1684,6 +1684,10 @@ async function _doCommitSentence(source) {
         const d = p.slice(i + 6);
         if (d === "[DONE]") continue;
         let txt; try { txt = JSON.parse(d); } catch (e) { continue; }
+        if (txt && typeof txt === "object" && txt.__usage__ != null) {
+          liveSessionTokens += (txt.__usage__ || 0);   // streamed line's token cost
+          continue;
+        }
         paint(txt);
       }
     }

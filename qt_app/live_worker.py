@@ -90,7 +90,7 @@ class LiveTranslateStreamWorker(QThread):
     each delta (chunk) so the caption grows live. Online only; offline/failure
     emits once. Used when 'Stream Translation' is enabled."""
     chunk = Signal(str, str)   # (timestamp, cumulative_text)
-    done = Signal(str)         # (timestamp)
+    done = Signal(str, int)    # (timestamp, total_tokens)
 
     def __init__(self, ts, source, src_code, dst_code, model, use_online,
                  api_key, parent=None):
@@ -104,15 +104,16 @@ class LiveTranslateStreamWorker(QThread):
         self._key = api_key
 
     def run(self):
+        sink = {}
         try:
             from core.llm.llm_wrapper import translate_text_simple_stream
             for partial in translate_text_simple_stream(
                     self._source, self._src or "auto", self._dst, self._model,
-                    self._online, self._key):
+                    self._online, self._key, usage_sink=sink):
                 self.chunk.emit(self._ts, partial or "")
         except Exception:  # noqa: BLE001
             pass
-        self.done.emit(self._ts)
+        self.done.emit(self._ts, int(sink.get("total_tokens", 0) or 0))
 
 
 class LiveWorker(QThread):
