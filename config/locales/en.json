@@ -284,6 +284,7 @@
   "Vocabulary": "Vocabulary",
   "Web": "Web",
   "Whisper Hint": "Default is SenseVoice (zh/en/ja/ko/yue). Faster-Whisper supports many more languages but is larger and slower; the chosen model downloads on first use.",
+  "STT Scope Hint": "This sets the STT model for Video/Audio subtitles only. The Real-Time Voice and Quick-Translate voice models are set on their own plugin cards.",
   "Word Bilingual": "Enable Bilingual Comparison",
   "Working": "Working",
   "lines/min": "lines/min",

@@ -284,7 +284,7 @@
   "Vocabulary": "词汇表",
   "Web": "网页",
   "Whisper Hint": "默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。",
-  "Word Bilingual": "启用双语对照",
+  "STT Scope Hint": "此处仅设置「视频/音频字幕」的 STT；实时语音、速译语音输入的 STT 模型在「插件」对应卡片中分别设置。",
   "Working": "处理中",
   "lines/min": "行/分",
   "threads": "线程",
