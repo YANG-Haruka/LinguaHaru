@@ -160,6 +160,27 @@ def _inuse_stt_keys():
     return keys
 
 
+def release_stt_model(model_id):
+    """Force-free a specific STT model from the in-memory cache so its files on
+    disk can be deleted (Windows file locks). Best-effort."""
+    global _sensevoice
+    spec = next((m for m in STT_MODELS if m["id"] == model_id), None)
+    if not spec:
+        return
+    engine, size = spec.get("engine"), spec.get("size")
+    try:
+        if engine == "whisper":
+            _whisper_models.pop(size, None)
+        elif engine == "qwen3asr":
+            _qwen_models.pop(size, None)
+        elif engine == "sensevoice":
+            _sensevoice = None
+        import gc
+        gc.collect()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def release_unused_stt_models():
     """Free any loaded STT model that NO feature selects anymore, so switching a
     model releases the previous one (RAM/VRAM). Features sharing the SAME model

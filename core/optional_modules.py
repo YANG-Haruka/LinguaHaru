@@ -104,10 +104,40 @@ def _cfg_write(key, value):
 
 
 _OCR_MODELS = [
-    {"id": "small",  "label": "PP-OCRv6 Small（轻量·快·推荐）", "info": "det+rec ≈ 100MB"},
-    {"id": "medium", "label": "PP-OCRv6 Medium（高精度·较慢）", "info": "det+rec ≈ 140MB"},
-    {"id": "tiny",   "label": "PP-OCRv6 Tiny（最快·精度略低）", "info": "det+rec ≈ 55MB"},
+    {"id": "small",  "label": "PP-OCRv6 Small", "tags": ["Tag Lightweight", "Tag Recommended"],
+     "size": "≈ 100 MB", "info": "det+rec ≈ 100MB"},
+    {"id": "medium", "label": "PP-OCRv6 Medium", "tags": ["Tag HighAccuracy"],
+     "size": "≈ 140 MB", "info": "det+rec ≈ 140MB"},
+    {"id": "tiny",   "label": "PP-OCRv6 Tiny", "tags": ["Tag Fastest"],
+     "size": "≈ 55 MB", "info": "det+rec ≈ 55MB"},
 ]
+
+# Per-model tags (i18n keys, resolved in the UI) for the speech-to-text catalog.
+_STT_TAGS = {
+    "sensevoice-small":       ["Tag Recommended", "Tag CJKStrong"],
+    "whisper-tiny":           ["Tag Fastest"],
+    "whisper-base":           [],
+    "whisper-small":          ["Tag Balanced"],
+    "whisper-large-v3-turbo": ["Tag HighAccuracy"],
+    "qwen3-asr-0.6b":         ["Tag Experimental"],
+    "qwen3-asr-1.7b":         ["Tag Experimental"],
+}
+
+# model id -> folder-name substrings identifying its files on disk (for the
+# downloaded-or-not check and for deletion). Kept here so the model catalog and
+# its storage footprint stay in one place.
+_MODEL_PROBES = {
+    "small":  ["PP-OCRv6_small"],
+    "medium": ["PP-OCRv6_medium"],
+    "tiny":   ["PP-OCRv6_tiny"],
+    "sensevoice-small":       ["SenseVoiceSmall"],
+    "whisper-tiny":           ["faster-whisper-tiny"],
+    "whisper-base":           ["faster-whisper-base"],
+    "whisper-small":          ["faster-whisper-small"],
+    "whisper-large-v3-turbo": ["faster-whisper-large-v3-turbo"],
+    "qwen3-asr-0.6b":         ["Qwen3-ASR-0.6B"],
+    "qwen3-asr-1.7b":         ["Qwen3-ASR-1.7B"],
+}
 
 
 def ocr_models():
@@ -122,7 +152,8 @@ def get_selected_ocr_model():
 
 def _stt_catalog():
     from core.pipelines.video_translation_pipeline import STT_MODELS
-    return [{"id": m["id"], "label": m["label"],
+    return [{"id": m["id"], "label": m["label"], "tags": _STT_TAGS.get(m["id"], []),
+             "size": m.get("disk", ""), "vram": m.get("vram", ""),
              "info": f"{m.get('disk', '')} · 显存 {m.get('vram', '')}".strip(" ·")}
             for m in STT_MODELS]
 
@@ -198,6 +229,50 @@ def download_plugin_model(name, model_id=None):
         from core.log_config import app_logger
         app_logger.warning(f"download_plugin_model({name}) failed: {e}")
     return False
+
+
+def plugin_model_states(name):
+    """Per-model state for a plugin's catalog: each model's id/label/tags/size,
+    whether it's downloaded on disk, and whether it's the active one. Powers the
+    'expand a model type -> install / delete / use' UI on both frontends."""
+    spec = _plugin_model_specs().get(name)
+    if not spec:
+        return []
+    active = plugin_current_model(name)
+    subs = [s for m in spec["models"] for s in _MODEL_PROBES.get(m["id"], [])]
+    try:
+        from core import model_store
+        hits = model_store.find_model_dirs(subs) if subs else {}
+    except Exception:  # noqa: BLE001
+        hits = {}
+    out = []
+    for m in spec["models"]:
+        downloaded = any(hits.get(s.lower()) for s in _MODEL_PROBES.get(m["id"], []))
+        out.append({
+            "id": m["id"], "label": m["label"], "tags": m.get("tags", []),
+            "size": m.get("size", m.get("info", "")), "vram": m.get("vram", ""),
+            "downloaded": bool(downloaded), "active": m["id"] == active,
+        })
+    return out
+
+
+def delete_plugin_model(name, model_id):
+    """Delete a specific model's files from disk. Frees it from memory first so
+    the files aren't locked. Returns True if anything was removed."""
+    subs = _MODEL_PROBES.get(model_id)
+    if not subs:
+        return False
+    try:
+        if name == "Image OCR":
+            import core.pipelines.image_translation_pipeline as ip
+            ip._ocr_engine = None
+        else:
+            from core.pipelines.video_translation_pipeline import release_stt_model
+            release_stt_model(model_id)
+    except Exception:  # noqa: BLE001
+        pass
+    from core import model_store
+    return model_store.delete_model_dirs(subs) > 0
 
 
 def module_status():

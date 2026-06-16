@@ -121,35 +121,122 @@ function useOnline() {
   return !!(BOOT.config && BOOT.config.default_online);
 }
 
-// Model Management: STT model picker (synced with the translate page via config).
-if ($("models-stt")) $("models-stt").onchange = () => {
-  saveConfig({ stt_model: $("models-stt").value });
-  if ($("stt-model")) $("stt-model").value = $("models-stt").value;
-};
-// Model Management: image-OCR model picker.
-if ($("models-ocr")) $("models-ocr").onchange = () => saveConfig({ ocr_model_size: $("models-ocr").value });
-// Model Management: show the unified download location + downloaded models.
+// Top-right transient notification (e.g. after a model install/delete).
+function toast(msg, kind) {
+  let wrap = $("lh-toasts");
+  if (!wrap) { wrap = document.createElement("div"); wrap.id = "lh-toasts"; document.body.appendChild(wrap); }
+  const t = document.createElement("div");
+  t.className = "lh-toast" + (kind ? " " + kind : "");
+  t.textContent = msg;
+  wrap.appendChild(t);
+  setTimeout(() => { t.classList.add("hide"); setTimeout(() => t.remove(), 400); }, 3200);
+}
+
+// Model Management: per-model install / delete / use, grouped by model type.
+// OCR uses the "Image OCR" plugin, STT the "Video/Audio" plugin (the video
+// subtitle STT — real-time / quick voice pick their model on the Plugins page).
 async function refreshModels() {
-  if ($("models-stt") && BOOT) fillSelect($("models-stt"), BOOT.stt_models, BOOT.config.stt_model);
-  if ($("models-ocr") && BOOT && BOOT.ocr_models) fillSelect($("models-ocr"), BOOT.ocr_models, BOOT.config.ocr_model_size);
   if (!$("models-dir")) return;
-  try {
-    const d = await api("/api/models");
-    $("models-dir").value = d.dir || "";
-    const list = $("models-list");
-    list.replaceChildren();
-    if (!d.models || !d.models.length) {
-      list.textContent = "尚未下载任何模型";
+  let d;
+  try { d = await api("/api/models"); } catch (e) { return; }  // server_mode etc.
+  $("models-dir").value = d.dir || "";
+  renderModelRows($("models-ocr"), "Image OCR", d.ocr || []);
+  renderModelRows($("models-stt"), "Video/Audio", d.stt || []);
+}
+
+function renderModelRows(host, plugin, states) {
+  if (!host) return;
+  host.replaceChildren();
+  states.forEach((s) => host.appendChild(modelRow(plugin, s)));
+}
+
+function modelRow(plugin, s) {
+  const row = document.createElement("div");
+  row.className = "model-row" + (s.active ? " active" : "");
+
+  const main = document.createElement("div"); main.className = "model-row-main";
+  const name = document.createElement("span"); name.className = "model-row-name"; name.textContent = s.label;
+  main.appendChild(name);
+  (s.tags || []).forEach((t) => {
+    const c = document.createElement("span");
+    c.className = "model-tag" + (t === "Tag Recommended" ? " rec" : "");
+    c.textContent = _label(t, t);
+    main.appendChild(c);
+  });
+
+  const size = document.createElement("span");
+  size.className = "model-row-size";
+  size.textContent = (s.size || "") + (s.vram ? ` · ${s.vram}` : "");
+
+  const act = document.createElement("div"); act.className = "model-row-act";
+  if (!s.downloaded) {
+    const b = document.createElement("button"); b.className = "mini";
+    b.textContent = _label("Install", "安装");
+    b.onclick = () => installModel(plugin, s, b);
+    act.appendChild(b);
+  } else {
+    if (s.active) {
+      const chip = document.createElement("span"); chip.className = "model-inuse";
+      chip.textContent = _label("In Use", "使用中"); act.appendChild(chip);
     } else {
-      // textContent (not innerHTML): labels derive from folder names on disk.
-      d.models.forEach((m, i) => {
-        if (i) list.appendChild(document.createElement("br"));
-        const span = document.createElement("span");
-        span.textContent = `• ${m.label} — ${m.size}`;
-        list.appendChild(span);
-      });
+      const u = document.createElement("button"); u.className = "mini";
+      u.textContent = _label("Set Active", "设为当前");
+      u.onclick = () => selectModel(plugin, s); act.appendChild(u);
     }
-  } catch (e) { /* server_mode or not available */ }
+    const del = document.createElement("button"); del.className = "mini danger";
+    del.textContent = _label("Delete", "删除");
+    del.onclick = () => deleteModel(plugin, s, del); act.appendChild(del);
+  }
+  row.append(main, size, act);
+  return row;
+}
+
+async function installModel(plugin, s, btn) {
+  btn.disabled = true; btn.textContent = _label("Downloading", "下载中…");
+  try {
+    await api("/api/modules/model", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: plugin, model_id: s.id }),
+    });
+  } catch (e) {
+    btn.disabled = false; btn.textContent = _label("Install", "安装");
+    toast((e.message || "failed").slice(-160), "bad"); return;
+  }
+  const poll = setInterval(async () => {
+    let st; try { st = await api("/api/modules/status?name=" + encodeURIComponent(plugin)); } catch { return; }
+    if (st.status === "running") return;
+    clearInterval(poll);
+    if (st.status === "done") toast(_label("Model Installed", "模型已安装") + "：" + s.label, "ok");
+    else toast((st.output || "failed").slice(-160), "bad");
+    refreshModels();
+  }, 1500);
+}
+
+async function selectModel(plugin, s) {
+  try {
+    await api("/api/models/select", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plugin, model_id: s.id }),
+    });
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); return; }
+  if (BOOT.config) {
+    if (plugin === "Image OCR") BOOT.config.ocr_model_size = s.id;
+    if (plugin === "Video/Audio") BOOT.config.stt_model = s.id;
+  }
+  refreshModels();
+}
+
+async function deleteModel(plugin, s, btn) {
+  if (!confirm(_label("Delete Model Confirm", "确定删除该模型的本地文件吗？"))) return;
+  btn.disabled = true; btn.textContent = _label("Deleting", "删除中…");
+  try {
+    await api("/api/models/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plugin, model_id: s.id }),
+    });
+    toast(_label("Model Deleted", "模型已删除") + "：" + s.label, "ok");
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+  refreshModels();
 }
 
 // ----- tabs -----

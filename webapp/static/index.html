@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260616A" />
+  <link rel="stylesheet" href="/static/style.css?v=20260617A" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -634,9 +634,14 @@
         <summary><span class="set-card-title" data-i18n="Model Management">模型管理</span><span class="set-card-sub" data-i18n="Model Management Sub">模型位置 · 已下载列表 · 视频/音频字幕 STT</span></summary>
         <div class="set-card-body">
           <div class="field"><label data-i18n="Model Location" data-i18n-title="Model Location Tip">模型位置</label><input type="text" id="models-dir" readonly /></div>
-          <div id="models-list" class="muted" style="margin-top:10px"></div>
-          <div class="field" style="margin-top:14px"><label data-i18n="Image OCR Model" data-i18n-title="Image OCR Model Tip">图片识别模型</label><select id="models-ocr"></select></div>
-          <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model" data-i18n-title="Speech-to-Text Model Tip">语音转文字模型</label><select id="models-stt"></select></div>
+          <details class="model-group" style="margin-top:14px">
+            <summary><span data-i18n="Image OCR Model" data-i18n-title="Image OCR Model Tip">图片识别模型</span></summary>
+            <div id="models-ocr" class="model-rows"></div>
+          </details>
+          <details class="model-group" style="margin-top:10px">
+            <summary><span data-i18n="Speech-to-Text Model" data-i18n-title="Speech-to-Text Model Tip">语音转文字模型</span></summary>
+            <div id="models-stt" class="model-rows"></div>
+          </details>
           <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="STT Scope Hint">此处仅设置「视频/音频字幕」的 STT；实时语音、速译语音输入的 STT 模型在「插件」对应卡片中分别设置。</div>
           <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
         </div>
@@ -654,7 +659,7 @@
      <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
    </div>
  </div>
-  <script src="/static/background.js?v=20260616A"></script>
-  <script src="/static/app.js?v=20260616A"></script>
+  <script src="/static/background.js?v=20260617A"></script>
+  <script src="/static/app.js?v=20260617A"></script>
 </body>
 </html>

@@ -271,11 +271,35 @@ def _translation_modes_for_ui():
 
 @app.get("/api/models")
 def list_models():
-    """Downloaded models + the unified location (Model Management view)."""
+    """Per-model state for the OCR + STT catalogs (install / delete / use) plus
+    the unified download location."""
     from core import model_store
+    from core.optional_modules import plugin_model_states
     return {"dir": model_store.current_dir(),
-            "models": [{"label": m["label"], "size": m["size_h"], "path": m["path"]}
-                       for m in model_store.list_models()]}
+            "ocr": plugin_model_states("Image OCR"),
+            "stt": plugin_model_states("Video/Audio")}
+
+
+@app.post("/api/models/select")
+async def model_select(payload: dict):
+    """Set the active model for a plugin (no download)."""
+    _block_in_server_mode()
+    from core.optional_modules import set_plugin_model
+    name, model_id = payload.get("plugin"), payload.get("model_id")
+    if not name or not model_id or not set_plugin_model(name, model_id):
+        raise HTTPException(400, "plugin and a valid model_id are required")
+    return {"ok": True}
+
+
+@app.post("/api/models/delete")
+async def model_delete(payload: dict):
+    """Delete a specific model's files from disk."""
+    _block_in_server_mode()
+    from core.optional_modules import delete_plugin_model
+    name, model_id = payload.get("plugin"), payload.get("model_id")
+    if not name or not model_id:
+        raise HTTPException(400, "plugin and model_id are required")
+    return {"ok": bool(delete_plugin_model(name, model_id))}
 
 
 @app.post("/api/config")

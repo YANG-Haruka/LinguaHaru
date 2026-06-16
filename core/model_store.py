@@ -241,6 +241,47 @@ def list_models():
     return found
 
 
+def find_model_dirs(substrings):
+    """Map each probe substring -> list of model-dir paths under the models tree
+    whose folder name contains it (case-insensitive) and which is non-empty.
+    Used to tell whether a specific model id is downloaded, and what to delete."""
+    base = current_dir()
+    subs = [s.lower() for s in substrings if s]
+    hits = {s: [] for s in subs}
+    if not subs or not os.path.isdir(base):
+        return hits
+    for root, dirs, _files in os.walk(base):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+        depth = root[len(base):].count(os.sep)
+        if depth >= 6:
+            dirs[:] = []
+            continue
+        for d in list(dirs):
+            dl = d.lower()
+            for s in subs:
+                if s in dl:
+                    full = os.path.join(root, d)
+                    if _dir_size(full) > 0:
+                        hits[s].append(full)
+                    dirs.remove(d)      # counted; don't descend into it
+                    break
+    return hits
+
+
+def delete_model_dirs(substrings):
+    """Remove every model dir matching any of the probe substrings. Returns the
+    number of directories removed."""
+    removed = 0
+    for paths in find_model_dirs(substrings).values():
+        for p in paths:
+            try:
+                shutil.rmtree(p)
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def set_models_dir(new_dir, move=False):
     """Persist a new models directory. If move=True, relocate existing model
     files there first. Returns (ok, message)."""

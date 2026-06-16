@@ -9,7 +9,7 @@ import os
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout, QFileDialog,
-    QLineEdit, QApplication,
+    QLineEdit, QApplication, QLabel,
 )
 
 from qfluentwidgets import (
@@ -328,45 +328,17 @@ class SettingsPage(ScrollArea):
         self.models_browse.clicked.connect(self._change_models_dir)
         loc_row.addWidget(self.models_browse)
         self.card_models.body.addLayout(loc_row)
-        self.models_list_host = QVBoxLayout()
-        self.models_list_host.setSpacing(4)
-        self.card_models.body.addLayout(self.models_list_host)
-        # Image-OCR model picker.
-        from core.optional_modules import ocr_models, get_selected_ocr_model
-        self._ocr_models = ocr_models()
-        ocr_row = QHBoxLayout()
-        ocr_row.setSpacing(8)
-        self.ocr_mm_label = BodyLabel(tr("Image OCR Model", self._lang))
-        ocr_row.addWidget(self.ocr_mm_label)
-        self.ocr_mm_combo = ComboBox()
-        for m in self._ocr_models:
-            self.ocr_mm_combo.addItem(m["label"])
-        cur_ocr = get_selected_ocr_model()
-        for i, m in enumerate(self._ocr_models):
-            if m["id"] == cur_ocr:
-                self.ocr_mm_combo.setCurrentIndex(i)
-                break
-        self.ocr_mm_combo.currentIndexChanged.connect(self._on_ocr_changed)
-        ocr_row.addWidget(self.ocr_mm_combo, 1)
-        self.card_models.body.addLayout(ocr_row)
-        from core.pipelines.video_translation_pipeline import (
-            STT_MODELS, get_selected_stt_model)
-        self._stt_models = STT_MODELS
-        stt_row = QHBoxLayout()
-        stt_row.setSpacing(8)
-        self.stt_mm_label = BodyLabel(tr("Speech-to-Text Model", self._lang))
-        stt_row.addWidget(self.stt_mm_label)
-        self.stt_mm_combo = ComboBox()
-        for m in STT_MODELS:
-            self.stt_mm_combo.addItem(m["label"])
-        cur = get_selected_stt_model()
-        for i, m in enumerate(STT_MODELS):
-            if m["id"] == cur:
-                self.stt_mm_combo.setCurrentIndex(i)
-                break
-        self.stt_mm_combo.currentIndexChanged.connect(self._on_stt_changed)
-        stt_row.addWidget(self.stt_mm_combo, 1)
-        self.card_models.body.addLayout(stt_row)
+        # Per-model install / delete / use, grouped by model type. OCR uses the
+        # "Image OCR" plugin, STT the "Video/Audio" plugin (video-subtitle STT).
+        self._model_workers = []
+        self.ocr_header, self.ocr_body, self._ocr_body_layout = \
+            self._make_model_section(tr("Image OCR Model", self._lang), "Image OCR Model Tip")
+        self.card_models.body.addWidget(self.ocr_header)
+        self.card_models.body.addWidget(self.ocr_body)
+        self.stt_header, self.stt_body, self._stt_body_layout = \
+            self._make_model_section(tr("Speech-to-Text Model", self._lang), "Speech-to-Text Model Tip")
+        self.card_models.body.addWidget(self.stt_header)
+        self.card_models.body.addWidget(self.stt_body)
         self.stt_scope_hint = CaptionLabel(tr("STT Scope Hint", self._lang))
         self.stt_scope_hint.setWordWrap(True)
         self.card_models.body.addWidget(self.stt_scope_hint)
@@ -506,37 +478,143 @@ class SettingsPage(ScrollArea):
             backend.set_config("result_dir", path)
 
     # --- model management ---
-    def _on_stt_changed(self, index):
-        if 0 <= index < len(self._stt_models):
-            backend.set_config("stt_model", self._stt_models[index]["id"])
-            # Free the previously-loaded STT model if no feature uses it anymore.
-            try:
-                from core.pipelines.video_translation_pipeline import release_unused_stt_models
-                release_unused_stt_models()
-            except Exception:  # noqa: BLE001
-                pass
-
     def _on_mode_changed(self, index):
         if 0 <= index < len(self._modes):
             backend.set_config("translation_mode", self._modes[index][0])
 
-    def _on_ocr_changed(self, index):
-        if 0 <= index < len(self._ocr_models):
-            backend.set_config("ocr_model_size", self._ocr_models[index]["id"])
+    # ----- Model management: per-model install / delete / use -----
+    def _make_model_section(self, title, tip_key=None):
+        """A collapsible section: a checkable header button that shows/hides a
+        body widget into which model rows are filled. Returns (header, body, layout)."""
+        header = PushButton(title)
+        header.setCheckable(True)
+        header.setChecked(True)
+        if tip_key:
+            header.setToolTip(tr(tip_key, self._lang))
+        body = QWidget()
+        bl = QVBoxLayout(body)
+        bl.setContentsMargins(0, 4, 0, 8)
+        bl.setSpacing(6)
+        header.toggled.connect(body.setVisible)
+        return header, body, bl
+
+    def _toast(self, title, text, error=False):
+        """Top-right transient notification (model install/delete result)."""
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        bar = InfoBar.error if error else InfoBar.success
+        bar(title, text, orient=1, isClosable=True,
+            position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self.window())
+
+    def _tag_chip(self, key):
+        chip = QLabel(tr(key, self._lang))
+        rec = key == "Tag Recommended"
+        chip.setStyleSheet(
+            "QLabel{font-size:10px;font-weight:600;padding:1px 7px;border-radius:8px;"
+            + ("background:rgba(0,120,212,0.16);color:#0a84ff;}"
+               if rec else "background:rgba(128,128,128,0.16);color:palette(mid);}"))
+        return chip
 
     def _refresh_models(self):
         self.models_dir_edit.setText(model_store.current_dir())
-        while self.models_list_host.count():
-            item = self.models_list_host.takeAt(0)
+        self._fill_model_rows(self._ocr_body_layout, "Image OCR")
+        self._fill_model_rows(self._stt_body_layout, "Video/Audio")
+
+    def _fill_model_rows(self, layout, plugin):
+        while layout.count():
+            item = layout.takeAt(0)
             w = item.widget()
             if w:
                 w.deleteLater()
-        models = model_store.list_models()
-        if not models:
-            self.models_list_host.addWidget(CaptionLabel(tr("No models downloaded", self._lang)))
+        from core.optional_modules import plugin_model_states
+        for st in plugin_model_states(plugin):
+            layout.addWidget(self._model_row_widget(plugin, st))
+
+    def _model_row_widget(self, plugin, st):
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(10, 7, 10, 7)
+        h.setSpacing(8)
+        name = StrongBodyLabel(st["label"])
+        h.addWidget(name)
+        for t in st.get("tags", []):
+            h.addWidget(self._tag_chip(t))
+        h.addStretch(1)
+        size = st.get("size", "")
+        if st.get("vram"):
+            size = f"{size} · {st['vram']}"
+        size_lbl = CaptionLabel(size)
+        size_lbl.setStyleSheet("color:palette(mid);")
+        h.addWidget(size_lbl)
+        if not st["downloaded"]:
+            b = PushButton(tr("Install", self._lang))
+            b.clicked.connect(lambda _=False, p=plugin, i=st["id"], btn=b: self._install_model(p, i, btn))
+            h.addWidget(b)
+        else:
+            if st["active"]:
+                used = CaptionLabel(tr("In Use", self._lang))
+                used.setStyleSheet("color:#0a84ff;font-weight:600;")
+                h.addWidget(used)
+            else:
+                u = PushButton(tr("Set Active", self._lang))
+                u.clicked.connect(lambda _=False, p=plugin, i=st["id"]: self._select_model(p, i))
+                h.addWidget(u)
+            d = PushButton(tr("Delete", self._lang))
+            d.clicked.connect(lambda _=False, p=plugin, i=st["id"], lbl=st["label"], btn=d: self._delete_model(p, i, lbl, btn))
+            h.addWidget(d)
+        row.setStyleSheet(
+            "QWidget{border:1px solid rgba(128,128,128,0.25);border-radius:8px;}"
+            if not st["active"] else
+            "QWidget{border:1px solid rgba(10,132,255,0.5);border-radius:8px;"
+            "background:rgba(10,132,255,0.07);}")
+        return row
+
+    def _install_model(self, plugin, model_id, btn):
+        from qt_app.worker import ModelDownloadWorker
+        btn.setEnabled(False)
+        btn.setText(tr("Downloading", self._lang))
+        w = ModelDownloadWorker(plugin, model_id)
+        self._model_workers.append(w)
+        label = next((s["label"] for s in self._all_states(plugin) if s["id"] == model_id), model_id)
+
+        def done(ok):
+            self._toast(tr("Model Management", self._lang),
+                        (tr("Model Installed", self._lang) + "：" + label) if ok
+                        else tr("Install failed", self._lang), error=not ok)
+            if w in self._model_workers:
+                self._model_workers.remove(w)
+            self._refresh_models()
+        w.finished_ok.connect(done)
+        w.start()
+
+    def _select_model(self, plugin, model_id):
+        from core.optional_modules import set_plugin_model
+        set_plugin_model(plugin, model_id)
+        self._refresh_models()
+
+    def _delete_model(self, plugin, model_id, label, btn):
+        box = MessageBox(tr("Model Management", self._lang),
+                         tr("Delete Model Confirm", self._lang), self.window())
+        if not box.exec():
             return
-        for m in models:
-            self.models_list_host.addWidget(CaptionLabel(f"• {m['label']} — {m['size_h']}"))
+        from qt_app.worker import ModelDeleteWorker
+        btn.setEnabled(False)
+        btn.setText(tr("Deleting", self._lang))
+        w = ModelDeleteWorker(plugin, model_id)
+        self._model_workers.append(w)
+
+        def done(ok):
+            self._toast(tr("Model Management", self._lang),
+                        (tr("Model Deleted", self._lang) + "：" + label) if ok
+                        else tr("Delete failed", self._lang), error=not ok)
+            if w in self._model_workers:
+                self._model_workers.remove(w)
+            self._refresh_models()
+        w.finished_ok.connect(done)
+        w.start()
+
+    def _all_states(self, plugin):
+        from core.optional_modules import plugin_model_states
+        return plugin_model_states(plugin)
 
     def _change_models_dir(self):
         path = QFileDialog.getExistingDirectory(
@@ -582,8 +660,8 @@ class SettingsPage(ScrollArea):
             (self.maxseg_label, getattr(self, "maxseg_combo", None), "Force Cut Tip"),
             (self.hist_max_label, getattr(self, "hist_max", None), "Auto-delete by count Tip"),
             (self.hist_age_label, getattr(self, "hist_age", None), "Auto-delete by age Tip"),
-            (self.ocr_mm_label, getattr(self, "ocr_mm_combo", None), "Image OCR Model Tip"),
-            (self.stt_mm_label, getattr(self, "stt_mm_combo", None), "Speech-to-Text Model Tip"),
+            (self.ocr_header, None, "Image OCR Model Tip"),
+            (self.stt_header, None, "Speech-to-Text Model Tip"),
             (self.models_loc_label, getattr(self, "models_dir_edit", None), "Model Location Tip"),
             (getattr(self, "lan_label", None), getattr(self, "lan_switch", None), "LAN Mode Tip"),
             (getattr(self, "lan_admin_label", None), getattr(self, "lan_admin_edit", None), "LAN admin password Tip"),
@@ -625,8 +703,9 @@ class SettingsPage(ScrollArea):
         self.card_models.set_title(tr("Model Management", lang))
         self.models_loc_label.setText(tr("Model Location", lang))
         self.models_browse.setText(tr("Change Location", lang))
-        self.ocr_mm_label.setText(tr("Image OCR Model", lang))
-        self.stt_mm_label.setText(tr("Speech-to-Text Model", lang))
+        self.ocr_header.setText(tr("Image OCR Model", lang))
+        self.stt_header.setText(tr("Speech-to-Text Model", lang))
+        self._refresh_models()   # rebuild rows in the new language
         self.stt_scope_hint.setText(tr("STT Scope Hint", lang))
         self.stt_hint.setText(tr("Whisper Hint", lang))
         self._apply_tips()

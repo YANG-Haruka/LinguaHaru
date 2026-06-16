@@ -99,6 +99,26 @@ class ModelDownloadWorker(QThread):
         self.finished_ok.emit(ok)
 
 
+class ModelDeleteWorker(QThread):
+    """Deletes a specific model's files off the UI thread via
+    ``optional_modules.delete_plugin_model(name, model_id)``."""
+
+    finished_ok = Signal(bool)
+
+    def __init__(self, module_name, model_id, parent=None):
+        super().__init__(parent)
+        self.module_name = module_name
+        self.model_id = model_id
+
+    def run(self):
+        from core.optional_modules import delete_plugin_model
+        try:
+            ok = bool(delete_plugin_model(self.module_name, self.model_id))
+        except Exception:  # noqa: BLE001
+            ok = False
+        self.finished_ok.emit(ok)
+
+
 class ModuleUpdateCheckWorker(QThread):
     """Checks PyPI for a newer version of an installed module's package, off the
     UI thread (the network call can block for seconds).
