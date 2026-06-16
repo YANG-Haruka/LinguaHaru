@@ -152,6 +152,21 @@ _MAX_LIVE_AUDIO_BYTES = 16000 * 2 * 32   # ~32s of 16kHz mono PCM16
 _MAX_QUICK_TEXT_CHARS = 5000             # quick-translate / TTS / live captions
 _MAX_UPLOAD_BYTES = 200 * 1024 * 1024    # total bytes per /api/translate request
 
+# Per-session real-time speaker assigners (for live-caption speaker labels).
+_live_spk_assigners = {}
+_live_spk_lock = threading.Lock()
+
+
+def _live_speaker_assigner(session_id, reset=False):
+    from core.pipelines.video_translation_pipeline import OnlineSpeakerAssigner
+    with _live_spk_lock:
+        if reset:
+            _live_spk_assigners.pop(session_id, None)
+        a = _live_spk_assigners.get(session_id)
+        if a is None:
+            a = _live_spk_assigners[session_id] = OnlineSpeakerAssigner()
+        return a
+
 
 def _capped_text(payload, field="text", limit=_MAX_QUICK_TEXT_CHARS):
     """Return payload[field].strip(), or raise 413 if it exceeds `limit`. These
@@ -232,6 +247,7 @@ def bootstrap():
             "bilingual_bold": config.get("bilingual_bold", True),
             "bilingual_color": config.get("bilingual_color", ""),
             "live_stream_translation": config.get("live_stream_translation", False),
+            "live_speaker_labels": config.get("live_speaker_labels", False),
             "web_vad": config.get("web_vad", "energy"),
             "live_vad_hang_ms": config.get("live_vad_hang_ms", 900),
             "live_vad_sensitivity": config.get("live_vad_sensitivity", "standard"),
@@ -309,7 +325,8 @@ async def update_config(payload: dict):
     allowed = {"default_online", "default_online_model", "default_src_lang",
                "default_dst_lang", "default_glossary", "stt_model",
                "live_stt_model", "quick_stt_model", "ocr_model_size",
-               "translate_subtitles", "subtitle_speaker_labels", "max_retries", "rpm_limit",
+               "translate_subtitles", "subtitle_speaker_labels", "live_speaker_labels",
+               "max_retries", "rpm_limit",
                "auto_extract_glossary", "translation_mode",
                "translation_tone", "translation_length", "translation_style",
                "translate_with_context",
@@ -1114,18 +1131,22 @@ async def live_preload(payload: dict = None):
 
 
 @app.post("/api/live-recognize")
-async def live_recognize(payload: dict):
+async def live_recognize(payload: dict, request: Request):
     """Step 1 of local live voice: recognize one utterance -> source text.
     Split from translation so the UI can show the source line immediately."""
     if not realtime_voice_available():
         raise HTTPException(400, "实时语音需要语音(STT)插件。")
     import base64
+    sid = getattr(request.state, "session_id", "default")
+    if payload.get("reset_speakers"):
+        _live_speaker_assigner(sid, reset=True)   # new session -> renumber speakers
+    want_speaker = bool(payload.get("want_speaker"))
     try:
         pcm = base64.b64decode(payload.get("audio_b64", ""))
     except Exception:
         raise HTTPException(400, "Bad audio payload")
     if not pcm:
-        return {"source": "", "detected": ""}
+        return {"source": "", "detected": "", "speaker": 0}
     # Bound STT cost: cap to the most recent ~32s (matches the client's max
     # utterance) so a runaway/huge body can't blow up CPU/memory.
     if len(pcm) > _MAX_LIVE_AUDIO_BYTES:
@@ -1142,14 +1163,24 @@ async def live_recognize(payload: dict):
         if not _STT_LOCK.acquire(timeout=timeout):
             return None
         try:
-            return recognize_utterance(pcm, sample_rate=16000)
+            text, det = recognize_utterance(pcm, sample_rate=16000)
+            spk = 0
+            if want_speaker:   # assign a speaker for this utterance (serialized)
+                try:
+                    import numpy as np
+                    from core.pipelines.video_translation_pipeline import embed_speaker  # noqa: F401
+                    audio = np.frombuffer(pcm, dtype=np.int16).astype("float32") / 32768.0
+                    spk = _live_speaker_assigner(sid).assign(audio, 16000)
+                except Exception:  # noqa: BLE001 — labeling is best-effort
+                    spk = 0
+            return text, det, spk
         finally:
             _STT_LOCK.release()
     res = await loop.run_in_executor(None, _recognize)
     if res is None:
         return {"source": "", "detected": "", "busy": True}
-    source, detected = res
-    return {"source": source or "", "detected": detected or ""}
+    source, detected, speaker = res
+    return {"source": source or "", "detected": detected or "", "speaker": speaker}
 
 
 @app.post("/api/live-translate-text")

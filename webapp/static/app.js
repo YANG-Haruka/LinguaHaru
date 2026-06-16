@@ -443,6 +443,7 @@ async function boot() {
   refreshSttPicker();   // only DOWNLOADED STT models are offered
   $("translate-subs").checked = c.translate_subtitles;
   if ($("speaker-labels")) $("speaker-labels").checked = !!c.subtitle_speaker_labels;
+  if ($("live-speaker-labels")) $("live-speaker-labels").checked = !!c.live_speaker_labels;
 
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
   $("set-lan").checked = !!c.lan_mode;
@@ -585,6 +586,10 @@ $("stt-model").onchange = () => {
 };
 $("translate-subs").onchange = () => saveConfig({ translate_subtitles: $("translate-subs").checked });
 if ($("speaker-labels")) $("speaker-labels").onchange = () => saveConfig({ subtitle_speaker_labels: $("speaker-labels").checked });
+if ($("live-speaker-labels")) $("live-speaker-labels").onchange = () => {
+  if (BOOT.config) BOOT.config.live_speaker_labels = $("live-speaker-labels").checked;
+  saveConfig({ live_speaker_labels: $("live-speaker-labels").checked });
+};
 
 function isSenseVoice(sttId) {
   return (sttId || "").startsWith("sensevoice");
@@ -1482,6 +1487,7 @@ function hideModelLoading() {
 
 async function startLocal() {
   liveSessionTokens = 0;
+  liveUttSpeaker = 0; liveSpkNeedReset = true;   // renumber speakers for this session
   try {
     liveStream = await acquireLiveStream();
   } catch (e) { setLiveStatus("无法访问输入设备：" + e.message); return; }
@@ -1599,6 +1605,9 @@ function stopLocal() {
 // appear — so sentence 1 is translated while you're already saying sentence 2.
 let liveCommittedText = "";  // raw text prefix already committed this utterance
 let liveLastText = "";       // previous partial (for LocalAgreement-2 stable prefix)
+let liveUttSpeaker = 0;      // this utterance's speaker id (0 = not assigned)
+let liveSpkNeedReset = false; // renumber speakers on the next recognize (new session)
+const liveSpkOn = () => !!(BOOT.config && BOOT.config.live_speaker_labels);
 let liveSessionTokens = 0;   // accumulated tokens this live session (for the thanks card)
 let livePartialBusy = false, livePendingPcm = null;
 let liveLastDetected = "auto";
@@ -1607,6 +1616,7 @@ function onVadMessage(e) {
   const m = e.data || {};
   if (m.type === "speechstart") {
     liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = "";
+    liveUttSpeaker = 0;   // re-assign speaker for this new utterance
     setLiveStatus("识别中…");
   } else if (m.type === "partial") {
     streamPartial(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
@@ -1692,9 +1702,15 @@ function commonPrefix(a, b) {
   return a.slice(0, i);
 }
 async function recognizeInt16(int16, final) {
+  const body = { audio_b64: int16ToB64(int16), final: !!final };
+  if (liveSpkOn()) {
+    body.want_speaker = liveUttSpeaker === 0;   // assign once per utterance
+    if (liveSpkNeedReset) { body.reset_speakers = true; liveSpkNeedReset = false; }
+  }
   const r = await api("/api/live-recognize", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ audio_b64: int16ToB64(int16), final: !!final }) });
+    body: JSON.stringify(body) });
+  if (r && r.speaker > 0) liveUttSpeaker = r.speaker;
   return r;
 }
 async function streamPartial(int16) {
@@ -1751,6 +1767,7 @@ function commitLiveSentence(source) {
   return liveCommitChain;
 }
 async function _doCommitSentence(source) {
+  if (liveSpkOn() && liveUttSpeaker > 0) source = `S${liveUttSpeaker}: ${source}`;
   const ts = liveTimeStamp();
   appendLive("live-input", `[${ts}] ${source}\n`);
   const streaming = !!(BOOT.config && BOOT.config.live_stream_translation);
