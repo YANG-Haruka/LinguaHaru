@@ -184,7 +184,8 @@ class PdfTranslator(DocumentTranslator):
                 segment, self.previous_text_default, self.model, self.use_online,
                 self.api_key, self.system_prompt, self.user_prompt,
                 self.previous_prompt, self.glossary_prompt, glossary_terms,
-                check_stop_callback=self._check_stop_and_signal_cancel
+                check_stop_callback=self._check_stop_and_signal_cancel,
+                options=self.topts,   # apply the run's mode sampling/tone/length too
             )
             self._add_token_usage(token_usage)
 
