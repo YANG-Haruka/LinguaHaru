@@ -251,6 +251,7 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
     current_segment_dict = {}
     current_token_count = 0
     current_glossary_terms = []
+    current_segment_types = {}    # {id: type} for the optional context block
     
     for i, cell in enumerate(cell_data):
         count_split = cell.get("count_split", cell.get("count"))
@@ -264,7 +265,9 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
             continue
         
         # Create line entry
-        line_dict = {str(count_split): value}
+        sid = str(count_split)
+        line_type = cell.get("type", "")
+        line_dict = {sid: value}
         line_json = json.dumps(line_dict, ensure_ascii=False)
         line_tokens = num_tokens_from_string(line_json)
         
@@ -279,11 +282,12 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
             if current_segment_dict:
                 progress = calculate_progress(current_segment_dict, max_count_split)
                 segment_output = create_segment_output(current_segment_dict)
-                all_segments.append((segment_output, progress, current_glossary_terms))
-                
+                all_segments.append((segment_output, progress, current_glossary_terms, dict(current_segment_types)))
+
                 current_segment_dict = {}
                 current_token_count = 0
                 current_glossary_terms = []
+                current_segment_types = {}
             
             # Split large text
             chunks = split_by_sentences_and_combine(value, segment_available_tokens)
@@ -297,29 +301,31 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
                     segment_dict = chunk_dict
                     progress = calculate_progress(segment_dict, max_count_split)
                     segment_output = create_segment_output(segment_dict)
-                    all_segments.append((segment_output, progress, segment_glossary_terms))
+                    all_segments.append((segment_output, progress, segment_glossary_terms, {sid: line_type}))
         
         # Check if adding line exceeds limit
         elif current_token_count + line_tokens > segment_available_tokens:
             progress = calculate_progress(current_segment_dict, max_count_split)
             segment_output = create_segment_output(current_segment_dict)
-            all_segments.append((segment_output, progress, current_glossary_terms))
-            
+            all_segments.append((segment_output, progress, current_glossary_terms, dict(current_segment_types)))
+
             current_segment_dict = line_dict
             current_token_count = line_tokens
             current_glossary_terms = segment_glossary_terms
+            current_segment_types = {sid: line_type}
         else:
             current_segment_dict.update(line_dict)
             current_token_count += line_tokens
-            current_glossary_terms.extend([term for term in segment_glossary_terms 
+            current_segment_types[sid] = line_type
+            current_glossary_terms.extend([term for term in segment_glossary_terms
                                          if term not in current_glossary_terms])
     
     # Add last segment
     if current_segment_dict:
         progress = calculate_progress(current_segment_dict, max_count_split)
         segment_output = create_segment_output(current_segment_dict)
-        all_segments.append((segment_output, progress, current_glossary_terms))
-    
+        all_segments.append((segment_output, progress, current_glossary_terms, dict(current_segment_types)))
+
     # Clean up
     try:
         if os.path.exists(working_copy_path):

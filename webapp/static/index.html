@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615Q" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615R" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -569,6 +569,7 @@
           <label class="check"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
           <label class="check" style="margin-top:10px"><input type="checkbox" id="set-mask-ph" /> 占位符保护（翻译前屏蔽 %s / ${var} / {占位符}，避免被改写；推荐开启）</label>
           <label class="check" style="margin-top:10px"><input type="checkbox" id="set-dedup-context" /> 上下文区分去重（相同文本但不同位置/类型分别翻译，更准但更费 token）</label>
+          <label class="check" style="margin-top:10px"><input type="checkbox" id="set-with-context" /> 附带类型上下文（实验：把每段的类型作为消歧提示发给模型，更费 token）</label>
           <div style="margin-top:12px; display:flex; gap:18px; align-items:center; flex-wrap:wrap">
             <label class="check" style="margin:0"><input type="checkbox" id="set-bi-bold" /> 双语对照：译文加粗</label>
             <label style="display:flex; align-items:center; gap:8px; margin:0; color:var(--text-2); font-size:0.9rem">译文颜色
@@ -629,7 +630,7 @@
      <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
    </div>
  </div>
-  <script src="/static/background.js?v=20260615Q"></script>
-  <script src="/static/app.js?v=20260615Q"></script>
+  <script src="/static/background.js?v=20260615R"></script>
+  <script src="/static/app.js?v=20260615R"></script>
 </body>
 </html>

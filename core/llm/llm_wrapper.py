@@ -75,7 +75,7 @@ def _unmask_reply(reply, mapping):
     return _unmask(reply, merged)
 
 
-def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None, check_stop_callback=None):
+def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None, check_stop_callback=None, context_map=None):
     """
     Translate text segments with optional glossary support
 
@@ -138,13 +138,28 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         user_prompt_str = str(user_prompt) if user_prompt else ""
         text_to_translate_str = str(text_to_translate) if text_to_translate else ""
         
+        # Optional per-id type context (opt-in via config; advisory only — output
+        # shape is unchanged). Helps disambiguate the same text in different roles
+        # (e.g. a button label vs a heading).
+        context_block = ""
+        if context_map:
+            try:
+                from core import backend
+                if backend.get_config("translate_with_context", False):
+                    context_block = ("The following maps each id to its content type, "
+                                     "for disambiguation only — do NOT translate it or "
+                                     "include it in the output:\n"
+                                     + json.dumps(context_map, ensure_ascii=False) + "\n")
+            except Exception:  # noqa: BLE001
+                context_block = ""
+
         # Calculate time status
         elapsed_time = time.time() - start_time
         remaining_time = max_retry_time - elapsed_time
-        
+
         # Construct full prompt
         try:
-            full_user_prompt = f"{previous_prompt_str}\n###{previous_text_str}###\n{user_prompt_str}###\n{text_to_translate_str}###\n{glossary_text}"
+            full_user_prompt = f"{context_block}{previous_prompt_str}\n###{previous_text_str}###\n{user_prompt_str}###\n{text_to_translate_str}###\n{glossary_text}"
         except Exception as e:
             app_logger.error(f"Error constructing prompt (attempt {current_attempt}): {e}")
             

@@ -305,6 +305,7 @@
   "Translation Color": "Translation color",
   "Translation Mode": "Translation mode",
   "Context Optional": "Context (optional, for disambiguation only — not translated)",
+  "Type Context": "Type context (experimental)",
   "Tone": "Tone",
   "Length": "Length",
   "Style Guide": "Style guide",

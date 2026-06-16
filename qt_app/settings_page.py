@@ -163,6 +163,12 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("dedup_context", v))
         self.dedup_ctx_label = BodyLabel(tr("Context-aware Dedup", lang))
         gl_form.addRow(self.dedup_ctx_label, self.dedup_ctx)
+        self.with_ctx = SwitchButton()
+        self.with_ctx.setChecked(config.get("translate_with_context", False))
+        self.with_ctx.checkedChanged.connect(
+            lambda v: backend.set_config("translate_with_context", v))
+        self.with_ctx_label = BodyLabel(tr("Type Context", lang))
+        gl_form.addRow(self.with_ctx_label, self.with_ctx)
         # Advanced modifiers: tone / length / free-text style guide.
         self._tones = [("", tr("Default", lang)), ("formal", tr("Formal", lang)),
                        ("casual", tr("Casual", lang))]
@@ -521,6 +527,7 @@ class SettingsPage(ScrollArea):
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
         self.mask_ph_label.setText(tr("Placeholder Protection", lang))
         self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))
+        self.with_ctx_label.setText(tr("Type Context", lang))
         self.tone_label.setText(tr("Tone", lang))
         self.length_label.setText(tr("Length", lang))
         self.style_label.setText(tr("Style Guide", lang))

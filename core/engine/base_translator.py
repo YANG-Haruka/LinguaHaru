@@ -305,8 +305,9 @@ class DocumentTranslator:
         
         def process_segment(segment_data):
             """Process a single segment with retry logic"""
-            segment, segment_progress, current_glossary_terms = segment_data
-            
+            segment, segment_progress, current_glossary_terms = segment_data[:3]
+            context_map = segment_data[3] if len(segment_data) > 3 else None
+
             # Retry limits
             max_retry_time = 3600  # 1 hour
             max_empty_retries = 1  # 1 retry for empty results
@@ -336,7 +337,8 @@ class DocumentTranslator:
                     translated_text, success, token_usage = translate_text(
                         segment, current_previous, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
-                        current_glossary_terms, check_stop_callback=self.check_for_stop
+                        current_glossary_terms, check_stop_callback=self.check_for_stop,
+                        context_map=context_map
                     )
 
                     # Track token usage
@@ -574,7 +576,8 @@ class DocumentTranslator:
 
         def process_failed_segment(segment_data, last_try=False):
             """Process failed segment with retry logic"""
-            segment, segment_progress, current_glossary_terms = segment_data
+            segment, segment_progress, current_glossary_terms = segment_data[:3]
+            context_map = segment_data[3] if len(segment_data) > 3 else None
             
             # Retry limits
             max_retry_time = 3600  # 1 hour
@@ -600,7 +603,8 @@ class DocumentTranslator:
                     translated_text, success, token_usage = translate_text(
                         segment, current_previous, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
-                        current_glossary_terms, check_stop_callback=self.check_for_stop
+                        current_glossary_terms, check_stop_callback=self.check_for_stop,
+                        context_map=context_map
                     )
 
                     # Track token usage

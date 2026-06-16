@@ -180,6 +180,8 @@ _DEFAULT_CONFIG = {
     "translation_tone": "",     # "" | "formal" | "casual"
     "translation_length": "",   # "" | "keep" | "expand" | "short"
     "translation_style": "",    # free-text style guide
+    # Pass each item's type to the LLM as a disambiguation context block (opt-in).
+    "translate_with_context": False,
     "rpm_limit": 0,
     "qt_theme": "light",
     "qt_ui_lang": "zh",

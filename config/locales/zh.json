@@ -304,6 +304,7 @@
   "Translation Color": "译文颜色",
   "Translation Mode": "翻译模式",
   "Context Optional": "上下文（可选，仅辅助消歧，不翻译）",
+  "Type Context": "附带类型上下文（实验）",
   "Tone": "语气",
   "Length": "长度",
   "Style Guide": "风格指南",

@@ -378,6 +378,7 @@ async function boot() {
   if ($("set-style")) $("set-style").value = c.translation_style || "";
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
+  if ($("set-with-context")) $("set-with-context").checked = !!c.translate_with_context;
   if ($("set-bi-bold")) $("set-bi-bold").checked = c.bilingual_bold !== false;
   if ($("set-bi-color")) $("set-bi-color").value = c.bilingual_color || "";
   if ($("set-live-stream")) $("set-live-stream").checked = !!c.live_stream_translation;
@@ -662,6 +663,7 @@ if ($("set-length")) $("set-length").onchange = () => saveConfig({ translation_l
 if ($("set-style")) $("set-style").onchange = () => saveConfig({ translation_style: $("set-style").value.trim() });
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
+if ($("set-with-context")) $("set-with-context").onchange = () => saveConfig({ translate_with_context: $("set-with-context").checked });
 if ($("set-bi-bold")) $("set-bi-bold").onchange = () => saveConfig({ bilingual_bold: $("set-bi-bold").checked });
 if ($("set-bi-color")) $("set-bi-color").onchange = () => saveConfig({ bilingual_color: $("set-bi-color").value });
 if ($("set-live-stream")) $("set-live-stream").onchange = () => {
