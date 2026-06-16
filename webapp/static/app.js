@@ -1019,7 +1019,11 @@ async function loadGlossaryTable(name) {
   const t = $("glossary-table");
   t.innerHTML = "";
   const head = document.createElement("tr");
-  head.innerHTML = data.columns.map((c) => `<th>${c}</th>`).join("");
+  for (const c of data.columns) {        // textContent: CSV headers are untrusted
+    const th = document.createElement("th");
+    th.textContent = c;
+    head.appendChild(th);
+  }
   t.appendChild(head);
   for (const row of data.rows) addGlossaryRow(row);
   $("glossary-status").textContent = `已加载 ${data.rows.length} 条`;

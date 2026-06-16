@@ -360,7 +360,7 @@ def list_online_interfaces():
     interfaces = []
     try:
         files = sorted(f for f in os.listdir(API_CONFIG_DIR)
-                       if f.endswith(".json"))
+                       if f.endswith(".json") and f != "Custom.json")  # template, not an interface
     except OSError:
         return interfaces
     for f in files:

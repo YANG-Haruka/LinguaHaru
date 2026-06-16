@@ -481,34 +481,45 @@ async def set_apikey(payload: dict):
 # --------------------------------------------------------------------------- #
 @app.get("/api/glossary")
 def get_glossary(name: str):
-    import pandas as pd
+    import csv
     path = backend.glossary_path(name)
     if not path or not os.path.exists(path):
         raise HTTPException(404, f"Glossary not found: {name}")
     for enc in ("utf-8-sig", "utf-8", "gbk", "shift-jis"):
         try:
-            df = pd.read_csv(path, encoding=enc, dtype=str).fillna("")
-            return {"columns": list(df.columns), "rows": df.values.tolist()}
+            with open(path, newline="", encoding=enc) as f:
+                rows = list(csv.reader(f))
         except UnicodeDecodeError:
             continue
         except Exception as e:  # noqa: BLE001
             raise HTTPException(500, f"Failed to load glossary: {e}")
+        columns = rows[0] if rows else []
+        n = len(columns)
+        # Pad/trim each data row to the header width so the grid stays rectangular.
+        data = [(r + [""] * n)[:n] for r in rows[1:]]
+        return {"columns": columns, "rows": data}
     raise HTTPException(500, "Failed to decode glossary file")
 
 
 @app.post("/api/glossary")
 async def save_glossary(payload: dict):
-    import pandas as pd
+    _block_in_server_mode()   # shared glossary must not be writable on public deploys
+    import csv
     name = payload.get("name")
     path = backend.glossary_path(name)
     if not path or not os.path.exists(path):
         raise HTTPException(404, f"Glossary not found: {name}")
-    df = pd.DataFrame(payload.get("rows", []), columns=payload.get("columns", []))
-    df = df[~(df.astype(str).apply(lambda r: "".join(r).strip() == "", axis=1))]
-    if len(df) == 0 and os.path.getsize(path) > 0:
+    columns = payload.get("columns", [])
+    clean = [r for r in payload.get("rows", [])
+             if "".join(str(c) for c in r).strip()]   # drop fully-empty rows
+    if not clean and os.path.getsize(path) > 0:
         raise HTTPException(400, "Refused: empty table over a non-empty glossary.")
-    df.to_csv(path, index=False, encoding="utf-8-sig")
-    return {"ok": True, "count": len(df)}
+    with open(path, "w", newline="", encoding="utf-8-sig") as f:
+        w = csv.writer(f)
+        if columns:
+            w.writerow(columns)
+        w.writerows(clean)
+    return {"ok": True, "count": len(clean)}
 
 
 # --------------------------------------------------------------------------- #

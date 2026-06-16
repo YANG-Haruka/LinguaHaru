@@ -14,6 +14,7 @@ python-pptx>=1.0.0
 # LLM & API
 openai>=1.59.6
 tiktoken>=0.8.0
+requests>=2.31    # offline (ollama/lm-studio) calls, update check, FX rates
 
 # Text processing
 bs4
