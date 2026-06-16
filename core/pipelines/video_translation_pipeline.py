@@ -765,6 +765,23 @@ def _recognize_whisper(audio, src_lang, size="small"):
 
 
 # --- public entry point -----------------------------------------------------
+def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
+                       session_lang, model_id):
+    """Dispatch to the selected STT engine; log WHY on failure (download/load
+    error) to the per-file log instead of failing silently, then re-raise."""
+    try:
+        if engine == "sensevoice":
+            return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang)
+        if engine == "qwen3asr":
+            return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang)
+        return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang)
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(
+            f"STT transcription failed (engine={engine}, model={model_id}): "
+            f"{type(e).__name__}: {e}")
+        raise
+
+
 def _speaker_labels_enabled():
     """Config toggle: prefix subtitle cues with a speaker label (S1/S2/...)."""
     try:
@@ -789,36 +806,31 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
     model_def = get_stt_model(model_id)
     engine, size = _resolve_stt_engine(model_def)
 
+    from core.compute_lock import GPU_LOCK
     with tempfile.TemporaryDirectory(dir=temp_dir) as audio_dir:
         if progress_callback:
             progress_callback(0.01, desc=f"{_tr('Extracting audio', session_lang)}...")
-        wav_path = extract_audio_to_wav(media_path, audio_dir)
+        wav_path = extract_audio_to_wav(media_path, audio_dir)   # ffmpeg (CPU) — ungated
 
-        if progress_callback:
-            progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
-
-        try:
-            if engine == "sensevoice":
-                triples = _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang)
-            elif engine == "qwen3asr":
-                triples = _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang)
-            else:
-                triples = _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang)
-        except Exception as e:  # noqa: BLE001 — log WHY (e.g. model download
-            # failed) into the per-file log instead of failing silently, then
-            # re-raise so the job is still marked failed.
-            app_logger.error(
-                f"STT transcription failed (engine={engine}, model={model_id}): "
-                f"{type(e).__name__}: {e}")
-            raise
-
-        # Optional speaker labels: prefix each cue with "S1: "/"S2: " (the tag
-        # survives translation as a name prefix). Done while the wav still exists.
-        if triples and _speaker_labels_enabled():
+        # Serialize the GPU/CPU-heavy transcription across concurrent tasks so
+        # they don't thrash one device; show a "waiting" hint if another is busy.
+        if not GPU_LOCK.acquire(blocking=False):
             if progress_callback:
-                progress_callback(0.99, desc=f"{_tr('Identifying speakers', session_lang)}...")
-            spk = diarize_triples(wav_path, triples)
-            triples = [(s, e, f"S{spk[i]}: {t}") for i, (s, e, t) in enumerate(triples)]
+                progress_callback(0.02, desc=f"{_tr('Waiting for compute', session_lang)}...")
+            GPU_LOCK.acquire()
+        try:
+            if progress_callback:
+                progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
+            triples = _run_transcription(engine, size, wav_path, src_lang,
+                                         progress_callback, session_lang, model_id)
+            # Optional speaker labels (also GPU) while we still hold the lock + wav.
+            if triples and _speaker_labels_enabled():
+                if progress_callback:
+                    progress_callback(0.99, desc=f"{_tr('Identifying speakers', session_lang)}...")
+                spk = diarize_triples(wav_path, triples)
+                triples = [(s, e, f"S{spk[i]}: {t}") for i, (s, e, t) in enumerate(triples)]
+        finally:
+            GPU_LOCK.release()
 
     if not triples:
         raise RuntimeError("Transcription produced no speech segments")

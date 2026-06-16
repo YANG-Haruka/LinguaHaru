@@ -145,19 +145,23 @@ def _load_ocr_engine(key, lang, size):
 
 
 def _run_ocr(file_path, src_lang=None):
-    """Run OCR and normalize results to a list of (text, quad_points, score)."""
+    """Run OCR and normalize results to a list of (text, quad_points, score).
+    Inference is serialized via GPU_LOCK so concurrent image tasks (or a video
+    transcription) don't thrash one GPU/CPU."""
+    from core.compute_lock import GPU_LOCK
     kind, engine = _get_ocr_engine(src_lang)
-    if kind == "paddle":
-        result = engine.predict(file_path)[0]
-        texts = list(result.get("rec_texts") or [])
-        boxes = list(result.get("rec_polys") if result.get("rec_polys") is not None
-                     else result.get("rec_boxes") or [])
-        scores = list(result.get("rec_scores") or [])
-    else:
-        result = engine(file_path)
-        texts = list(result.txts or [])
-        boxes = list(result.boxes if result.boxes is not None else [])
-        scores = list(result.scores or [])
+    with GPU_LOCK:
+        if kind == "paddle":
+            result = engine.predict(file_path)[0]
+            texts = list(result.get("rec_texts") or [])
+            boxes = list(result.get("rec_polys") if result.get("rec_polys") is not None
+                         else result.get("rec_boxes") or [])
+            scores = list(result.get("rec_scores") or [])
+        else:
+            result = engine(file_path)
+            texts = list(result.txts or [])
+            boxes = list(result.boxes if result.boxes is not None else [])
+            scores = list(result.scores or [])
     return texts, boxes, scores
 
 

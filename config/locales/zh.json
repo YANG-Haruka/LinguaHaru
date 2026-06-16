@@ -398,6 +398,7 @@
   "Detecting speech": "正在检测语音片段",
   "Transcribing": "正在转录",
   "Identifying speakers": "正在识别说话人",
+  "Waiting for compute": "等待 GPU/CPU（另一个任务正在运行）",
   "Context Optional": "上下文（可选，仅辅助消歧，不翻译）",
   "Type Context": "附带类型上下文（实验）",
   "Tone": "语气",
