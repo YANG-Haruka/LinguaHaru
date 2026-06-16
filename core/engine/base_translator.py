@@ -99,6 +99,15 @@ class DocumentTranslator:
         # see the ordering note in translate()).
         self.previous_content = {}
 
+        # Snapshot the translation mode/options ONCE so a concurrent task or
+        # another LAN user changing the global config mid-run can't perturb this
+        # task's sampling / second pass / QA / context behavior.
+        try:
+            from core import translation_modes
+            self.topts = translation_modes.snapshot()
+        except Exception:  # noqa: BLE001
+            self.topts = {"params": {}, "with_context": False}
+
     def check_for_stop(self):
         """Check if translation should stop"""
         if self.check_stop_requested and callable(self.check_stop_requested):
@@ -338,7 +347,7 @@ class DocumentTranslator:
                         segment, current_previous, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
                         current_glossary_terms, check_stop_callback=self.check_for_stop,
-                        context_map=context_map
+                        context_map=context_map, options=self.topts
                     )
 
                     # Track token usage
@@ -376,13 +385,12 @@ class DocumentTranslator:
                     # the first-pass result if the polish output isn't valid
                     # same-key JSON.
                     try:
-                        from core.translation_modes import active_second_pass
-                        if active_second_pass():
+                        if self.topts.get("params", {}).get("second_pass"):
                             from core.llm.llm_wrapper import polish_translation
                             translated_text, _polish_usage = polish_translation(
                                 translated_text, self.dst_lang, self.model,
                                 self.use_online, self.api_key,
-                                check_stop=self.check_for_stop)
+                                check_stop=self.check_for_stop, options=self.topts)
                             self._add_token_usage(_polish_usage)
                     except Exception as e:  # noqa: BLE001 — never break on polish
                         app_logger.warning(f"Second pass skipped: {e}")
@@ -605,7 +613,7 @@ class DocumentTranslator:
                         segment, current_previous, self.model, self.use_online, self.api_key,
                         self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
                         current_glossary_terms, check_stop_callback=self.check_for_stop,
-                        context_map=context_map
+                        context_map=context_map, options=self.topts
                     )
 
                     # Track token usage
@@ -642,13 +650,12 @@ class DocumentTranslator:
                     # the first-pass result if the polish output isn't valid
                     # same-key JSON.
                     try:
-                        from core.translation_modes import active_second_pass
-                        if active_second_pass():
+                        if self.topts.get("params", {}).get("second_pass"):
                             from core.llm.llm_wrapper import polish_translation
                             translated_text, _polish_usage = polish_translation(
                                 translated_text, self.dst_lang, self.model,
                                 self.use_online, self.api_key,
-                                check_stop=self.check_for_stop)
+                                check_stop=self.check_for_stop, options=self.topts)
                             self._add_token_usage(_polish_usage)
                     except Exception as e:  # noqa: BLE001 — never break on polish
                         app_logger.warning(f"Second pass skipped: {e}")
@@ -1231,8 +1238,7 @@ class DocumentTranslator:
         try:
             import json as _json
             from core.engine import translation_qa
-            from core.translation_modes import active_params
-            qa_list = active_params().get("qa", [])
+            qa_list = self.topts.get("params", {}).get("qa", [])
             if not qa_list:
                 return
             with open(self.result_json_path, encoding="utf-8") as f:

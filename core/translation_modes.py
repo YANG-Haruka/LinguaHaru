@@ -67,16 +67,38 @@ def _sampling_supported(model_config):
     return True
 
 
-def resolve_sampling(model_config, cfg_temp, cfg_top_p):
-    """(temperature, top_p) to actually send. The active mode overrides the
+def resolve_sampling(model_config, cfg_temp, cfg_top_p, params=None):
+    """(temperature, top_p) to actually send. The mode params override the
     model-config values; if the provider can't take custom sampling, returns
-    (None, None) so the caller omits them."""
+    (None, None) so the caller omits them. Pass `params` (a snapshot's mode
+    params) to avoid re-reading the global active mode — important for
+    concurrent/LAN tasks."""
     if not _sampling_supported(model_config):
         return None, None
-    p = active_params()
+    p = params if params is not None else active_params()
     temp = p.get("temperature", cfg_temp)
     top_p = p.get("top_p", cfg_top_p)
     return temp, top_p
+
+
+def snapshot():
+    """Capture the active translation options ONCE (at task start), so a
+    concurrent task — or another LAN user changing the global config mid-run —
+    can't perturb this task's sampling, second pass, QA, or context behavior.
+    Low layers should use this snapshot instead of re-reading global config."""
+    try:
+        from core import backend
+        cfg = backend.read_config()
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    return {
+        "mode": get_active_mode(),
+        "params": dict(active_params()),
+        "tone": str(cfg.get("translation_tone", "") or ""),
+        "length": str(cfg.get("translation_length", "") or ""),
+        "style": str(cfg.get("translation_style", "") or "").strip(),
+        "with_context": bool(cfg.get("translate_with_context", False)),
+    }
 
 
 def offline_temperature(default=0.3):

@@ -366,7 +366,7 @@ def _create_completion(client, params):
         raise
 
 
-def translate_online(api_key, messages, model):
+def translate_online(api_key, messages, model, mode_params=None):
     """
     Perform translation using an online API with config from a JSON file.
 
@@ -391,7 +391,7 @@ def translate_online(api_key, messages, model):
     # providers that reject custom sampling get neither.
     try:
         from core.translation_modes import resolve_sampling
-        temperature, top_p = resolve_sampling(model_config, temperature, top_p)
+        temperature, top_p = resolve_sampling(model_config, temperature, top_p, params=mode_params)
     except Exception:  # noqa: BLE001
         pass
     presence_penalty = model_config.get("presence_penalty")

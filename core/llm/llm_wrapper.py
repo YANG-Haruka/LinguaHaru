@@ -75,7 +75,7 @@ def _unmask_reply(reply, mapping):
     return _unmask(reply, merged)
 
 
-def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None, check_stop_callback=None, context_map=None):
+def translate_text(segments, previous_text, model, use_online, api_key, system_prompt, user_prompt, previous_prompt, glossary_prompt, glossary_terms=None, check_stop_callback=None, context_map=None, options=None):
     """
     Translate text segments with optional glossary support
 
@@ -144,8 +144,12 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         context_block = ""
         if context_map:
             try:
-                from core import backend
-                if backend.get_config("translate_with_context", False):
+                if options is not None:
+                    with_ctx = bool(options.get("with_context"))
+                else:
+                    from core import backend
+                    with_ctx = bool(backend.get_config("translate_with_context", False))
+                if with_ctx:
                     context_block = ("The following maps each id to its content type, "
                                      "for disambiguation only — do NOT translate it or "
                                      "include it in the output:\n"
@@ -183,7 +187,9 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             if not use_online:
                 translation_result, api_success, token_usage = translate_offline(messages, model)
             else:
-                translation_result, api_success, token_usage = translate_online(api_key, messages, model)
+                translation_result, api_success, token_usage = translate_online(
+                    api_key, messages, model,
+                    mode_params=(options.get("params") if options else None))
 
             # If API call was successful, return the result
             if api_success:
@@ -372,7 +378,7 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         yield result
 
 
-def polish_translation(translated_json, dst_lang, model, use_online, api_key, check_stop=None):
+def polish_translation(translated_json, dst_lang, model, use_online, api_key, check_stop=None, options=None):
     """Second pass for the 'polish' mode: improve the fluency / word choice of an
     already-translated JSON object's values, in the TARGET language, without
     changing meaning, keys, or non-text tokens.
@@ -409,7 +415,9 @@ def polish_translation(translated_json, dst_lang, model, use_online, api_key, ch
     try:
         if use_online:
             from core.llm.online_translation import translate_online
-            raw, ok, usage = translate_online(api_key, messages, model)
+            raw, ok, usage = translate_online(
+                api_key, messages, model,
+                mode_params=(options.get("params") if options else None))
         else:
             from core.llm.offline_translation import translate_offline
             raw, ok, usage = translate_offline(messages, model)
