@@ -1067,6 +1067,11 @@ class LivePage(ScrollArea):
         self._stream_committed = ""
         self._stream_last = ""
         self._recog_pending = None
+        # Clear any in-flight STT marker too: if a worker from a previous session
+        # outlived on_stop()'s wait, this stops the new session from queueing all
+        # audio behind a stale busy flag (a late result is ignored via the
+        # _is_listening() guard in _on_recognized_stream).
+        self._recog_busy = False
 
     def _vad_model(self):
         """Lazy TEN-VAD (neural, noise-robust, ~0.1ms/frame). None -> energy
