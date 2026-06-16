@@ -389,6 +389,8 @@ async function boot() {
   if ($("set-live-stream")) $("set-live-stream").checked = !!c.live_stream_translation;
   if ($("set-web-vad")) $("set-web-vad").value = c.web_vad || "energy";
   if ($("set-vad-hang")) $("set-vad-hang").value = String(c.live_vad_hang_ms || 900);
+  if ($("set-vad-sens")) $("set-vad-sens").value = c.live_vad_sensitivity || "standard";
+  if ($("set-vad-maxseg")) $("set-vad-maxseg").value = String(c.live_vad_max_seg_ms || 30000);
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
@@ -691,6 +693,16 @@ if ($("set-vad-hang")) $("set-vad-hang").onchange = () => {
   const v = parseInt($("set-vad-hang").value, 10) || 900;
   if (BOOT.config) BOOT.config.live_vad_hang_ms = v;   // applies on next live start
   saveConfig({ live_vad_hang_ms: v });
+};
+if ($("set-vad-sens")) $("set-vad-sens").onchange = () => {
+  const v = $("set-vad-sens").value;
+  if (BOOT.config) BOOT.config.live_vad_sensitivity = v;
+  saveConfig({ live_vad_sensitivity: v });
+};
+if ($("set-vad-maxseg")) $("set-vad-maxseg").onchange = () => {
+  const v = parseInt($("set-vad-maxseg").value, 10) || 30000;
+  if (BOOT.config) BOOT.config.live_vad_max_seg_ms = v;
+  saveConfig({ live_vad_max_seg_ms: v });
 };
 if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
 if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
@@ -1411,12 +1423,18 @@ async function startLocal() {
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   startMicMeter();
 }
+// Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
+// more sensitive (picks up softer speech); higher = needs a louder voice.
+const VAD_SENS = { high: [0.004, 0.0026], standard: [0.006, 0.004], low: [0.010, 0.0066] };
 async function startWorkletVad() {
   await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260616A");
-  const hangMs = (BOOT.config && BOOT.config.live_vad_hang_ms) || 900;
+  const cfg = BOOT.config || {};
+  const hangMs = cfg.live_vad_hang_ms || 900;
+  const maxSegMs = cfg.live_vad_max_seg_ms || 30000;
+  const [onAbs, offAbs] = VAD_SENS[cfg.live_vad_sensitivity] || VAD_SENS.standard;
   liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
-    { processorOptions: { prerollMs: 500, onMs: 90, hangMs, minSegMs: 280, maxSegMs: 30000,
-                          onAbs: 0.006, offAbs: 0.004 } });
+    { processorOptions: { prerollMs: 500, onMs: 90, hangMs, minSegMs: 280, maxSegMs,
+                          onAbs, offAbs } });
   liveNode.port.onmessage = onVadMessage;
   liveNode.port.postMessage({ type: "mode", mode: "open" });
   liveSrc.connect(liveNode); liveNode.connect(liveCtx.destination);

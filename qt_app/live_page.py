@@ -45,6 +45,10 @@ _VAD_ON_ABS, _VAD_ON_MUL = 0.006, 2.2
 _VAD_OFF_ABS, _VAD_OFF_MUL = 0.004, 1.6
 _VAD_ON_MS, _VAD_HANG_MS = 90, 900
 _VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
+# Mic sensitivity preset -> (energy onset threshold, TEN-VAD threshold). Lower =
+# more sensitive (picks up softer speech); higher = needs a louder voice (better
+# in a noisy room). User-tunable in Settings (config live_vad_sensitivity).
+_VAD_SENS = {"high": (0.004, 0.35), "standard": (0.006, 0.50), "low": (0.010, 0.65)}
 # Lead-in kept before speech onset is confirmed, so the first words (often the
 # key info) aren't clipped. Mirrors the Web vad-worklet's pre-roll ring buffer.
 _VAD_PREROLL_MS = 500
@@ -1040,6 +1044,19 @@ class LivePage(ScrollArea):
             self._hang_ms = float(backend.get_config("live_vad_hang_ms", _VAD_HANG_MS))
         except (TypeError, ValueError):
             self._hang_ms = float(_VAD_HANG_MS)
+        # Mic sensitivity (onset/neural threshold) + force-cut ceiling, both
+        # user-tunable in Settings.
+        self._on_abs, ten_th = _VAD_SENS.get(
+            backend.get_config("live_vad_sensitivity", "standard"), _VAD_SENS["standard"])
+        try:
+            self._max_seg_ms = float(backend.get_config("live_vad_max_seg_ms", _VAD_MAX_MS))
+        except (TypeError, ValueError):
+            self._max_seg_ms = float(_VAD_MAX_MS)
+        # Rebuild the cached TEN-VAD if the sensitivity threshold changed.
+        if getattr(self, "_ten_vad_threshold", None) != ten_th:
+            self._ten_vad_threshold = ten_th
+            if hasattr(self, "_ten_vad"):
+                del self._ten_vad
         self._vad_on = False
         self._vad_buf = bytearray()
         self._vad_preroll = bytearray()
@@ -1058,7 +1075,8 @@ class LivePage(ScrollArea):
         if not hasattr(self, "_ten_vad"):
             try:
                 from ten_vad import TenVad
-                self._ten_vad = TenVad(hop_size=_VAD_FRAME, threshold=0.5)
+                self._ten_vad = TenVad(hop_size=_VAD_FRAME,
+                                       threshold=getattr(self, "_ten_vad_threshold", 0.5))
             except Exception:  # noqa: BLE001 — lib missing -> energy fallback
                 self._ten_vad = None
         return self._ten_vad
@@ -1073,7 +1091,7 @@ class LivePage(ScrollArea):
                 self._ten_vad = None
         import numpy as np
         lvl = float(np.sqrt(np.mean((frame_np.astype("float32") / 32768.0) ** 2)))
-        return lvl > _VAD_ON_ABS
+        return lvl > getattr(self, "_on_abs", _VAD_ON_ABS)
 
     def _vad_feed(self, pcm):
         import numpy as np
@@ -1122,7 +1140,7 @@ class LivePage(ScrollArea):
                 hang = base_hang * 0.7
             else:
                 hang = max(500.0, base_hang * 0.55)
-            ended = self._vad_sil_ms >= hang or dur_ms >= _VAD_MAX_MS
+            ended = self._vad_sil_ms >= hang or dur_ms >= getattr(self, "_max_seg_ms", _VAD_MAX_MS)
             if ended:
                 utt = bytes(self._vad_buf)
                 self._vad_on = False

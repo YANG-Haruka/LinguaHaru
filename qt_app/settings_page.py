@@ -249,6 +249,34 @@ class SettingsPage(ScrollArea):
             lambda i: backend.set_config("live_vad_hang_ms", int(self._hangs[i][0])) if 0 <= i < len(self._hangs) else None)
         self.hang_label = BodyLabel(tr("Segmentation Pause", lang))
         gl_form.addRow(self.hang_label, self.hang_combo)
+        # Mic sensitivity (onset / neural-VAD threshold).
+        self._sens = [("high", tr("Sens High", lang)), ("standard", tr("Sens Standard", lang)),
+                      ("low", tr("Sens Low", lang))]
+        self.sens_combo = ComboBox()
+        for _v, lbl in self._sens:
+            self.sens_combo.addItem(lbl)
+        cur_sens = config.get("live_vad_sensitivity", "standard")
+        for i, (v, _l) in enumerate(self._sens):
+            if v == cur_sens:
+                self.sens_combo.setCurrentIndex(i)
+        self.sens_combo.currentIndexChanged.connect(
+            lambda i: backend.set_config("live_vad_sensitivity", self._sens[i][0]) if 0 <= i < len(self._sens) else None)
+        self.sens_label = BodyLabel(tr("Mic Sensitivity", lang))
+        gl_form.addRow(self.sens_label, self.sens_combo)
+        # Force-cut ceiling: hard cap on one utterance's length.
+        self._maxsegs = [("15000", tr("MaxSeg 15s", lang)), ("30000", tr("MaxSeg 30s", lang)),
+                         ("60000", tr("MaxSeg 60s", lang))]
+        self.maxseg_combo = ComboBox()
+        for _v, lbl in self._maxsegs:
+            self.maxseg_combo.addItem(lbl)
+        cur_max = str(config.get("live_vad_max_seg_ms", 30000))
+        for i, (v, _l) in enumerate(self._maxsegs):
+            if v == cur_max:
+                self.maxseg_combo.setCurrentIndex(i)
+        self.maxseg_combo.currentIndexChanged.connect(
+            lambda i: backend.set_config("live_vad_max_seg_ms", int(self._maxsegs[i][0])) if 0 <= i < len(self._maxsegs) else None)
+        self.maxseg_label = BodyLabel(tr("Force Cut", lang))
+        gl_form.addRow(self.maxseg_label, self.maxseg_combo)
         self.card_options.body.addLayout(gl_form)
 
         # --- Card 3: Data & Storage (output folder + history retention/clear) ---

@@ -596,6 +596,21 @@
             </select>
           </label>
           <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Hang Note">停顿多久算一句结束。说话慢、句间停顿多时调大，避免一句被切成几段（下次开始识别时生效）。</div>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Mic Sensitivity">麦克风灵敏度</span>
+            <select id="set-vad-sens" style="width:auto">
+              <option value="high" data-i18n="Sens High">高（拾取轻声·安静环境）</option>
+              <option value="standard" data-i18n="Sens Standard">标准（推荐）</option>
+              <option value="low" data-i18n="Sens Low">低（只收大声·嘈杂环境）</option>
+            </select>
+          </label>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Force Cut">强制断句上限</span>
+            <select id="set-vad-maxseg" style="width:auto">
+              <option value="15000" data-i18n="MaxSeg 15s">15 秒</option>
+              <option value="30000" data-i18n="MaxSeg 30s">30 秒（推荐）</option>
+              <option value="60000" data-i18n="MaxSeg 60s">60 秒</option>
+            </select>
+          </label>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="MaxSeg Note">一句最长说多久就强制断一次（即使没停顿），防止超长不断句。</div>
         </div>
       </details>
       <details class="card set-card">
