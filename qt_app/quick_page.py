@@ -242,10 +242,23 @@ class QuickPage(ScrollArea):
 
     def hideEvent(self, event):
         # Leaving the page must not keep the mic hot or audio playing.
+        self.shutdown()
+        super().hideEvent(event)
+
+    def shutdown(self):
+        """Stop mic/playback and wait for STT/TTS worker threads — so a running
+        QThread is never destroyed mid-run (Qt aborts on that) when leaving the
+        page or closing the app."""
         if self._source is not None:
             self._stop_recording(dispatch=False)
         self._stop_playback()
-        super().hideEvent(event)
+        for attr in ("_stt", "_tts", "_worker"):
+            w = getattr(self, attr, None)
+            try:
+                if w is not None and w.isRunning():
+                    w.wait(3000)
+            except RuntimeError:
+                pass   # already deleted
 
     # --- Enter-to-translate + click-to-toggle/reload via event filter ---
     def eventFilter(self, obj, event):

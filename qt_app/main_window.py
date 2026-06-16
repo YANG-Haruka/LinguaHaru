@@ -221,6 +221,24 @@ class MainWindow(FluentWindow):
         self._update_worker.done.connect(self._on_update_checked)
         self._update_worker.start()
 
+    def closeEvent(self, event):
+        """Deterministically stop every page's background QThreads before the app
+        tears down — otherwise a running mic/STT/translate/update thread is
+        destroyed mid-run and Qt aborts ('QThread: Destroyed while thread is
+        still running')."""
+        self.live_page._shutting_down = True   # save the transcript but skip the modal
+        for fn in (
+            lambda: self.live_page.on_stop(),
+            lambda: self.quick_page.shutdown(),
+            lambda: self.translate_page.shutdown(),
+            lambda: (self._update_worker.isRunning() and self._update_worker.wait(2000)),
+        ):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001 — shutdown must never block exit
+                pass
+        super().closeEvent(event)
+
     # Width at/above which the nav rail expands; below it, it collapses to icons.
     _NAV_EXPAND_THRESHOLD = 940
 

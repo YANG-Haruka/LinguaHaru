@@ -622,6 +622,19 @@ class TranslatePage(QStackedWidget):
         # Drop anything not yet started so the pool drains.
         self._queue = []
 
+    def shutdown(self):
+        """Stop in-flight translations and wait briefly, so document-translation
+        worker threads aren't destroyed mid-run when the app closes."""
+        self._queue = []
+        self._running = False
+        for worker in list(self._workers):
+            try:
+                if worker.isRunning():
+                    worker.request_stop()
+                    worker.wait(5000)
+            except RuntimeError:
+                pass
+
     def _back_to_controls(self):
         """Return from the (post-run) dashboard to the controls to start anew."""
         self.setCurrentWidget(self._controls)

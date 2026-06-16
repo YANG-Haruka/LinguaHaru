@@ -771,6 +771,7 @@ class LivePage(ScrollArea):
         self.input_text.clear()
         self.output_text.clear()
         self._session_tokens = 0
+        self._stream_text = {}          # drop any leftover streamed-translation state
         self._reset_vad()
 
         # Google mode needs playback (it returns spoken audio); local mode is
@@ -907,9 +908,14 @@ class LivePage(ScrollArea):
         if self._preloader is not None:
             self._preloader.wait(2000)
             self._preloader = None
+        # Best-effort wait for in-flight STT/translate workers, but NEVER drop a
+        # reference to a thread that's still running (Qt would destroy it mid-run
+        # and abort). Finished ones are removed; still-running ones retire
+        # themselves via their finished -> _retire_local signal.
         for w in list(self._local_workers):
-            w.wait(3000)
-        self._local_workers.clear()
+            if w.isRunning():
+                w.wait(3000)
+        self._local_workers = [w for w in self._local_workers if w.isRunning()]
         self._save_live_history()       # persist this session's transcript
         if self._source is not None:
             self._source.stop()
@@ -954,8 +960,9 @@ class LivePage(ScrollArea):
                               self.target_combo.currentText(), model, online,
                               result_dir, log_dir, total_tokens=tokens,
                               cost_amount=cost_amount, cost_currency=cost_currency)
-            from qt_app.thanks import show_thanks
-            show_thanks(self.window(), self._lang, tokens, cost_amount, cost_symbol, cost_currency)
+            if not getattr(self, "_shutting_down", False):   # no modal during app close
+                from qt_app.thanks import show_thanks
+                show_thanks(self.window(), self._lang, tokens, cost_amount, cost_symbol, cost_currency)
         except Exception:  # noqa: BLE001 — history is best-effort
             pass
 
@@ -1122,6 +1129,8 @@ class LivePage(ScrollArea):
         """Run one STT pass (partial or final) on the utterance-so-far. Only one
         worker is in flight; while busy the newest request is queued (a final
         overrides a pending partial) so we never lag behind fast speech."""
+        if not self._is_listening():
+            return   # session stopped — don't start new STT work
         if self._recog_busy:
             if (is_final or self._recog_pending is None
                     or not self._recog_pending[1]):
@@ -1246,6 +1255,8 @@ class LivePage(ScrollArea):
         Robust to STT revising/re-segmenting its tail, so sentences aren't
         duplicated or dropped while you keep speaking."""
         self._recog_busy = False
+        if not self._is_listening():
+            return   # a late STT result after stop — ignore (don't re-dispatch/write)
         if detected:
             self._stream_detected = detected
         text = text or ""
