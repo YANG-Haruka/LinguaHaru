@@ -358,9 +358,17 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
             yield result
             return
         params = {"model": api_model, "messages": messages, "stream": True}
-        for k in ("top_p", "temperature"):
-            if cfg.get(k) is not None:
-                params[k] = cfg[k]
+        # Apply the active mode's sampling (+ provider capability gate) like the
+        # batch path — so e.g. precise pins temperature low for live captions too.
+        try:
+            from core.translation_modes import resolve_sampling
+            _temp, _top_p = resolve_sampling(cfg, cfg.get("temperature"), cfg.get("top_p"))
+        except Exception:  # noqa: BLE001
+            _temp, _top_p = cfg.get("temperature"), cfg.get("top_p")
+        if _temp is not None:
+            params["temperature"] = _temp
+        if _top_p is not None:
+            params["top_p"] = _top_p
         client = OpenAI(api_key=api_key, base_url=base_url)
         acc = ""
         for chunk in client.chat.completions.create(**params):

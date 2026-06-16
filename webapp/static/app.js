@@ -275,7 +275,9 @@ if ($("iface-modal")) $("iface-modal").onclick = (e) => { if (e.target.id === "i
 
 // ----- interface language (i18n) -----
 const _UI_LANGS = [["en", "English"], ["zh", "简体中文"], ["zh-Hant", "繁體中文"], ["ja", "日本語"]];
+let _uiLang = "zh";   // current UI language (for label_en vs label choice)
 function applyI18n(lang) {
+  _uiLang = lang || _uiLang;
   const L = (BOOT.labels && BOOT.labels[lang]) || {};
   const EN = (BOOT.labels && BOOT.labels.en) || {};
   document.querySelectorAll("[data-i18n]").forEach((el) => {
@@ -367,7 +369,10 @@ async function boot() {
     if (!sel.options.length) {
       for (const m of (BOOT.translation_modes || [])) {
         const o = document.createElement("option");
-        o.value = m.id; o.textContent = m.label || m.id;
+        o.value = m.id;
+        // Chinese UI -> Chinese label; otherwise the English label (more
+        // universal than Chinese for ja/fr/… UIs).
+        o.textContent = _uiLang.startsWith("zh") ? (m.label || m.id) : (m.label_en || m.label || m.id);
         sel.appendChild(o);
       }
     }

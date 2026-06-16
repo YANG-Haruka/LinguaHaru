@@ -29,6 +29,8 @@ _FIELDS = [
     "model", "use_online", "input_file", "file_type",
     "output_file_path", "log_file_path", "status",
     "cost_amount", "cost_currency",
+    # Translation-mode snapshot (for reproducibility / "why did this run differ").
+    "translation_mode", "translation_tone", "translation_length", "translation_style",
 ]
 
 
@@ -95,8 +97,16 @@ class TranslationHistoryManager:
                         model TEXT, use_online INTEGER,
                         input_file TEXT, file_type TEXT,
                         output_file_path TEXT, log_file_path TEXT,
-                        status TEXT, cost_amount REAL, cost_currency TEXT
+                        status TEXT, cost_amount REAL, cost_currency TEXT,
+                        translation_mode TEXT, translation_tone TEXT,
+                        translation_length TEXT, translation_style TEXT
                     )""")
+                # Add any columns missing from an older DB (additive migration) —
+                # BEFORE creating indexes, which may reference those columns.
+                have = {r[1] for r in conn.execute("PRAGMA table_info(records)").fetchall()}
+                for col in _FIELDS:
+                    if col not in have:
+                        conn.execute(f"ALTER TABLE records ADD COLUMN {col} TEXT")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_start ON records(start_time)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_ftype ON records(file_type)")
         except Exception as e:  # noqa: BLE001
@@ -265,9 +275,11 @@ def create_translation_record(
     status: str,
     cost_amount: Optional[float] = None,
     cost_currency: Optional[str] = None,
+    translation_options: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create a translation/project record dictionary."""
     duration_seconds = int((end_time - start_time).total_seconds())
+    opts = translation_options or {}
     return {
         "id": translation_id,
         "start_time": start_time.isoformat(),
@@ -287,6 +299,10 @@ def create_translation_record(
         "status": status,
         "cost_amount": cost_amount,
         "cost_currency": cost_currency,
+        "translation_mode": opts.get("mode", ""),
+        "translation_tone": opts.get("tone", ""),
+        "translation_length": opts.get("length", ""),
+        "translation_style": opts.get("style", ""),
     }
 
 

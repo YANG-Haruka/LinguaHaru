@@ -136,8 +136,10 @@ class SettingsPage(ScrollArea):
             from core.translation_modes import load_modes, get_active_mode
             self._modes = list(load_modes().items())
             cur = get_active_mode()
+            _zh = str(lang).startswith("zh")
             for i, (mid, m) in enumerate(self._modes):
-                self.mode_combo.addItem(m.get("label", mid))
+                self.mode_combo.addItem(m.get("label", mid) if _zh
+                                        else m.get("label_en", m.get("label", mid)))
                 if mid == cur:
                     self.mode_combo.setCurrentIndex(i)
         except Exception:  # noqa: BLE001

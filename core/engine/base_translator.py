@@ -188,6 +188,7 @@ class DocumentTranslator:
                 status=status,
                 cost_amount=cost_amount,
                 cost_currency=cost_currency,
+                translation_options=getattr(self, "topts", None),
             )
 
             # Save to history
