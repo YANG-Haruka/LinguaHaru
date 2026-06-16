@@ -1162,6 +1162,8 @@ class DocumentTranslator:
 
         # Translation coverage report (best-effort; must never break a run)
         self._write_coverage_report()
+        # Mode-aware QA warnings (best-effort, non-blocking)
+        self._write_qa_report()
 
         # Save translation summary
         self._save_translation_summary(status="success", output_file_path=final_output_path)
@@ -1185,3 +1187,33 @@ class DocumentTranslator:
             os.replace(tmp_path, out_path)
         except Exception as e:  # noqa: BLE001 — coverage is non-essential
             app_logger.warning(f"Could not write coverage report: {e}")
+
+    def _write_qa_report(self):
+        """Run the active translation mode's QA checks over this run's result and
+        log + write qa.json. Fully guarded — QA is advisory and MUST NEVER break
+        a translation."""
+        try:
+            import json as _json
+            from core.engine import translation_qa
+            from core.translation_modes import active_params
+            qa_list = active_params().get("qa", [])
+            if not qa_list:
+                return
+            with open(self.result_json_path, encoding="utf-8") as f:
+                dst_items = _json.load(f)
+            glossary = []
+            if self.glossary_path and os.path.exists(self.glossary_path):
+                from core.engine.text_separator import load_glossary
+                glossary = load_glossary(self.glossary_path, self.src_lang, self.dst_lang)
+            warns = translation_qa.run(qa_list, dst_items, glossary)
+            if warns:
+                summary = ", ".join(f"{k}: {len(v)}" for k, v in warns.items())
+                app_logger.info(f"QA warnings ({summary})")
+            os.makedirs(self.result_dir, exist_ok=True)
+            out_path = os.path.join(self.result_dir, "qa.json")
+            tmp_path = out_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                _json.dump(warns, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, out_path)
+        except Exception as e:  # noqa: BLE001 — QA must never raise
+            app_logger.warning(f"Could not write QA report: {e}")
