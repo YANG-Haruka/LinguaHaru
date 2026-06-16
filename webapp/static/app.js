@@ -1620,7 +1620,10 @@ async function finalizeUtterance(int16) {
     liveLastDetected = r.detected || liveLastDetected;
     const text = r.source || "";
     // Translate only what hasn't been committed yet (committed text is a prefix).
-    const rest = text.length >= liveCommittedText.length ? text.slice(liveCommittedText.length) : text;
+    // Only translate the genuinely-new tail. If the final pass CONTRACTED/revised
+    // below the committed prefix, add nothing (the streamed commits already
+    // covered it) — re-translating the whole text would duplicate shown lines.
+    const rest = text.startsWith(liveCommittedText) ? text.slice(liveCommittedText.length) : "";
     const { units } = splitScored(rest, true);
     for (const u of units) commitLiveSentence(u);
   } catch (e) { /* drop */ }

@@ -1261,9 +1261,11 @@ class LivePage(ScrollArea):
             self._stream_detected = detected
         text = text or ""
         if is_final:
-            # Translate only what wasn't committed yet (committed is a prefix).
+            # Only the genuinely-new tail. If the final pass contracted/revised
+            # below the committed prefix, add nothing (streamed commits covered
+            # it) — re-translating the whole text would duplicate shown lines.
             rest = text[len(self._stream_committed):] \
-                if len(text) >= len(self._stream_committed) else text
+                if text.startswith(self._stream_committed) else ""
             units, _ = self._split_scored(rest, True)
             for s in units:
                 self._commit_stream_sentence(s)
