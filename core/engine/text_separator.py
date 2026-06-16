@@ -75,6 +75,19 @@ def safe_convert_to_int(value):
     # 默认返回0
     return 0
 
+def _lang_tokens(lang):
+    """Accepted header tokens for a language: its code AND its readable name
+    (both lowercased), so a glossary headed with names or codes both match."""
+    from core.languages_config import LANGUAGE_MAP
+    lang = str(lang or "").strip().lower()
+    tokens = {lang}
+    for name, code in LANGUAGE_MAP.items():
+        if lang == code.lower() or lang == name.lower():
+            tokens.add(code.lower())
+            tokens.add(name.lower())
+    return tokens
+
+
 def load_glossary(glossary_path, src_lang, dst_lang):
     """Load glossary from CSV file with multiple encodings"""
     encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1', 'shift-jis', 'cp949']
@@ -89,16 +102,29 @@ def load_glossary(glossary_path, src_lang, dst_lang):
                 if not lang_codes:
                     continue
                     
-                # Find column indices
+                # Find column indices. Accept either a language CODE ("en") or a
+                # readable NAME ("English"/"中文") in the header, so a user table
+                # headed "English,中文" still matches src/dst "en"/"zh".
+                src_tokens = _lang_tokens(src_lang)
+                dst_tokens = _lang_tokens(dst_lang)
                 src_idx = None
                 dst_idx = None
-                
                 for i, code in enumerate(lang_codes):
-                    if code.strip().lower() == src_lang.strip().lower():
+                    c = code.strip().lower()
+                    if src_idx is None and c in src_tokens:
                         src_idx = i
-                    if code.strip().lower() == dst_lang.strip().lower():
+                    if dst_idx is None and c in dst_tokens:
                         dst_idx = i
-                
+
+                # Auto source: we can't match a source column by name, so take the
+                # first non-target column — recovers the user's glossary instead of
+                # silently dropping it when the UI source language is "auto".
+                if src_idx is None and str(src_lang).strip().lower() == "auto" and dst_idx is not None:
+                    for i in range(len(lang_codes)):
+                        if i != dst_idx:
+                            src_idx = i
+                            break
+
                 if src_idx is None or dst_idx is None:
                     continue
                 

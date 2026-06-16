@@ -10,8 +10,10 @@ import os
 import re
 
 from core.log_config import app_logger
-from core.llm.online_translation import translate_online
-from core.llm.offline_translation import translate_offline
+# NOTE: translate_online/translate_offline are imported lazily inside
+# extract_glossary_terms() — importing them at module load pulls in `openai`,
+# which made even _parse_terms() (and unit tests) fail with ModuleNotFoundError
+# in environments without the online deps installed.
 
 MAX_SAMPLE_CHARS = 8000
 MAX_TERMS = 60
@@ -73,8 +75,10 @@ def extract_glossary_terms(values, model, use_online, api_key, src_lang, dst_lan
     messages = [{"role": "user", "content": prompt}]
     try:
         if use_online:
+            from core.llm.online_translation import translate_online
             raw, success, _ = translate_online(api_key, messages, model)
         else:
+            from core.llm.offline_translation import translate_offline
             raw, success, _ = translate_offline(messages, model)
     except Exception as e:
         app_logger.warning(f"Glossary extraction call failed: {e}")

@@ -92,7 +92,12 @@ class DocumentTranslator:
 
         # Load prompts
         self.system_prompt, self.user_prompt, self.previous_prompt, self.previous_text_default, self.glossary_prompt = load_prompt(src_lang, dst_lang)
-        self.previous_content = self.previous_text_default
+        # Start with NO prior context. The old prompts seeded this with example
+        # sentences ("Hello / This is an automatic translation system…"), which
+        # polluted the first batch — especially short strings, titles and button
+        # labels. Real context accumulates as segments translate (single-threaded;
+        # see the ordering note in translate()).
+        self.previous_content = {}
 
     def check_for_stop(self):
         """Check if translation should stop"""
