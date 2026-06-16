@@ -589,9 +589,12 @@ $("stop-btn").onclick = async () => {
   if (currentTask) await api("/api/stop/" + currentTask, { method: "POST" });
 };
 
+let _progressES = null;
 function listenProgress(taskId) {
   $("progress-wrap").hidden = false;
+  if (_progressES) { try { _progressES.close(); } catch (e) {} }   // don't leak a prior stream
   const es = new EventSource("/api/progress/" + taskId);
+  _progressES = es;
   es.onmessage = (ev) => {
     const d = JSON.parse(ev.data);
     const pct = Math.round((d.progress || 0) * 100);
@@ -1318,7 +1321,10 @@ function stopGoogle() {
   try { if (liveProc) liveProc.disconnect(); if (liveSrc) liveSrc.disconnect(); } catch (e) { /* */ }
   if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
   if (liveWS && liveWS.readyState === 1) { try { liveWS.send(JSON.stringify({ end: true })); } catch (e) {} liveWS.close(); }
-  if (liveCtx) liveCtx.close();
+  if (liveCtx) { try { liveCtx.close(); } catch (e) {} liveCtx = null; }
+  // Also release the 24k playback context (browsers cap live AudioContexts; not
+  // closing it leaked one per Google session until the cap threw).
+  if (playCtx) { try { playCtx.close(); } catch (e) {} playCtx = null; }
   liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
 }
 

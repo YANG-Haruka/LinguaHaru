@@ -137,6 +137,7 @@ MAX_ACTIVE_TASKS_PER_SESSION = 2  # per browser/session
 # tie up a translate worker, the STT lock, or memory for an unbounded time.
 _MAX_LIVE_AUDIO_BYTES = 16000 * 2 * 32   # ~32s of 16kHz mono PCM16
 _MAX_QUICK_TEXT_CHARS = 5000             # quick-translate / TTS / live captions
+_MAX_UPLOAD_BYTES = 200 * 1024 * 1024    # total bytes per /api/translate request
 
 
 def _capped_text(payload, field="text", limit=_MAX_QUICK_TEXT_CHARS):
@@ -266,7 +267,8 @@ async def update_config(payload: dict):
     """Persist arbitrary settings keys (whitelisted)."""
     _block_in_server_mode()
     allowed = {"default_online", "default_online_model", "default_src_lang",
-               "default_dst_lang", "default_glossary", "stt_model", "ocr_model_size",
+               "default_dst_lang", "default_glossary", "stt_model",
+               "live_stt_model", "quick_stt_model", "ocr_model_size",
                "translate_subtitles", "max_retries", "rpm_limit",
                "auto_extract_glossary", "translation_mode",
                "translation_tone", "translation_length", "translation_style",
@@ -521,8 +523,10 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
         cov_path = os.path.join(result_dir, "coverage.json")
         if os.path.exists(cov_path):
             with open(cov_path, "r", encoding="utf-8") as f:
-                with _TASKS_LOCK:
-                    TASKS[task_id]["coverage"] = json.load(f)
+                cov = json.load(f)
+            with _TASKS_LOCK:
+                if task_id in TASKS:
+                    TASKS[task_id]["coverage"] = cov
     except Exception:  # noqa: BLE001
         pass
     return output_path
@@ -628,10 +632,23 @@ async def translate(
     upload_dir = os.path.join(UPLOAD_DIR, session_id, task_id)
     os.makedirs(upload_dir, exist_ok=True)
     dests = []
+    written = 0
     for f in files:
         dest = os.path.join(upload_dir, os.path.basename(f.filename or "upload"))
+        # Stream with a hard cap so a remote/LAN peer can't exhaust disk/memory
+        # (document uploads were the one unbounded input — short-text/audio are
+        # already capped).
         with open(dest, "wb") as out:
-            shutil.copyfileobj(f.file, out)
+            while True:
+                chunk = f.file.read(1 << 20)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > _MAX_UPLOAD_BYTES:
+                    out.close()
+                    shutil.rmtree(upload_dir, ignore_errors=True)
+                    raise HTTPException(413, "Upload too large")
+                out.write(chunk)
         dests.append(dest)
 
     with _TASKS_LOCK:
@@ -656,10 +673,14 @@ def progress(task_id: str, request: Request):
         raise HTTPException(404, "Unknown task")
 
     def stream():
+        import time
         last = None
+        deadline = time.time() + 6 * 3600   # safety bound: never pin a worker forever
         while True:
             with _TASKS_LOCK:
                 state = dict(TASKS.get(task_id, {}))
+            if not state or time.time() > deadline:
+                break   # task pruned/gone, or safety deadline hit
             snapshot = (round(state.get("progress", 0), 4), state.get("desc"),
                         state.get("status"))
             if snapshot != last:
@@ -673,7 +694,6 @@ def progress(task_id: str, request: Request):
                 yield f"data: {json.dumps(payload)}\n\n"
             if state.get("status") in ("done", "error", "stopped"):
                 break
-            import time
             time.sleep(0.2)
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -734,10 +754,10 @@ def history_clear(request: Request, payload: dict = None):
 def pick_folder():
     """Open a native folder picker ON THE SERVER machine (local desktop use) and
     return the chosen absolute path. Runs in a subprocess so tkinter never
-    touches the server's asyncio loop. Disabled on public/shared deploys (no
-    display there anyway)."""
-    if server_mode_on():
-        raise HTTPException(403, "Folder picker is not available in server mode")
+    touches the server's asyncio loop. Disabled on public/shared deploys, and
+    admin-gated so a remote LAN peer can't pop a dialog on the host's desktop
+    (it's a local-desktop convenience only)."""
+    _block_in_server_mode()
     import subprocess
     import sys
     code = ("import tkinter, sys\n"
@@ -803,18 +823,19 @@ async def proofread_export(payload: dict, request: Request):
             path = dest
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, str(e))
-    EXPORTS[name] = path
+    EXPORTS[(sid, name)] = path   # per-session key: same-named docs across users don't collide
     return {"ok": True, "filename": os.path.basename(path)}
 
 
-EXPORTS = {}  # doc_name -> exported file path
+EXPORTS = {}  # (session_id, doc_name) -> exported file path
 
 
 @app.get("/api/proofread/download")
 def proofread_download(name: str, request: Request):
-    if sessions.proofread_doc_dir(name, request.state.session_id) is None:
+    sid = request.state.session_id
+    if sessions.proofread_doc_dir(name, sid) is None:
         raise HTTPException(404, "Export not ready")
-    path = EXPORTS.get(name)
+    path = EXPORTS.get((sid, name))
     if not path or not os.path.exists(path):
         raise HTTPException(404, "Export not ready")
     return FileResponse(path, filename=os.path.basename(path))
@@ -924,9 +945,14 @@ async def live_translate(ws: WebSocket):
     # server-side Google key, so only same-origin pages may open it. Non-browser
     # clients send no Origin and aren't subject to CSRF.
     origin = ws.headers.get("origin")
-    host = ws.headers.get("host", "")
-    allowed = {f"http://{host}", f"https://{host}",
-               "http://localhost", "http://127.0.0.1"}
+    host = ws.headers.get("host", "")          # includes the port, e.g. 127.0.0.1:8080
+    port = host.split(":", 1)[1] if ":" in host else ""
+    allowed = {f"http://{host}", f"https://{host}"}
+    # Loopback aliases on the SAME port (the Host header may differ from how the
+    # browser addressed it, e.g. localhost vs 127.0.0.1).
+    for h in ("localhost", "127.0.0.1"):
+        allowed.add(f"http://{h}:{port}" if port else f"http://{h}")
+        allowed.add(f"https://{h}:{port}" if port else f"https://{h}")
     if origin is not None and origin not in allowed:
         await ws.close(code=1008)
         return
