@@ -375,6 +375,7 @@ class SettingsPage(ScrollArea):
         self.card_models.body.addWidget(self.stt_hint)
         self._refresh_models()
 
+        self._apply_tips()
         layout.addStretch(1)
 
         # Stop the LAN server cleanly when the app quits.
@@ -560,6 +561,40 @@ class SettingsPage(ScrollArea):
         bar(title, text, orient=1, isClosable=True,
             position=InfoBarPosition.TOP, duration=3000, parent=self)
 
+    def _apply_tips(self):
+        """Hover tooltips explaining each non-obvious option. Set on the label
+        (and its paired control) so hovering either shows the explanation; the
+        tip text lives in the locale files keyed '<Label> Tip'."""
+        pairs = [
+            (self.mode_label, getattr(self, "mode_combo", None), "Translation Mode Tip"),
+            (self.auto_glossary_label, getattr(self, "auto_glossary", None), "AI Glossary Extraction Tip"),
+            (self.mask_ph_label, getattr(self, "mask_ph", None), "Placeholder Protection Tip"),
+            (self.dedup_ctx_label, getattr(self, "dedup_ctx", None), "Context-aware Dedup Tip"),
+            (self.with_ctx_label, getattr(self, "with_ctx", None), "Type Context Tip"),
+            (self.tone_label, getattr(self, "tone_combo", None), "Tone Tip"),
+            (self.length_label, getattr(self, "length_combo", None), "Length Tip"),
+            (self.style_label, getattr(self, "style_edit", None), "Style Guide Tip"),
+            (self.bi_bold_label, getattr(self, "bi_bold", None), "Bilingual Bold Tip"),
+            (self.bi_color_label, getattr(self, "bi_color", None), "Translation Color Tip"),
+            (self.live_stream_label, getattr(self, "live_stream", None), "Stream Translation Tip"),
+            (self.hang_label, getattr(self, "hang_combo", None), "Segmentation Pause Tip"),
+            (self.sens_label, getattr(self, "sens_combo", None), "Mic Sensitivity Tip"),
+            (self.maxseg_label, getattr(self, "maxseg_combo", None), "Force Cut Tip"),
+            (self.hist_max_label, getattr(self, "hist_max", None), "Auto-delete by count Tip"),
+            (self.hist_age_label, getattr(self, "hist_age", None), "Auto-delete by age Tip"),
+            (self.ocr_mm_label, getattr(self, "ocr_mm_combo", None), "Image OCR Model Tip"),
+            (self.stt_mm_label, getattr(self, "stt_mm_combo", None), "Speech-to-Text Model Tip"),
+            (self.models_loc_label, getattr(self, "models_dir_edit", None), "Model Location Tip"),
+            (getattr(self, "lan_label", None), getattr(self, "lan_switch", None), "LAN Mode Tip"),
+            (getattr(self, "lan_admin_label", None), getattr(self, "lan_admin_edit", None), "LAN admin password Tip"),
+        ]
+        for label, control, key in pairs:
+            tip = tr(key, self._lang)
+            if label is not None:
+                label.setToolTip(tip)
+            if control is not None:
+                control.setToolTip(tip)
+
     def retranslate(self, lang):
         self._lang = lang
         self.section_translation.setText(tr("Settings", lang))
@@ -594,3 +629,4 @@ class SettingsPage(ScrollArea):
         self.stt_mm_label.setText(tr("Speech-to-Text Model", lang))
         self.stt_scope_hint.setText(tr("STT Scope Hint", lang))
         self.stt_hint.setText(tr("Whisper Hint", lang))
+        self._apply_tips()

@@ -138,19 +138,19 @@
       <div class="modal">
         <h3 id="iface-modal-title" data-i18n="Add Interface">添加接口</h3>
         <div class="field"><label data-i18n="Interface Name">接口名称</label><input id="if-name" placeholder="My Provider" /></div>
-        <div class="field"><label data-i18n="Base URL">Base URL</label><input id="if-base" placeholder="https://api.example.com/v1" /></div>
-        <div class="field"><label data-i18n="Model ID">模型 ID</label><input id="if-model" placeholder="gpt-4o" /></div>
+        <div class="field"><label data-i18n="Base URL" data-i18n-title="Base URL Tip">Base URL</label><input id="if-base" placeholder="https://api.example.com/v1" /></div>
+        <div class="field"><label data-i18n="Model ID" data-i18n-title="Model ID Tip">模型 ID</label><input id="if-model" placeholder="gpt-4o" /></div>
         <div class="field"><label data-i18n="API Key">API 密钥</label><input id="if-key" type="password" placeholder="留空则不修改" /></div>
         <div class="row-2">
-          <div class="field"><label data-i18n="Temperature">Temperature</label><input id="if-temp" type="text" placeholder="1.3" /></div>
-          <div class="field"><label data-i18n="Top P">Top P</label><input id="if-topp" type="text" placeholder="0.95" /></div>
+          <div class="field"><label data-i18n="Temperature" data-i18n-title="Temperature Tip">Temperature</label><input id="if-temp" type="text" placeholder="1.3" /></div>
+          <div class="field"><label data-i18n="Top P" data-i18n-title="Top P Tip">Top P</label><input id="if-topp" type="text" placeholder="0.95" /></div>
         </div>
         <div class="row-2">
-          <div class="field"><label data-i18n="RPM Limit">RPM 限制</label><input id="if-rpm" type="number" min="0" max="100000" placeholder="0 = 不限制" /></div>
-          <div class="field"><label data-i18n="Thread Count">线程数</label><input id="if-thread" type="number" min="1" max="64" placeholder="留空用默认" /></div>
+          <div class="field"><label data-i18n="RPM Limit" data-i18n-title="RPM Limit Tip">RPM 限制</label><input id="if-rpm" type="number" min="0" max="100000" placeholder="0 = 不限制" /></div>
+          <div class="field"><label data-i18n="Thread Count" data-i18n-title="Thread Count Tip">线程数</label><input id="if-thread" type="number" min="1" max="64" placeholder="留空用默认" /></div>
         </div>
         <div class="row-2">
-          <div class="field"><label data-i18n="Max Retries">最大重试次数</label><input id="if-retries" type="number" min="1" max="10" placeholder="4" /></div>
+          <div class="field"><label data-i18n="Max Retries" data-i18n-title="Max Retries Tip">最大重试次数</label><input id="if-retries" type="number" min="1" max="10" placeholder="4" /></div>
           <div class="field"></div>
         </div>
         <div class="modal-actions">
@@ -548,17 +548,17 @@
       <details class="card set-card">
         <summary><span class="set-card-title" data-i18n="Translation Options">翻译选项</span><span class="set-card-sub" data-i18n="Translation Options Sub">AI 术语提取 · 占位符保护 · 上下文区分去重</span></summary>
         <div class="set-card-body">
-          <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Mode">翻译模式</span>
+          <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Mode" data-i18n-title="Translation Mode Tip">翻译模式</span>
             <select id="set-translation-mode" style="width:auto"></select>
           </label>
           <div class="muted" style="margin-bottom:12px; font-size:0.8rem" data-i18n="Mode Picker Hint">精准=忠实低温（文档/技术/合同，推荐）；自然=更通顺；润色=更地道（含二次润色）；字幕精简=短句口语，适合字幕。</div>
           <details style="margin-bottom:12px">
             <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem" data-i18n="Advanced Options">高级（语气 / 长度 / 风格指南）</summary>
             <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px">
-              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Tone">语气</span>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Tone" data-i18n-title="Tone Tip">语气</span>
                 <select id="set-tone" style="width:auto"><option value="" data-i18n="Default">默认</option><option value="formal" data-i18n="Formal">正式</option><option value="casual" data-i18n="Casual">口语</option></select>
               </label>
-              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Length">长度</span>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Length" data-i18n-title="Length Tip">长度</span>
                 <select id="set-length" style="width:auto"><option value="" data-i18n="Default">默认</option><option value="keep" data-i18n="Keep Length">贴近原文长度</option><option value="expand" data-i18n="Allow Longer">允许变长</option><option value="short" data-i18n="Concise">尽量简短</option></select>
               </label>
               <label style="display:flex; flex-direction:column; gap:4px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Style Guide Label">风格指南（自由填写，会附加到翻译指令）</span>
@@ -572,7 +572,7 @@
           <label class="check" style="margin-top:10px"><input type="checkbox" id="set-with-context" /> <span data-i18n="Type Context Label">附带类型上下文（实验：把每段的类型作为消歧提示发给模型，更费 token）</span></label>
           <div style="margin-top:12px; display:flex; gap:18px; align-items:center; flex-wrap:wrap">
             <label class="check" style="margin:0"><input type="checkbox" id="set-bi-bold" /> <span data-i18n="Bilingual Bold Label">双语对照：译文加粗</span></label>
-            <label style="display:flex; align-items:center; gap:8px; margin:0; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Color">译文颜色</span>
+            <label style="display:flex; align-items:center; gap:8px; margin:0; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Color" data-i18n-title="Translation Color Tip">译文颜色</span>
               <select id="set-bi-color" style="width:auto">
                 <option value="" data-i18n="None">无</option><option value="C00000" data-i18n="Red">红</option><option value="1F4E79" data-i18n="Blue">蓝</option><option value="2E7D32" data-i18n="Green">绿</option><option value="B36B00" data-i18n="Orange">橙</option>
               </select>
@@ -587,7 +587,7 @@
             </select>
           </label>
           <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Web VAD Note">仅影响 Web 端实时语音断句；Qt 端固定使用 TEN-VAD。</div>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Segmentation Pause">实时语音断句停顿</span>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Segmentation Pause" data-i18n-title="Segmentation Pause Tip">实时语音断句停顿</span>
             <select id="set-vad-hang" style="width:auto">
               <option value="600" data-i18n="Hang Sensitive">灵敏（停顿短就断句·延迟最低）</option>
               <option value="900" data-i18n="Hang Standard">标准（推荐）</option>
@@ -596,14 +596,14 @@
             </select>
           </label>
           <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Hang Note">停顿多久算一句结束。说话慢、句间停顿多时调大，避免一句被切成几段（下次开始识别时生效）。</div>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Mic Sensitivity">麦克风灵敏度</span>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Mic Sensitivity" data-i18n-title="Mic Sensitivity Tip">麦克风灵敏度</span>
             <select id="set-vad-sens" style="width:auto">
               <option value="high" data-i18n="Sens High">高（拾取轻声·安静环境）</option>
               <option value="standard" data-i18n="Sens Standard">标准（推荐）</option>
               <option value="low" data-i18n="Sens Low">低（只收大声·嘈杂环境）</option>
             </select>
           </label>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Force Cut">强制断句上限</span>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Force Cut" data-i18n-title="Force Cut Tip">强制断句上限</span>
             <select id="set-vad-maxseg" style="width:auto">
               <option value="15000" data-i18n="MaxSeg 15s">15 秒</option>
               <option value="30000" data-i18n="MaxSeg 30s">30 秒（推荐）</option>
@@ -633,10 +633,10 @@
       <details class="card set-card">
         <summary><span class="set-card-title" data-i18n="Model Management">模型管理</span><span class="set-card-sub" data-i18n="Model Management Sub">模型位置 · 已下载列表 · 视频/音频字幕 STT</span></summary>
         <div class="set-card-body">
-          <div class="field"><label data-i18n="Model Location">模型位置</label><input type="text" id="models-dir" readonly /></div>
+          <div class="field"><label data-i18n="Model Location" data-i18n-title="Model Location Tip">模型位置</label><input type="text" id="models-dir" readonly /></div>
           <div id="models-list" class="muted" style="margin-top:10px"></div>
-          <div class="field" style="margin-top:14px"><label data-i18n="Image OCR Model">图片识别模型</label><select id="models-ocr"></select></div>
-          <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model">语音转文字模型</label><select id="models-stt"></select></div>
+          <div class="field" style="margin-top:14px"><label data-i18n="Image OCR Model" data-i18n-title="Image OCR Model Tip">图片识别模型</label><select id="models-ocr"></select></div>
+          <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model" data-i18n-title="Speech-to-Text Model Tip">语音转文字模型</label><select id="models-stt"></select></div>
           <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="STT Scope Hint">此处仅设置「视频/音频字幕」的 STT；实时语音、速译语音输入的 STT 模型在「插件」对应卡片中分别设置。</div>
           <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
         </div>
