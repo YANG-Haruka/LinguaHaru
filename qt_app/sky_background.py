@@ -14,7 +14,7 @@ don't cover. Painting is driven by a ~30 fps QTimer that pauses when hidden.
 import math
 import random
 
-from PySide6.QtCore import Qt, QTimer, QPointF, QRectF
+from PySide6.QtCore import Qt, QTimer, QPointF, QRectF, QElapsedTimer
 from PySide6.QtGui import (
     QPainter, QColor, QPixmap, QImage, QRadialGradient, QLinearGradient, QPen,
 )
@@ -43,9 +43,17 @@ class SkyBackground(QWidget):
         self._meteors = []
         self._clouds = []      # each: dict with day/night sprite + position
         self._motes = []
+        self._backdrop = None  # cached static layer (gradient + sun/nebula)
+
+        # Delta-time animation: motion is scaled by real elapsed time, so it runs
+        # at the same speed regardless of frame rate and stays smooth if a frame
+        # is late. _fs is the per-frame scale relative to the original 30fps tuning.
+        self._clock = QElapsedTimer()
+        self._fs = 1.0
+        self._dt = 0.0166
 
         self._timer = QTimer(self)
-        self._timer.setInterval(33)  # ~30 fps
+        self._timer.setInterval(16)  # ~60 fps (frames are cheap: blit + sprites)
         self._timer.timeout.connect(self._tick)
 
     # ------------------------------------------------------------------ #
@@ -55,11 +63,24 @@ class SkyBackground(QWidget):
         if new != self._mode:
             self._mode = new
             self._meteors = []
+            self._build_backdrop()
             self.update()
 
     # ------------------------------------------------------------------ #
     def _tick(self):
-        self._t += 0.033
+        # Real elapsed seconds since the last frame (clamped so a long stall
+        # doesn't make everything jump). _fs scales per-frame motion to the
+        # original 30fps baseline.
+        if not self._clock.isValid():
+            self._clock.start()
+            dt = 0.0166
+        else:
+            dt = self._clock.restart() / 1000.0
+        if dt <= 0 or dt > 0.1:
+            dt = 0.0166
+        self._dt = dt
+        self._fs = dt * 30.0
+        self._t += dt
         self.update()
 
     def showEvent(self, e):
@@ -85,6 +106,7 @@ class SkyBackground(QWidget):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._build_scene()
+        self._build_backdrop()
 
     # ------------------------------------------------------------------ #
     # Scene construction (depends on widget size; rebuilt on resize)
@@ -186,11 +208,62 @@ class SkyBackground(QWidget):
     # ------------------------------------------------------------------ #
     # Painting
     # ------------------------------------------------------------------ #
+    def _build_backdrop(self):
+        """Pre-render the static layer (sky gradient + sun bloom for day, or
+        gradient + nebula for night) to a QPixmap. It's identical every frame,
+        so caching it turns each paint into a blit + a few cheap moving sprites
+        instead of redrawing full-window gradients 60×/second."""
+        w, h = max(1, self.width()), max(1, self.height())
+        if not self._nebula:
+            self._init_nebula()
+        dpr = self.devicePixelRatioF() or 1.0
+        pm = QPixmap(round(w * dpr), round(h * dpr))
+        pm.setDevicePixelRatio(dpr)
+        pm.fill(Qt.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.Antialiasing, True)
+        rect = QRectF(0, 0, w, h)
+        if self._mode == "day":
+            g = QLinearGradient(0, 0, 0, h)
+            g.setColorAt(0.00, QColor("#3a93cf"))
+            g.setColorAt(0.42, QColor("#78bfe6"))
+            g.setColorAt(0.72, QColor("#c2e4f1"))
+            g.setColorAt(1.00, QColor("#fbe6cd"))
+            p.fillRect(rect, g)
+            sx, sy = w * 0.82, h * 0.18
+            sg = QRadialGradient(sx, sy, max(w, h) * 0.55)
+            sg.setColorAt(0.00, QColor(255, 249, 235, 178))
+            sg.setColorAt(0.07, QColor(255, 243, 214, 102))
+            sg.setColorAt(0.28, QColor(255, 228, 186, 31))
+            sg.setColorAt(1.00, QColor(255, 226, 182, 0))
+            p.setCompositionMode(QPainter.CompositionMode_Screen)
+            p.fillRect(rect, sg)
+        else:
+            g = QLinearGradient(0, 0, 0, h)
+            g.setColorAt(0.0, QColor("#05080f"))
+            g.setColorAt(0.6, QColor("#0a1222"))
+            g.setColorAt(1.0, QColor("#0d1830"))
+            p.fillRect(rect, g)
+            p.setCompositionMode(QPainter.CompositionMode_Plus)
+            for nb in self._nebula:
+                cx, cy = nb["x"] * w, nb["y"] * h
+                ng = QRadialGradient(cx, cy, nb["r"] * max(w, h))
+                r, gg, b = nb["c"]
+                ng.setColorAt(0.0, QColor(r, gg, b, int(nb["a"] * 255)))
+                ng.setColorAt(1.0, QColor(r, gg, b, 0))
+                p.fillRect(rect, ng)
+        p.end()
+        self._backdrop = pm
+
     def paintEvent(self, _e):
         if not self._clouds and self.width() > 1:
             self._build_scene()
+        if self._backdrop is None and self.width() > 1:
+            self._build_backdrop()
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing, True)
+        if self._backdrop is not None:
+            p.drawPixmap(0, 0, self._backdrop)
         if self._mode == "day":
             self._draw_day(p)
         else:
@@ -199,29 +272,14 @@ class SkyBackground(QWidget):
 
     # ---------- day ----------
     def _draw_day(self, p):
+        # Sky gradient + sun bloom are in the cached backdrop; only the moving
+        # layers are drawn here, with motion scaled by delta-time (_fs).
         w, h = self.width(), self.height()
-        g = QLinearGradient(0, 0, 0, h)
-        g.setColorAt(0.00, QColor("#3a93cf"))
-        g.setColorAt(0.42, QColor("#78bfe6"))
-        g.setColorAt(0.72, QColor("#c2e4f1"))
-        g.setColorAt(1.00, QColor("#fbe6cd"))
-        p.fillRect(self.rect(), g)
-
-        # Sun bloom (upper-right).
-        sx, sy = w * 0.82, h * 0.18
-        rr = max(w, h) * 0.55
-        sg = QRadialGradient(sx, sy, rr)
-        sg.setColorAt(0.00, QColor(255, 249, 235, 178))
-        sg.setColorAt(0.07, QColor(255, 243, 214, 102))
-        sg.setColorAt(0.28, QColor(255, 228, 186, 31))
-        sg.setColorAt(1.00, QColor(255, 226, 182, 0))
-        p.setCompositionMode(QPainter.CompositionMode_Screen)
-        p.fillRect(self.rect(), sg)
-        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        fs = self._fs
 
         # Drifting clouds.
         for c in self._clouds:
-            c["x"] += c["vx"]
+            c["x"] += c["vx"] * fs
             if c["x"] - c["w"] > w:
                 c["x"] = -c["w"] - _rand(0, 200)
             by = c["y"] + math.sin(self._t * 0.3 + c["bob"]) * 4
@@ -232,8 +290,8 @@ class SkyBackground(QWidget):
         # Floating motes.
         p.setPen(Qt.NoPen)
         for m in self._motes:
-            m["y"] += m["vy"]
-            m["x"] += m["vx"]
+            m["y"] += m["vy"] * fs
+            m["x"] += m["vx"] * fs
             if m["y"] < -6:
                 m["y"] = h + 6
                 m["x"] = random.random() * w
@@ -245,28 +303,14 @@ class SkyBackground(QWidget):
 
     # ---------- night ----------
     def _draw_night(self, p):
+        # Gradient + nebula are in the cached backdrop; only the moving layers
+        # are drawn here, with motion scaled by delta-time (_fs).
         w, h = self.width(), self.height()
-        g = QLinearGradient(0, 0, 0, h)
-        g.setColorAt(0.0, QColor("#05080f"))
-        g.setColorAt(0.6, QColor("#0a1222"))
-        g.setColorAt(1.0, QColor("#0d1830"))
-        p.fillRect(self.rect(), g)
-
-        # Nebula glow (additive).
-        p.setCompositionMode(QPainter.CompositionMode_Plus)
-        for nb in self._nebula:
-            cx, cy = nb["x"] * w, nb["y"] * h
-            rr = nb["r"] * max(w, h)
-            ng = QRadialGradient(cx, cy, rr)
-            r, gg, b = nb["c"]
-            ng.setColorAt(0.0, QColor(r, gg, b, int(nb["a"] * 255)))
-            ng.setColorAt(1.0, QColor(r, gg, b, 0))
-            p.fillRect(self.rect(), ng)
-        p.setCompositionMode(QPainter.CompositionMode_SourceOver)
+        fs = self._fs
 
         # Faint moonlit clouds drifting low and slow (kept dim so stars read).
         for c in self._clouds:
-            c["x"] += c["vx"] * 0.6
+            c["x"] += c["vx"] * 0.6 * fs
             if c["x"] - c["w"] > w:
                 c["x"] = -c["w"] - _rand(0, 200)
             by = c["y"] + math.sin(self._t * 0.25 + c["bob"]) * 3
@@ -289,10 +333,11 @@ class SkyBackground(QWidget):
         self._draw_meteors(p, w, h)
 
     def _draw_meteors(self, p, w, h):
+        fs = self._fs
         for m in self._meteors:
-            m["x"] += m["vx"]
-            m["y"] += m["vy"]
-            m["life"] += 1
+            m["x"] += m["vx"] * fs
+            m["y"] += m["vy"] * fs
+            m["life"] += fs
             inv = 1.0 / math.hypot(m["vx"], m["vy"])
             tx = m["x"] - m["vx"] * inv * m["len"]
             ty = m["y"] - m["vy"] * inv * m["len"]
@@ -314,7 +359,7 @@ class SkyBackground(QWidget):
         self._meteors = [m for m in self._meteors
                          if m["life"] < m["max"] and m["y"] < h + 60
                          and -300 < m["x"] < w + 300]
-        self._next_meteor -= 0.033
+        self._next_meteor -= self._dt
         if self._next_meteor <= 0:
             self._spawn_meteor(w, h)
             self._next_meteor = _rand(2.6, 5.5)

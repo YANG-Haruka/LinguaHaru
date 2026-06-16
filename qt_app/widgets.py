@@ -7,7 +7,7 @@ Translate page (colorful format-category cards), the Plugins / Interface pages
 
 import os
 
-from PySide6.QtCore import Qt, Signal, QTimer, QRectF
+from PySide6.QtCore import Qt, Signal, QTimer, QRectF, QElapsedTimer
 from PySide6.QtGui import QColor, QPainter, QPen, QFont, QPainterPath, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QVBoxLayout, QHBoxLayout, QWidget
@@ -147,16 +147,26 @@ class DropZone(SimpleCardWidget):
         self.prompt.setWordWrap(True)
         layout.addWidget(self.prompt, 0, Qt.AlignHCenter)
 
-        # ~30 fps marquee animation (paused while hidden).
+        # ~60 fps marquee animation (paused while hidden). Motion is delta-time
+        # based so the speed is the same regardless of frame rate and stays
+        # smooth if a frame is late.
+        self._clock = QElapsedTimer()
         self._timer = QTimer(self)
-        self._timer.setInterval(33)
+        self._timer.setInterval(16)
         self._timer.timeout.connect(self._tick)
 
     def set_prompt(self, text):
         self.prompt.setText(text)
 
     def _tick(self):
-        self._scroll += 0.6  # px/frame ≈ 18 px/s
+        if not self._clock.isValid():
+            self._clock.start()
+            dt = 0.0166
+        else:
+            dt = self._clock.restart() / 1000.0
+        if dt <= 0 or dt > 0.1:
+            dt = 0.0166
+        self._scroll += 18.0 * dt  # ≈ 18 px/s, frame-rate independent
         self.update()
 
     def showEvent(self, event):

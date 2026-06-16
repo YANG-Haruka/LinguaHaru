@@ -22,6 +22,7 @@
     canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
     ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
     initStars(); initNebula(); initClouds(); initMotes();
+    buildBackdrop();
     drawOnce();
   }
 
@@ -51,13 +52,8 @@
     });
   }
   function drawNight(dt) {
-    ctx.globalCompositeOperation = "screen";
-    for (const nb of nebula) {
-      const cx = nb.x * W, cy = nb.y * H, rr = nb.r * Math.max(W, H);
-      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
-      g.addColorStop(0, `rgba(${nb.c},${nb.a})`); g.addColorStop(1, `rgba(${nb.c},0)`);
-      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    }
+    // Nebula glow is pre-rendered into the cached backdrop; only stars/meteors
+    // (the animated layers) are drawn per frame here.
     ctx.globalCompositeOperation = "source-over";
     ctx.fillStyle = "#eaf2ff";
     for (const s of stars) {
@@ -164,28 +160,21 @@
     if (off) { birds = []; birdTimer = rand(5, 11); }
   }
   function drawDay(dt) {
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#3a93cf"); g.addColorStop(0.42, "#78bfe6");
-    g.addColorStop(0.72, "#c2e4f1"); g.addColorStop(1, "#fbe6cd");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-    // sun bloom (upper-right)
-    const sx = W * 0.82, sy = H * 0.18, rr = Math.max(W, H) * 0.55;
-    const sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, rr);
-    sg.addColorStop(0, "rgba(255,249,235,0.70)");
-    sg.addColorStop(0.07, "rgba(255,243,214,0.40)");
-    sg.addColorStop(0.28, "rgba(255,228,186,0.12)");
-    sg.addColorStop(1, "rgba(255,226,182,0)");
-    ctx.globalCompositeOperation = "screen"; ctx.fillStyle = sg; ctx.fillRect(0, 0, W, H);
-    // faint lens-flare dots along sun→center axis
+    // The sky gradient + sun bloom are pre-rendered into the cached backdrop;
+    // only the animated layers are drawn per frame here. sx/sy mark the sun.
+    const sx = W * 0.82, sy = H * 0.18;
+    ctx.globalCompositeOperation = "screen";
+    // faint lens-flare dots along sun→center axis (fill only each dot's box, not
+    // the whole canvas — same look, a fraction of the pixels)
     if (!reduce) {
       const cx = W * 0.5, cy = H * 0.5;
       for (let i = 1; i <= 3; i++) {
         const fx = sx + (cx - sx) * (i * 0.5), fy = sy + (cy - sy) * (i * 0.5);
-        const fr = 30 + 18 * Math.sin(t * 0.6 + i);
-        const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, Math.max(8, fr));
+        const fr = Math.max(8, 30 + 18 * Math.sin(t * 0.6 + i));
+        const fg = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr);
         fg.addColorStop(0, `rgba(255,238,205,${0.06 + 0.03 * Math.sin(t + i)})`);
         fg.addColorStop(1, "rgba(255,238,205,0)");
-        ctx.fillStyle = fg; ctx.fillRect(0, 0, W, H);
+        ctx.fillStyle = fg; ctx.fillRect(fx - fr, fy - fr, fr * 2, fr * 2);
       }
     }
     // soft god-rays fanning down from the sun
@@ -220,8 +209,48 @@
     ctx.globalAlpha = 1;
   }
 
+  // ---------- cached static backdrop ----------
+  // The gradient sky + sun bloom (day) / nebula (night) are identical every
+  // frame, so render them ONCE to an offscreen canvas and blit that each frame.
+  // This removes 3-5 full-canvas gradient creations+fills per frame that were
+  // saturating the main thread and making the UI (marquee, scrolling) stutter.
+  let backdrop = null, bctx = null;
+  function buildBackdrop() {
+    if (!backdrop) { backdrop = document.createElement("canvas"); bctx = backdrop.getContext("2d"); }
+    backdrop.width = Math.round(W * DPR); backdrop.height = Math.round(H * DPR);
+    bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    bctx.clearRect(0, 0, W, H);
+    if (mode === "day") {
+      const g = bctx.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, "#3a93cf"); g.addColorStop(0.42, "#78bfe6");
+      g.addColorStop(0.72, "#c2e4f1"); g.addColorStop(1, "#fbe6cd");
+      bctx.fillStyle = g; bctx.fillRect(0, 0, W, H);
+      const sx = W * 0.82, sy = H * 0.18, rr = Math.max(W, H) * 0.55;
+      const sg = bctx.createRadialGradient(sx, sy, 0, sx, sy, rr);
+      sg.addColorStop(0, "rgba(255,249,235,0.70)");
+      sg.addColorStop(0.07, "rgba(255,243,214,0.40)");
+      sg.addColorStop(0.28, "rgba(255,228,186,0.12)");
+      sg.addColorStop(1, "rgba(255,226,182,0)");
+      bctx.globalCompositeOperation = "screen"; bctx.fillStyle = sg; bctx.fillRect(0, 0, W, H);
+      bctx.globalCompositeOperation = "source-over";
+    } else {
+      bctx.globalCompositeOperation = "screen";
+      for (const nb of nebula) {
+        const cx = nb.x * W, cy = nb.y * H, rr = nb.r * Math.max(W, H);
+        const g = bctx.createRadialGradient(cx, cy, 0, cx, cy, rr);
+        g.addColorStop(0, `rgba(${nb.c},${nb.a})`); g.addColorStop(1, `rgba(${nb.c},0)`);
+        bctx.fillStyle = g; bctx.fillRect(0, 0, W, H);
+      }
+      bctx.globalCompositeOperation = "source-over";
+    }
+  }
+
   // ---------- loop ----------
-  function render(dt) { ctx.clearRect(0, 0, W, H); if (mode === "day") drawDay(dt); else drawNight(dt); }
+  function render(dt) {
+    ctx.clearRect(0, 0, W, H);
+    if (backdrop) ctx.drawImage(backdrop, 0, 0, W, H);
+    if (mode === "day") drawDay(dt); else drawNight(dt);
+  }
   function drawOnce() { render(0.016); }
   function frame(ts) {
     const dt = Math.min(0.05, (ts - last) / 1000) || 0.016; last = ts; t += dt;
@@ -236,7 +265,7 @@
 
   resize();
   window.LHBackground = {
-    setMode(m) { mode = m === "light" ? "day" : "night"; meteors = []; drawOnce(); },
+    setMode(m) { mode = m === "light" ? "day" : "night"; meteors = []; buildBackdrop(); drawOnce(); },
   };
   start();
 })();
