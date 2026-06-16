@@ -15,11 +15,27 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, CaptionLabel,
     CardWidget, PushButton, LineEdit, FluentIcon, MessageBox, ComboBox,
+    ToolTipFilter, ToolTipPosition,
 )
 
 from core import backend
 from core import model_store
 from qt_app.i18n import tr
+
+# Outlined button styles: a neutral one and a red "danger" one (for the
+# irreversible delete), both with a hover fill — cleaner than solid blocks.
+_NEUTRAL_BTN_QSS = (
+    "PushButton{border:1px solid rgba(128,128,128,0.40);border-radius:8px;"
+    "padding:5px 16px;background:transparent;}"
+    "PushButton:hover{background:rgba(128,128,128,0.14);border-color:rgba(128,128,128,0.65);}"
+    "PushButton:pressed{background:rgba(128,128,128,0.22);}"
+)
+_DANGER_BTN_QSS = (
+    "PushButton{border:1px solid rgba(224,80,60,0.55);border-radius:8px;"
+    "padding:5px 16px;background:transparent;color:#e0503c;}"
+    "PushButton:hover{background:rgba(224,80,60,0.16);border-color:#e0503c;}"
+    "PushButton:pressed{background:rgba(224,80,60,0.28);}"
+)
 
 
 class _CollapsibleCard(CardWidget):
@@ -307,12 +323,21 @@ class SettingsPage(ScrollArea):
         self.hist_age_label = BodyLabel(tr("Auto-delete by age", lang))
         hist_form.addRow(self.hist_age_label, self.hist_age_edit)
         self.card_data.body.addLayout(hist_form)
-        self.hist_clear_btn = PushButton(FluentIcon.DELETE, tr("Clear History", lang))
+        # Two danger actions, side by side: "clear records" is the lighter one
+        # (neutral outline), "clear records + files" is the irreversible one
+        # (red outline that fills on hover). Content-width, not full-width blocks.
+        hist_btn_row = QHBoxLayout()
+        hist_btn_row.setSpacing(10)
+        self.hist_clear_btn = PushButton(FluentIcon.BROOM, tr("Clear History", lang))
         self.hist_clear_btn.clicked.connect(self._clear_history)
-        self.card_data.body.addWidget(self.hist_clear_btn)
+        self.hist_clear_btn.setStyleSheet(_NEUTRAL_BTN_QSS)
         self.hist_clear_files_btn = PushButton(FluentIcon.DELETE, tr("Clear History And Files", lang))
         self.hist_clear_files_btn.clicked.connect(self._clear_history_and_files)
-        self.card_data.body.addWidget(self.hist_clear_files_btn)
+        self.hist_clear_files_btn.setStyleSheet(_DANGER_BTN_QSS)
+        hist_btn_row.addWidget(self.hist_clear_btn)
+        hist_btn_row.addWidget(self.hist_clear_files_btn)
+        hist_btn_row.addStretch(1)
+        self.card_data.body.addLayout(hist_btn_row)
 
         # --- Card 4: Model Management ---
         self.card_models = _CollapsibleCard(tr("Model Management", lang))
@@ -630,9 +655,13 @@ class SettingsPage(ScrollArea):
             position=InfoBarPosition.TOP, duration=3000, parent=self)
 
     def _apply_tips(self):
-        """Hover tooltips explaining each non-obvious option. Set on the label
-        (and its paired control) so hovering either shows the explanation; the
-        tip text lives in the locale files keyed '<Label> Tip'."""
+        """Hover tooltips explaining each non-obvious option. To make them
+        DISCOVERABLE and responsive (the native tooltip is slow and gives no
+        cue): each labelled option gets a help-cursor on hover, a soft highlight,
+        and a fast styled tooltip (ToolTipFilter, ~250ms). Tip text lives in the
+        locale files keyed '<Label> Tip'."""
+        from PySide6.QtCore import Qt
+        self._tip_filters = getattr(self, "_tip_filters", [])
         pairs = [
             (self.mode_label, getattr(self, "mode_combo", None), "Translation Mode Tip"),
             (self.auto_glossary_label, getattr(self, "auto_glossary", None), "AI Glossary Extraction Tip"),
@@ -656,12 +685,26 @@ class SettingsPage(ScrollArea):
             (getattr(self, "lan_label", None), getattr(self, "lan_switch", None), "LAN Mode Tip"),
             (getattr(self, "lan_admin_label", None), getattr(self, "lan_admin_edit", None), "LAN admin password Tip"),
         ]
+        _hover_qss = ("QLabel:hover{background:rgba(0,120,212,0.13);"
+                      "border-radius:4px;}")
         for label, control, key in pairs:
             tip = tr(key, self._lang)
             if label is not None:
                 label.setToolTip(tip)
+                label.setCursor(Qt.WhatsThisCursor)       # ?-cursor: "there's help here"
+                label.setStyleSheet(_hover_qss)           # soft highlight on hover
+                if not getattr(label, "_has_tip_filter", False):
+                    self._tip_filters.append(
+                        ToolTipFilter(label, showDelay=250, position=ToolTipPosition.TOP))
+                    label.installEventFilter(self._tip_filters[-1])
+                    label._has_tip_filter = True
             if control is not None:
                 control.setToolTip(tip)
+                if not getattr(control, "_has_tip_filter", False):
+                    self._tip_filters.append(
+                        ToolTipFilter(control, showDelay=250, position=ToolTipPosition.TOP))
+                    control.installEventFilter(self._tip_filters[-1])
+                    control._has_tip_filter = True
 
     def retranslate(self, lang):
         self._lang = lang

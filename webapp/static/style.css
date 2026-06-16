@@ -432,6 +432,16 @@ textarea:-webkit-autofill {
 .ft { display: inline-flex; align-items: center; gap: 5px; }
 .ft img { width: 24px; height: 30px; display: block; }
 .ft i { font-style: normal; font-size: 13px; font-weight: 700; color: var(--muted); }
+/* Tooltip discoverability: anything with a hover tooltip gets a help cursor +
+   a subtle dotted underline, brightening to the accent on hover — so it's
+   obvious there's an explanation before the native tooltip appears. */
+[data-i18n-title] {
+  cursor: help;
+  text-decoration: underline dotted rgba(127,140,160,0.5);
+  text-underline-offset: 3px;
+}
+[data-i18n-title]:hover { text-decoration-color: var(--accent); color: var(--text); }
+
 /* Model management: per-model rows with install/delete/use */
 .model-group > summary { cursor: pointer; color: var(--text-2); font-size: 0.9rem; padding: 4px 0; user-select: none; }
 .model-rows { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
