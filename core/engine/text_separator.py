@@ -149,11 +149,28 @@ def load_glossary(glossary_path, src_lang, dst_lang):
     
     return []
 
+_CJK_RE = re.compile(r"[　-鿿＀-￯]")
+
+
+def _term_matches(term, text):
+    """Whether a glossary source term occurs in `text`. CJK terms use plain
+    substring (no word boundaries in CJK); Latin/word terms use a case-
+    insensitive WHOLE-WORD match so 'app' doesn't match inside 'application'."""
+    if not term:
+        return False
+    if _CJK_RE.search(term):
+        return term in text
+    if re.fullmatch(r"[\w\s'\-]+", term):
+        return re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", text,
+                         re.IGNORECASE) is not None
+    return term in text   # symbols/mixed -> substring fallback
+
+
 def format_glossary_for_prompt(glossary_entries, text):
     """Format glossary entries for prompt"""
     relevant_entries = []
     for src_term, dst_term in glossary_entries:
-        if src_term in text:
+        if _term_matches(src_term, text):
             relevant_entries.append((src_term, dst_term))
     
     if not relevant_entries:
@@ -176,10 +193,10 @@ def find_terms_with_hashtable(text, glossary_entries):
     sorted_terms = sorted(term_dict.keys(), key=len, reverse=True)
     
     for term in sorted_terms:
-        if term in text and term not in found_terms:
+        if term not in found_terms and _term_matches(term, text):
             found_terms.add(term)
             results.append((term, term_dict[term]))
-    
+
     return results
 
 def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, previous_prompt, src_lang=None, dst_lang=None, glossary_path=None, continue_mode=False):

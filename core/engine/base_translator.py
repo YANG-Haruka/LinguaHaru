@@ -774,6 +774,7 @@ class DocumentTranslator:
             enabled = False
         if not enabled:
             return
+        self.check_for_stop()   # honor a pending Stop before the extraction call
         try:
             from core.engine.glossary_extractor import (
                 extract_glossary_terms, write_merged_glossary)
@@ -789,7 +790,8 @@ class DocumentTranslator:
                     values.append(value.strip())
 
             terms = extract_glossary_terms(values, self.model, self.use_online,
-                                           self.api_key, self.src_lang, self.dst_lang)
+                                           self.api_key, self.src_lang, self.dst_lang,
+                                           check_stop=self.check_for_stop)
             if not terms:
                 return
 
