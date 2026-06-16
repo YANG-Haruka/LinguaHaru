@@ -314,8 +314,18 @@ class DocumentTranslator:
                 retry_count += 1
                 
                 try:
-                    with self.lock:
-                        current_previous = self.previous_content
+                    # The running "previous content" gives the LLM prior context
+                    # for consistency, but that only holds when segments are
+                    # translated IN DOCUMENT ORDER. Under concurrency
+                    # (num_threads > 1) completion order is nondeterministic, so
+                    # this value is a last-writer-wins race that would inject
+                    # arbitrary out-of-order context. Disable it then so output is
+                    # reproducible; keep it for single-threaded (ordered) runs.
+                    if self.num_threads > 1:
+                        current_previous = ""
+                    else:
+                        with self.lock:
+                            current_previous = self.previous_content
 
                     # Translate with stop callback
                     translated_text, success, token_usage = translate_text(
@@ -363,9 +373,13 @@ class DocumentTranslator:
                         )
                         
                         if translation_results:
-                            self.previous_content = self._update_previous_content(
-                                translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
-                            )
+                            # Only accumulate running context when sequential (see
+                            # the ordering note above); under concurrency it would
+                            # be nondeterministic, so we leave it untouched.
+                            if self.num_threads == 1:
+                                self.previous_content = self._update_previous_content(
+                                    translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
+                                )
                             return translation_results
                         else:
                             empty_result_count += 1
@@ -554,8 +568,13 @@ class DocumentTranslator:
                 retry_count += 1
                 
                 try:
-                    with self.lock:
-                        current_previous = self.previous_content
+                    # See the ordering note in the main loop: running context is
+                    # only coherent in single-threaded (document-order) runs.
+                    if self.num_threads > 1:
+                        current_previous = ""
+                    else:
+                        with self.lock:
+                            current_previous = self.previous_content
 
                     # Translate
                     translated_text, success, token_usage = translate_text(
@@ -603,9 +622,10 @@ class DocumentTranslator:
                         )
                         
                         if translation_results:
-                            self.previous_content = self._update_previous_content(
-                                translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
-                            )
+                            if self.num_threads == 1:
+                                self.previous_content = self._update_previous_content(
+                                    translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
+                                )
                             app_logger.debug("Successfully processed segment")
                             return translation_results
                         else:
