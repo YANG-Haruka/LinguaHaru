@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615S" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615T" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -539,10 +539,10 @@
         <p data-i18n="Settings Subtitle">模型密钥、网络与重试。可选能力模块请前往「插件」。</p>
       </div>
       <details class="card set-card">
-        <summary><span class="set-card-title" data-i18n="Run Mode">运行模式</span><span class="set-card-sub">局域网模式 · 管理密码</span></summary>
+        <summary><span class="set-card-title" data-i18n="Run Mode">运行模式</span><span class="set-card-sub" data-i18n="Run Mode Sub">局域网模式 · 管理密码</span></summary>
         <div class="set-card-body">
-          <label class="check"><input type="checkbox" id="set-lan" /> 局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</label>
-          <div class="field" style="margin-top:10px"><label>局域网管理密码（不设密码时，<b>只有本机</b>可修改配置 / 密钥 / 插件，其他设备无法管理；设置后其他设备需输入此密码才能管理）</label><input type="password" id="set-lan-admin" placeholder="留空 = 仅本机可管理" /></div>
+          <label class="check"><input type="checkbox" id="set-lan" /> <span data-i18n="LAN Mode Label">局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</span></label>
+          <div class="field" style="margin-top:10px"><label data-i18n="LAN Admin Label">局域网管理密码（不设密码时，只有本机可修改配置 / 密钥 / 插件，其他设备无法管理；设置后其他设备需输入此密码才能管理）</label><input type="password" id="set-lan-admin" data-i18n-ph="LAN Admin Placeholder" placeholder="留空 = 仅本机可管理" /></div>
         </div>
       </details>
       <details class="card set-card">
@@ -590,30 +590,30 @@
         </div>
       </details>
       <details class="card set-card">
-        <summary><span class="set-card-title" data-i18n="Data &amp; Storage">数据保存</span><span class="set-card-sub">保存位置 · 自动删除 · 清空</span></summary>
+        <summary><span class="set-card-title" data-i18n="Data &amp; Storage">数据保存</span><span class="set-card-sub" data-i18n="Data Storage Sub">保存位置 · 自动删除 · 清空</span></summary>
         <div class="set-card-body">
-          <div class="field"><label>结果保存位置（输出文件 / 实时语音字幕的保存目录）</label>
+          <div class="field"><label data-i18n="Result Dir Label">结果保存位置（输出文件 / 实时语音字幕的保存目录）</label>
             <div class="dir-row"><input type="text" id="set-result-dir" placeholder="data/result" /><button id="set-result-browse" type="button" data-i18n="Browse">浏览</button></div>
           </div>
           <div class="row-2" style="margin-top:10px">
-            <div class="field"><label>超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
-            <div class="field"><label>超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
+            <div class="field"><label data-i18n="Auto Delete Count">超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
+            <div class="field"><label data-i18n="Auto Delete Days">超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
           </div>
           <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
             <button id="set-hist-clear" class="danger" data-i18n="Clear History">清空历史记录</button>
             <button id="set-hist-clear-files" class="danger" data-i18n="Clear History And Files">清空历史及相关文件</button>
           </div>
-          <div class="muted" style="margin-top:6px; font-size:0.8rem">「清空历史记录」仅删除列表；「清空历史及相关文件」会同时删除这些记录生成的译文/日志文件（不会删除你的原始文件）。</div>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Clear History Note">「清空历史记录」仅删除列表；「清空历史及相关文件」会同时删除这些记录生成的译文/日志文件（不会删除你的原始文件）。</div>
         </div>
       </details>
       <details class="card set-card">
-        <summary><span class="set-card-title" data-i18n="Model Management">模型管理</span><span class="set-card-sub">模型位置 · 已下载列表 · 视频/音频字幕 STT</span></summary>
+        <summary><span class="set-card-title" data-i18n="Model Management">模型管理</span><span class="set-card-sub" data-i18n="Model Management Sub">模型位置 · 已下载列表 · 视频/音频字幕 STT</span></summary>
         <div class="set-card-body">
           <div class="field"><label data-i18n="Model Location">模型位置</label><input type="text" id="models-dir" readonly /></div>
           <div id="models-list" class="muted" style="margin-top:10px"></div>
           <div class="field" style="margin-top:14px"><label data-i18n="Image OCR Model">图片识别模型</label><select id="models-ocr"></select></div>
           <div class="field" style="margin-top:14px"><label data-i18n="Speech-to-Text Model">语音转文字模型</label><select id="models-stt"></select></div>
-          <div class="muted" style="margin-top:6px; font-size:0.8rem">此处仅设置「视频/音频字幕」的 STT；实时语音、速译语音输入的 STT 模型在「插件」对应卡片中分别设置。</div>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="STT Scope Hint">此处仅设置「视频/音频字幕」的 STT；实时语音、速译语音输入的 STT 模型在「插件」对应卡片中分别设置。</div>
           <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
         </div>
       </details>
@@ -630,7 +630,7 @@
      <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
    </div>
  </div>
-  <script src="/static/background.js?v=20260615S"></script>
-  <script src="/static/app.js?v=20260615S"></script>
+  <script src="/static/background.js?v=20260615T"></script>
+  <script src="/static/app.js?v=20260615T"></script>
 </body>
 </html>
