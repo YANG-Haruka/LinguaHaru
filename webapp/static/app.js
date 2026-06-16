@@ -1293,6 +1293,17 @@ function stopGoogle() {
 }
 
 // --- Local (SenseVoice + LLM): audio-thread VAD segments -> POST per utterance ---
+// Glass lock shown while an STT model loads (first use can download + warm for
+// seconds). Blocks mis-clicks and tells the user what's happening.
+function showModelLoading(text) {
+  const o = $("model-loading-overlay"); if (!o) return;
+  const t = $("model-loading-text"); if (t && text) t.textContent = text;
+  o.hidden = false;
+}
+function hideModelLoading() {
+  const o = $("model-loading-overlay"); if (o) o.hidden = true;
+}
+
 async function startLocal() {
   try {
     liveStream = await acquireLiveStream();
@@ -1300,7 +1311,10 @@ async function startLocal() {
   $("live-input").textContent = ""; $("live-output").textContent = "";
   // Preload the local model so the first sentence isn't blocked on a slow load.
   setLiveStatus("正在加载本地模型…（首次需下载/加载，请稍候）");
-  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "live" }) }); } catch (e) { /* load lazily */ }
+  showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
+  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "live" }) }); }
+  catch (e) { /* load lazily */ }
+  finally { hideModelLoading(); }
   liveCtx = new AudioContext();
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
@@ -1923,7 +1937,10 @@ async function quickMic() {
   } catch (e) { $("quick-status").textContent = "无法访问麦克风：" + e.message; return; }
   $("quick-status").textContent = "正在加载本地模型…";
   // Quick voice uses its own STT model (quick_stt_model) — preload THAT, not live.
-  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "quick" }) }); } catch (e) { /* lazy load */ }
+  showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
+  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "quick" }) }); }
+  catch (e) { /* lazy load */ }
+  finally { hideModelLoading(); }
   _quickRecCtx = new AudioContext();
   _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
   try {
