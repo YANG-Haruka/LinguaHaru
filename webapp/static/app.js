@@ -115,6 +115,24 @@ function modelsForMode(online) {
   return online ? BOOT.online_models : BOOT.local_models;
 }
 
+// The media STT picker offers ONLY downloaded models (the user installs them in
+// Settings -> Model Management). Refreshed on load and whenever a media file is
+// picked, so newly-installed models appear without a reload.
+async function refreshSttPicker() {
+  const sel = $("stt-model");
+  if (!sel) return;
+  const cur = BOOT.config && BOOT.config.stt_model;
+  let items;
+  try {
+    const d = await api("/api/models");
+    items = (d.stt || []).filter((m) => m.downloaded).map((m) => ({ id: m.id, label: m.label }));
+  } catch (e) {
+    items = BOOT.stt_models || [];   // endpoint unavailable -> degrade to full list
+  }
+  fillSelect(sel, items, items.some((m) => m.id === cur) ? cur : (items[0] && items[0].id));
+  if (sel.value && BOOT.config) BOOT.config.stt_model = sel.value;
+}
+
 // Online vs offline is decided by the ACTIVE interface (set in Interface
 // Management), not a Settings checkbox. activateIface keeps this in sync.
 function useOnline() {
@@ -422,7 +440,7 @@ async function boot() {
   fillSelect($("dst-lang"), BOOT.languages, c.default_dst_lang);
   fillSelect($("model"), modelsForMode(c.default_online), c.default_online_model);
   fillSelect($("glossary"), BOOT.glossaries, c.default_glossary);
-  fillSelect($("stt-model"), BOOT.stt_models, c.stt_model);
+  refreshSttPicker();   // only DOWNLOADED STT models are offered
   $("translate-subs").checked = c.translate_subtitles;
 
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
@@ -609,7 +627,7 @@ function setFiles(list) {
   }
   const anyMedia = list.some((f) => MEDIA_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
   $("media-options").hidden = !anyMedia;
-  if (anyMedia) applySenseVoiceRestriction();
+  if (anyMedia) { refreshSttPicker().then(applySenseVoiceRestriction); }
   const anyPdf = list.some((f) => f.name.split(".").pop().toLowerCase() === "pdf");
   $("pdf-options").hidden = !anyPdf;
 }

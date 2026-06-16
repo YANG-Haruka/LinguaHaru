@@ -391,6 +391,7 @@
   "Model Deleted": "模型已删除",
   "Delete Model Confirm": "确定删除该模型的本地文件吗？",
   "No Models Hint": "展开模型类型即可安装或删除其中的模型。",
+  "No STT downloaded": "未下载语音转文字模型 —— 请到 设置 → 模型管理 下载。",
   "Context Optional": "上下文（可选，仅辅助消歧，不翻译）",
   "Type Context": "附带类型上下文（实验）",
   "Tone": "语气",

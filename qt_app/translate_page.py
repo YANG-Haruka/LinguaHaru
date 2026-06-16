@@ -158,15 +158,16 @@ class TranslatePage(QStackedWidget):
         media_form = QFormLayout(self.media_card)
         media_form.setContentsMargins(20, 14, 20, 14)
         media_form.setSpacing(10)
-        self._stt_ids = [m["id"] for m in STT_MODELS]
+        self._stt_ids = []
         self.stt_combo = ComboBox()
-        self.stt_combo.addItems([m["label"] for m in STT_MODELS])
-        sel = get_selected_stt_model()
-        if sel in self._stt_ids:
-            self.stt_combo.setCurrentIndex(self._stt_ids.index(sel))
         self.stt_combo.currentIndexChanged.connect(self._on_stt_changed)
         self.stt_label = BodyLabel(tr("Speech-to-Text Model", lang))
         media_form.addRow(self.stt_label, self.stt_combo)
+        self.stt_empty_hint = CaptionLabel(tr("No STT downloaded", lang))
+        self.stt_empty_hint.setWordWrap(True)
+        self.stt_empty_hint.setVisible(False)
+        media_form.addRow("", self.stt_empty_hint)
+        self._refresh_stt_models()
         sub_row = QHBoxLayout()
         self.translate_subs_switch = SwitchButton()
         self.translate_subs_switch.setChecked(config.get("translate_subtitles", True))
@@ -376,6 +377,8 @@ class TranslatePage(QStackedWidget):
         self._rebuild_bilingual_switches()
         # Show STT options only for media files; apply SenseVoice lang limits.
         has_media = any(os.path.splitext(p)[1].lower() in MEDIA_EXTENSIONS for p in paths)
+        if has_media:
+            self._refresh_stt_models()   # reflect models installed since last view
         self.media_card.setVisible(has_media)
         if has_media and 0 <= self.stt_combo.currentIndex() < len(self._stt_ids):
             self._apply_stt_language_restriction(self._stt_ids[self.stt_combo.currentIndex()])
@@ -424,6 +427,25 @@ class TranslatePage(QStackedWidget):
             self.bilingual_layout.addWidget(container)
             self._bilingual_switches[key] = sw
         self.bilingual_card.setVisible(bool(keys))
+
+    def _refresh_stt_models(self):
+        """Offer only DOWNLOADED STT models — selection happens here at translate
+        time; models are installed in Settings -> Model Management."""
+        from core.optional_modules import plugin_model_states
+        states = [s for s in plugin_model_states("Video/Audio") if s["downloaded"]]
+        self._stt_ids = [s["id"] for s in states]
+        self.stt_combo.blockSignals(True)
+        self.stt_combo.clear()
+        self.stt_combo.addItems([s["label"] for s in states])
+        sel = get_selected_stt_model()
+        if sel in self._stt_ids:
+            self.stt_combo.setCurrentIndex(self._stt_ids.index(sel))
+        elif self._stt_ids:
+            self.stt_combo.setCurrentIndex(0)
+        self.stt_combo.blockSignals(False)
+        self.stt_combo.setVisible(bool(self._stt_ids))
+        self.stt_label.setVisible(bool(self._stt_ids))
+        self.stt_empty_hint.setVisible(not self._stt_ids)
 
     def _on_stt_changed(self, index):
         if not (0 <= index < len(self._stt_ids)):

@@ -11,8 +11,16 @@ import json
 import shutil
 import subprocess
 import tempfile
+import threading
 
 from core.log_config import app_logger
+
+# Serialize model LOADING. Two batch jobs (e.g. two videos) starting at once
+# both tried to load the same model via device_map/accelerate concurrently,
+# which corrupted the load ("Cannot copy out of meta tensor"). Loading is rare
+# and quick relative to a translation, so one global lock is fine; inference
+# still runs concurrently once the (shared) model is cached.
+_LOAD_LOCK = threading.RLock()
 
 # --- STT model catalogue ----------------------------------------------------
 # Each entry: id (stored in config), label (UI), engine, size/model name.
@@ -245,17 +253,20 @@ def extract_audio_to_wav(media_path, output_dir):
 
 # --- whisper engine ---------------------------------------------------------
 def _get_whisper_model(size):
-    if size not in _whisper_models:
-        from faster_whisper import WhisperModel
-        from core.model_store import whisper_dir
-        dev = _stt_device()
-        # float16 on GPU is fast+accurate; int8 on CPU is ~4x faster than float32.
-        ctype = "float16" if dev == "cuda" else "int8"
-        app_logger.info(
-            f"Loading faster-whisper '{size}' on {dev} ({ctype})...")
-        # download_root keeps whisper models in the unified data/models location.
-        _whisper_models[size] = WhisperModel(
-            size, device=dev, compute_type=ctype, download_root=whisper_dir())
+    if size in _whisper_models:
+        return _whisper_models[size]
+    with _LOAD_LOCK:
+        if size not in _whisper_models:   # double-check inside the lock
+            from faster_whisper import WhisperModel
+            from core.model_store import whisper_dir
+            dev = _stt_device()
+            # float16 on GPU is fast+accurate; int8 on CPU is ~4x faster.
+            ctype = "float16" if dev == "cuda" else "int8"
+            app_logger.info(
+                f"Loading faster-whisper '{size}' on {dev} ({ctype})...")
+            # download_root keeps whisper models in the unified data/models dir.
+            _whisper_models[size] = WhisperModel(
+                size, device=dev, compute_type=ctype, download_root=whisper_dir())
     return _whisper_models[size]
 
 
@@ -333,20 +344,23 @@ def _sensevoice_local_dir():
 
 def _get_sensevoice(model_name):
     global _sensevoice
-    if _sensevoice is None:
-        from funasr import AutoModel
-        dev = _stt_device()
-        app_logger.info(f"Loading SenseVoice + fsmn-vad on {dev} (downloads on first use)...")
-        local = _sensevoice_local_dir()
-        if local:
-            app_logger.info(f"SenseVoice from HF mirror: {local}")
-            asr = AutoModel(model=local, disable_update=True, device=dev)
-        else:  # mirror unreachable -> modelscope (may be slow)
-            app_logger.warning("HF mirror unavailable; loading SenseVoice via modelscope.")
-            asr = AutoModel(model=model_name, disable_update=True, device=dev)
-        vad = AutoModel(model="fsmn-vad", disable_update=True, device=dev,
-                        vad_kwargs={"max_single_segment_time": 30000})
-        _sensevoice = (asr, vad)
+    if _sensevoice is not None:
+        return _sensevoice
+    with _LOAD_LOCK:
+        if _sensevoice is None:   # double-check inside the lock
+            from funasr import AutoModel
+            dev = _stt_device()
+            app_logger.info(f"Loading SenseVoice + fsmn-vad on {dev} (downloads on first use)...")
+            local = _sensevoice_local_dir()
+            if local:
+                app_logger.info(f"SenseVoice from HF mirror: {local}")
+                asr = AutoModel(model=local, disable_update=True, device=dev)
+            else:  # mirror unreachable -> modelscope (may be slow)
+                app_logger.warning("HF mirror unavailable; loading SenseVoice via modelscope.")
+                asr = AutoModel(model=model_name, disable_update=True, device=dev)
+            vad = AutoModel(model="fsmn-vad", disable_update=True, device=dev,
+                            vad_kwargs={"max_single_segment_time": 30000})
+            _sensevoice = (asr, vad)
     return _sensevoice
 
 
@@ -356,11 +370,14 @@ _vad_only = None  # fsmn-vad loaded standalone (so Qwen needn't load SenseVoice)
 def _get_vad():
     """fsmn-vad on its own (used to time-segment audio for the Qwen engine)."""
     global _vad_only
-    if _vad_only is None:
-        from funasr import AutoModel
-        _vad_only = AutoModel(model="fsmn-vad", disable_update=True,
-                              device=_stt_device(),
-                              vad_kwargs={"max_single_segment_time": 30000})
+    if _vad_only is not None:
+        return _vad_only
+    with _LOAD_LOCK:
+        if _vad_only is None:   # double-check inside the lock
+            from funasr import AutoModel
+            _vad_only = AutoModel(model="fsmn-vad", disable_update=True,
+                                  device=_stt_device(),
+                                  vad_kwargs={"max_single_segment_time": 30000})
     return _vad_only
 
 
@@ -370,11 +387,14 @@ _QWEN_LANG_CODE = {"Chinese": "zh", "English": "en", "Japanese": "ja",
 
 
 def _get_qwen(model_name):
-    if model_name not in _qwen_models:
-        from qwen_asr import Qwen3ASRModel
-        dm = "cuda:0" if _stt_device() == "cuda" else "cpu"
-        app_logger.info(f"Loading {model_name} on {dm} (downloads on first use)...")
-        _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(model_name, device_map=dm)
+    if model_name in _qwen_models:
+        return _qwen_models[model_name]
+    with _LOAD_LOCK:
+        if model_name not in _qwen_models:   # double-check inside the lock
+            from qwen_asr import Qwen3ASRModel
+            dm = "cuda:0" if _stt_device() == "cuda" else "cpu"
+            app_logger.info(f"Loading {model_name} on {dm} (downloads on first use)...")
+            _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(model_name, device_map=dm)
     return _qwen_models[model_name]
 
 
