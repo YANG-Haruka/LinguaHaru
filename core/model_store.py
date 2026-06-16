@@ -50,15 +50,19 @@ def pick_hf_endpoint():
             return configured
     except Exception:  # noqa: BLE001
         pass
+    # One short probe of the official endpoint only (so offline/firewalled first
+    # launches wait ~2s, not 6s). Reachable -> official; otherwise fall back to
+    # the China mirror without a second probe. Set HF_ENDPOINT or config
+    # "hf_endpoint" to skip probing entirely.
     import urllib.request
-    for ep in ("https://huggingface.co", "https://hf-mirror.com"):
-        try:
-            urllib.request.urlopen(urllib.request.Request(ep, method="HEAD"), timeout=3)
-            app_logger.info(f"HF endpoint: {ep}")
-            return ep
-        except Exception:  # noqa: BLE001 — unreachable, try the next
-            continue
-    return "https://hf-mirror.com"
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request("https://huggingface.co", method="HEAD"), timeout=2)
+        app_logger.info("HF endpoint: https://huggingface.co")
+        return "https://huggingface.co"
+    except Exception:  # noqa: BLE001 — unreachable/blocked -> mirror
+        app_logger.info("HF endpoint: https://hf-mirror.com (official unreachable)")
+        return "https://hf-mirror.com"
 
 
 def setup_model_env():

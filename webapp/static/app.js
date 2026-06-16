@@ -130,7 +130,12 @@ async function refreshSttPicker() {
     items = BOOT.stt_models || [];   // endpoint unavailable -> degrade to full list
   }
   fillSelect(sel, items, items.some((m) => m.id === cur) ? cur : (items[0] && items[0].id));
-  if (sel.value && BOOT.config) BOOT.config.stt_model = sel.value;
+  // If the configured model isn't downloaded, the picker fell back to another —
+  // persist it so the BACKEND transcribes with what the UI shows (not a deleted one).
+  if (sel.value && sel.value !== cur) {
+    if (BOOT.config) BOOT.config.stt_model = sel.value;
+    saveConfig({ stt_model: sel.value });
+  }
 }
 
 // Online vs offline is decided by the ACTIVE interface (set in Interface

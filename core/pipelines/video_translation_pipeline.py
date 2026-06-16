@@ -506,12 +506,13 @@ class OnlineSpeakerAssigner:
         self._centroids = []   # list of (np.array, count)
 
     def assign(self, audio_f32, sample_rate=16000):
-        """Return a 1-based speaker id for this utterance (1 if embedding fails,
-        so it never blocks captioning)."""
+        """Return a 1-based speaker id for this utterance, or 0 if the embedding
+        failed (too short / noise) — callers leave the utterance unassigned and
+        retry on the next, fuller chunk instead of locking it to speaker 1."""
         import numpy as np
         v = embed_speaker(audio_f32, sample_rate)
         if v is None:
-            return 1
+            return 0
         best, best_d = -1, 1e9
         for i, (c, _n) in enumerate(self._centroids):
             d = float(1.0 - np.dot(v, c) / ((np.linalg.norm(c)) or 1.0))

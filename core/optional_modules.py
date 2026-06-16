@@ -211,7 +211,8 @@ def download_plugin_model(name, model_id=None):
     try:
         if name == "Image OCR":
             import core.pipelines.image_translation_pipeline as ip
-            ip._ocr_engine = None          # force re-create with the new size
+            ip._ocr_engines.clear()        # drop cached engines -> re-create with new size
+            import gc; gc.collect()
             ip._get_ocr_engine()           # constructs PaddleOCR -> downloads models
             return True
         if name in ("Video/Audio", "Real-Time Voice", "翻译语音输入"):
@@ -265,14 +266,25 @@ def delete_plugin_model(name, model_id):
     try:
         if name == "Image OCR":
             import core.pipelines.image_translation_pipeline as ip
-            ip._ocr_engine = None
+            ip._ocr_engines.clear()        # release the cached engine (Windows file lock)
+            import gc; gc.collect()
         else:
             from core.pipelines.video_translation_pipeline import release_stt_model
             release_stt_model(model_id)
     except Exception:  # noqa: BLE001
         pass
     from core import model_store
-    return model_store.delete_model_dirs(subs) > 0
+    removed = model_store.delete_model_dirs(subs) > 0
+    # If we just deleted the plugin's ACTIVE model, switch its config to another
+    # still-downloaded model so the backend doesn't try to use/redownload it.
+    if removed:
+        spec = _plugin_model_specs().get(name)
+        if spec and plugin_current_model(name) == model_id:
+            states = plugin_model_states(name)
+            other = next((s["id"] for s in states if s["downloaded"] and s["id"] != model_id), None)
+            if other:
+                set_plugin_model(name, other)
+    return removed
 
 
 def module_status():

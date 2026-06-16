@@ -453,6 +453,9 @@ class TranslatePage(QStackedWidget):
             self.stt_combo.setCurrentIndex(self._stt_ids.index(sel))
         elif self._stt_ids:
             self.stt_combo.setCurrentIndex(0)
+            # Configured model isn't downloaded -> persist the fallback so the
+            # backend transcribes with the model the UI actually shows.
+            backend.set_config("stt_model", self._stt_ids[0])
         self.stt_combo.blockSignals(False)
         self.stt_combo.setVisible(bool(self._stt_ids))
         self.stt_label.setVisible(bool(self._stt_ids))

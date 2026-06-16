@@ -67,5 +67,19 @@ if _FROZEN:
         API_CONFIG_DIR = _writable_ac
     except Exception:  # noqa: BLE001 — fall back to bundled (read-only) path
         API_CONFIG_DIR = os.path.join(CONFIG_DIR, "api_config")
+    # Example glossaries ship in the (read-only) bundle but the app reads from
+    # the writable DATA_DIR/glossary — seed them on first run so new users see
+    # Default.csv instead of an empty list.
+    try:
+        _seed_gl = os.path.join(BUNDLE_ROOT, "data", "glossary")
+        _dst_gl = os.path.join(DATA_DIR, "glossary")
+        if os.path.isdir(_seed_gl):
+            os.makedirs(_dst_gl, exist_ok=True)
+            import shutil
+            for _f in os.listdir(_seed_gl):
+                if _f.endswith(".csv") and not os.path.exists(os.path.join(_dst_gl, _f)):
+                    shutil.copyfile(os.path.join(_seed_gl, _f), os.path.join(_dst_gl, _f))
+    except Exception:  # noqa: BLE001 — non-fatal; glossary list just stays empty
+        pass
 else:
     SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")

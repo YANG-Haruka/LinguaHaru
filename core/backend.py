@@ -316,11 +316,12 @@ def max_retries_for_model(model=None):
 
 # --- Model list discovery (mirrors app.py startup logic) ---------------------
 def scan_online_models():
-    """Online models = config/api_config/*.json filenames (without .json)."""
-    config_dir = os.path.join(REPO_ROOT, "config", "api_config")
+    """Online models = api_config/*.json filenames (without .json). Reads the
+    WRITABLE API_CONFIG_DIR so newly-added/fetched interfaces show up (in a
+    frozen build the bundled dir is read-only and never gets user additions)."""
     try:
         return sorted(
-            os.path.splitext(f)[0] for f in os.listdir(config_dir)
+            os.path.splitext(f)[0] for f in os.listdir(API_CONFIG_DIR)
             if f.endswith(".json") and f != "Custom.json"
         )
     except OSError:
