@@ -1326,11 +1326,17 @@ function stopGoogle() {
 // A friendly "thanks for using LinguaHaru" card shown when an experience
 // finishes (document translation done, real-time voice stopped), summarizing
 // the tokens used + estimated cost. `cost` is {amount, symbol, currency} or null.
+const THANKS_COOLDOWN_MS = 10 * 60 * 1000;   // pop the card at most once per 10 min
 function showThanks(tokens, cost) {
-  // Shown when a LONG task finishes (document/PDF/video/image translation,
-  // real-time voice). Always thanks the user; tokens/cost lines appear only when
-  // known (offline/local/PDF runs may report none). Quick Translate never calls
-  // this (too high-frequency).
+  // Shown when a LONG task finishes (document translation, real-time voice).
+  // Skipped when there are no tokens to report, and throttled so frequent runs
+  // don't pop a card every time. Quick Translate never calls this.
+  if (!tokens) return;
+  try {
+    const last = +(localStorage.getItem("lh-thanks-last") || 0);
+    if (Date.now() - last < THANKS_COOLDOWN_MS) return;   // within cooldown -> skip
+    localStorage.setItem("lh-thanks-last", String(Date.now()));
+  } catch (e) { /* localStorage unavailable -> just show */ }
   const old = document.getElementById("thanks-overlay");
   if (old) old.remove();
   const fmtTokens = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "K" : String(n));
