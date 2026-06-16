@@ -51,5 +51,21 @@ if _FROZEN:
                 shutil.copyfile(_seed, SYSTEM_CONFIG)
     except Exception:  # noqa: BLE001 — fall back to bundled path if seeding fails
         SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")
+    # api_config is WRITTEN at runtime (interfaces, API keys), so it must live in
+    # the writable config dir too — seeded from the bundled templates on 1st run.
+    _writable_ac = os.path.join(_WRITABLE_CONFIG_DIR, "api_config")
+    try:
+        os.makedirs(_writable_ac, exist_ok=True)
+        _seed_ac = os.path.join(CONFIG_DIR, "api_config")
+        if os.path.isdir(_seed_ac):
+            import shutil
+            for _f in os.listdir(_seed_ac):
+                if _f.endswith(".json"):
+                    _dst = os.path.join(_writable_ac, _f)
+                    if not os.path.exists(_dst):
+                        shutil.copyfile(os.path.join(_seed_ac, _f), _dst)
+        API_CONFIG_DIR = _writable_ac
+    except Exception:  # noqa: BLE001 — fall back to bundled (read-only) path
+        API_CONFIG_DIR = os.path.join(CONFIG_DIR, "api_config")
 else:
     SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")

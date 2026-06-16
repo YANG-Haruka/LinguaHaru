@@ -21,7 +21,7 @@ from core.languages_config import (
     get_language_code, get_available_languages, LABEL_TRANSLATIONS,
 )
 
-from core.paths import RUNTIME_ROOT, DATA_DIR, SYSTEM_CONFIG
+from core.paths import RUNTIME_ROOT, DATA_DIR, SYSTEM_CONFIG, API_CONFIG_DIR
 
 # Bundled (read-only) resources — config templates, requirements — are anchored
 # here; from source it's the repo root, in a frozen build it's the bundle dir.
@@ -345,7 +345,8 @@ def fetch_online_models(selected_model, api_key):
 
 
 # --- Interface management (config/api_config/*.json) -------------------------
-API_CONFIG_DIR = os.path.join(REPO_ROOT, "config", "api_config")
+# API_CONFIG_DIR comes from core.paths: writable (seeded from the bundle) in a
+# frozen build, the repo's config/api_config from source.
 
 # Prefixes used by the bundled "official" provider configs. Anything not starting
 # with one of these (and not the Custom template) is treated as user-added.

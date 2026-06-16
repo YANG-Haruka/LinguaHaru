@@ -49,7 +49,9 @@ else:
     _ASSETS_DIR = os.path.join(backend.REPO_ROOT, "assets")
 # Uploads must live OUTSIDE the translation temp dir: DocumentTranslator.process()
 # wipes temp/ on a fresh run, which would delete the file being translated.
-UPLOAD_DIR = os.path.join(backend.REPO_ROOT, "data", "web_uploads")
+# DATA_DIR is the writable runtime data root (next to the exe in a frozen build),
+# not the read-only bundle — so uploads work when installed to a read-only dir.
+UPLOAD_DIR = os.path.join(backend.DATA_DIR, "web_uploads")
 
 app = FastAPI(title="LinguaHaru Web")
 
