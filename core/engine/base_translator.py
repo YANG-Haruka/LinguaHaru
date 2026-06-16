@@ -368,7 +368,22 @@ class DocumentTranslator:
                         app_logger.warning(f"Segment returned empty result (attempt {empty_result_count}/{max_empty_retries})")
                         interruptible_sleep(1, self.check_for_stop)
                         continue
-                    
+
+                    # Optional second pass (e.g. "polish" mode): refine the
+                    # already-translated JSON in the target language. Safe — keeps
+                    # the first-pass result if the polish output isn't valid
+                    # same-key JSON.
+                    try:
+                        from core.translation_modes import active_second_pass
+                        if active_second_pass():
+                            from core.llm.llm_wrapper import polish_translation
+                            translated_text = polish_translation(
+                                translated_text, self.dst_lang, self.model,
+                                self.use_online, self.api_key,
+                                check_stop=self.check_for_stop)
+                    except Exception as e:  # noqa: BLE001 — never break on polish
+                        app_logger.warning(f"Second pass skipped: {e}")
+
                     # Process successful translation
                     with self.lock:
                         translation_results = process_translation_results(
@@ -616,7 +631,22 @@ class DocumentTranslator:
                         app_logger.warning("Failed segment returned empty result")
                         interruptible_sleep(1, self.check_for_stop)
                         continue
-                    
+
+                    # Optional second pass (e.g. "polish" mode): refine the
+                    # already-translated JSON in the target language. Safe — keeps
+                    # the first-pass result if the polish output isn't valid
+                    # same-key JSON.
+                    try:
+                        from core.translation_modes import active_second_pass
+                        if active_second_pass():
+                            from core.llm.llm_wrapper import polish_translation
+                            translated_text = polish_translation(
+                                translated_text, self.dst_lang, self.model,
+                                self.use_online, self.api_key,
+                                check_stop=self.check_for_stop)
+                    except Exception as e:  # noqa: BLE001 — never break on polish
+                        app_logger.warning(f"Second pass skipped: {e}")
+
                     # Process successful translation
                     with self.lock:
                         translation_results = process_translation_results(

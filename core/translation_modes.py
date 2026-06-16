@@ -89,3 +89,9 @@ def active_prompt_hint():
     so the mode actually changes translation behavior (not just sampling). Kept
     short so it never dominates the target-language system prompt."""
     return str(active_params().get("prompt_hint", "")).strip()
+
+
+def active_second_pass():
+    """The active mode's second-pass step name (e.g. 'polish_target'), or '' if
+    the mode runs a single pass."""
+    return str(active_params().get("second_pass", "")).strip()

@@ -349,3 +349,59 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         app_logger.warning(f"Stream translate failed ({e}); falling back.")
         result, _ok, _u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
         yield result
+
+
+def polish_translation(translated_json, dst_lang, model, use_online, api_key, check_stop=None):
+    """Second pass for the 'polish' mode: improve the fluency / word choice of an
+    already-translated JSON object's values, in the TARGET language, without
+    changing meaning, keys, or non-text tokens.
+
+    SAFE: returns the original first-pass JSON unchanged unless the polish output
+    is valid JSON with exactly the same keys — so a bad second pass never
+    corrupts or drops a translation."""
+    import json as _json
+    import re as _re
+    if not translated_json or not str(translated_json).strip():
+        return translated_json
+    try:
+        orig = _json.loads(translated_json)
+        if not isinstance(orig, dict):
+            return translated_json
+    except (ValueError, TypeError):
+        return translated_json   # not a JSON object we can validate -> skip
+
+    from core.load_prompt import _lang_name
+    dst = _lang_name(dst_lang)
+    system_prompt = (
+        f"You are a professional {dst} copy editor. The input is a JSON object whose "
+        f"values are already written in {dst}. Improve their fluency, naturalness, and "
+        f"word choice WITHOUT changing the meaning. Return exactly ONE JSON object with "
+        f"the SAME keys (do not add, remove, or rename keys), no Markdown code fences. "
+        f"Keep every placeholder, variable, tag, escape sequence, URL, number, and code "
+        f"fragment EXACTLY as it is.")
+    messages = [{"role": "system", "content": system_prompt},
+                {"role": "user", "content": "Polish the values and output only the JSON:\n" + translated_json}]
+    if callable(check_stop):
+        check_stop()
+    try:
+        if use_online:
+            from core.llm.online_translation import translate_online
+            raw, ok, _ = translate_online(api_key, messages, model)
+        else:
+            from core.llm.offline_translation import translate_offline
+            raw, ok, _ = translate_offline(messages, model)
+    except Exception as e:  # noqa: BLE001
+        app_logger.warning(f"Polish pass failed ({e}); keeping first-pass translation.")
+        return translated_json
+    if not ok or not raw:
+        return translated_json
+    m = _re.search(r"\{.*\}", raw, _re.DOTALL)
+    if not m:
+        return translated_json
+    try:
+        polished = _json.loads(m.group(0))
+    except ValueError:
+        return translated_json
+    if not isinstance(polished, dict) or set(polished.keys()) != set(orig.keys()):
+        return translated_json   # key drift -> keep the safe first pass
+    return _json.dumps(polished, ensure_ascii=False)
