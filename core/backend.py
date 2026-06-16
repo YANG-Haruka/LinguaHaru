@@ -173,6 +173,9 @@ _DEFAULT_CONFIG = {
     "default_src_lang": "English",
     "default_dst_lang": "English",
     "auto_extract_glossary": False,
+    # Translation mode profile (sampling params + later prompt rules / QA).
+    # See config/translation_modes.json. Default "precise" pins temperature low.
+    "translation_mode": "precise",
     "rpm_limit": 0,
     "qt_theme": "light",
     "qt_ui_lang": "zh",

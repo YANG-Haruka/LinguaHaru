@@ -159,16 +159,26 @@ def translate_offline(messages, model):
                         " /no_think IMPORTANT: Return a single valid JSON object containing all translations. Wrap everything in {}"
                     )
         
+        # Sampling temperature from the active translation mode (was a fixed
+        # 0.7 for LM Studio, which is high for document translation). Default
+        # mode "precise" -> ~0.1 for stable, consistent output.
+        try:
+            from core.translation_modes import offline_temperature
+            mode_temp = offline_temperature()
+        except Exception:  # noqa: BLE001
+            mode_temp = 0.3
+
         # Configure URL and payload based on service
         if service.lower() == "ollama":
             url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
-            
+
             payload = {
                 "model": model_name,
                 "messages": messages,
                 "options": {
                     "num_ctx": 8192,
-                    "num_predict": -1
+                    "num_predict": -1,
+                    "temperature": mode_temp
                 },
                 "stream": False
             }
@@ -184,7 +194,7 @@ def translate_offline(messages, model):
             payload = {
                 "model": model_name,
                 "messages": messages,
-                "temperature": 0.7,
+                "temperature": mode_temp,
                 "max_tokens": 2048,
                 "stream": False
             }

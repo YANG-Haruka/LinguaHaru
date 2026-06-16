@@ -386,6 +386,14 @@ def translate_online(api_key, messages, model):
     api_model = model_config.get("model")
     top_p = model_config.get("top_p")
     temperature = model_config.get("temperature")
+    # The active translation mode overrides the model-config sampling params
+    # (e.g. "precise" pins temperature low for stable JSON/term consistency);
+    # providers that reject custom sampling get neither.
+    try:
+        from core.translation_modes import resolve_sampling
+        temperature, top_p = resolve_sampling(model_config, temperature, top_p)
+    except Exception:  # noqa: BLE001
+        pass
     presence_penalty = model_config.get("presence_penalty")
     frequency_penalty = model_config.get("frequency_penalty")
     thinking_type = model_config.get("thinking_type")
