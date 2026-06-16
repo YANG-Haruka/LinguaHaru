@@ -309,7 +309,7 @@ async def update_config(payload: dict):
     allowed = {"default_online", "default_online_model", "default_src_lang",
                "default_dst_lang", "default_glossary", "stt_model",
                "live_stt_model", "quick_stt_model", "ocr_model_size",
-               "translate_subtitles", "max_retries", "rpm_limit",
+               "translate_subtitles", "subtitle_speaker_labels", "max_retries", "rpm_limit",
                "auto_extract_glossary", "translation_mode",
                "translation_tone", "translation_length", "translation_style",
                "translate_with_context",

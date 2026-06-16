@@ -393,6 +393,7 @@
   "Delete Model Confirm": "Delete this model's files from disk?",
   "No Models Hint": "Expand a model type to install or remove its models.",
   "No STT downloaded": "No speech-to-text model downloaded — install one in Settings → Model Management.",
+  "Speaker Labels": "Label speakers (S1/S2…)",
   "Context Optional": "Context (optional, for disambiguation only — not translated)",
   "Type Context": "Type context (experimental)",
   "Tone": "Tone",

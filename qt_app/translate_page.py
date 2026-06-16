@@ -177,6 +177,15 @@ class TranslatePage(QStackedWidget):
         sub_row.addStretch(1)
         self.translate_subs_label = BodyLabel(tr("Translate Subtitles", lang))
         media_form.addRow(self.translate_subs_label, sub_row)
+        spk_row = QHBoxLayout()
+        self.speaker_labels_switch = SwitchButton()
+        self.speaker_labels_switch.setChecked(config.get("subtitle_speaker_labels", False))
+        self.speaker_labels_switch.checkedChanged.connect(
+            lambda v: backend.set_config("subtitle_speaker_labels", v))
+        spk_row.addWidget(self.speaker_labels_switch)
+        spk_row.addStretch(1)
+        self.speaker_labels_label = BodyLabel(tr("Speaker Labels", lang))
+        media_form.addRow(self.speaker_labels_label, spk_row)
         self.media_card.setVisible(False)
         layout.addWidget(self.media_card)
 
@@ -229,6 +238,8 @@ class TranslatePage(QStackedWidget):
         self.glossary_label.setText(tr("Glossary", lang))
         self.stt_label.setText(tr("Speech-to-Text Model", lang))
         self.translate_subs_label.setText(tr("Translate Subtitles", lang))
+        self.speaker_labels_label.setText(tr("Speaker Labels", lang))
+        self.stt_empty_hint.setText(tr("No STT downloaded", lang))
         self.pdf_title.setText(tr("PDF Options", lang))
         for label, label_key, caption, hint_key in self._pdf_label_specs:
             label.setText(tr(label_key, lang))

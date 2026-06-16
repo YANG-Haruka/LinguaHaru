@@ -442,6 +442,7 @@ async function boot() {
   fillSelect($("glossary"), BOOT.glossaries, c.default_glossary);
   refreshSttPicker();   // only DOWNLOADED STT models are offered
   $("translate-subs").checked = c.translate_subtitles;
+  if ($("speaker-labels")) $("speaker-labels").checked = !!c.subtitle_speaker_labels;
 
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
   $("set-lan").checked = !!c.lan_mode;
@@ -583,6 +584,7 @@ $("stt-model").onchange = () => {
   refreshMediaNote();
 };
 $("translate-subs").onchange = () => saveConfig({ translate_subtitles: $("translate-subs").checked });
+if ($("speaker-labels")) $("speaker-labels").onchange = () => saveConfig({ subtitle_speaker_labels: $("speaker-labels").checked });
 
 function isSenseVoice(sttId) {
   return (sttId || "").startsWith("sensevoice");
