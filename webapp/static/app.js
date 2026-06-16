@@ -1441,6 +1441,7 @@ function liveTimeStamp() {
 const _SENT_END = "。！？!?.";
 const _CLAUSE = "、，,；;";
 const _CJK_MAX = 24, _LAT_MAX = 60;   // min clause length before a comma-split
+const _CJK_HARD = 40, _LAT_HARD = 100;  // hard cap: force a break even w/o punctuation
 function splitSentences(text) {
   const units = [];
   let cur = "";
@@ -1449,7 +1450,17 @@ function splitSentences(text) {
     if (_SENT_END.includes(ch)) { if (cur.trim()) units.push(cur.trim()); cur = ""; continue; }
     if (_CLAUSE.includes(ch)) {
       const lim = /[　-鿿]/.test(cur) ? _CJK_MAX : _LAT_MAX;
-      if (cur.trim().length >= lim) { units.push(cur.trim()); cur = ""; }
+      if (cur.trim().length >= lim) { units.push(cur.trim()); cur = ""; continue; }
+    }
+    // Hard cap: a long run-on with no usable punctuation still gets chopped, so
+    // one translation never swallows several sentences. Prefer the last space
+    // (Latin) to avoid cutting a word; otherwise hard-cut (CJK has no spaces).
+    const hard = /[　-鿿]/.test(cur) ? _CJK_HARD : _LAT_HARD;
+    if (cur.trim().length >= hard) {
+      const seg = cur.trim();
+      const sp = seg.lastIndexOf(" ");
+      if (sp >= hard / 2) { units.push(seg.slice(0, sp).trim()); cur = seg.slice(sp); }
+      else { units.push(seg); cur = ""; }
     }
   }
   return { sents: units.filter(Boolean), tail: cur.trim() };

@@ -1145,7 +1145,8 @@ class LivePage(ScrollArea):
         monologues keep flowing instead of waiting for the utterance to end."""
         SENT_END = "。！？!?."
         CLAUSE = "、，,；;"
-        CJK_MAX, LAT_MAX = 24, 60
+        CJK_MAX, LAT_MAX = 24, 60     # min clause length before a comma-split
+        CJK_HARD, LAT_HARD = 40, 100  # hard cap: force a break even w/o punctuation
         units, cur = [], ""
         for ch in (text or ""):
             cur += ch
@@ -1158,6 +1159,20 @@ class LivePage(ScrollArea):
                 lim = CJK_MAX if re.search(r"[　-鿿]", cur) else LAT_MAX
                 if len(cur.strip()) >= lim:
                     units.append(cur.strip())
+                    cur = ""
+                    continue
+            # Hard cap: a long run-on with no usable punctuation still gets
+            # chopped, so one translation never swallows several sentences.
+            # Prefer the last space (Latin) to avoid cutting a word.
+            hard = CJK_HARD if re.search(r"[　-鿿]", cur) else LAT_HARD
+            if len(cur.strip()) >= hard:
+                seg = cur.strip()
+                sp = seg.rfind(" ")
+                if sp >= hard // 2:
+                    units.append(seg[:sp].strip())
+                    cur = seg[sp:]
+                else:
+                    units.append(seg)
                     cur = ""
         return [u for u in units if u], cur.strip()
 
