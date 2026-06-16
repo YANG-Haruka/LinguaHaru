@@ -1211,7 +1211,7 @@ function saveLiveHistory() {
     body: JSON.stringify({ source_lines: src, translated_lines: dst,
       src_display: "Auto", dst_display: dstDisplay,
       tokens: liveSessionTokens, ui_lang: _uiLang }) })
-    .then((r) => { if (r) showThanks(r.tokens, r.cost); })
+    .then((r) => { if (r && r.saved) showThanks(r.tokens, r.cost); })
     .catch(() => {});
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
@@ -1327,12 +1327,18 @@ function stopGoogle() {
 // finishes (document translation done, real-time voice stopped), summarizing
 // the tokens used + estimated cost. `cost` is {amount, symbol, currency} or null.
 function showThanks(tokens, cost) {
-  if (!tokens) return;   // nothing meaningful to report (e.g. fully cached/offline)
+  // Shown when a LONG task finishes (document/PDF/video/image translation,
+  // real-time voice). Always thanks the user; tokens/cost lines appear only when
+  // known (offline/local/PDF runs may report none). Quick Translate never calls
+  // this (too high-frequency).
   const old = document.getElementById("thanks-overlay");
   if (old) old.remove();
   const fmtTokens = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "K" : String(n));
   const ov = document.createElement("div");
   ov.id = "thanks-overlay"; ov.className = "thanks-overlay";
+  const tokenLine = tokens
+    ? `<div class="thanks-stat"><span>${_label("Thanks Tokens Label", "本次消耗")}</span><b>${fmtTokens(tokens)} tokens</b></div>`
+    : "";
   const costLine = cost
     ? `<div class="thanks-stat"><span>${_label("Thanks Cost Label", "预计花费")}</span><b>${cost.symbol}${cost.amount} ${cost.currency}</b></div>`
     : "";
@@ -1340,7 +1346,7 @@ function showThanks(tokens, cost) {
     `<div class="thanks-card">
        <div class="thanks-flower">✿</div>
        <h3>${_label("Thanks Title", "感谢使用 LinguaHaru")}</h3>
-       <div class="thanks-stat"><span>${_label("Thanks Tokens Label", "本次消耗")}</span><b>${fmtTokens(tokens)} tokens</b></div>
+       ${tokenLine}
        ${costLine}
        <button id="thanks-ok">${_label("OK", "好的")}</button>
      </div>`;

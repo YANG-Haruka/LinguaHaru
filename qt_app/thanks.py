@@ -14,11 +14,12 @@ def _fmt_tokens(n):
 
 
 def show_thanks(parent, lang, tokens, cost_amount=None, cost_symbol=None, cost_currency=None):
-    """Show the thanks dialog. No-op when there are no tokens to report
-    (e.g. offline/local model or a fully-cached run)."""
-    if not tokens:
-        return
-    lines = [f"{tr('Thanks Tokens Label', lang)}: {_fmt_tokens(tokens)} tokens"]
+    """Show the thanks dialog when a LONG task finishes. Always thanks the user;
+    the tokens / cost lines appear only when known (offline/local/PDF runs may
+    report none). Not used for high-frequency Quick Translate."""
+    lines = []
+    if tokens:
+        lines.append(f"{tr('Thanks Tokens Label', lang)}: {_fmt_tokens(tokens)} tokens")
     if cost_amount is not None:
         lines.append(f"{tr('Thanks Cost Label', lang)}: {cost_symbol}{cost_amount} {cost_currency}")
     try:

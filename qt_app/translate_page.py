@@ -650,8 +650,8 @@ class TranslatePage(QStackedWidget):
         self.dashboard.show_done(summary, can_open=bool(self._results),
                                  coverage=self._aggregate_coverage())
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
-        # Thank-you + token/cost summary (only when something was actually translated).
-        if ok and self._exact_tokens:
+        # Thank-you + token/cost summary for the finished (long) translation run.
+        if ok:
             cost_amount = cost_symbol = cost_currency = None
             if self._run_online:
                 try:
