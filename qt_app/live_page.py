@@ -475,7 +475,8 @@ class LivePage(ScrollArea):
         self._vad_sil_ms = 0.0
         # streaming-recognition state (Windows-Live-Captions style)
         self._partial_ms = 0.0          # ms since the last partial dispatch
-        self._stream_emitted = 0        # sentences committed in the current utterance
+        self._stream_committed = ""     # raw text prefix committed this utterance
+        self._stream_last = ""          # previous partial (LocalAgreement-2)
         self._recog_busy = False        # one STT worker in flight at a time
         self._recog_pending = None      # (pcm, is_final) — latest-wins while busy
         self._stream_detected = "auto"
@@ -1019,7 +1020,8 @@ class LivePage(ScrollArea):
         self._vad_voice_ms = 0.0
         self._vad_sil_ms = 0.0
         self._partial_ms = 0.0
-        self._stream_emitted = 0
+        self._stream_committed = ""
+        self._stream_last = ""
         self._recog_pending = None
 
     def _vad_model(self):
@@ -1071,7 +1073,8 @@ class LivePage(ScrollArea):
                     self._vad_on = True
                     self._vad_sil_ms = 0.0
                     self._partial_ms = 0.0
-                    self._stream_emitted = 0       # new utterance
+                    self._stream_committed = ""     # new utterance
+                    self._stream_last = ""
                     self._stream_detected = "auto"
                     self._vad_buf = bytearray(self._vad_preroll)
             else:
@@ -1137,69 +1140,124 @@ class LivePage(ScrollArea):
         if self._overlay is not None:
             self._overlay.hide()
 
+    # Scored sentence boundaries + LocalAgreement-2 prefix commit. Twin of the
+    # Web app.js logic: streaming STT revises its tail and re-segments, so we
+    # commit by stable CHARACTER PREFIX (agreed by 2 consecutive partials) and
+    # break at the most natural point — sentence punct > clause comma > space >
+    # CJK connective > (last resort) a hard cap — measuring length in CELLS
+    # (CJK = 2, latin = 1) so a caption line looks balanced regardless of script.
+    _SENT_END = "。！？!?."
+    _CLAUSE = "、，,；;"
+    _CONNECTIVES = ("然后", "然後", "但是", "所以", "因为", "因為", "如果", "不过",
+                    "不過", "而且", "还有", "還有", "其实", "其實", "因此", "于是",
+                    "於是", "可是", "虽然", "雖然", "这样", "這樣")
+    _MIN_CELLS, _TARGET_CELLS, _HARD_CELLS = 24, 60, 88
+
     @staticmethod
-    def _split_sents(text):
-        """Committable units + trailing unfinished tail. A unit ends at sentence-
-        final punctuation, OR — for run-on speech with no full stop — at a clause
-        separator (、，,;) once the clause is long enough, so long pause-less
-        monologues keep flowing instead of waiting for the utterance to end."""
-        SENT_END = "。！？!?."
-        CLAUSE = "、，,；;"
-        CJK_MAX, LAT_MAX = 24, 60     # min clause length before a comma-split
-        CJK_HARD, LAT_HARD = 40, 100  # hard cap: force a break even w/o punctuation
-        units, cur = [], ""
-        for ch in (text or ""):
-            cur += ch
-            if ch in SENT_END:
-                if cur.strip():
-                    units.append(cur.strip())
-                cur = ""
-                continue
-            if ch in CLAUSE:
-                lim = CJK_MAX if re.search(r"[　-鿿]", cur) else LAT_MAX
-                if len(cur.strip()) >= lim:
-                    units.append(cur.strip())
-                    cur = ""
-                    continue
-            # Hard cap: a long run-on with no usable punctuation still gets
-            # chopped, so one translation never swallows several sentences.
-            # Prefer the last space (Latin) to avoid cutting a word.
-            hard = CJK_HARD if re.search(r"[　-鿿]", cur) else LAT_HARD
-            if len(cur.strip()) >= hard:
-                seg = cur.strip()
-                sp = seg.rfind(" ")
-                if sp >= hard // 2:
-                    units.append(seg[:sp].strip())
-                    cur = seg[sp:]
-                else:
-                    units.append(seg)
-                    cur = ""
-        return [u for u in units if u], cur.strip()
+    def _cell(ch):
+        return 2 if re.search(r"[　-鿿＀-￯]", ch) else 1
+
+    @classmethod
+    def _conn_at(cls, text, i):
+        return any(text.startswith(w, i) for w in cls._CONNECTIVES)
+
+    @classmethod
+    def _find_boundary(cls, text, start, final):
+        """Index to end the unit starting at `start`, or -1 to wait for more."""
+        w = 0
+        comma = space = conn = -1
+        for i in range(start, len(text)):
+            ch = text[i]
+            w += cls._cell(ch)
+            if ch in cls._SENT_END:
+                return i + 1                       # best: a full stop
+            if w >= cls._MIN_CELLS:
+                if ch in cls._CLAUSE:
+                    comma = i + 1
+                elif ch == " ":
+                    space = i + 1
+                elif i > start and cls._conn_at(text, i):
+                    conn = i                       # cut BEFORE the connective
+            if w >= cls._HARD_CELLS:               # last resort: must break
+                if comma > 0:
+                    return comma
+                if space > 0:
+                    return space
+                if conn > 0:
+                    return conn
+                return i + 1                        # hard cut
+        if not final and w >= cls._TARGET_CELLS:
+            if comma > 0:
+                return comma
+            if space > 0:
+                return space
+            if conn > 0:
+                return conn
+        return -1
+
+    @classmethod
+    def _split_scored(cls, text, final):
+        """(units, consumed): ready units + the RAW length forming complete units
+        (so the caller advances its committed prefix exactly). When final, the
+        trailing remainder is flushed as a last unit."""
+        units = []
+        i = 0
+        while i < len(text):
+            cut = cls._find_boundary(text, i, final)
+            if cut < 0:
+                break
+            seg = text[i:cut].strip()
+            if seg:
+                units.append(seg)
+            i = cut
+        consumed = i
+        if final:
+            seg = text[i:].strip()
+            if seg:
+                units.append(seg)
+            consumed = len(text)
+        return units, consumed
+
+    @staticmethod
+    def _common_prefix(a, b):
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return a[:i]
 
     def _on_recognized_stream(self, text, detected, is_final):
-        """Stable-prefix commit: a sentence is finalized (and translated) the
-        moment the NEXT sentence starts appearing, so sentence 1 is translated
-        while you're already speaking sentence 2."""
+        """LocalAgreement-2 prefix commit: only text two consecutive partials
+        agree on is committed (& translated), broken at the most natural point.
+        Robust to STT revising/re-segmenting its tail, so sentences aren't
+        duplicated or dropped while you keep speaking."""
         self._recog_busy = False
         if detected:
             self._stream_detected = detected
-        sents, tail = self._split_sents(text)
+        text = text or ""
         if is_final:
-            rest = sents[self._stream_emitted:]
-            if tail:
-                rest.append(tail)
-            for s in rest:
+            # Translate only what wasn't committed yet (committed is a prefix).
+            rest = text[len(self._stream_committed):] \
+                if len(text) >= len(self._stream_committed) else text
+            units, _ = self._split_scored(rest, True)
+            for s in units:
                 self._commit_stream_sentence(s)
-            self._stream_emitted = 0
+            self._stream_committed = ""
+            self._stream_last = ""
             self._set_caption_interim("")
             if self._is_listening():
                 self.status_label.setText(tr("Listening", self._lang))
         else:
-            confirmable = len(sents) if tail else max(0, len(sents) - 1)
-            while self._stream_emitted < confirmable:
-                self._commit_stream_sentence(sents[self._stream_emitted])
-                self._stream_emitted += 1
-            self._set_caption_interim("".join(sents[confirmable:]) + tail)
+            stable = self._common_prefix(text, self._stream_last)
+            self._stream_last = text
+            if not stable.startswith(self._stream_committed):
+                self._stream_committed = stable[:len(self._stream_committed)]
+            pending = stable[len(self._stream_committed):]
+            units, consumed = self._split_scored(pending, False)
+            for s in units:
+                self._commit_stream_sentence(s)
+            self._stream_committed += pending[:consumed]
+            self._set_caption_interim(text[len(self._stream_committed):])
         if self._recog_pending is not None:        # process the freshest queued audio
             pcm, fin = self._recog_pending
             self._recog_pending = None

@@ -1378,7 +1378,7 @@ async function startSileroVad() {
   liveSilero = await window.vad.AudioNodeVAD.new(liveCtx, {
     baseAssetPath: "/static/vad/", onnxWASMBasePath: "/static/vad/", model: "legacy",
     onSpeechStart() {
-      liveSileroSpeaking = true; liveEmitted = 0; livePendingPcm = null; pipInterim = "";
+      liveSileroSpeaking = true; liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = "";
       liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus("识别中…");
     },
     onFrameProcessed(_probs, frame) {
@@ -1413,14 +1413,15 @@ function stopLocal() {
 // STT on it (latest-wins, one in flight), and use STABLE-PREFIX commit: a
 // sentence is finalized & translated the moment the NEXT sentence starts to
 // appear — so sentence 1 is translated while you're already saying sentence 2.
-let liveEmitted = 0;        // sentences already committed in the current utterance
+let liveCommittedText = "";  // raw text prefix already committed this utterance
+let liveLastText = "";       // previous partial (for LocalAgreement-2 stable prefix)
 let livePartialBusy = false, livePendingPcm = null;
 let liveLastDetected = "auto";
 
 function onVadMessage(e) {
   const m = e.data || {};
   if (m.type === "speechstart") {
-    liveEmitted = 0; livePendingPcm = null; pipInterim = "";
+    liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = "";
     setLiveStatus("识别中…");
   } else if (m.type === "partial") {
     streamPartial(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
@@ -1433,37 +1434,77 @@ function liveTimeStamp() {
   const p = (n) => String(n).padStart(2, "0");
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
-// Split text into committable units + a trailing unfinished fragment. A unit
-// ends at sentence-final punctuation, OR — for run-on speech with no full stop —
-// at a clause separator (、，,;) once the clause is long enough. This keeps long
-// pause-less monologues flowing (idea borrowed from LiveTranslate's pysbd +
-// comma-fallback) instead of waiting for the end of the whole utterance.
+// --- Scored sentence boundaries + LocalAgreement-2 prefix commit -------------
+// Streaming STT revises its tail and re-segments as more audio arrives, so
+// committing by SENTENCE COUNT (slice(emitted)) duplicates/drops sentences when
+// boundaries shift. Instead we track a COMMITTED CHARACTER PREFIX and only
+// commit text that two consecutive partials AGREE on (LocalAgreement-2 — the
+// policy from whisper_streaming / WhisperLiveKit). Within the stable,
+// not-yet-committed text we pick the most NATURAL break — sentence punctuation >
+// clause comma > space > CJK connective — and only HARD-cut as a last resort.
+// Length is measured in CELLS (CJK = 2, latin = 1) so a caption line looks
+// balanced regardless of script.
 const _SENT_END = "。！？!?.";
 const _CLAUSE = "、，,；;";
-const _CJK_MAX = 24, _LAT_MAX = 60;   // min clause length before a comma-split
-const _CJK_HARD = 40, _LAT_HARD = 100;  // hard cap: force a break even w/o punctuation
-function splitSentences(text) {
-  const units = [];
-  let cur = "";
-  for (const ch of (text || "")) {
-    cur += ch;
-    if (_SENT_END.includes(ch)) { if (cur.trim()) units.push(cur.trim()); cur = ""; continue; }
-    if (_CLAUSE.includes(ch)) {
-      const lim = /[　-鿿]/.test(cur) ? _CJK_MAX : _LAT_MAX;
-      if (cur.trim().length >= lim) { units.push(cur.trim()); cur = ""; continue; }
+const _CONNECTIVES = ["然后", "然後", "但是", "所以", "因为", "因為", "如果", "不过",
+  "不過", "而且", "还有", "還有", "其实", "其實", "因此", "于是", "於是", "可是",
+  "虽然", "雖然", "这样", "這樣"];
+const _MIN_CELLS = 24, _TARGET_CELLS = 60, _HARD_CELLS = 88;
+function _cell(ch) { return /[　-鿿＀-￯]/.test(ch) ? 2 : 1; }
+function _connAt(text, i) { return _CONNECTIVES.some((w) => text.startsWith(w, i)); }
+// Index to end the unit starting at `start`, or -1 to wait for more text.
+function _findBoundary(text, start, final) {
+  let w = 0, comma = -1, space = -1, conn = -1;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    w += _cell(ch);
+    if (_SENT_END.includes(ch)) return i + 1;            // best: a full stop
+    if (w >= _MIN_CELLS) {
+      if (_CLAUSE.includes(ch)) comma = i + 1;
+      else if (ch === " ") space = i + 1;
+      else if (i > start && _connAt(text, i)) conn = i;   // cut BEFORE the connective
     }
-    // Hard cap: a long run-on with no usable punctuation still gets chopped, so
-    // one translation never swallows several sentences. Prefer the last space
-    // (Latin) to avoid cutting a word; otherwise hard-cut (CJK has no spaces).
-    const hard = /[　-鿿]/.test(cur) ? _CJK_HARD : _LAT_HARD;
-    if (cur.trim().length >= hard) {
-      const seg = cur.trim();
-      const sp = seg.lastIndexOf(" ");
-      if (sp >= hard / 2) { units.push(seg.slice(0, sp).trim()); cur = seg.slice(sp); }
-      else { units.push(seg); cur = ""; }
+    if (w >= _HARD_CELLS) {                                // last resort: must break
+      if (comma > 0) return comma;
+      if (space > 0) return space;
+      if (conn > 0) return conn;
+      return i + 1;                                        // hard cut (no boundary at all)
     }
   }
-  return { sents: units.filter(Boolean), tail: cur.trim() };
+  // End of available text: commit early only past TARGET at a natural boundary,
+  // else wait for more audio (final flushes the remainder later).
+  if (!final && w >= _TARGET_CELLS) {
+    if (comma > 0) return comma;
+    if (space > 0) return space;
+    if (conn > 0) return conn;
+  }
+  return -1;
+}
+// Split `text` into ready units; `consumed` is the RAW length forming complete
+// units (so the caller can advance its committed prefix exactly). When final,
+// the trailing remainder is flushed as a last unit.
+function splitScored(text, final) {
+  const units = [];
+  let i = 0;
+  while (i < text.length) {
+    const cut = _findBoundary(text, i, final);
+    if (cut < 0) break;
+    const seg = text.slice(i, cut).trim();
+    if (seg) units.push(seg);
+    i = cut;
+  }
+  let consumed = i;
+  if (final) {
+    const seg = text.slice(i).trim();
+    if (seg) units.push(seg);
+    consumed = text.length;
+  }
+  return { units, consumed };
+}
+function commonPrefix(a, b) {
+  let i = 0; const n = Math.min(a.length, b.length);
+  while (i < n && a[i] === b[i]) i++;
+  return a.slice(0, i);
 }
 async function recognizeInt16(int16, final) {
   const r = await api("/api/live-recognize", {
@@ -1478,12 +1519,17 @@ async function streamPartial(int16) {
     const r = await recognizeInt16(int16, false);
     if (r.busy) return;   // server dropped this partial under load — keep state, retry next
     liveLastDetected = r.detected || liveLastDetected;
-    const { sents, tail } = splitSentences(r.source || "");
-    const confirmable = tail ? sents.length : Math.max(0, sents.length - 1);
-    while (liveEmitted < confirmable) {
-      commitLiveSentence(sents[liveEmitted]); liveEmitted++;
-    }
-    pipInterim = sents.slice(confirmable).join("") + tail;   // live, not-yet-final
+    const text = r.source || "";
+    // LocalAgreement-2: only the prefix two consecutive partials agree on is stable.
+    const stable = commonPrefix(text, liveLastText);
+    liveLastText = text;
+    // If STT revised the already-committed region, resync length without re-emitting.
+    if (!stable.startsWith(liveCommittedText)) liveCommittedText = stable.slice(0, liveCommittedText.length);
+    const pending = stable.slice(liveCommittedText.length);
+    const { units, consumed } = splitScored(pending, false);
+    for (const u of units) commitLiveSentence(u);
+    liveCommittedText += pending.slice(0, consumed);
+    pipInterim = text.slice(liveCommittedText.length);      // live, not-yet-committed tail
     updatePipCaption();
     if (liveRunning && pipInterim) setLiveStatus("识别中：" + pipInterim);
   } catch (e) { /* transient; next partial retries */ }
@@ -1496,13 +1542,14 @@ async function finalizeUtterance(int16) {
   livePendingPcm = null;
   try {
     const r = await recognizeInt16(int16, true);
-    const { sents, tail } = splitSentences(r.source || "");
-    const rest = sents.slice(liveEmitted);
-    if (tail) rest.push(tail);
     liveLastDetected = r.detected || liveLastDetected;
-    for (const s of rest) commitLiveSentence(s);
+    const text = r.source || "";
+    // Translate only what hasn't been committed yet (committed text is a prefix).
+    const rest = text.length >= liveCommittedText.length ? text.slice(liveCommittedText.length) : text;
+    const { units } = splitScored(rest, true);
+    for (const u of units) commitLiveSentence(u);
   } catch (e) { /* drop */ }
-  liveEmitted = 0; pipInterim = ""; updatePipCaption();
+  liveCommittedText = ""; liveLastText = ""; pipInterim = ""; updatePipCaption();
   if (liveRunning) setLiveStatus(liveListenMsg());
 }
 // Finalize one sentence: show the source line now, then translate it. Commits
