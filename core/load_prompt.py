@@ -31,13 +31,15 @@ def load_prompt(src_lang, dst_lang):
         # Extract prompts
         system_prompt = prompt_data.get("system_prompt", "")
         user_prompt = prompt_data.get("user_prompt", "Translate the following text:")
-        previous_prompt = prompt_data.get("previous_prompt", "This is the contextual content of the previous paragraph:")
+        previous_prompt = prompt_data.get("previous_prompt", "Context for disambiguation only. Do not translate it or include it in the output:")
         previous_text_default = prompt_data.get("previous_text_default", {})
         glossary_prompt = prompt_data.get("glossary_prompt", {})
 
-        # Fill placeholders with readable language names (handles "auto" source).
-        system_prompt = system_prompt.format(
-            Text_Target_Language=_lang_name(dst_lang),
-            Text_Source_Language=_lang_name(src_lang, source=True))
+        # Inject the language names via str.replace (NOT str.format) so the prompt
+        # bodies can contain literal braces in placeholder EXAMPLES ({name}, {0},
+        # ${var}, {{token}}) without needing to be doubled/escaped.
+        system_prompt = (system_prompt
+                         .replace("{Text_Target_Language}", _lang_name(dst_lang))
+                         .replace("{Text_Source_Language}", _lang_name(src_lang, source=True)))
 
         return system_prompt, user_prompt, previous_prompt, previous_text_default, glossary_prompt
