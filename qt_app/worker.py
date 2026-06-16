@@ -130,17 +130,18 @@ class QuickTranslateWorker(QThread):
     """
     done = Signal(str, bool)
 
-    def __init__(self, text, src_lang, dst_lang, parent=None):
+    def __init__(self, text, src_lang, dst_lang, parent=None, context=""):
         super().__init__(parent)
         self.text = text
         self.src_lang = src_lang
         self.dst_lang = dst_lang
+        self.context = context
 
     def run(self):
         from core import quick_translate
         try:
             translated, ok = quick_translate.translate(
-                self.text, self.src_lang, self.dst_lang)
+                self.text, self.src_lang, self.dst_lang, context=self.context)
         except Exception as e:  # noqa: BLE001 - surface as a failed translation
             self.done.emit(f"Error: {e}", False)
             return

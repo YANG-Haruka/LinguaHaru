@@ -1900,7 +1900,7 @@ async function quickTranslate() {
   try {
     const r = await api("/api/quick-translate", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, src_lang: $("quick-src").value, dst_lang: $("quick-dst").value }) });
+      body: JSON.stringify({ text, src_lang: $("quick-src").value, dst_lang: $("quick-dst").value, context: ($("quick-context") ? $("quick-context").value.trim() : "") }) });
     $("quick-output").textContent = r.translated || "";
     $("quick-status").textContent = "";
     renderQuickHistory(r.history || []);

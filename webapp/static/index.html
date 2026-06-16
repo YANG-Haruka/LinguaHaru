@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615P" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615Q" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -402,6 +402,7 @@
 
       <div class="live-split quick-split">
         <div class="card live-pane quick-pane">
+          <input id="quick-context" type="text" class="quick-context" placeholder="上下文（可选，仅辅助消歧，不翻译）例如：按钮文字 / 菜单项" />
           <textarea id="quick-input" class="quick-area" data-i18n-ph="Enter Text" placeholder="输入文本"></textarea>
           <div class="quick-foot">
             <span class="muted" data-i18n="Enter To Translate">按回车翻译，Shift+回车换行</span>
@@ -628,7 +629,7 @@
      <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
    </div>
  </div>
-  <script src="/static/background.js?v=20260615P"></script>
-  <script src="/static/app.js?v=20260615P"></script>
+  <script src="/static/background.js?v=20260615Q"></script>
+  <script src="/static/app.js?v=20260615Q"></script>
 </body>
 </html>

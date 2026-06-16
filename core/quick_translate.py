@@ -22,9 +22,11 @@ def _history_path(store_dir=None):
     return os.path.join(store_dir or DATA_DIR, "quick_history.json")
 
 
-def translate(text, src_lang, dst_lang):
+def translate(text, src_lang, dst_lang, context=""):
     """Translate short text via the ACTIVE interface (same model resolution as
-    live voice / document translation). Returns (translated, ok)."""
+    live voice / document translation). `context` is an optional disambiguation
+    hint (e.g. "button label") — used to pick the right sense of an ambiguous
+    word, never translated. Returns (translated, ok)."""
     text = (text or "").strip()
     if not text:
         return "", False
@@ -35,7 +37,7 @@ def translate(text, src_lang, dst_lang):
     model = backend.get_active_model(use_online)
     api_key = load_api_key_for_model(model) if use_online else ""
     translated, ok, _usage = translate_text_simple(
-        text, src_lang or "auto", dst_lang, model, use_online, api_key)
+        text, src_lang or "auto", dst_lang, model, use_online, api_key, context=context)
     return (translated if ok else ""), bool(ok)
 
 

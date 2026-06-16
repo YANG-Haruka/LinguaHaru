@@ -1174,11 +1174,12 @@ async def quick_translate_api(payload: dict, request: Request):
         return {"translated": "", "history": []}
     src_lang = payload.get("src_lang") or "auto"
     dst_lang = payload.get("dst_lang", "en")
+    context = (payload.get("context") or "").strip()[:300]
     from core import quick_translate
     loop = asyncio.get_event_loop()
     try:
         translated, ok = await loop.run_in_executor(
-            None, quick_translate.translate, text, src_lang, dst_lang)
+            None, quick_translate.translate, text, src_lang, dst_lang, context)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Translate failed: {e}")
     history = []

@@ -259,7 +259,7 @@ def _plain_translation(result):
     return s
 
 
-def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key):
+def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, context=""):
     """
     Simple text translation without complex prompt templates.
     Used by BabelDOC integration for direct text translation.
@@ -271,6 +271,9 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key):
         model: Model name to use
         use_online: Whether to use online API
         api_key: API key for online translation
+        context: Optional disambiguation hint (e.g. "button label, File menu").
+            Used to pick the right meaning of short ambiguous text; never
+            translated or echoed.
 
     Returns:
         tuple: (translation_result, success_status, token_usage)
@@ -280,6 +283,9 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key):
 
     # Simple system prompt for translation
     system_prompt = f"You are a professional translator. Translate the following text from {src_lang} to {dst_lang}. Output only the translation, nothing else."
+    if context and str(context).strip():
+        system_prompt += (" Context for disambiguation only (do NOT translate it or"
+                          f" include it in the output): {str(context).strip()}")
 
     # User message is just the text to translate
     messages = [

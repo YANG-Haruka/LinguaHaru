@@ -25,7 +25,7 @@ from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
     CardWidget, PlainTextEdit, TextEdit, PushButton, PrimaryPushButton,
     ToolButton, TransparentToolButton, FluentIcon, InfoBar, InfoBarPosition,
-    ListWidget,
+    ListWidget, LineEdit,
 )
 
 from core import backend
@@ -102,6 +102,10 @@ class QuickPage(ScrollArea):
         left = QVBoxLayout(left_card)
         left.setContentsMargins(16, 14, 16, 14)
         left.setSpacing(8)
+        self.context_edit = LineEdit()
+        self.context_edit.setPlaceholderText(tr("Context Optional", lang))
+        self.context_edit.setClearButtonEnabled(True)
+        left.addWidget(self.context_edit)
         self.input_text = PlainTextEdit()
         self.input_text.setPlaceholderText(tr("Enter Text", lang))
         self.input_text.setMinimumHeight(220)
@@ -206,6 +210,7 @@ class QuickPage(ScrollArea):
         self.subtitle.setText(tr("Quick Translate Subtitle", lang))
         self.src_combo.setItemText(0, tr("Auto Detect", lang))
         self.input_text.setPlaceholderText(tr("Enter Text", lang))
+        self.context_edit.setPlaceholderText(tr("Context Optional", lang))
         self.input_hint.setText(tr("Enter To Translate", lang))
         self.mic_btn.setToolTip(tr("Voice Input", lang))
         self.speak_btn.setToolTip(tr("Read Aloud", lang))
@@ -274,7 +279,8 @@ class QuickPage(ScrollArea):
         self._set_busy(True)
         self.output_text.setPlainText(tr("Translating", self._lang) + "...")
         self._worker = QuickTranslateWorker(
-            text, self._src_value(), self.dst_combo.currentText())
+            text, self._src_value(), self.dst_combo.currentText(),
+            context=self.context_edit.text().strip())
         self._worker.done.connect(self._on_translated)
         self._worker.start()
 
