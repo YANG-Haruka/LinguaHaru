@@ -35,24 +35,51 @@ def load_prompt(src_lang, dst_lang):
         previous_text_default = prompt_data.get("previous_text_default", {})
         glossary_prompt = prompt_data.get("glossary_prompt", {})
 
+        # Source-language name: use the target file's LOCALIZED auto-source label
+        # when the source is auto-detect, so a non-English prompt doesn't get an
+        # English clause spliced in ("从 the source language...").
+        if not src_lang or src_lang == "auto":
+            src_name = prompt_data.get("auto_source_label") or _lang_name("auto", source=True)
+        else:
+            src_name = _lang_name(src_lang)
+
         # Inject the language names via str.replace (NOT str.format) so the prompt
         # bodies can contain literal braces in placeholder EXAMPLES ({name}, {0},
         # ${var}, {{token}}) without needing to be doubled/escaped.
         system_prompt = (system_prompt
                          .replace("{Text_Target_Language}", _lang_name(dst_lang))
-                         .replace("{Text_Source_Language}", _lang_name(src_lang, source=True)))
+                         .replace("{Text_Source_Language}", src_name))
 
-        # Append the active translation mode's one-line behavior hint (precise /
-        # natural / polish / subtitle), so the chosen mode actually shapes the
-        # output beyond sampling params.
+        # Append the active mode's behavior hint + advanced (tone/length/style)
+        # modifiers — all taken from the TARGET-language prompt file so no English
+        # is mixed into a non-English prompt. Falls back to the English versions in
+        # core.translation_modes only if a file lacks the localized maps.
         try:
-            from core.translation_modes import active_prompt_hint, active_advanced_hint
-            hint = active_prompt_hint()
-            if hint:
-                system_prompt = f"{system_prompt}\n\n{hint}"
-            adv = active_advanced_hint()
-            if adv:
-                system_prompt = f"{system_prompt}\n{adv}"
+            from core import translation_modes as _tmod
+            from core import backend as _backend
+            mode = _tmod.get_active_mode()
+            mode_hint = (prompt_data.get("mode_hints") or {}).get(mode) or _tmod.active_prompt_hint()
+            if mode_hint:
+                system_prompt = f"{system_prompt}\n\n{mode_hint}"
+
+            adv_parts = []
+            tone = str(_backend.get_config("translation_tone", "") or "")
+            length = str(_backend.get_config("translation_length", "") or "")
+            style = str(_backend.get_config("translation_style", "") or "").strip()
+            th = (prompt_data.get("tone_hints") or {}).get(tone)
+            lh = (prompt_data.get("length_hints") or {}).get(length)
+            if th:
+                adv_parts.append(th)
+            if lh:
+                adv_parts.append(lh)
+            if style:
+                adv_parts.append(style)
+            if not th and not lh:   # localized maps missing -> English fallback
+                fb = _tmod.active_advanced_hint()
+                if fb:
+                    adv_parts = [fb]
+            if adv_parts:
+                system_prompt = f"{system_prompt}\n" + " ".join(adv_parts)
         except Exception:  # noqa: BLE001
             pass
 
