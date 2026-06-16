@@ -233,6 +233,22 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("live_stream_translation", v))
         self.live_stream_label = BodyLabel(tr("Stream Translation", lang))
         gl_form.addRow(self.live_stream_label, self.live_stream)
+        # Real-time caption sentence-splitting: how long a pause ends an
+        # utterance. Slower speakers need a longer pause so their natural
+        # between-phrase gaps don't chop a sentence into fragments.
+        self._hangs = [("600", tr("Hang Sensitive", lang)), ("900", tr("Hang Standard", lang)),
+                       ("1200", tr("Hang Relaxed", lang)), ("1600", tr("Hang Very Relaxed", lang))]
+        self.hang_combo = ComboBox()
+        for _v, lbl in self._hangs:
+            self.hang_combo.addItem(lbl)
+        cur_hang = str(config.get("live_vad_hang_ms", 900))
+        for i, (v, _l) in enumerate(self._hangs):
+            if v == cur_hang:
+                self.hang_combo.setCurrentIndex(i)
+        self.hang_combo.currentIndexChanged.connect(
+            lambda i: backend.set_config("live_vad_hang_ms", int(self._hangs[i][0])) if 0 <= i < len(self._hangs) else None)
+        self.hang_label = BodyLabel(tr("Segmentation Pause", lang))
+        gl_form.addRow(self.hang_label, self.hang_combo)
         self.card_options.body.addLayout(gl_form)
 
         # --- Card 3: Data & Storage (output folder + history retention/clear) ---

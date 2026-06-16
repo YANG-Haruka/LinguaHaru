@@ -388,6 +388,7 @@ async function boot() {
   if ($("set-bi-color")) $("set-bi-color").value = c.bilingual_color || "";
   if ($("set-live-stream")) $("set-live-stream").checked = !!c.live_stream_translation;
   if ($("set-web-vad")) $("set-web-vad").value = c.web_vad || "energy";
+  if ($("set-vad-hang")) $("set-vad-hang").value = String(c.live_vad_hang_ms || 900);
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
@@ -685,6 +686,11 @@ if ($("set-web-vad")) $("set-web-vad").onchange = () => {
   const v = $("set-web-vad").value;
   if (BOOT.config) BOOT.config.web_vad = v;   // applies on next live start
   saveConfig({ web_vad: v });
+};
+if ($("set-vad-hang")) $("set-vad-hang").onchange = () => {
+  const v = parseInt($("set-vad-hang").value, 10) || 900;
+  if (BOOT.config) BOOT.config.live_vad_hang_ms = v;   // applies on next live start
+  saveConfig({ live_vad_hang_ms: v });
 };
 if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
 if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
@@ -1407,8 +1413,9 @@ async function startLocal() {
 }
 async function startWorkletVad() {
   await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260616A");
+  const hangMs = (BOOT.config && BOOT.config.live_vad_hang_ms) || 900;
   liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
-    { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 900, minSegMs: 280, maxSegMs: 30000,
+    { processorOptions: { prerollMs: 500, onMs: 90, hangMs, minSegMs: 280, maxSegMs: 30000,
                           onAbs: 0.006, offAbs: 0.004 } });
   liveNode.port.onmessage = onVadMessage;
   liveNode.port.postMessage({ type: "mode", mode: "open" });

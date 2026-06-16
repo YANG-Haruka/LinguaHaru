@@ -587,6 +587,15 @@
             </select>
           </label>
           <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Web VAD Note">仅影响 Web 端实时语音断句；Qt 端固定使用 TEN-VAD。</div>
+          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Segmentation Pause">实时语音断句停顿</span>
+            <select id="set-vad-hang" style="width:auto">
+              <option value="600" data-i18n="Hang Sensitive">灵敏（停顿短就断句·延迟最低）</option>
+              <option value="900" data-i18n="Hang Standard">标准（推荐）</option>
+              <option value="1200" data-i18n="Hang Relaxed">宽松（说话慢·不易被切断）</option>
+              <option value="1600" data-i18n="Hang Very Relaxed">很宽松（停顿很久才断句）</option>
+            </select>
+          </label>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Hang Note">停顿多久算一句结束。说话慢、句间停顿多时调大，避免一句被切成几段（下次开始识别时生效）。</div>
         </div>
       </details>
       <details class="card set-card">

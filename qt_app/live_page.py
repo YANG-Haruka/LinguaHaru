@@ -1034,6 +1034,12 @@ class LivePage(ScrollArea):
 
     # --- local mode: neural VAD (TEN-VAD) over 16k PCM16, per 16ms frame ---
     def _reset_vad(self):
+        # Trailing-silence (hang) that ends an utterance — user-tunable in
+        # Settings so slow speakers can keep their phrases from being chopped.
+        try:
+            self._hang_ms = float(backend.get_config("live_vad_hang_ms", _VAD_HANG_MS))
+        except (TypeError, ValueError):
+            self._hang_ms = float(_VAD_HANG_MS)
         self._vad_on = False
         self._vad_buf = bytearray()
         self._vad_preroll = bytearray()
@@ -1109,12 +1115,13 @@ class LivePage(ScrollArea):
             # needed to end it — lower latency on long speech (LiveTranslate-style).
             # The floor stays >=500ms so a slow speaker's natural between-phrase
             # pauses don't chop a sentence into fragments. Mirrors the Web worklet.
+            base_hang = getattr(self, "_hang_ms", float(_VAD_HANG_MS))
             if dur_ms < 4000:
-                hang = _VAD_HANG_MS
+                hang = base_hang
             elif dur_ms < 8000:
-                hang = _VAD_HANG_MS * 0.7
+                hang = base_hang * 0.7
             else:
-                hang = max(500.0, _VAD_HANG_MS * 0.55)
+                hang = max(500.0, base_hang * 0.55)
             ended = self._vad_sil_ms >= hang or dur_ms >= _VAD_MAX_MS
             if ended:
                 utt = bytes(self._vad_buf)
