@@ -989,7 +989,7 @@ def _get_sheet_drawing_map(excel_zip) -> Dict[int, str]:
             workbook_xml = excel_zip.read('xl/workbook.xml')
             workbook_tree = etree.fromstring(workbook_xml)
 
-            sheets = workbook_tree.xpath('.//sheet', namespaces={'': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'})
+            sheets = workbook_tree.xpath('.//m:sheet', namespaces={'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'})
 
             for sheet in sheets:
                 sheet_name = sheet.get('name')
@@ -1001,7 +1001,7 @@ def _get_sheet_drawing_map(excel_zip) -> Dict[int, str]:
                         worksheet_xml = excel_zip.read(worksheet_path)
                         worksheet_tree = etree.fromstring(worksheet_xml)
 
-                        drawings = worksheet_tree.xpath('.//drawing', namespaces={'': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'})
+                        drawings = worksheet_tree.xpath('.//m:drawing', namespaces={'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'})
                         for drawing in drawings:
                             drawing_r_id = drawing.get('{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id')
                             if drawing_r_id:
