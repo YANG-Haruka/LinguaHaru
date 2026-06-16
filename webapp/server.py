@@ -664,12 +664,17 @@ def history(request: Request, limit: int = 200, file_type: str = "",
 
 
 @app.post("/api/history/clear")
-def history_clear(request: Request):
-    """Clear this session's translation history (incl. real-time-voice records)."""
+def history_clear(request: Request, payload: dict = None):
+    """Clear this session's translation history (incl. real-time-voice records).
+    With {"with_files": true} also delete the OUTPUT/LOG files those records
+    produced (never the user's original input files)."""
     from core.translation_history import TranslationHistoryManager
     _, _, log_dir = sessions.session_paths(request.state.session_id)
-    ok = TranslationHistoryManager(log_dir=log_dir).clear_all_records()
-    return {"ok": bool(ok)}
+    h = TranslationHistoryManager(log_dir=log_dir)
+    if payload and payload.get("with_files"):
+        info = h.clear_all_records_and_files()
+        return {"ok": True, "files_deleted": info.get("files_deleted", 0)}
+    return {"ok": bool(h.clear_all_records())}
 
 
 @app.post("/api/pick-folder")

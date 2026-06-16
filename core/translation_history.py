@@ -225,6 +225,28 @@ class TranslationHistoryManager:
             app_logger.error(f"Error clearing translation records: {e}")
             return False
 
+    def clear_all_records_and_files(self) -> Dict[str, int]:
+        """Delete the OUTPUT and LOG files this history produced, then clear the
+        records. Returns {"records", "files_deleted"}. Only removes files we
+        generated (output_file_path / log_file_path) — never the user's original
+        input_file — and only real existing files (no dir/recursive deletes)."""
+        deleted = 0
+        try:
+            records = self.get_all_records()
+        except Exception:  # noqa: BLE001
+            records = []
+        for rec in records:
+            for key in ("output_file_path", "log_file_path"):
+                p = rec.get(key)
+                if p and os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                        deleted += 1
+                    except OSError as e:
+                        app_logger.warning(f"Could not delete history file {p}: {e}")
+        ok = self.clear_all_records()
+        return {"records": len(records) if ok else 0, "files_deleted": deleted}
+
 
 def create_translation_record(
     translation_id: str,

@@ -678,6 +678,14 @@ if ($("set-hist-clear")) $("set-hist-clear").onclick = async () => {
     if (typeof loadHistory === "function") loadHistory();
   } catch (e) { $("settings-status").textContent = "清空失败：" + e.message; }
 };
+if ($("set-hist-clear-files")) $("set-hist-clear-files").onclick = async () => {
+  if (!confirm("确定清空历史记录，并删除这些记录生成的译文/日志文件？\n你的原始文件不会被删除。此操作不可撤销。")) return;
+  try {
+    const d = await api("/api/history/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ with_files: true }) });
+    $("settings-status").textContent = `历史记录已清空，删除了 ${d.files_deleted || 0} 个文件。`;
+    if (typeof loadHistory === "function") loadHistory();
+  } catch (e) { $("settings-status").textContent = "清空失败：" + e.message; }
+};
 // PDF options (Translate page) — persisted to config; backend reads them.
 if ($("pdf-translate-table")) $("pdf-translate-table").onchange = () => saveConfig({ pdf_translate_table: $("pdf-translate-table").checked });
 if ($("pdf-ocr-scanned")) $("pdf-ocr-scanned").onchange = () => saveConfig({ pdf_ocr_scanned: $("pdf-ocr-scanned").checked });

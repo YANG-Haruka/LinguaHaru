@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615J" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615K" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -579,7 +579,11 @@
             <div class="field"><label>超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
             <div class="field"><label>超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
           </div>
-          <button id="set-hist-clear" class="danger" style="margin-top:14px" data-i18n="Clear History">清空历史记录</button>
+          <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
+            <button id="set-hist-clear" class="danger" data-i18n="Clear History">清空历史记录</button>
+            <button id="set-hist-clear-files" class="danger" data-i18n="Clear History And Files">清空历史及相关文件</button>
+          </div>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem">「清空历史记录」仅删除列表；「清空历史及相关文件」会同时删除这些记录生成的译文/日志文件（不会删除你的原始文件）。</div>
         </div>
       </details>
       <details class="card set-card">
@@ -599,7 +603,7 @@
     <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
   </main>
  </div>
-  <script src="/static/background.js?v=20260615J"></script>
-  <script src="/static/app.js?v=20260615J"></script>
+  <script src="/static/background.js?v=20260615K"></script>
+  <script src="/static/app.js?v=20260615K"></script>
 </body>
 </html>

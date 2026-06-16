@@ -208,6 +208,9 @@ class SettingsPage(ScrollArea):
         self.hist_clear_btn = PushButton(FluentIcon.DELETE, tr("Clear History", lang))
         self.hist_clear_btn.clicked.connect(self._clear_history)
         self.card_data.body.addWidget(self.hist_clear_btn)
+        self.hist_clear_files_btn = PushButton(FluentIcon.DELETE, tr("Clear History And Files", lang))
+        self.hist_clear_files_btn.clicked.connect(self._clear_history_and_files)
+        self.card_data.body.addWidget(self.hist_clear_files_btn)
 
         # --- Card 4: Model Management ---
         self.card_models = _CollapsibleCard(tr("Model Management", lang))
@@ -378,6 +381,19 @@ class SettingsPage(ScrollArea):
             _, _, log_dir = backend.get_custom_paths()
             TranslationHistoryManager(log_dir=log_dir).clear_all_records()
 
+    def _clear_history_and_files(self):
+        box = MessageBox(tr("Clear History And Files", self._lang),
+                         tr("Clear history and files confirm", self._lang), self.window())
+        if box.exec():
+            from core.translation_history import TranslationHistoryManager
+            _, _, log_dir = backend.get_custom_paths()
+            info = TranslationHistoryManager(log_dir=log_dir).clear_all_records_and_files()
+            from qfluentwidgets import InfoBar
+            InfoBar.success(
+                tr("Clear History And Files", self._lang),
+                f"{info.get('files_deleted', 0)} files deleted",
+                duration=3000, parent=self.window())
+
     def _pick_output_dir(self):
         current = self.output_edit.text() or os.getcwd()
         path = QFileDialog.getExistingDirectory(
@@ -459,6 +475,7 @@ class SettingsPage(ScrollArea):
         self.hist_max_label.setText(tr("Auto-delete by count", lang))
         self.hist_age_label.setText(tr("Auto-delete by age", lang))
         self.hist_clear_btn.setText(tr("Clear History", lang))
+        self.hist_clear_files_btn.setText(tr("Clear History And Files", lang))
         self.card_models.set_title(tr("Model Management", lang))
         self.models_loc_label.setText(tr("Model Location", lang))
         self.models_browse.setText(tr("Change Location", lang))
