@@ -36,7 +36,8 @@ class VideoTranslator(DocumentTranslator):
     def extract_content_to_json(self, progress_callback=None):
         transcribe_media_to_srt(
             self.input_file_path, self.temp_dir, src_lang=self.src_lang,
-            progress_callback=progress_callback, transcript_copy_dir=self.result_dir)
+            progress_callback=progress_callback, transcript_copy_dir=self.result_dir,
+            session_lang=self.session_lang)
         return extract_srt_content_to_json(self._generated_srt_path, self.temp_dir)
 
     def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
@@ -61,7 +62,8 @@ class VideoTranslator(DocumentTranslator):
             self.translation_start_time = datetime.now()
             transcribe_media_to_srt(
                 self.input_file_path, self.temp_dir, src_lang=self.src_lang,
-                progress_callback=progress_callback, transcript_copy_dir=self.result_dir)
+                progress_callback=progress_callback, transcript_copy_dir=self.result_dir,
+                session_lang=self.session_lang)
             if progress_callback:
                 progress_callback(1.0, desc=self._get_status_message("Translation completed"))
             base = os.path.splitext(os.path.basename(self.input_file_path))[0]

@@ -22,6 +22,13 @@ from core.log_config import app_logger
 # still runs concurrently once the (shared) model is cached.
 _LOAD_LOCK = threading.RLock()
 
+
+def _tr(key, lang):
+    """Localize a progress label via the shared LABEL_TRANSLATIONS (UI language)."""
+    from core.languages_config import LABEL_TRANSLATIONS
+    labels = LABEL_TRANSLATIONS.get(lang, LABEL_TRANSLATIONS.get("en", {}))
+    return labels.get(key, key)
+
 # --- STT model catalogue ----------------------------------------------------
 # Each entry: id (stored in config), label (UI), engine, size/model name.
 # Curated "friendly subset" of speech-to-text models. `disk` = approximate
@@ -270,7 +277,7 @@ def _get_whisper_model(size):
     return _whisper_models[size]
 
 
-def _transcribe_whisper(wav_path, size, src_lang, progress_callback):
+def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en"):
     """Yield (start, end, text) tuples for each spoken segment."""
     model = _get_whisper_model(size)
     language = src_lang.split("-")[0] if src_lang else None  # zh, en, ja, ...
@@ -283,8 +290,10 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback):
             out.append((seg.start, seg.end, text))
         if progress_callback and duration:
             # Full 0..1 of this phase; caller maps it into the extraction range.
+            # Show elapsed/total seconds so a long file reads as progressing.
             progress_callback(min(seg.end / duration, 1.0),
-                              desc=f"Transcribing (whisper-{size})...")
+                              desc=f"{_tr('Transcribing', ui_lang)} "
+                                   f"{int(seg.end)}/{int(duration)}s")
     return out
 
 
@@ -532,7 +541,7 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
     return _qwen_text(r), detected
 
 
-def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback):
+def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en"):
     """VAD-segment the audio (for SRT timing) then batch-recognize the segments
     with Qwen3-ASR. Falls back to a single whole-file pass if VAD is unavailable."""
     import wave
@@ -543,6 +552,8 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback):
         sr = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
     audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    if progress_callback:   # VAD on a long file takes a while with no inner ticks
+        progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
     try:
         vad_res = _get_vad().generate(input=wav_path)
         segments = (vad_res[0].get("value") if vad_res else None) or []
@@ -568,11 +579,13 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback):
             if txt:
                 out.append((start, end, txt))
         if progress_callback:
-            progress_callback(min(1.0, (i + BATCH) / total), desc="Transcribing (Qwen3-ASR)...")
+            done = min(i + BATCH, total)
+            progress_callback(min(1.0, done / total),
+                              desc=f"{_tr('Transcribing', ui_lang)} {done}/{total}")
     return out
 
 
-def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
+def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en"):
     """VAD-segment the audio, recognize each segment with SenseVoice, and return
     (start, end, text) tuples. Timing comes from the VAD so the SRT is aligned."""
     import wave
@@ -580,6 +593,8 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
     from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
     asr, vad = _get_sensevoice(model_name)
+    if progress_callback:
+        progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
     vad_res = vad.generate(input=wav_path)
     segments = (vad_res[0].get("value") if vad_res else None) or []
 
@@ -603,7 +618,8 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback):
         if progress_callback:
             # Emit the full 0..1 of this phase; the caller maps it into the
             # extraction sub-range (e.g. 0..50%) via EXTRACTION_PROGRESS_SHARE.
-            progress_callback((i + 1) / total, desc="Transcribing (SenseVoice)...")
+            progress_callback((i + 1) / total,
+                              desc=f"{_tr('Transcribing', ui_lang)} {i + 1}/{total}")
     return out
 
 
@@ -759,10 +775,11 @@ def _speaker_labels_enabled():
 
 
 def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callback=None,
-                            transcript_copy_dir=None, stt_model=None):
+                            transcript_copy_dir=None, stt_model=None, session_lang="en"):
     """Transcribe a video/audio file and write an SRT next to the temp data.
 
     stt_model: an id from STT_MODELS; defaults to the UI-selected one.
+    session_lang localizes the progress labels to the UI language.
     Returns the path of the generated SRT (named after the media file)."""
     filename = os.path.splitext(os.path.basename(media_path))[0]
     os.makedirs(temp_dir, exist_ok=True)
@@ -773,19 +790,19 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
 
     with tempfile.TemporaryDirectory(dir=temp_dir) as audio_dir:
         if progress_callback:
-            progress_callback(0.01, desc="Extracting audio...")
+            progress_callback(0.01, desc=f"{_tr('Extracting audio', session_lang)}...")
         wav_path = extract_audio_to_wav(media_path, audio_dir)
 
         if progress_callback:
-            progress_callback(0.03, desc=f"Transcribing ({engine})...")
+            progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
 
         try:
             if engine == "sensevoice":
-                triples = _transcribe_sensevoice(wav_path, size, src_lang, progress_callback)
+                triples = _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang)
             elif engine == "qwen3asr":
-                triples = _transcribe_qwen(wav_path, size, src_lang, progress_callback)
+                triples = _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang)
             else:
-                triples = _transcribe_whisper(wav_path, size, src_lang, progress_callback)
+                triples = _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang)
         except Exception as e:  # noqa: BLE001 — log WHY (e.g. model download
             # failed) into the per-file log instead of failing silently, then
             # re-raise so the job is still marked failed.
@@ -798,7 +815,7 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
         # survives translation as a name prefix). Done while the wav still exists.
         if triples and _speaker_labels_enabled():
             if progress_callback:
-                progress_callback(0.48, desc="Identifying speakers...")
+                progress_callback(0.99, desc=f"{_tr('Identifying speakers', session_lang)}...")
             spk = diarize_triples(wav_path, triples)
             triples = [(s, e, f"S{spk[i]}: {t}") for i, (s, e, t) in enumerate(triples)]
 
