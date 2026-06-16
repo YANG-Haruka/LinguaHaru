@@ -21,6 +21,10 @@ from core.languages_config import (
     get_language_code, get_available_languages, LABEL_TRANSLATIONS,
 )
 
+from core.paths import RUNTIME_ROOT, DATA_DIR, SYSTEM_CONFIG
+
+# Bundled (read-only) resources — config templates, requirements — are anchored
+# here; from source it's the repo root, in a frozen build it's the bundle dir.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Cap on concurrent file translations (mirrors app.MAX_CONCURRENT_TASKS).
@@ -146,7 +150,9 @@ def bilingual_keys_for_files(file_paths):
 
 
 # --- system_config.json -----------------------------------------------------
-CONFIG_PATH = os.path.join(REPO_ROOT, "config", "system_config.json")
+# Writable + frozen-aware (persists next to the exe, seeded from the bundled
+# default on first run) — NOT under the read-only bundle.
+CONFIG_PATH = SYSTEM_CONFIG
 
 _DEFAULT_CONFIG = {
     "lan_mode": False,
@@ -255,7 +261,7 @@ def get_custom_paths():
     for key, default in (("temp_dir", "data/temp"), ("result_dir", "data/result"), ("log_dir", "data/log")):
         d = config.get(key, default)
         if not os.path.isabs(d):
-            d = os.path.join(REPO_ROOT, d)
+            d = os.path.join(RUNTIME_ROOT, d)   # writable runtime root, not bundle
         os.makedirs(d, exist_ok=True)
         paths.append(d)
     return tuple(paths)
@@ -440,7 +446,8 @@ def install_command_for(module_name):
 
 
 # --- Glossary (CSV, utf-8-sig, multi-encoding read) -------------------------
-GLOSSARY_DIR = os.path.join(REPO_ROOT, "data", "glossary")
+# User-editable -> writable runtime data dir (not the read-only bundle).
+GLOSSARY_DIR = os.path.join(DATA_DIR, "glossary")
 _GLOSSARY_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "shift-jis")
 
 

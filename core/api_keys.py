@@ -8,9 +8,7 @@ import json
 import base64
 
 from core.log_config import app_logger
-
-# Repo root = parent of this config/ directory.
-_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from core.paths import DATA_DIR
 
 
 # --- at-rest protection -----------------------------------------------------
@@ -88,8 +86,10 @@ def _restrict_perms(path):
 
 
 def get_mykeys_dir():
-    """Return the mykeys directory (created if missing)."""
-    mykeys_dir = os.path.join(_REPO_ROOT, "data", "mykeys")
+    """Return the mykeys directory (created if missing). Anchored to the writable
+    runtime DATA_DIR so a frozen build stores keys next to the exe, not in the
+    ephemeral read-only bundle."""
+    mykeys_dir = os.path.join(DATA_DIR, "mykeys")
     os.makedirs(mykeys_dir, exist_ok=True)
     return mykeys_dir
 
