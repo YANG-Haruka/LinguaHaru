@@ -71,6 +71,17 @@ class SkyBackground(QWidget):
         super().hideEvent(e)
         self._timer.stop()
 
+    # Pause/resume the animation around page transitions: freezing this
+    # full-window repaint while a page slides in frees the whole frame budget
+    # for the slide animation, so switching pages stays smooth (the ~300ms
+    # freeze of cloud drift is imperceptible).
+    def pause(self):
+        self._timer.stop()
+
+    def resume(self):
+        if self.isVisible() and not self._timer.isActive():
+            self._timer.start()
+
     def resizeEvent(self, e):
         super().resizeEvent(e)
         self._build_scene()

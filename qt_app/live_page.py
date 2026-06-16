@@ -43,7 +43,7 @@ _OUT_RATE = 24000  # Gemini output
 # Lowered so a soft voice still trips onset (the adaptive floor guards noise).
 _VAD_ON_ABS, _VAD_ON_MUL = 0.006, 2.2
 _VAD_OFF_ABS, _VAD_OFF_MUL = 0.004, 1.6
-_VAD_ON_MS, _VAD_HANG_MS = 90, 600
+_VAD_ON_MS, _VAD_HANG_MS = 90, 900
 _VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
 # Lead-in kept before speech onset is confirmed, so the first words (often the
 # key info) aren't clipped. Mirrors the Web vad-worklet's pre-roll ring buffer.
@@ -1107,12 +1107,14 @@ class LivePage(ScrollArea):
             self._partial_ms += dt_ms
             # Progressive silence: the longer the utterance, the shorter the pause
             # needed to end it — lower latency on long speech (LiveTranslate-style).
-            if dur_ms < 3000:
+            # The floor stays >=500ms so a slow speaker's natural between-phrase
+            # pauses don't chop a sentence into fragments. Mirrors the Web worklet.
+            if dur_ms < 4000:
                 hang = _VAD_HANG_MS
-            elif dur_ms < 6000:
-                hang = _VAD_HANG_MS * 0.5
+            elif dur_ms < 8000:
+                hang = _VAD_HANG_MS * 0.7
             else:
-                hang = max(220.0, _VAD_HANG_MS * 0.34)
+                hang = max(500.0, _VAD_HANG_MS * 0.55)
             ended = self._vad_sil_ms >= hang or dur_ms >= _VAD_MAX_MS
             if ended:
                 utt = bytes(self._vad_buf)

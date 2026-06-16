@@ -216,6 +216,16 @@ class MainWindow(FluentWindow):
         # Reload data whenever a tab becomes current.
         self.stackedWidget.currentChanged.connect(self._on_page_changed)
 
+        # Freeze the animated sky while a page slides in: the page-switch
+        # animation then gets the full frame budget instead of competing with a
+        # 30fps full-window background repaint, so transitions feel smooth.
+        try:
+            view = self.stackedWidget.view  # the PopUpAniStackedWidget
+            view.aniStart.connect(self._sky.pause)
+            view.aniFinished.connect(self._sky.resume)
+        except Exception:
+            pass
+
         # Check for a newer version in the background (China-friendly mirrors).
         self._update_worker = _UpdateCheckWorker()
         self._update_worker.done.connect(self._on_update_checked)

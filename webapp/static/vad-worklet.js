@@ -13,7 +13,7 @@ class VADProcessor extends AudioWorkletProcessor {
     super();
     const o = (options && options.processorOptions) || {};
     this.onMs = o.onMs || 90;            // sustained voice to confirm a turn
-    this.hangMs = o.hangMs || 850;       // trailing silence that ends an utterance
+    this.hangMs = o.hangMs || 900;       // trailing silence that ends an utterance
     this.minSegMs = o.minSegMs || 280;   // shorter than this → drop as a blip
     this.noiseMaxMs = o.noiseMaxMs || 6000;   // flat loud noise dropped after this
     this.maxSegMs = o.maxSegMs || 30000;      // hard ceiling → force-send
@@ -125,10 +125,12 @@ class VADProcessor extends AudioWorkletProcessor {
       if (level > this.segMax) this.segMax = level;
       const durMs = (this.segN / this.sr) * 1000;
       // Progressive silence: longer utterances end on a shorter pause (lower
-      // latency on long speech). Mirrors the Qt side.
-      const hang = durMs < 3000 ? this.hangMs
-                 : durMs < 6000 ? this.hangMs * 0.5
-                 : Math.max(220, this.hangMs * 0.34);
+      // latency on long speech). Mirrors the Qt side. The floor is kept high
+      // enough (>=500ms) that a slow speaker's natural between-phrase pauses
+      // don't chop a sentence into fragments.
+      const hang = durMs < 4000 ? this.hangMs
+                 : durMs < 8000 ? this.hangMs * 0.7
+                 : Math.max(500, this.hangMs * 0.55);
       if (this.silenceMs >= hang) { this._flush(durMs); }
       else if (durMs > this.noiseMaxMs && !this.segDip && (this.segMax <= 0 || (this.segMax - this.segMin) / this.segMax < 0.45)) {
         this.port.postMessage({ type: 'drop', reason: 'steady-noise' }); this._abort();

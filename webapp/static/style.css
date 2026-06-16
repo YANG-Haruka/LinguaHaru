@@ -187,6 +187,7 @@ html[data-theme="light"] .footer {
   padding: 9px 12px; border-radius: var(--r); cursor: pointer;
   font-family: var(--font-sans); font-size: 0.9rem; font-weight: 500; text-align: left;
   transition: color .2s, background .2s, border-color .2s;
+  user-select: none; -webkit-user-select: none;  /* no text caret/selection on click */
 }
 .tab .ti { width: 19px; height: 19px; flex-shrink: 0; color: var(--muted); transition: color .2s; }
 .tab .ti svg { width: 100%; height: 100%; display: block; }
