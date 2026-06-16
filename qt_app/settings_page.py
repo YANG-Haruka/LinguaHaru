@@ -129,6 +129,22 @@ class SettingsPage(ScrollArea):
         layout.addWidget(self.card_options)
         gl_form = QFormLayout()
         gl_form.setSpacing(12)
+        # Translation mode (precise / natural / polish / subtitle)
+        self._modes = []
+        self.mode_combo = ComboBox()
+        try:
+            from core.translation_modes import load_modes, get_active_mode
+            self._modes = list(load_modes().items())
+            cur = get_active_mode()
+            for i, (mid, m) in enumerate(self._modes):
+                self.mode_combo.addItem(m.get("label", mid))
+                if mid == cur:
+                    self.mode_combo.setCurrentIndex(i)
+        except Exception:  # noqa: BLE001
+            pass
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self.mode_label = BodyLabel(tr("Translation Mode", lang))
+        gl_form.addRow(self.mode_label, self.mode_combo)
         self.auto_glossary = SwitchButton()
         self.auto_glossary.setChecked(config.get("auto_extract_glossary", False))
         self.auto_glossary.checkedChanged.connect(
@@ -413,6 +429,10 @@ class SettingsPage(ScrollArea):
             except Exception:  # noqa: BLE001
                 pass
 
+    def _on_mode_changed(self, index):
+        if 0 <= index < len(self._modes):
+            backend.set_config("translation_mode", self._modes[index][0])
+
     def _on_ocr_changed(self, index):
         if 0 <= index < len(self._ocr_models):
             backend.set_config("ocr_model_size", self._ocr_models[index]["id"])
@@ -463,6 +483,7 @@ class SettingsPage(ScrollArea):
         self.lan_hint.setText(tr("LAN access hint", lang))
         self.lan_admin_label.setText(tr("LAN admin password", lang))
         self.card_options.set_title(tr("Translation Options", lang))
+        self.mode_label.setText(tr("Translation Mode", lang))
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
         self.mask_ph_label.setText(tr("Placeholder Protection", lang))
         self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))

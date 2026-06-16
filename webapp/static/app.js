@@ -362,6 +362,17 @@ async function boot() {
   $("set-lan").checked = !!c.lan_mode;
   $("set-lan-admin").placeholder = c.has_lan_admin ? "已设置（留空则不修改）" : "留空则不启用";
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
+  if ($("set-translation-mode")) {
+    const sel = $("set-translation-mode");
+    if (!sel.options.length) {
+      for (const m of (BOOT.translation_modes || [])) {
+        const o = document.createElement("option");
+        o.value = m.id; o.textContent = m.label || m.id;
+        sel.appendChild(o);
+      }
+    }
+    sel.value = c.translation_mode || "precise";
+  }
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
   if ($("set-bi-bold")) $("set-bi-bold").checked = c.bilingual_bold !== false;
@@ -642,6 +653,7 @@ $("set-lan-admin").onchange = () => {
   $("settings-status").textContent = "局域网管理密码已更新。";
 };
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
+if ($("set-translation-mode")) $("set-translation-mode").onchange = () => saveConfig({ translation_mode: $("set-translation-mode").value });
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
 if ($("set-bi-bold")) $("set-bi-bold").onchange = () => saveConfig({ bilingual_bold: $("set-bi-bold").checked });

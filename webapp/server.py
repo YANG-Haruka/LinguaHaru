@@ -208,6 +208,7 @@ def bootstrap():
             # the safety-net default when unset (so the UI isn't misleading).
             "rpm_limit": config.get("rpm_limit", _DEFAULT_RPM),
             "auto_extract_glossary": config.get("auto_extract_glossary", False),
+            "translation_mode": config.get("translation_mode", "precise"),
             "mask_placeholders": config.get("mask_placeholders", True),
             "dedup_context": config.get("dedup_context", False),
             "bilingual_bold": config.get("bilingual_bold", True),
@@ -229,8 +230,22 @@ def bootstrap():
             "thread_count": backend.thread_count_for_mode(
                 online, config.get("default_online_model")),
         },
+        "translation_modes": _translation_modes_for_ui(),
         "labels": LABEL_TRANSLATIONS,
     }
+
+
+def _translation_modes_for_ui():
+    """[{id, label, label_en}] for the translation-mode picker."""
+    try:
+        from core.translation_modes import load_modes
+        out = []
+        for mid, m in load_modes().items():
+            out.append({"id": mid, "label": m.get("label", mid),
+                        "label_en": m.get("label_en", mid)})
+        return out
+    except Exception:  # noqa: BLE001
+        return []
 
 
 @app.get("/api/models")
@@ -249,7 +264,8 @@ async def update_config(payload: dict):
     allowed = {"default_online", "default_online_model", "default_src_lang",
                "default_dst_lang", "default_glossary", "stt_model", "ocr_model_size",
                "translate_subtitles", "max_retries", "rpm_limit",
-               "auto_extract_glossary", "mask_placeholders", "dedup_context",
+               "auto_extract_glossary", "translation_mode",
+               "mask_placeholders", "dedup_context",
                "bilingual_bold", "bilingual_color", "live_stream_translation",
                "web_vad", "lan_mode",
                "result_dir", "history_max_records", "history_max_age_days",
