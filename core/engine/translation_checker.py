@@ -419,7 +419,7 @@ def _mark_all_as_failed(original_text, FAILED_JSON_PATH):
         for key, value in original_json.items():
             failed_segments.append({
                 "count_split": int(key),
-                "value": value.strip()
+                "value": str(value).strip()    # value may be non-str on a malformed reply
             })
     except json.JSONDecodeError as e:
         app_logger.warning(f"Error parsing original: {e}")

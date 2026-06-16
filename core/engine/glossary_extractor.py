@@ -141,7 +141,7 @@ def _clean_terms(terms, corpus):
 
 
 def extract_glossary_terms(values, model, use_online, api_key, src_lang, dst_lang,
-                           check_stop=None):
+                           check_stop=None, mode_params=None):
     """One-shot LLM term extraction from document text values, validated against
     the document. `check_stop` (callable) is honored before the request so a
     pending Stop doesn't have to wait for extraction to even begin."""
@@ -159,7 +159,7 @@ def extract_glossary_terms(values, model, use_online, api_key, src_lang, dst_lan
     try:
         if use_online:
             from core.llm.online_translation import translate_online
-            raw, success, _ = translate_online(api_key, messages, model)
+            raw, success, _ = translate_online(api_key, messages, model, mode_params=mode_params)
         else:
             from core.llm.offline_translation import translate_offline
             raw, success, _ = translate_offline(messages, model)

@@ -147,17 +147,16 @@ def translate_offline(messages, model):
             
         app_logger.debug(f"Using {service} model: {model_name}")
         
-        # Special handling for qwen3 models
+        # Special handling for qwen3 models. Copy first — never mutate the
+        # caller-owned messages list (would corrupt retries if it were reused).
         is_qwen3 = "qwen3" in model_name.lower()
-        if is_qwen3 and messages and len(messages) > 0:
-            last_message = messages[-1]
-            if last_message.get("role") == "user" and "content" in last_message:
-                if isinstance(last_message["content"], str):
-                    # Add instruction to return valid JSON
-                    messages[-1]["content"] = (
-                        last_message["content"] + 
-                        " /no_think IMPORTANT: Return a single valid JSON object containing all translations. Wrap everything in {}"
-                    )
+        if is_qwen3 and messages and messages[-1].get("role") == "user" \
+                and isinstance(messages[-1].get("content"), str):
+            messages = list(messages)
+            messages[-1] = dict(messages[-1])
+            messages[-1]["content"] += (
+                " /no_think IMPORTANT: Return a single valid JSON object "
+                "containing all translations. Wrap everything in {}")
         
         # Sampling temperature from the active translation mode (was a fixed
         # 0.7 for LM Studio, which is high for document translation). Default
@@ -319,13 +318,16 @@ def fix_json_format(text):
         
     # Try to parse multiple JSON objects on separate lines
     try:
-        # Extract all JSON-like objects
-        objects = re.findall(r'(\{.*?\})', text, re.DOTALL)
-        
+        # Extract all balanced top-level objects (string/nesting aware), so a
+        # value containing braces isn't truncated/merged into corruption.
+        from core.llm.online_translation import _balanced_json_objects
+        objects = _balanced_json_objects(text)
+
         if not objects:
-            # Fall back to simply wrapping everything in {}
-            app_logger.warning("No JSON objects found in response, wrapping text")
-            return "{" + text.strip() + "}"
+            # Plain-text reply -> wrap it as a single value (NOT "{"+text+"}",
+            # which produces invalid JSON for arbitrary text).
+            app_logger.debug("No JSON objects found in response, wrapping text")
+            return json.dumps({"translated_text": text}, ensure_ascii=False)
             
         # Parse each object and merge them
         merged_data = {}

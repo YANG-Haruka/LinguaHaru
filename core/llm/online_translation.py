@@ -21,11 +21,19 @@ class HardApiError(Exception):
 # run only hard-fails when no usable key remains.
 _key_lock = threading.Lock()
 _key_counter = 0
-_bad_keys = set()
+# key -> unix-ts until which it stays quarantined. TIME-LIMITED so a transient
+# quota/429 blip doesn't permanently disable a key for the whole process life
+# (this server can run for days); the key is retried automatically after the TTL.
+_bad_keys = {}
+_KEY_QUARANTINE_TTL = 600   # seconds
 
 
 def _split_keys(api_key):
     return [k.strip() for k in (api_key or "").split(",") if k.strip()]
+
+
+def _key_usable(k, now):
+    return _bad_keys.get(k, 0) <= now
 
 
 def _pick_api_key(api_key):
@@ -33,8 +41,9 @@ def _pick_api_key(api_key):
     keys = _split_keys(api_key)
     if len(keys) <= 1:
         return api_key
+    now = time.time()
     with _key_lock:
-        usable = [k for k in keys if k not in _bad_keys]
+        usable = [k for k in keys if _key_usable(k, now)]
         if not usable:
             raise HardApiError("All API keys failed authentication/quota checks")
         _key_counter += 1
@@ -42,13 +51,15 @@ def _pick_api_key(api_key):
 
 
 def _quarantine_key(api_key, used_key, reason):
-    """Mark one key as dead. Returns True if other keys remain usable."""
+    """Quarantine one key for _KEY_QUARANTINE_TTL seconds. Returns True if other
+    keys remain usable right now."""
     keys = _split_keys(api_key)
+    now = time.time()
     with _key_lock:
-        _bad_keys.add(used_key)
-        remaining = [k for k in keys if k not in _bad_keys]
-    app_logger.warning(f"API key ...{used_key[-6:]} quarantined ({reason}); "
-                       f"{len(remaining)} key(s) remaining")
+        _bad_keys[used_key] = now + _KEY_QUARANTINE_TTL
+        remaining = [k for k in keys if _key_usable(k, now)]
+    app_logger.warning(f"API key ...{used_key[-6:]} quarantined for "
+                       f"{_KEY_QUARANTINE_TTL}s ({reason}); {len(remaining)} key(s) usable now")
     return bool(remaining)
 
 
@@ -270,6 +281,38 @@ def fetch_models_into_configs(selected_model, api_key, timeout=5):
     return added, None
 
 
+def _balanced_json_objects(text):
+    """Top-level {...} substrings, respecting string literals + nesting. Unlike a
+    non-greedy regex this never truncates a value that itself contains braces
+    (ICU placeholders, code, nested objects)."""
+    objs = []
+    depth = 0
+    start = -1
+    in_str = False
+    esc = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                objs.append(text[start:i + 1])
+                start = -1
+    return objs
+
+
 def fix_json_format(text):
     """
     Fix the JSON format of the response text.
@@ -299,9 +342,9 @@ def fix_json_format(text):
         
     # Try to parse multiple JSON objects on separate lines
     try:
-        # Extract all JSON-like objects
-        objects = re.findall(r'(\{.*?\})', text, re.DOTALL)
-        
+        # Extract all balanced top-level objects (string/nesting aware).
+        objects = _balanced_json_objects(text)
+
         if not objects:
             # Plain-text reply (e.g. the simple/live translation prompt asks for
             # exactly that) -> wrap it. Debug, not warning: it's normal + noisy.
@@ -465,6 +508,14 @@ def translate_online(api_key, messages, model, mode_params=None):
         error_msg = str(e).lower()
         app_logger.error(f"API call failed: {e}")
 
+        # Rate limit FIRST — a 429 body often contains "exceeded" (e.g. "rate
+        # limit exceeded"), which would otherwise be misread as a fatal quota
+        # error and abort the whole run. 429 is retryable: park the model.
+        if "rate limit" in error_msg or "429" in error_msg or "too many requests" in error_msg:
+            cooldown = _parse_retry_after(e)
+            _set_cooldown(model, cooldown)
+            return f"Rate limit exceeded; backing off {cooldown}s", False, None
+
         # Hard errors: retrying the same key is pointless. Quarantine the key;
         # if other keys remain the caller retries (soft) with the next key,
         # otherwise abort the whole translation immediately.
@@ -473,16 +524,10 @@ def translate_online(api_key, messages, model, mode_params=None):
                 return f"API key quarantined, retrying with next key: {str(e)}", False, None
             raise HardApiError(f"Unrecoverable API error: {str(e)}")
 
-        # Soft errors: rate limit / network / server hiccups - worth retrying
+        # Soft errors: network / server hiccups - worth retrying.
         if "connection" in error_msg or "network" in error_msg:
             return f"Network error: {str(e)}", False, None
-        elif "rate limit" in error_msg or "429" in error_msg:
-            # Learn the provider's real limit: park this model until Retry-After.
-            cooldown = _parse_retry_after(e)
-            _set_cooldown(model, cooldown)
-            return f"Rate limit exceeded; backing off {cooldown}s", False, None
-        else:
-            return f"API request failed: {str(e)}", False, None
+        return f"API request failed: {str(e)}", False, None
     finally:
         _sem.release()
 

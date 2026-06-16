@@ -81,9 +81,11 @@ def _get_rates():
 
     fresh = _fetch_fx()
     if fresh:
-        try:
-            with open(_FX_CACHE, "w", encoding="utf-8") as f:
+        try:                       # atomic write so a concurrent reader never sees a torn file
+            tmp = f"{_FX_CACHE}.{os.getpid()}.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump({"ts": now, "rates": fresh}, f)
+            os.replace(tmp, _FX_CACHE)
         except Exception:
             pass
         return fresh

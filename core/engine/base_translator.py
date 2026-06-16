@@ -835,7 +835,8 @@ class DocumentTranslator:
 
             terms = extract_glossary_terms(values, self.model, self.use_online,
                                            self.api_key, self.src_lang, self.dst_lang,
-                                           check_stop=self.check_for_stop)
+                                           check_stop=self.check_for_stop,
+                                           mode_params=self.topts.get("params"))
             if not terms:
                 return
 
@@ -996,8 +997,8 @@ class DocumentTranslator:
                     
                 for count_split, value in segment_dict.items():
                     failed_segments.append({
-                        "count_split": int(count_split), 
-                        "value": value.strip()
+                        "count_split": int(count_split),
+                        "value": str(value).strip()    # value may be non-str on a malformed reply
                     })
                     
                 f.seek(0)

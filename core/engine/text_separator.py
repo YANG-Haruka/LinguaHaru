@@ -149,7 +149,12 @@ def load_glossary(glossary_path, src_lang, dst_lang):
     
     return []
 
-_CJK_RE = re.compile(r"[　-鿿＀-￯]")
+# Scripts written WITHOUT spaces (scriptio continua) — these must use substring
+# matching, not \b word boundaries. Covers CJK ideographs + kana + CJK/fullwidth
+# punctuation (U+3000–U+9FFF, U+FF00–U+FFEF), Hangul (U+1100–U+11FF, U+AC00–U+D7A3)
+# and Thai (U+0E00–U+0E7F). Without Hangul/Thai a Korean/Thai glossary term
+# embedded in connected text never matched (\b fails between same-script chars).
+_CJK_RE = re.compile(r"[ᄀ-ᇿ฀-๿　-鿿가-힣＀-￯]")
 
 
 def _term_matches(term, text):
