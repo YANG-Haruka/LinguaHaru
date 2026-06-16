@@ -39,22 +39,33 @@ class LiveRecognizeWorker(QThread):
     utterance every ~360ms; we re-run STT and emit the full text-so-far. The page
     applies stable-prefix commit on the text. ``is_final`` marks the end-of-
     utterance pass (flush the remainder)."""
-    done = Signal(str, str, bool)   # (text, detected_lang, is_final)
+    done = Signal(str, str, bool, int)   # (text, detected_lang, is_final, speaker)
 
-    def __init__(self, pcm_bytes, sample_rate, is_final, parent=None):
+    def __init__(self, pcm_bytes, sample_rate, is_final, assigner=None,
+                 want_speaker=False, parent=None):
         super().__init__(parent)
         self._pcm = pcm_bytes
         self._sr = sample_rate
         self._final = is_final
+        self._assigner = assigner          # OnlineSpeakerAssigner (or None)
+        self._want_speaker = want_speaker   # compute a speaker id for this utterance
 
     def run(self):
+        speaker = 0
         try:
             from core.pipelines.video_translation_pipeline import recognize_utterance
-            with _STT_LOCK:
+            with _STT_LOCK:   # also serializes assigner access (one worker at a time)
                 text, detected = recognize_utterance(self._pcm, sample_rate=self._sr)
-            self.done.emit(text or "", detected or "auto", self._final)
+                if self._want_speaker and self._assigner is not None:
+                    try:
+                        import numpy as np
+                        audio = np.frombuffer(self._pcm, dtype=np.int16).astype("float32") / 32768.0
+                        speaker = self._assigner.assign(audio, self._sr)
+                    except Exception:  # noqa: BLE001 — labeling is best-effort
+                        speaker = 0
+            self.done.emit(text or "", detected or "auto", self._final, speaker)
         except Exception:  # noqa: BLE001 — transient; the next partial retries
-            self.done.emit("", "auto", self._final)
+            self.done.emit("", "auto", self._final, 0)
 
 
 class LiveTranslateWorker(QThread):
