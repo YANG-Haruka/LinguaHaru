@@ -163,6 +163,40 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("dedup_context", v))
         self.dedup_ctx_label = BodyLabel(tr("Context-aware Dedup", lang))
         gl_form.addRow(self.dedup_ctx_label, self.dedup_ctx)
+        # Advanced modifiers: tone / length / free-text style guide.
+        self._tones = [("", tr("Default", lang)), ("formal", tr("Formal", lang)),
+                       ("casual", tr("Casual", lang))]
+        self.tone_combo = ComboBox()
+        for _v, lbl in self._tones:
+            self.tone_combo.addItem(lbl)
+        cur_tone = config.get("translation_tone", "")
+        for i, (v, _l) in enumerate(self._tones):
+            if v == cur_tone:
+                self.tone_combo.setCurrentIndex(i)
+        self.tone_combo.currentIndexChanged.connect(
+            lambda i: backend.set_config("translation_tone", self._tones[i][0]) if 0 <= i < len(self._tones) else None)
+        self.tone_label = BodyLabel(tr("Tone", lang))
+        gl_form.addRow(self.tone_label, self.tone_combo)
+        self._lengths = [("", tr("Default", lang)), ("keep", tr("Keep Length", lang)),
+                         ("expand", tr("Allow Longer", lang)), ("short", tr("Concise", lang))]
+        self.length_combo = ComboBox()
+        for _v, lbl in self._lengths:
+            self.length_combo.addItem(lbl)
+        cur_len = config.get("translation_length", "")
+        for i, (v, _l) in enumerate(self._lengths):
+            if v == cur_len:
+                self.length_combo.setCurrentIndex(i)
+        self.length_combo.currentIndexChanged.connect(
+            lambda i: backend.set_config("translation_length", self._lengths[i][0]) if 0 <= i < len(self._lengths) else None)
+        self.length_label = BodyLabel(tr("Length", lang))
+        gl_form.addRow(self.length_label, self.length_combo)
+        self.style_edit = LineEdit()
+        self.style_edit.setText(config.get("translation_style", ""))
+        self.style_edit.setClearButtonEnabled(True)
+        self.style_edit.editingFinished.connect(
+            lambda: backend.set_config("translation_style", self.style_edit.text().strip()))
+        self.style_label = BodyLabel(tr("Style Guide", lang))
+        gl_form.addRow(self.style_label, self.style_edit)
         # Bilingual: bold + color the translated text so it stands out (subtitles).
         self.bi_bold = SwitchButton()
         self.bi_bold.setChecked(config.get("bilingual_bold", True))
@@ -487,6 +521,9 @@ class SettingsPage(ScrollArea):
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
         self.mask_ph_label.setText(tr("Placeholder Protection", lang))
         self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))
+        self.tone_label.setText(tr("Tone", lang))
+        self.length_label.setText(tr("Length", lang))
+        self.style_label.setText(tr("Style Guide", lang))
         self.bi_bold_label.setText(tr("Bilingual Bold", lang))
         self.bi_color_label.setText(tr("Translation Color", lang))
         self.live_stream_label.setText(tr("Stream Translation", lang))

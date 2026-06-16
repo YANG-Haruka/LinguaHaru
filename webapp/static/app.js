@@ -373,6 +373,9 @@ async function boot() {
     }
     sel.value = c.translation_mode || "precise";
   }
+  if ($("set-tone")) $("set-tone").value = c.translation_tone || "";
+  if ($("set-length")) $("set-length").value = c.translation_length || "";
+  if ($("set-style")) $("set-style").value = c.translation_style || "";
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
   if ($("set-bi-bold")) $("set-bi-bold").checked = c.bilingual_bold !== false;
@@ -654,6 +657,9 @@ $("set-lan-admin").onchange = () => {
 };
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
 if ($("set-translation-mode")) $("set-translation-mode").onchange = () => saveConfig({ translation_mode: $("set-translation-mode").value });
+if ($("set-tone")) $("set-tone").onchange = () => saveConfig({ translation_tone: $("set-tone").value });
+if ($("set-length")) $("set-length").onchange = () => saveConfig({ translation_length: $("set-length").value });
+if ($("set-style")) $("set-style").onchange = () => saveConfig({ translation_style: $("set-style").value.trim() });
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
 if ($("set-bi-bold")) $("set-bi-bold").onchange = () => saveConfig({ bilingual_bold: $("set-bi-bold").checked });

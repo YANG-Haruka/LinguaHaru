@@ -46,10 +46,13 @@ def load_prompt(src_lang, dst_lang):
         # natural / polish / subtitle), so the chosen mode actually shapes the
         # output beyond sampling params.
         try:
-            from core.translation_modes import active_prompt_hint
+            from core.translation_modes import active_prompt_hint, active_advanced_hint
             hint = active_prompt_hint()
             if hint:
                 system_prompt = f"{system_prompt}\n\n{hint}"
+            adv = active_advanced_hint()
+            if adv:
+                system_prompt = f"{system_prompt}\n{adv}"
         except Exception:  # noqa: BLE001
             pass
 

@@ -176,6 +176,10 @@ _DEFAULT_CONFIG = {
     # Translation mode profile (sampling params + later prompt rules / QA).
     # See config/translation_modes.json. Default "precise" pins temperature low.
     "translation_mode": "precise",
+    # Advanced translation modifiers (appended to the prompt; all optional).
+    "translation_tone": "",     # "" | "formal" | "casual"
+    "translation_length": "",   # "" | "keep" | "expand" | "short"
+    "translation_style": "",    # free-text style guide
     "rpm_limit": 0,
     "qt_theme": "light",
     "qt_ui_lang": "zh",

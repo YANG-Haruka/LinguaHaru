@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260615O" />
+  <link rel="stylesheet" href="/static/style.css?v=20260615P" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -550,7 +550,21 @@
           <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color:var(--text-2); font-size:0.9rem">翻译模式
             <select id="set-translation-mode" style="width:auto"></select>
           </label>
-          <div class="muted" style="margin-bottom:12px; font-size:0.8rem">精准=忠实低温（文档/技术/合同，推荐）；自然=更通顺；润色=更地道；字幕精简=短句口语，适合字幕。</div>
+          <div class="muted" style="margin-bottom:12px; font-size:0.8rem">精准=忠实低温（文档/技术/合同，推荐）；自然=更通顺；润色=更地道（含二次润色）；字幕精简=短句口语，适合字幕。</div>
+          <details style="margin-bottom:12px">
+            <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem">高级（语气 / 长度 / 风格指南）</summary>
+            <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px">
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem">语气
+                <select id="set-tone" style="width:auto"><option value="">默认</option><option value="formal">正式</option><option value="casual">口语</option></select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem">长度
+                <select id="set-length" style="width:auto"><option value="">默认</option><option value="keep">贴近原文长度</option><option value="expand">允许变长</option><option value="short">尽量简短</option></select>
+              </label>
+              <label style="display:flex; flex-direction:column; gap:4px; color:var(--text-2); font-size:0.9rem">风格指南（自由填写，会附加到翻译指令）
+                <textarea id="set-style" rows="2" placeholder="例如：使用台湾用语；保持品牌名英文不译" style="resize:vertical"></textarea>
+              </label>
+            </div>
+          </details>
           <label class="check"><input type="checkbox" id="set-auto-glossary" /> AI 术语提取（翻译前自动从文档抽取术语表）</label>
           <label class="check" style="margin-top:10px"><input type="checkbox" id="set-mask-ph" /> 占位符保护（翻译前屏蔽 %s / ${var} / {占位符}，避免被改写；推荐开启）</label>
           <label class="check" style="margin-top:10px"><input type="checkbox" id="set-dedup-context" /> 上下文区分去重（相同文本但不同位置/类型分别翻译，更准但更费 token）</label>
@@ -614,7 +628,7 @@
      <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
    </div>
  </div>
-  <script src="/static/background.js?v=20260615O"></script>
-  <script src="/static/app.js?v=20260615O"></script>
+  <script src="/static/background.js?v=20260615P"></script>
+  <script src="/static/app.js?v=20260615P"></script>
 </body>
 </html>

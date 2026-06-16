@@ -91,6 +91,37 @@ def active_prompt_hint():
     return str(active_params().get("prompt_hint", "")).strip()
 
 
+_TONES = {
+    "formal": "Use a formal, professional tone.",
+    "casual": "Use a casual, conversational tone.",
+}
+_LENGTHS = {
+    "keep": "Keep each translation close in length to its source.",
+    "expand": "You may lengthen the translation where it improves clarity and flow.",
+    "short": "Make each translation as concise as possible.",
+}
+
+
+def active_advanced_hint():
+    """Optional one-line modifiers from the Advanced area (tone / length / free
+    style guide), appended after the mode hint. Empty when nothing is set."""
+    try:
+        from core import backend
+        tone = str(backend.get_config("translation_tone", "") or "")
+        length = str(backend.get_config("translation_length", "") or "")
+        style = str(backend.get_config("translation_style", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        return ""
+    parts = []
+    if tone in _TONES:
+        parts.append(_TONES[tone])
+    if length in _LENGTHS:
+        parts.append(_LENGTHS[length])
+    if style:
+        parts.append("Follow this style guide: " + style)
+    return " ".join(parts)
+
+
 def active_second_pass():
     """The active mode's second-pass step name (e.g. 'polish_target'), or '' if
     the mode runs a single pass."""
