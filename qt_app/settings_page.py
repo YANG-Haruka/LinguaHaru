@@ -506,12 +506,17 @@ class SettingsPage(ScrollArea):
             position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self.window())
 
     def _tag_chip(self, key):
+        from qfluentwidgets import isDarkTheme
         chip = QLabel(tr(key, self._lang))
-        rec = key == "Tag Recommended"
+        if key == "Tag Recommended":
+            bg, fg = "rgba(10,132,255,0.20)", "#3aa0ff"
+        elif isDarkTheme():
+            bg, fg = "rgba(255,255,255,0.13)", "#dde3ee"
+        else:
+            bg, fg = "rgba(0,0,0,0.07)", "#5a6473"
         chip.setStyleSheet(
-            "QLabel{font-size:10px;font-weight:600;padding:1px 7px;border-radius:8px;"
-            + ("background:rgba(0,120,212,0.16);color:#0a84ff;}"
-               if rec else "background:rgba(128,128,128,0.16);color:palette(mid);}"))
+            f"QLabel{{font-size:10px;font-weight:600;padding:1px 7px;"
+            f"border-radius:8px;background:{bg};color:{fg};}}")
         return chip
 
     def _refresh_models(self):
@@ -530,42 +535,32 @@ class SettingsPage(ScrollArea):
             layout.addWidget(self._model_row_widget(plugin, st))
 
     def _model_row_widget(self, plugin, st):
+        # Management = download state only: not-downloaded -> Install, downloaded
+        # -> Delete. The model actually used is chosen at translate time (the
+        # media STT picker), so there's no "active" concept here.
         row = QWidget()
+        row.setObjectName("modelRow")   # scope the border to the row, NOT children
         h = QHBoxLayout(row)
         h.setContentsMargins(10, 7, 10, 7)
         h.setSpacing(8)
-        name = StrongBodyLabel(st["label"])
-        h.addWidget(name)
+        h.addWidget(StrongBodyLabel(st["label"]))
         for t in st.get("tags", []):
             h.addWidget(self._tag_chip(t))
         h.addStretch(1)
         size = st.get("size", "")
         if st.get("vram"):
             size = f"{size} · {st['vram']}"
-        size_lbl = CaptionLabel(size)
-        size_lbl.setStyleSheet("color:palette(mid);")
-        h.addWidget(size_lbl)
+        h.addWidget(CaptionLabel(size))
         if not st["downloaded"]:
             b = PushButton(tr("Install", self._lang))
             b.clicked.connect(lambda _=False, p=plugin, i=st["id"], btn=b: self._install_model(p, i, btn))
             h.addWidget(b)
         else:
-            if st["active"]:
-                used = CaptionLabel(tr("In Use", self._lang))
-                used.setStyleSheet("color:#0a84ff;font-weight:600;")
-                h.addWidget(used)
-            else:
-                u = PushButton(tr("Set Active", self._lang))
-                u.clicked.connect(lambda _=False, p=plugin, i=st["id"]: self._select_model(p, i))
-                h.addWidget(u)
             d = PushButton(tr("Delete", self._lang))
             d.clicked.connect(lambda _=False, p=plugin, i=st["id"], lbl=st["label"], btn=d: self._delete_model(p, i, lbl, btn))
             h.addWidget(d)
         row.setStyleSheet(
-            "QWidget{border:1px solid rgba(128,128,128,0.25);border-radius:8px;}"
-            if not st["active"] else
-            "QWidget{border:1px solid rgba(10,132,255,0.5);border-radius:8px;"
-            "background:rgba(10,132,255,0.07);}")
+            "#modelRow{border:1px solid rgba(128,128,128,0.28);border-radius:8px;}")
         return row
 
     def _install_model(self, plugin, model_id, btn):
@@ -585,11 +580,6 @@ class SettingsPage(ScrollArea):
             self._refresh_models()
         w.finished_ok.connect(done)
         w.start()
-
-    def _select_model(self, plugin, model_id):
-        from core.optional_modules import set_plugin_model
-        set_plugin_model(plugin, model_id)
-        self._refresh_models()
 
     def _delete_model(self, plugin, model_id, label, btn):
         box = MessageBox(tr("Model Management", self._lang),

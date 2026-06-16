@@ -152,7 +152,7 @@ function renderModelRows(host, plugin, states) {
 
 function modelRow(plugin, s) {
   const row = document.createElement("div");
-  row.className = "model-row" + (s.active ? " active" : "");
+  row.className = "model-row";
 
   const main = document.createElement("div"); main.className = "model-row-main";
   const name = document.createElement("span"); name.className = "model-row-name"; name.textContent = s.label;
@@ -175,14 +175,6 @@ function modelRow(plugin, s) {
     b.onclick = () => installModel(plugin, s, b);
     act.appendChild(b);
   } else {
-    if (s.active) {
-      const chip = document.createElement("span"); chip.className = "model-inuse";
-      chip.textContent = _label("In Use", "使用中"); act.appendChild(chip);
-    } else {
-      const u = document.createElement("button"); u.className = "mini";
-      u.textContent = _label("Set Active", "设为当前");
-      u.onclick = () => selectModel(plugin, s); act.appendChild(u);
-    }
     const del = document.createElement("button"); del.className = "mini danger";
     del.textContent = _label("Delete", "删除");
     del.onclick = () => deleteModel(plugin, s, del); act.appendChild(del);
@@ -210,20 +202,6 @@ async function installModel(plugin, s, btn) {
     else toast((st.output || "failed").slice(-160), "bad");
     refreshModels();
   }, 1500);
-}
-
-async function selectModel(plugin, s) {
-  try {
-    await api("/api/models/select", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ plugin, model_id: s.id }),
-    });
-  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); return; }
-  if (BOOT.config) {
-    if (plugin === "Image OCR") BOOT.config.ocr_model_size = s.id;
-    if (plugin === "Video/Audio") BOOT.config.stt_model = s.id;
-  }
-  refreshModels();
 }
 
 async function deleteModel(plugin, s, btn) {
