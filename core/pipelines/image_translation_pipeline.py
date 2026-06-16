@@ -6,6 +6,7 @@
 # Optional module - requires: rapidocr, onnxruntime, opencv-python-headless
 import json
 import os
+import threading
 
 import cv2
 import numpy as np
@@ -16,6 +17,10 @@ from .skip_pipeline import should_translate
 from core.log_config import app_logger
 
 _ocr_engines = {}   # (size, ocr_lang) -> (kind, engine)
+# Serialize engine LOADING: two images OCR'd at once would otherwise both build
+# the (non-thread-safe) PaddleOCR/RapidOCR engine concurrently. Inference reuses
+# the cached engine afterwards.
+_OCR_LOAD_LOCK = threading.Lock()
 
 # PaddleOCR PP-OCRv6 size variant (det+rec). "small" is the light default —
 # noticeably smaller/faster than "medium" with only a minor accuracy drop;
@@ -92,6 +97,13 @@ def _get_ocr_engine(src_lang=None):
     key = (size, lang[0] if lang else None)
     if key in _ocr_engines:
         return _ocr_engines[key]
+    with _OCR_LOAD_LOCK:
+        if key in _ocr_engines:      # double-check inside the lock
+            return _ocr_engines[key]
+        return _load_ocr_engine(key, lang, size)
+
+
+def _load_ocr_engine(key, lang, size):
     try:
         # DLL load-order fix: paddle's oneDNN/MKL DLLs break ctranslate2
         # (faster-whisper) if paddle loads first; the reverse order works.

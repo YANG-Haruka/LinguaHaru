@@ -5,6 +5,7 @@ Uses local encoding file for PyInstaller compatibility.
 """
 import sys
 import base64
+import threading
 from pathlib import Path
 import tiktoken
 from typing import Optional
@@ -21,8 +22,9 @@ def get_application_path() -> Path:
             current_dir = current_dir.parent
         raise RuntimeError("Could not find project root directory containing assets/models/tiktoken")
 
-# Global cached encoder
+# Global cached encoder (lock so concurrent first-calls don't double-parse the BPE)
 _cached_encoder: Optional[tiktoken.Encoding] = None
+_encoder_lock = threading.Lock()
 
 def get_encoder(encoding_name: str = "cl100k_base") -> tiktoken.Encoding:
     """Get encoder with caching and manual loading for PyInstaller compatibility."""
@@ -30,6 +32,14 @@ def get_encoder(encoding_name: str = "cl100k_base") -> tiktoken.Encoding:
 
     if _cached_encoder is not None:
         return _cached_encoder
+    with _encoder_lock:
+        if _cached_encoder is not None:   # double-check inside the lock
+            return _cached_encoder
+        return _build_encoder(encoding_name)
+
+
+def _build_encoder(encoding_name: str) -> tiktoken.Encoding:
+    global _cached_encoder
 
     # Load encoder file manually
     encoder_file = get_application_path() / "assets" / "models" / "tiktoken" / f"{encoding_name}.tiktoken"
