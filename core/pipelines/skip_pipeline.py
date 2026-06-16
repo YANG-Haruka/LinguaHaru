@@ -1,4 +1,42 @@
-import regex as re
+import regex as _regex
+
+
+class _CachedRe:
+    """Drop-in for the parts of the `regex` module this file uses, but compiling
+    each pattern ONCE and reusing the compiled object. The plain
+    `regex.match(pattern_str, ...)` convenience re-does flag/compile work on every
+    call (~100 calls per text value here), which made should_translate the
+    dominant cost when extracting large spreadsheets/docs. Caching the compiled
+    patterns cuts that to a dict lookup."""
+    UNICODE = _regex.UNICODE
+    IGNORECASE = _regex.IGNORECASE
+    DOTALL = _regex.DOTALL
+    _cache = {}
+
+    @classmethod
+    def _c(cls, pattern, flags=0):
+        key = (pattern, flags)
+        c = cls._cache.get(key)
+        if c is None:
+            c = _regex.compile(pattern, flags)
+            cls._cache[key] = c
+        return c
+
+    @classmethod
+    def match(cls, pattern, string, flags=0):
+        return cls._c(pattern, flags).match(string)
+
+    @classmethod
+    def search(cls, pattern, string, flags=0):
+        return cls._c(pattern, flags).search(string)
+
+    @classmethod
+    def split(cls, pattern, string, flags=0):
+        return cls._c(pattern, flags).split(string)
+
+
+re = _CachedRe
+
 
 def is_multibyte(text):
     """Check if text contains multibyte characters (Chinese, Japanese, Korean, etc.)"""
