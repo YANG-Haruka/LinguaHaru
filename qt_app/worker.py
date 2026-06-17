@@ -283,6 +283,11 @@ class TranslationWorker(QThread):
         # Resume: reuse the original record's id so the run updates that history
         # row (interrupted -> success) instead of adding a duplicate.
         self.resume_record_id = resume_record_id
+        # Stable id for THIS task's history row, known before the run starts so
+        # the page can update its status live (e.g. running -> paused). A resume
+        # reuses the original row's id; a fresh run gets a new one.
+        import uuid as _uuid
+        self.translation_id = resume_record_id or _uuid.uuid4().hex
         self._stop = False
         self._paused = False
         # Coverage report for this file (filled after process(); read by the page)
@@ -386,8 +391,7 @@ class TranslationWorker(QThread):
             history_dir=history_dir,
         )
         translator.check_stop_requested = self._check_stop
-        if self.resume_record_id:
-            translator.translation_id = self.resume_record_id
+        translator.translation_id = self.translation_id
         # Captured into the history record if this run fails/stops, so a later
         # "Continue" can reconstruct THIS exact worker (display langs, glossary,
         # bilingual flags — things the translator itself doesn't keep).

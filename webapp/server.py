@@ -627,6 +627,11 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     if resume_record_id:
         # Resume reuses the original row (interrupted -> success), no duplicate.
         translator.translation_id = resume_record_id
+    # Expose THIS file's history-row id on the task so /api/pause and /api/resume
+    # can mirror the live status (running <-> paused) onto its record.
+    with _TASKS_LOCK:
+        if task_id in TASKS:
+            TASKS[task_id]["translation_id"] = translator.translation_id
     # Captured into the history record if this run fails/stops, so a later
     # Continue can reconstruct THIS run (langs/model/glossary/bilingual + dirs).
     translator.resume_info = {
@@ -893,15 +898,32 @@ def stop(task_id: str, request: Request):
     return {"ok": True}
 
 
+def _mirror_task_status(session_id, task, status):
+    """Reflect the live task status (running/paused) onto the in-flight file's
+    history row so the History page mirrors the real state. Best-effort."""
+    tid = task.get("translation_id")
+    if not tid:
+        return
+    try:
+        from core.translation_history import TranslationHistoryManager
+        TranslationHistoryManager(log_dir=history_log_dir(session_id)).set_status(tid, status)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @app.post("/api/pause/{task_id}")
 def pause(task_id: str, request: Request):
     """Freeze a running task in place (true pause — nothing is torn down, so a
     later resume continues from the exact point). Task-scoped."""
     sid = request.state.session_id
+    paused_task = None
     with _TASKS_LOCK:
         task = TASKS.get(task_id)
         if task is not None and task.get("session_id") == sid and task.get("status") == "running":
             task["paused"] = True
+            paused_task = dict(task)
+    if paused_task:
+        _mirror_task_status(sid, paused_task, "paused")
     return {"ok": True}
 
 
@@ -910,10 +932,14 @@ def resume(task_id: str, request: Request):
     """Resume a paused task; its blocked worker threads continue from where they
     stopped checking."""
     sid = request.state.session_id
+    resumed_task = None
     with _TASKS_LOCK:
         task = TASKS.get(task_id)
         if task is not None and task.get("session_id") == sid:
             task["paused"] = False
+            resumed_task = dict(task)
+    if resumed_task:
+        _mirror_task_status(sid, resumed_task, "running")
     return {"ok": True}
 
 

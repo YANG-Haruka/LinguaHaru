@@ -2198,6 +2198,7 @@ const HSTATUS = {
   stopped: ["Status Stopped", "#ef6c00"],
   interrupted: ["Status Interrupted", "#ef6c00"],
   running: ["Status Running", "#1565c0"],
+  paused: ["Status Paused", "#8e8e93"],
 };
 
 function _fmtDuration(sec) {

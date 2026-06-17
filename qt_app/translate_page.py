@@ -669,13 +669,28 @@ class TranslatePage(QStackedWidget):
         for worker in list(self._workers):
             if worker.isRunning():
                 worker.request_pause()
+        self._set_history_status("paused")
         self.dashboard.set_paused(True)
 
     def on_resume(self):
         for worker in list(self._workers):
             if worker.isRunning():
                 worker.request_resume()
+        self._set_history_status("running")
         self.dashboard.set_paused(False)
+
+    def _set_history_status(self, status):
+        """Reflect the live task status (running/paused) on each in-flight task's
+        history row, so the History page mirrors the real state in real time."""
+        try:
+            from core.translation_history import TranslationHistoryManager
+            _, _, log_dir = backend.get_custom_paths()
+            mgr = TranslationHistoryManager(log_dir=log_dir)
+            for worker in list(self._workers):
+                if worker.isRunning():
+                    mgr.set_status(worker.translation_id, status)
+        except Exception:  # noqa: BLE001 — status mirroring must never break a run
+            pass
 
     def adopt_resume_worker(self, worker, file_path):
         """Run a resume worker (built by the History page) on THIS page's

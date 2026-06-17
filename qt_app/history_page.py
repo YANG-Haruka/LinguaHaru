@@ -47,9 +47,10 @@ _STATUS_META = {
     "stopped": ("Status Stopped", "#ef6c00"),
     "interrupted": ("Status Interrupted", "#ef6c00"),
     "running": ("Status Running", "#1565c0"),
+    "paused": ("Status Paused", "#8e8e93"),
 }
 # Order for the status filter dropdown.
-_STATUS_FILTER = ["success", "failed", "stopped", "interrupted", "running"]
+_STATUS_FILTER = ["success", "failed", "stopped", "interrupted", "running", "paused"]
 
 
 def open_folder(path):

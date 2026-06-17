@@ -237,15 +237,27 @@ class TranslationHistoryManager:
         except Exception:  # noqa: BLE001
             return None
 
+    def set_status(self, record_id: str, status: str) -> bool:
+        """Update just the status of one record (live status tracking, e.g.
+        running -> paused -> running). No-op if the row doesn't exist yet."""
+        try:
+            with self._connect() as conn:
+                conn.execute("UPDATE records SET status=? WHERE id=?", (status, record_id))
+            return True
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"Could not update record status: {e}")
+            return False
+
     def mark_running_as_interrupted(self) -> int:
-        """Recovery sweep: any record still 'running' belongs to a previous
-        process that died without finishing (crash / force-quit), so flip it to
-        'interrupted' (resumable). Call once at app startup, before new runs.
-        Returns how many rows were recovered."""
+        """Recovery sweep: any record still 'running' or 'paused' belongs to a
+        previous process that died without finishing (crash / force-quit), so
+        flip it to 'interrupted' (resumable). Call once at app startup, before
+        new runs. Returns how many rows were recovered."""
         try:
             with self._connect() as conn:
                 cur = conn.execute(
-                    "UPDATE records SET status='interrupted' WHERE status='running'")
+                    "UPDATE records SET status='interrupted' "
+                    "WHERE status IN ('running', 'paused')")
                 return cur.rowcount or 0
         except Exception as e:  # noqa: BLE001
             app_logger.warning(f"History recovery sweep failed: {e}")
