@@ -286,28 +286,75 @@ def _get_whisper_model(size):
     return _whisper_models[size]
 
 
-def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en", check_stop=None):
-    """Yield (start, end, text) tuples for each spoken segment."""
+def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en",
+                        check_stop=None, checkpoint_path=None):
+    """Yield (start, end, text) tuples for each spoken segment.
+
+    Resumable: whisper segments the audio itself (no external VAD), so a resume
+    can't skip individual segments — instead it replays the checkpointed ones and
+    restarts decoding from just past the last one by clipping the audio (whisper
+    decodes from t=0 otherwise). Clipping at a segment boundary is a natural pause,
+    so no speech is cut; timestamps are shifted back by the clip offset."""
     model = _get_whisper_model(size)
     language = src_lang.split("-")[0] if src_lang else None  # zh, en, ja, ...
-    segments, info = model.transcribe(wav_path, language=language, vad_filter=True)
-    duration = getattr(info, "duration", None) or 0
-    out = []
-    for seg in segments:
-        # Pause/stop checkpoint between segments: pause blocks here in place
-        # (the whisper iterator + this process stay alive, so resume continues
-        # from this exact segment); stop raises out of the loop.
-        if check_stop:
-            check_stop()
-        text = _clean_asr_text(seg.text)
-        if text:
-            out.append((seg.start, seg.end, text))
-        if progress_callback and duration:
-            # Full 0..1 of this phase; caller maps it into the extraction range.
-            # Show elapsed/total seconds so a long file reads as progressing.
-            progress_callback(min(seg.end / duration, 1.0),
-                              desc=f"{_tr('Transcribing', ui_lang)} "
-                                   f"{int(seg.end)}/{int(duration)}s")
+
+    # Resume: load already-decoded segments; restart decoding past the last one.
+    done, offset = [], 0.0
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    s, e, t = json.loads(line)
+                    done.append((s, e, t))
+            if done:
+                offset = max(e for _, e, _ in done)
+        except Exception:  # noqa: BLE001 — corrupt checkpoint -> start over
+            done, offset = [], 0.0
+
+    if offset > 0:
+        import wave
+        import numpy as np
+        with wave.open(wav_path, "rb") as wf:
+            sr = wf.getframerate()
+            raw = wf.readframes(wf.getnframes())
+        audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+        clipped = audio[int(offset * sr):]   # wav is 16k mono; whisper assumes 16k
+        app_logger.info(f"faster-whisper resume: {len(done)} segments done, "
+                        f"continuing from {offset:.0f}s")
+        segments, info = model.transcribe(clipped, language=language, vad_filter=True)
+        duration = offset + (getattr(info, "duration", None) or 0)
+    else:
+        segments, info = model.transcribe(wav_path, language=language, vad_filter=True)
+        duration = getattr(info, "duration", None) or 0
+
+    out = [(s, e, t) for s, e, t in done if t]
+    ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
+    try:
+        for seg in segments:
+            # Pause/stop checkpoint between segments: pause blocks here in place
+            # (the whisper iterator + this process stay alive, so resume continues
+            # from this exact segment); stop raises out of the loop.
+            if check_stop:
+                check_stop()
+            text = _clean_asr_text(seg.text)
+            s, e = seg.start + offset, seg.end + offset   # shift past the clip
+            if text:
+                out.append((s, e, text))
+            if ckpt_f:   # record every segment (even empty) so offset advances
+                ckpt_f.write(json.dumps([s, e, text]) + "\n")
+                ckpt_f.flush()
+            if progress_callback and duration:
+                # Full 0..1 of this phase; caller maps it into the extraction range.
+                # Show elapsed/total seconds so a long file reads as progressing.
+                progress_callback(min(e / duration, 1.0),
+                                  desc=f"{_tr('Transcribing', ui_lang)} "
+                                       f"{int(e)}/{int(duration)}s")
+    finally:
+        if ckpt_f:
+            ckpt_f.close()
     return out
 
 
@@ -721,9 +768,13 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     return [(spans[k][0], spans[k][1], texts[k]) for k in range(len(chunks)) if texts[k]]
 
 
-def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en", check_stop=None):
+def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
+                           check_stop=None, checkpoint_path=None):
     """VAD-segment the audio, recognize each segment with SenseVoice, and return
-    (start, end, text) tuples. Timing comes from the VAD so the SRT is aligned."""
+    (start, end, text) tuples. Timing comes from the VAD so the SRT is aligned.
+
+    Resumable like _transcribe_qwen: segments already recognized by a prior
+    stopped run are loaded (by their ms boundaries) and skipped."""
     import wave
     import numpy as np
     from funasr.utils.postprocess_utils import rich_transcription_postprocess
@@ -741,24 +792,54 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
 
     lang = _sensevoice_lang(src_lang)
     total = len(segments) or 1
-    out = []
-    for i, seg in enumerate(segments):
-        if check_stop:   # pause/stop between segments (see _transcribe_whisper)
-            check_stop()
-        s_ms, e_ms = seg[0], seg[1]
-        chunk = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
-        if chunk.size == 0:
-            continue
-        res = asr.generate(input=chunk, fs=sr, language=lang, use_itn=True)
-        text = _clean_asr_text(rich_transcription_postprocess(res[0]["text"])) if res else ""
-        if text:
-            out.append((s_ms / 1000.0, e_ms / 1000.0, text))
-        if progress_callback:
-            # Emit the full 0..1 of this phase; the caller maps it into the
-            # extraction sub-range (e.g. 0..50%) via EXTRACTION_PROGRESS_SHARE.
-            progress_callback((i + 1) / total,
-                              desc=f"{_tr('Transcribing', ui_lang)} {i + 1}/{total}")
-    return out
+    keys = [(int(round(seg[0])), int(round(seg[1]))) for seg in segments]
+
+    # Resume: load segments a prior stopped run already recognized.
+    done = {}
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    s_ms, e_ms, t = json.loads(line)
+                    done[(int(round(s_ms)), int(round(e_ms)))] = t
+        except Exception:  # noqa: BLE001 — a corrupt checkpoint just re-transcribes
+            done = {}
+    texts = [done.get(k) for k in keys]
+    if done:
+        remaining = sum(1 for t in texts if t is None)
+        app_logger.info(f"SenseVoice resume: {total - remaining}/{total} segments "
+                        f"already done, transcribing {remaining} more")
+
+    ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
+    try:
+        for i, seg in enumerate(segments):
+            if texts[i] is None:   # not yet done -> recognize it
+                if check_stop:   # pause/stop between segments (see _transcribe_whisper)
+                    check_stop()
+                s_ms, e_ms = seg[0], seg[1]
+                chunk = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
+                if chunk.size == 0:
+                    texts[i] = ""
+                else:
+                    res = asr.generate(input=chunk, fs=sr, language=lang, use_itn=True)
+                    texts[i] = _clean_asr_text(rich_transcription_postprocess(res[0]["text"])) if res else ""
+                if ckpt_f:
+                    ckpt_f.write(json.dumps([keys[i][0], keys[i][1], texts[i]]) + "\n")
+                    ckpt_f.flush()
+            if progress_callback:
+                # Emit the full 0..1 of this phase; the caller maps it into the
+                # extraction sub-range (e.g. 0..50%) via EXTRACTION_PROGRESS_SHARE.
+                progress_callback((i + 1) / total,
+                                  desc=f"{_tr('Transcribing', ui_lang)} {i + 1}/{total}")
+    finally:
+        if ckpt_f:
+            ckpt_f.close()
+
+    return [(segments[i][0] / 1000.0, segments[i][1] / 1000.0, texts[i])
+            for i in range(len(segments)) if texts[i]]
 
 
 def recognizer_ready(getter=None):
@@ -915,11 +996,13 @@ def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
     error) to the per-file log instead of failing silently, then re-raise."""
     try:
         if engine == "sensevoice":
-            return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
+            return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang,
+                                          check_stop, checkpoint_path)
         if engine == "qwen3asr":
             return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang,
                                     check_stop, checkpoint_path)
-        return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
+        return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang,
+                                   check_stop, checkpoint_path)
     except Exception as e:  # noqa: BLE001
         app_logger.error(
             f"STT transcription failed (engine={engine}, model={model_id}): "
@@ -986,8 +1069,10 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
             if progress_callback:
                 progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
             # Checkpoint survives a Stop (it lives in temp_dir, not the audio temp
-            # dir) so a Continue resumes transcription instead of redoing it.
-            ckpt_path = os.path.join(temp_dir, f"{filename}.asr_ckpt.jsonl")
+            # dir) so a Continue resumes transcription instead of redoing it. Keyed
+            # by engine so switching STT model between stop/resume can't cross-read
+            # a mismatched format.
+            ckpt_path = os.path.join(temp_dir, f"{filename}.{engine}.asr_ckpt.jsonl")
             triples = _run_transcription(engine, size, wav_path, src_lang,
                                          trans_cb, session_lang, model_id, check_stop,
                                          checkpoint_path=ckpt_path)
@@ -1017,7 +1102,7 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
     # Transcription finished -> the checkpoint is spent; drop it so a fresh
     # re-translation of this file doesn't reuse a stale partial transcript.
     try:
-        os.remove(os.path.join(temp_dir, f"{filename}.asr_ckpt.jsonl"))
+        os.remove(os.path.join(temp_dir, f"{filename}.{engine}.asr_ckpt.jsonl"))
     except OSError:
         pass
 
