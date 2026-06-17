@@ -24,15 +24,17 @@ from qt_app.i18n import tr
 
 # Outlined button styles: a neutral one and a red "danger" one (for the
 # irreversible delete), both with a hover fill — cleaner than solid blocks.
+# Left padding (38px) leaves room for the leading icon; without it the custom
+# padding overrides qfluentwidgets' icon gap and the icon overlaps the text.
 _NEUTRAL_BTN_QSS = (
     "PushButton{border:1px solid rgba(128,128,128,0.40);border-radius:8px;"
-    "padding:5px 16px;background:transparent;}"
+    "padding:5px 16px 5px 38px;background:transparent;}"
     "PushButton:hover{background:rgba(128,128,128,0.14);border-color:rgba(128,128,128,0.65);}"
     "PushButton:pressed{background:rgba(128,128,128,0.22);}"
 )
 _DANGER_BTN_QSS = (
     "PushButton{border:1px solid rgba(224,80,60,0.55);border-radius:8px;"
-    "padding:5px 16px;background:transparent;color:#e0503c;}"
+    "padding:5px 16px 5px 38px;background:transparent;color:#e0503c;}"
     "PushButton:hover{background:rgba(224,80,60,0.16);border-color:#e0503c;}"
     "PushButton:pressed{background:rgba(224,80,60,0.28);}"
 )
@@ -362,6 +364,17 @@ class SettingsPage(ScrollArea):
         out_row.addWidget(self.output_edit, 1)
         out_row.addWidget(self.output_browse)
         self.card_data.body.addLayout(out_row)
+        # Save the deliverable next to the SOURCE file (e.g. 1.mp4's subtitle in
+        # 1.mp4's folder). Desktop-only; the web app has no original-file folder.
+        beside_form = QFormLayout()
+        beside_form.setSpacing(12)
+        self.beside_source = SwitchButton()
+        self.beside_source.setChecked(config.get("output_beside_source", False))
+        self.beside_source.checkedChanged.connect(
+            lambda v: backend.set_config("output_beside_source", v))
+        self.beside_source_label = BodyLabel(tr("Save Next to Source", lang))
+        beside_form.addRow(self.beside_source_label, self.beside_source)
+        self.card_data.body.addLayout(beside_form)
         # Retention, grouped: RESULTS first (count / MB / days), then LOGS
         # (count / MB / days). 0 = unlimited. "Result count/days" reuse the
         # history-record limits (one record per result); "Result MB" caps the
@@ -413,9 +426,9 @@ class SettingsPage(ScrollArea):
         self.hist_clear_files_btn = PushButton(FluentIcon.DELETE, tr("Clear History And Files", lang))
         self.hist_clear_files_btn.clicked.connect(self._clear_history_and_files)
         self.hist_clear_files_btn.setStyleSheet(_DANGER_BTN_QSS)
+        hist_btn_row.addStretch(1)   # right-align the two action buttons
         hist_btn_row.addWidget(self.hist_clear_btn)
         hist_btn_row.addWidget(self.hist_clear_files_btn)
-        hist_btn_row.addStretch(1)
         self.card_data.body.addLayout(hist_btn_row)
 
         # --- Card 4: Model Management ---
@@ -778,6 +791,7 @@ class SettingsPage(ScrollArea):
             (self.maxseg_label, getattr(self, "maxseg_combo", None), "Force Cut Tip"),
             (self.hist_max_label, getattr(self, "hist_max", None), "Auto-delete by count Tip"),
             (self.hist_age_label, getattr(self, "hist_age", None), "Auto-delete by age Tip"),
+            (getattr(self, "beside_source_label", None), getattr(self, "beside_source", None), "Save Next to Source Tip"),
             (self.ocr_header, None, "Image OCR Model Tip"),
             (self.stt_header, None, "Speech-to-Text Model Tip"),
             (self.models_loc_label, getattr(self, "models_dir_edit", None), "Model Location Tip"),
@@ -830,6 +844,7 @@ class SettingsPage(ScrollArea):
         self.card_data.set_title(tr("Data & Storage", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))
+        self.beside_source_label.setText(tr("Save Next to Source", lang))
         self.hist_max_label.setText(tr("Result Max Count", lang))
         self.result_size_label.setText(tr("Result Max Size", lang))
         self.hist_age_label.setText(tr("Result Max Days", lang))

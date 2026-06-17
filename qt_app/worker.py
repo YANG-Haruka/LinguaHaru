@@ -13,6 +13,7 @@ actionable message (mirrors app.translate_files).
 
 import os
 import json
+import shutil
 import subprocess
 
 from PySide6.QtCore import QThread, Signal
@@ -425,6 +426,22 @@ class TranslationWorker(QThread):
             tokens_str = f"{total_tokens / 1000:.1f}K" if total_tokens >= 1000 else str(total_tokens)
             desc = f"{desc} | Total tokens used: {tokens_str}"
         self.progress.emit(1.0, desc)
+
+        # Optionally drop the finished file next to its SOURCE (config toggle),
+        # e.g. 1.mp4 -> its subtitle lands in 1.mp4's folder. Only the deliverable
+        # is copied; temp/log/coverage stay under data/ to avoid cluttering the
+        # user's folder. Resume runs keep their pinned dirs.
+        if (output_path and not self.resume_dirs
+                and backend.read_config().get("output_beside_source", False)):
+            try:
+                dest_dir = os.path.dirname(os.path.abspath(self.file_path))
+                dest = os.path.join(dest_dir, os.path.basename(output_path))
+                if os.path.abspath(dest) != os.path.abspath(output_path):
+                    shutil.copy2(output_path, dest)
+                output_path = dest
+            except Exception as e:  # noqa: BLE001 — never fail the run over a copy
+                from core.log_config import app_logger
+                app_logger.warning(f"Could not save output beside source: {e}")
 
         missing = sorted(missing_counts) if missing_counts else []
         self.finished.emit(output_path, missing)

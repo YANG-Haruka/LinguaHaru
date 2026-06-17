@@ -1,4 +1,6 @@
 {
+  "Save Next to Source": "元ファイルと同じ場所に保存",
+  "Save Next to Source Tip": "翻訳結果を元ファイルと同じフォルダに保存します（例：1.mp4 の字幕を 1.mp4 の隣に）。デスクトップ版のみ。",
   "Pause": "一時停止",
   "Resume": "再開",
   "Paused": "一時停止中",

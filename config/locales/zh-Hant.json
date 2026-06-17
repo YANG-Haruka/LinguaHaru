@@ -1,4 +1,6 @@
 {
+  "Save Next to Source": "儲存到原檔目錄",
+  "Save Next to Source Tip": "把譯文放到原檔所在的資料夾（例如 1.mp4 的字幕就存在 1.mp4 旁邊）。僅桌面端，Web 端結果仍在 data/result。",
   "AI Glossary Extraction": "AI 術語擷取",
   "AI Glossary Extraction Info": "翻譯前使用大型模型自動擷取術語",
   "API Auth Error": "API 金鑰無效或已失效，請檢查翻譯頁頂部的 API 金鑰",
