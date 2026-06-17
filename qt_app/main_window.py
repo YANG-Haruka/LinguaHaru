@@ -100,15 +100,21 @@ class MainWindow(FluentWindow):
         if os.path.exists(ICON_PATH):
             self.setWindowIcon(QIcon(ICON_PATH))
 
+        # Build only the landing page (Translate/quick) and the page before it in
+        # the nav (Interface) eagerly; the heavier pages (Plugins ~220ms, etc.)
+        # stream in right after the window is shown — see _build_deferred_pages —
+        # so the window appears almost instantly. They all come AFTER quick in the
+        # nav order, so appending them later preserves the order.
         self.interface_page = InterfacePage(self, lang=self._lang)
-        self.translate_page = TranslatePage(self, lang=self._lang)
         self.quick_page = QuickPage(self, lang=self._lang)
-        self.live_page = LivePage(self, lang=self._lang)
-        self.settings_page = SettingsPage(self, lang=self._lang)
-        self.history_page = HistoryPage(self, lang=self._lang)
-        self.proofread_page = ProofreadPage(self, lang=self._lang)
-        self.glossary_page = GlossaryPage(self, lang=self._lang)
-        self.plugins_page = PluginsPage(self, lang=self._lang)
+        self.translate_page = None
+        self.live_page = None
+        self.settings_page = None
+        self.history_page = None
+        self.proofread_page = None
+        self.glossary_page = None
+        self.plugins_page = None
+        self._deferred_built = False
 
         # routeKey -> label key, so nav text can be re-localized in place
         self._nav_keys = {
@@ -139,44 +145,9 @@ class MainWindow(FluentWindow):
         nav.addSeparator()
         self.addSubInterface(self.quick_page, FluentIcon.SEND,
                              tr("Translate", self._lang))
-        self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
-                             tr("File Translation", self._lang))
-        self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
-                             tr("Real-Time Voice", self._lang))
-
-        nav.addSeparator()
-        self.addSubInterface(self.glossary_page, FluentIcon.DICTIONARY,
-                             tr("Glossary", self._lang))
-        self.addSubInterface(self.proofread_page, FluentIcon.EDIT,
-                             tr("Proofread", self._lang))
-        self.addSubInterface(self.history_page, FluentIcon.HISTORY,
-                             tr("History", self._lang))
-
-        nav.addSeparator()
-        self.addSubInterface(self.plugins_page, FluentIcon.APPLICATION,
-                             tr("Plugins", self._lang))
-
-        nav.addSeparator()
-        self.addSubInterface(self.settings_page, FluentIcon.SETTING,
-                             tr("Settings", self._lang))
-
-        # Cross-page wiring.
-        self.settings_page.on_ui_lang_changed = self.on_lang_changed
-        self.interface_page.on_active_changed = self.translate_page.refresh_active_interface
-        # Clicking an unavailable format card jumps to the Plugins page; the
-        # interface button jumps to Interface Management.
-        self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
-        self.translate_page.on_open_interface = lambda: self.switchTo(self.interface_page)
-        self.quick_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
-        self.live_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
-        # Continuing a stopped run from History runs on the Translate dashboard
-        # and jumps the nav there (web parity).
-        def _continue_on_dashboard(worker, name):
-            if self.translate_page.adopt_resume_worker(worker, name):
-                self.switchTo(self.translate_page)
-                return True
-            return False
-        self.history_page.on_continue_resume = _continue_on_dashboard
+        # The remaining pages (File Translation, Real-Time Voice, Glossary,
+        # Proofread, History, Plugins, Settings) are added in _build_deferred_pages
+        # after the window is shown.
 
         # Interface-language picker + theme toggle pinned at the bottom of the
         # navigation rail (language above theme).
@@ -239,17 +210,72 @@ class MainWindow(FluentWindow):
         self._update_worker.done.connect(self._on_update_checked)
         self._update_worker.start()
 
+        # Stream the remaining (heavier) pages in right after the first paint, so
+        # the window appears almost instantly instead of waiting for every page.
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(0, self._build_deferred_pages)
+
+    def _build_deferred_pages(self):
+        """Construct + wire the heavier pages after the window is visible. They
+        all sit AFTER the eager landing page in the nav, so appending preserves
+        the order/grouping."""
+        if self._deferred_built:
+            return
+        self._deferred_built = True
+        nav = self.navigationInterface
+        self.translate_page = TranslatePage(self, lang=self._lang)
+        self.live_page = LivePage(self, lang=self._lang)
+        self.glossary_page = GlossaryPage(self, lang=self._lang)
+        self.proofread_page = ProofreadPage(self, lang=self._lang)
+        self.history_page = HistoryPage(self, lang=self._lang)
+        self.plugins_page = PluginsPage(self, lang=self._lang)
+        self.settings_page = SettingsPage(self, lang=self._lang)
+        # Continue the nav order after "Translate" (quick).
+        self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
+                             tr("File Translation", self._lang))
+        self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
+                             tr("Real-Time Voice", self._lang))
+        nav.addSeparator()
+        self.addSubInterface(self.glossary_page, FluentIcon.DICTIONARY,
+                             tr("Glossary", self._lang))
+        self.addSubInterface(self.proofread_page, FluentIcon.EDIT,
+                             tr("Proofread", self._lang))
+        self.addSubInterface(self.history_page, FluentIcon.HISTORY,
+                             tr("History", self._lang))
+        nav.addSeparator()
+        self.addSubInterface(self.plugins_page, FluentIcon.APPLICATION,
+                             tr("Plugins", self._lang))
+        nav.addSeparator()
+        self.addSubInterface(self.settings_page, FluentIcon.SETTING,
+                             tr("Settings", self._lang))
+        # Cross-page wiring (now that the pages exist).
+        self.settings_page.on_ui_lang_changed = self.on_lang_changed
+        self.interface_page.on_active_changed = self.translate_page.refresh_active_interface
+        self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
+        self.translate_page.on_open_interface = lambda: self.switchTo(self.interface_page)
+        self.quick_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
+        self.live_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
+
+        def _continue_on_dashboard(worker, name):
+            if self.translate_page.adopt_resume_worker(worker, name):
+                self.switchTo(self.translate_page)
+                return True
+            return False
+        self.history_page.on_continue_resume = _continue_on_dashboard
+        self._auto_nav(animate=False)
+
     def closeEvent(self, event):
         """Deterministically stop every page's background QThreads before the app
         tears down — otherwise a running mic/STT/translate/update thread is
         destroyed mid-run and Qt aborts ('QThread: Destroyed while thread is
         still running')."""
-        self.live_page._shutting_down = True   # save the transcript but skip the modal
+        if self.live_page:
+            self.live_page._shutting_down = True   # save the transcript but skip the modal
         for fn in (
-            lambda: self.live_page.on_stop(),
+            lambda: self.live_page and self.live_page.on_stop(),
             lambda: self.quick_page.shutdown(),
-            lambda: self.translate_page.shutdown(),
-            lambda: self.plugins_page.shutdown(),
+            lambda: self.translate_page and self.translate_page.shutdown(),
+            lambda: self.plugins_page and self.plugins_page.shutdown(),
             lambda: (self._update_worker.isRunning() and self._update_worker.wait(2000)),
         ):
             try:
@@ -354,7 +380,8 @@ class MainWindow(FluentWindow):
         for page in (self.interface_page, self.translate_page, self.quick_page,
                      self.live_page, self.settings_page, self.history_page,
                      self.proofread_page, self.glossary_page, self.plugins_page):
-            page.retranslate(lang)
+            if page is not None:   # deferred pages may not be built yet
+                page.retranslate(lang)
         # Re-localize navigation labels.
         for route_key, label_key in self._nav_keys.items():
             item = self.navigationInterface.widget(route_key)
