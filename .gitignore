@@ -27,6 +27,7 @@ tests/_proofread_work/
 tests/_ui_shots/
 tests/fixtures/
 config/text_rules.json
+config/system_config.json
 .playwright-mcp/
 linguaharu-ui-tabs.png
 tests/_selfshot.py

@@ -25,8 +25,16 @@ MODULE_SPECS = {
     "Image OCR": ("requirements/ocr.txt",
                   ["paddleocr", "paddlepaddle", "rapidocr", "onnxruntime",
                    "opencv-python-headless"]),
-    "Video/Audio": ("requirements/video.txt", ["faster-whisper", "funasr", "imageio-ffmpeg"]),
-    "Real-Time Voice": ("requirements/video.txt", ["faster-whisper", "funasr"]),
+    # Video/Audio and Real-Time Voice share the STT stack (video.txt). Uninstall
+    # removes the engines + helpers so the plugin really reports unavailable; we
+    # deliberately do NOT remove torch/torchaudio (large, shared base ML libs the
+    # user may have installed as a specific CUDA build).
+    "Video/Audio": ("requirements/video.txt",
+                    ["faster-whisper", "funasr", "qwen-asr", "imageio-ffmpeg",
+                     "soundcard", "ten-vad", "scikit-learn"]),
+    "Real-Time Voice": ("requirements/video.txt",
+                        ["faster-whisper", "funasr", "qwen-asr",
+                         "soundcard", "ten-vad", "scikit-learn"]),
     # Quick-Translate audio = read-aloud (edge-tts) + voice input (shared STT).
     # Uninstall removes only edge-tts (keep the shared STT used by other plugins).
     "翻译语音输入": ("requirements/speechio.txt", ["edge-tts"]),

@@ -36,21 +36,28 @@ LOCALES_DIR = os.path.join(CONFIG_DIR, "locales")
 ASSETS_DIR = os.path.join(BUNDLE_ROOT, "assets")
 DATA_DIR = os.path.join(RUNTIME_ROOT, "data")             # WRITABLE — models/temp/result/log
 
-# system_config.json must be writable (model choices, settings). In a frozen
-# build keep it next to the exe (persists) and seed it from the bundled default
-# on first run; from source it stays in the repo's config/.
+# system_config.json is WRITTEN at runtime (model choices, settings, theme), so
+# the repo only tracks a conservative template (system_config.default.json); the
+# live system_config.json is gitignored and seeded from the template on first
+# run — both from source and frozen — so local/test state never leaks into the
+# repo or the release seed.
+_CONFIG_TEMPLATE = os.path.join(CONFIG_DIR, "system_config.default.json")
+
+
+def _seed_file(src, dst):
+    if src and dst and os.path.exists(src) and not os.path.exists(dst):
+        import shutil
+        shutil.copyfile(src, dst)
+
+
 if _FROZEN:
     _WRITABLE_CONFIG_DIR = os.path.join(RUNTIME_ROOT, "config")
     SYSTEM_CONFIG = os.path.join(_WRITABLE_CONFIG_DIR, "system_config.json")
     try:
         os.makedirs(_WRITABLE_CONFIG_DIR, exist_ok=True)
-        if not os.path.exists(SYSTEM_CONFIG):
-            _seed = os.path.join(CONFIG_DIR, "system_config.json")
-            if os.path.exists(_seed):
-                import shutil
-                shutil.copyfile(_seed, SYSTEM_CONFIG)
-    except Exception:  # noqa: BLE001 — fall back to bundled path if seeding fails
-        SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")
+        _seed_file(_CONFIG_TEMPLATE, SYSTEM_CONFIG)
+    except Exception:  # noqa: BLE001 — fall back to bundled template if seeding fails
+        SYSTEM_CONFIG = _CONFIG_TEMPLATE
     # api_config is WRITTEN at runtime (interfaces, API keys), so it must live in
     # the writable config dir too — seeded from the bundled templates on 1st run.
     _writable_ac = os.path.join(_WRITABLE_CONFIG_DIR, "api_config")
@@ -83,3 +90,4 @@ if _FROZEN:
         pass
 else:
     SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")
+    _seed_file(_CONFIG_TEMPLATE, SYSTEM_CONFIG)   # first run / fresh clone
