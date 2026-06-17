@@ -54,7 +54,7 @@ def detect_and_convert_untranslated_dates(original_text, translated_text, target
             converted_date = convert_date_to_target_format(date_str, effective_target)
             if converted_date != date_str:
                 date_conversions[date_str] = converted_date
-                app_logger.info(f"Prepared date conversion: '{date_str}' -> '{converted_date}'")
+                app_logger.debug(f"Prepared date conversion: '{date_str}' -> '{converted_date}'")
 
     sorted_dates = sorted(date_conversions.keys(), key=len, reverse=True)
 
@@ -64,7 +64,7 @@ def detect_and_convert_untranslated_dates(original_text, translated_text, target
         if occurrences > 0:
             converted_text = converted_text.replace(original_date, converted_date)
             conversion_count += occurrences
-            app_logger.info(f"Auto-converted {occurrences} occurrences of date: '{original_date}' -> '{converted_date}'")
+            app_logger.debug(f"Auto-converted {occurrences} occurrences of date: '{original_date}' -> '{converted_date}'")
 
     if conversion_count > 0:
         app_logger.info(f"Total {conversion_count} date instances auto-converted in text: '{original_text[:30]}...'")

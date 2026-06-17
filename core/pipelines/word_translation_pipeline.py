@@ -4933,7 +4933,7 @@ def update_toc_paragraph_with_complete_structure(paragraph, translated_title, na
             new_text_node = etree.SubElement(first_title_run, f"{{{namespaces['w']}}}t")
             new_text_node.text = translated_title
             
-            app_logger.info(f"Successfully updated TOC paragraph with translated title: '{translated_title}'")
+            app_logger.debug(f"Successfully updated TOC paragraph with translated title: '{translated_title}'")
     
     except Exception as e:
         app_logger.error(f"Error updating TOC with complete structure: {e}")
