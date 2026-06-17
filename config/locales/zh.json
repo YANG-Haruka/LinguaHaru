@@ -393,6 +393,7 @@
   "No Models Hint": "展开模型类型即可安装或删除其中的模型。",
   "No STT downloaded": "未下载语音转文字模型 —— 请到 设置 → 模型管理 下载。",
   "Speaker Labels": "标注说话人（S1/S2…）",
+  "Speaker Labels Note": "注意：会明显变慢——转录后还要对每段做说话人识别。",
   "Extracting audio": "正在提取音频",
   "Loading speech model": "正在加载语音模型",
   "Detecting speech": "正在检测语音片段",

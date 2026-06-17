@@ -285,7 +285,7 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
     duration = getattr(info, "duration", None) or 0
     out = []
     for seg in segments:
-        text = seg.text.strip()
+        text = _clean_asr_text(seg.text)
         if text:
             out.append((seg.start, seg.end, text))
         if progress_callback and duration:
@@ -544,7 +544,7 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
         return "", (src_lang or "auto")
     r = results[0]
     detected = _QWEN_LANG_CODE.get(getattr(r, "language", None), src_lang or "auto")
-    return _qwen_text(r), detected
+    return _clean_asr_text(_qwen_text(r)), detected
 
 
 def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en"):
@@ -581,7 +581,7 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     for i in range(0, len(chunks), BATCH):
         results = model.transcribe(chunks[i:i + BATCH])
         for (start, end), r in zip(spans[i:i + BATCH], results):
-            txt = _qwen_text(r)
+            txt = _clean_asr_text(_qwen_text(r))
             if txt:
                 out.append((start, end, txt))
         if progress_callback:
@@ -618,7 +618,7 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
         if chunk.size == 0:
             continue
         res = asr.generate(input=chunk, fs=sr, language=lang, use_itn=True)
-        text = rich_transcription_postprocess(res[0]["text"]).strip() if res else ""
+        text = _clean_asr_text(rich_transcription_postprocess(res[0]["text"])) if res else ""
         if text:
             out.append((s_ms / 1000.0, e_ms / 1000.0, text))
         if progress_callback:
@@ -743,17 +743,24 @@ def _recognize_sensevoice(audio, src_lang, sample_rate, model_name):
     return _strip_sensevoice_marks(rich_transcription_postprocess(raw)), detected
 
 
-# SenseVoice's rich_transcription_postprocess injects emotion/event emojis
-# (<|HAPPY|>→😊, <|BGM|>→🎼, <|Applause|>→👏, …). We want plain text for
-# translation/captioning, so strip those markers (and any leftover <|tag|>).
-_SENSEVOICE_EMOJIS = set("😊😔😡😐🤢😱🎼👏😀😄😭🤧😷🤔🥱🎤🎶❓")
+# ASR engines inject non-speech glyphs we don't want in subtitles/captions:
+# SenseVoice emotion/event emojis (<|HAPPY|>→😊, <|BGM|>→🎼, …), and music notes
+# (♪ ♫ 🎵) that Whisper/Qwen emit for singing/BGM. Strip them (+ any <|tag|>).
+_SENSEVOICE_EMOJIS = set("😊😔😡😐🤢😱🎼👏😀😄😭🤧😷🤔🥱🎤🎶❓"
+                         "♪♫♬♩🎵🎧🎙🥁")
 
 
-def _strip_sensevoice_marks(text):
+def _clean_asr_text(text):
+    """Remove ASR non-speech markers (emotion/event emojis, music notes, <|tag|>)
+    so subtitles/captions are plain text. Applied to ALL STT engines."""
     import re
     text = re.sub(r"<\|[^|]*\|>", "", text or "")
     text = "".join(ch for ch in text if ch not in _SENSEVOICE_EMOJIS)
     return re.sub(r"\s{2,}", " ", text).strip()
+
+
+# Back-compat alias (older call sites).
+_strip_sensevoice_marks = _clean_asr_text
 
 
 def _recognize_whisper(audio, src_lang, size="small"):
@@ -764,7 +771,7 @@ def _recognize_whisper(audio, src_lang, size="small"):
     language = (src_lang or "").split("-")[0] or None
     segments, info = model.transcribe(
         audio, language=language, vad_filter=False, beam_size=1)
-    text = " ".join(s.text.strip() for s in segments).strip()
+    text = _clean_asr_text(" ".join(s.text.strip() for s in segments))
     detected = getattr(info, "language", None) or language
     return text, detected
 
@@ -825,12 +832,12 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
             GPU_LOCK.acquire()
         try:
             labels_on = _speaker_labels_enabled()
-            # When also diarizing, give transcription 0-90% of the phase and
-            # diarization 90-100%, so BOTH show smooth progress (not a stall at
-            # ~99% while N segments are embedded). Otherwise transcription owns 0-100%.
+            # When also diarizing, split the phase 50/50 (transcription 0-50%,
+            # speaker ID 50-100%) — diarization embeds every segment and is itself
+            # slow, so it gets equal weight. Otherwise transcription owns 0-100%.
             if progress_callback and labels_on:
-                trans_cb = lambda v, desc=None: progress_callback(v * 0.9, desc=desc)
-                dia_cb = lambda v, desc=None: progress_callback(0.9 + v * 0.1, desc=desc)
+                trans_cb = lambda v, desc=None: progress_callback(v * 0.5, desc=desc)
+                dia_cb = lambda v, desc=None: progress_callback(0.5 + v * 0.5, desc=desc)
             else:
                 trans_cb, dia_cb = progress_callback, None
             if progress_callback:

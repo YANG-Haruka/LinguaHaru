@@ -139,10 +139,11 @@ def reset_rpm_limit_cache():
 
 # --- global API concurrency cap -------------------------------------------- #
 # Without this, the Web layer (up to 6 tasks) x per-model threads (Flash=16)
-# could fire ~96 simultaneous requests at the provider. This bounds the TOTAL
-# in-flight LLM requests across the whole process, complementing the per-minute
-# RPM window. Configurable via "max_api_concurrency" (default 32).
-_DEFAULT_API_CONCURRENCY = 32
+# could fire dozens of simultaneous requests at the provider. This bounds the
+# TOTAL in-flight LLM requests across the whole process, complementing the
+# per-minute RPM window. 16 is a safer default — 32 caused timeout storms when
+# several videos translated at once. Raise via config "max_api_concurrency".
+_DEFAULT_API_CONCURRENCY = 16
 _api_sem = None
 _api_sem_n = 0
 _api_sem_lock = threading.Lock()
@@ -459,8 +460,10 @@ def translate_online(api_key, messages, model, mode_params=None):
     _sem.acquire()
 
     try:
-        # Initialize API client
-        client = OpenAI(api_key=used_key, base_url=base_url)
+        # Initialize API client. An explicit timeout means a stalled request
+        # (common under heavy concurrency, e.g. several videos at once) fails and
+        # retries in ~90s instead of hanging a worker on the SDK's ~10min default.
+        client = OpenAI(api_key=used_key, base_url=base_url, timeout=90.0, max_retries=0)
 
         # Prepare parameters for the API call
         params = {

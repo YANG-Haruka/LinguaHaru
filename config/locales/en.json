@@ -394,6 +394,7 @@
   "No Models Hint": "Expand a model type to install or remove its models.",
   "No STT downloaded": "No speech-to-text model downloaded — install one in Settings → Model Management.",
   "Speaker Labels": "Label speakers (S1/S2…)",
+  "Speaker Labels Note": "Note: noticeably slower — runs speaker recognition on every segment after transcription.",
   "Extracting audio": "Extracting audio",
   "Loading speech model": "Loading speech model",
   "Detecting speech": "Detecting speech segments",
