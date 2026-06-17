@@ -103,16 +103,17 @@ def _cfg_write(key, value):
         json.dump(cfg, f, indent=4, ensure_ascii=False)
 
 
-# VRAM only applies when a CUDA paddle build is installed (OCR then runs on GPU,
-# see image_translation_pipeline._paddle_device); on the default CPU paddle it
-# uses RAM. The det+rec nets are tiny — the CUDA context dominates (~1GB).
+# OCR runs on CPU here: paddlepaddle-gpu's CUDA DLLs conflict with torch's
+# (cudnn WinError 127 once torch is imported first), so a GPU paddle would break
+# PP-OCRv6 and degrade OCR to RapidOCR. The code (_paddle_device) is GPU-ready
+# if that conflict is ever resolved, but we show disk only (no misleading VRAM).
 _OCR_MODELS = [
     {"id": "small",  "label": "PP-OCRv6 Small", "tags": ["Tag Lightweight", "Tag Recommended"],
-     "size": "≈ 100 MB", "vram": "~1GB", "info": "det+rec ≈ 100MB · 显存 ~1GB"},
+     "size": "≈ 100 MB", "info": "det+rec ≈ 100MB"},
     {"id": "medium", "label": "PP-OCRv6 Medium", "tags": ["Tag HighAccuracy"],
-     "size": "≈ 140 MB", "vram": "~1GB", "info": "det+rec ≈ 140MB · 显存 ~1GB"},
+     "size": "≈ 140 MB", "info": "det+rec ≈ 140MB"},
     {"id": "tiny",   "label": "PP-OCRv6 Tiny", "tags": ["Tag Fastest"],
-     "size": "≈ 55 MB", "vram": "~1GB", "info": "det+rec ≈ 55MB · 显存 ~1GB"},
+     "size": "≈ 55 MB", "info": "det+rec ≈ 55MB"},
 ]
 
 # Per-model tags (i18n keys, resolved in the UI) for the speech-to-text catalog.
