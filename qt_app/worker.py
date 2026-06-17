@@ -326,8 +326,10 @@ class TranslationWorker(QThread):
         return False
 
     def run(self):
+        from core.power import keep_awake
         try:
-            self._translate()
+            with keep_awake():   # don't let Windows sleep/throttle mid-translation
+                self._translate()
         except _StopRequested:
             self.stopped.emit("Translation stopped by user.")
         except HardApiError as e:

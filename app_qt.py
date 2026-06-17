@@ -85,6 +85,14 @@ def main():
     except Exception:  # noqa: BLE001
         pass
 
+    # Don't let Windows throttle our CPU when the window is minimized/backgrounded
+    # — translation and real-time voice keep running at full speed (process-wide).
+    try:
+        from core.power import disable_background_throttling
+        disable_background_throttling()
+    except Exception:  # noqa: BLE001
+        pass
+
     # Recover history rows left "running" by a previous crash / force-quit:
     # flip them to "interrupted" so they show up (and can be continued).
     try:

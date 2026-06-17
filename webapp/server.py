@@ -77,6 +77,11 @@ def _recover_interrupted_history():
     except Exception:  # noqa: BLE001
         pass
     try:
+        from core.power import disable_background_throttling
+        disable_background_throttling()   # full CPU speed even when backgrounded
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         import logging as _lg
         from core.log_config import install_excepthooks, file_logger, system_event
         install_excepthooks()
@@ -741,6 +746,14 @@ def _mark_web_queued_stopped(session_id, file_ids):
         pass
 
 
+def _run_with_power(fn, *args):
+    """Thread target wrapper: keep the machine awake/un-throttled for the whole
+    run, then release it. Used for every translation/resume background thread."""
+    from core.power import keep_awake
+    with keep_awake():
+        fn(*args)
+
+
 def _run_translation(task_id, session_id, file_paths, model, use_online,
                      src_lang, dst_lang, glossary_name, bilingual_flags, ui_lang="en"):
     """Background worker: translate one or more files; zip when more than one."""
@@ -897,7 +910,8 @@ async def translate(
                  f"{len(dests)} file(s), {written // 1024} KB, "
                  f"{model} ({'online' if use_online else 'offline'}), "
                  f"{src_lang}->{dst_lang}")
-    threading.Thread(target=_run_translation, args=(
+    threading.Thread(target=_run_with_power, args=(
+        _run_translation,
         task_id, session_id, dests, model, use_online, src_lang, dst_lang,
         glossary, flags, ui_lang), daemon=True).start()
     return {"task_id": task_id}
@@ -1128,7 +1142,7 @@ def history_resume(payload: dict, request: Request):
         TASKS[task_id] = {"progress": 0.0, "desc": "Queued...", "status": "running",
                           "output": None, "error": None, "stop": False,
                           "paused": False, "session_id": sid}
-    threading.Thread(target=_run_resume, args=(task_id, sid, rec, ui_lang),
+    threading.Thread(target=_run_with_power, args=(_run_resume, task_id, sid, rec, ui_lang),
                      daemon=True).start()
     return {"task_id": task_id}
 
@@ -1256,7 +1270,7 @@ def history_resume_batch(payload: dict, request: Request):
         TASKS[task_id] = {"progress": 0.0, "desc": "Queued...", "status": "running",
                           "output": None, "error": None, "stop": False,
                           "paused": False, "session_id": sid}
-    threading.Thread(target=_run_resume_batch, args=(task_id, sid, recs, ui_lang),
+    threading.Thread(target=_run_with_power, args=(_run_resume_batch, task_id, sid, recs, ui_lang),
                      daemon=True).start()
     return {"task_id": task_id}
 

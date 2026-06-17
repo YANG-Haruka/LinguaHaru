@@ -813,6 +813,15 @@ class LivePage(ScrollArea):
                 self._preloader.done.connect(self._on_preload_done)
                 self._preloader.start()
 
+        # Real-time voice is in progress -> keep the system awake (and, with the
+        # process-wide opt-out, un-throttled) until on_stop.
+        try:
+            from core.power import begin_activity
+            begin_activity()
+            self._power_held = True
+        except Exception:  # noqa: BLE001
+            pass
+
         self._style_go(True)
         self.target_combo.setEnabled(False)
         self.mode_combo.setEnabled(False)
@@ -948,6 +957,13 @@ class LivePage(ScrollArea):
         self.target_combo.setEnabled(True)
         self.mode_combo.setEnabled(True)
         self.status_label.setText(tr("Connection closed", self._lang))
+        if getattr(self, "_power_held", False):   # balance begin_activity()
+            self._power_held = False
+            try:
+                from core.power import end_activity
+                end_activity()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _save_live_history(self):
         """Save the just-finished session (source + translation) to history."""
