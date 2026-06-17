@@ -936,11 +936,12 @@ def download(task_id: str, request: Request):
 # --------------------------------------------------------------------------- #
 @app.get("/api/history")
 def history(request: Request, limit: int = 200, file_type: str = "",
-            sort_by: str = "start_time", desc: bool = True):
+            sort_by: str = "start_time", desc: bool = True, status: str = ""):
     from core.translation_history import TranslationHistoryManager
     h = TranslationHistoryManager(log_dir=history_log_dir(request.state.session_id))
     records = h.get_all_records(limit=limit, file_type=(file_type or None),
-                                sort_by=sort_by, descending=desc)
+                                sort_by=sort_by, descending=desc,
+                                status=(status or None))
     return {"records": records, "file_types": h.file_types()}
 
 

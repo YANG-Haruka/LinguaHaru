@@ -528,7 +528,17 @@
       </div>
       <div class="card">
         <div class="actions" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
-          <div class="field" style="min-width:140px"><label>文件类型</label><select id="history-type"><option value="" data-i18n="All Types">全部类型</option></select></div>
+          <div class="field" style="min-width:140px"><label data-i18n="File Type">文件类型</label><select id="history-type"><option value="" data-i18n="All Types">全部类型</option></select></div>
+          <div class="field" style="min-width:130px"><label data-i18n="Status">状态</label>
+            <select id="history-status">
+              <option value="" data-i18n="All Statuses">全部状态</option>
+              <option value="success" data-i18n="Status Success">成功</option>
+              <option value="failed" data-i18n="Status Failed">失败</option>
+              <option value="stopped" data-i18n="Status Stopped">已停止</option>
+              <option value="interrupted" data-i18n="Status Interrupted">已中断</option>
+              <option value="running" data-i18n="Status Running">进行中</option>
+            </select>
+          </div>
           <div class="field" style="min-width:140px"><label data-i18n="Sort">排序</label>
             <select id="history-sort">
               <option value="start_time|1" data-i18n="Newest">时间（新→旧）</option>
@@ -705,7 +715,7 @@
      <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
    </div>
  </div>
-  <script src="/static/background.js?v=20260617G"></script>
-  <script src="/static/app.js?v=20260617G"></script>
+  <script src="/static/background.js?v=20260617H"></script>
+  <script src="/static/app.js?v=20260617H"></script>
 </body>
 </html>

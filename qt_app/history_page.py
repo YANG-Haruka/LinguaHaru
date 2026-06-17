@@ -48,6 +48,8 @@ _STATUS_META = {
     "interrupted": ("Status Interrupted", "#ef6c00"),
     "running": ("Status Running", "#1565c0"),
 }
+# Order for the status filter dropdown.
+_STATUS_FILTER = ["success", "failed", "stopped", "interrupted", "running"]
 
 
 def open_folder(path):
@@ -105,6 +107,13 @@ class HistoryPage(QWidget):
         self.type_combo.setMinimumWidth(120)
         self.type_combo.currentIndexChanged.connect(self._on_filter_changed)
         top.addWidget(self.type_combo)
+        self.status_label = BodyLabel(tr("Status", lang))
+        top.addWidget(self.status_label)
+        self.status_combo = ComboBox()
+        self.status_combo.setMinimumWidth(110)
+        self._populate_status_combo()
+        self.status_combo.currentIndexChanged.connect(self._on_filter_changed)
+        top.addWidget(self.status_combo)
         self.sort_label = BodyLabel(tr("Sort", lang))
         top.addWidget(self.sort_label)
         self.sort_combo = ComboBox()
@@ -167,6 +176,8 @@ class HistoryPage(QWidget):
         self.title.setText(tr("Translation History", lang))
         self.refresh_btn.setText(tr("Refresh Records", lang))
         self.type_label.setText(tr("File Type", lang))
+        self.status_label.setText(tr("Status", lang))
+        self._populate_status_combo()   # relocalize status filter labels
         self.sort_label.setText(tr("Sort", lang))
         sort_idx = self.sort_combo.currentIndex()
         self.sort_combo.blockSignals(True)
@@ -178,6 +189,18 @@ class HistoryPage(QWidget):
         self._apply_headers()
         self.detail_card.hide()
         self.reload()
+
+    def _populate_status_combo(self):
+        """All Statuses + one entry per known status (preserves the selection)."""
+        cur = self.status_combo.currentData()
+        self.status_combo.blockSignals(True)
+        self.status_combo.clear()
+        self.status_combo.addItem(tr("All Statuses", self._lang), userData="")
+        for s in _STATUS_FILTER:
+            self.status_combo.addItem(tr(_STATUS_META[s][0], self._lang), userData=s)
+        idx = max(0, self.status_combo.findData(cur)) if cur else 0
+        self.status_combo.setCurrentIndex(idx)
+        self.status_combo.blockSignals(False)
 
     def _on_filter_changed(self, _idx=0):
         self.reload()
@@ -199,9 +222,11 @@ class HistoryPage(QWidget):
             self._types_loaded = True
 
         ftype = self.type_combo.currentData() or None
+        fstatus = self.status_combo.currentData() or None
         sort_by, descending = _SORT_OPTIONS[max(0, self.sort_combo.currentIndex())]
         self._records = manager.get_all_records(
-            limit=200, file_type=ftype, sort_by=sort_by, descending=descending)
+            limit=200, file_type=ftype, sort_by=sort_by, descending=descending,
+            status=fstatus)
         # Repopulate without the row changes firing _on_row_selected mid-rebuild
         # (which made the panel "auto-jump" to another row after a delete).
         self.table.blockSignals(True)

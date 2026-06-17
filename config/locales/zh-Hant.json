@@ -1,4 +1,5 @@
 {
+  "All Statuses": "全部狀態",
   "Bilingual Comparison": "雙語對照",
   "Save Next to Source": "儲存到原檔目錄",
   "Save Next to Source Tip": "把譯文放到原檔所在的資料夾（例如 1.mp4 的字幕就存在 1.mp4 旁邊）。僅桌面端，Web 端結果仍在 data/result。",

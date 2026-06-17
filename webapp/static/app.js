@@ -2259,10 +2259,11 @@ async function loadHistory() {
   const t = $("history-table");
   tableSkeleton(t, 4);
   const ftype = $("history-type").value;
+  const fstatus = $("history-status") ? $("history-status").value : "";
   const [sortBy, descFlag] = ($("history-sort").value || "start_time|1").split("|");
   let data;
   try {
-    data = await api(`/api/history?file_type=${encodeURIComponent(ftype)}&sort_by=${sortBy}&desc=${descFlag === "1"}`);
+    data = await api(`/api/history?file_type=${encodeURIComponent(ftype)}&status=${encodeURIComponent(fstatus)}&sort_by=${sortBy}&desc=${descFlag === "1"}`);
   }
   catch (e) { t.innerHTML = "<tr><td style='border:none'>" + emptyState(EICON.inbox, "无法加载记录", e.message) + "</td></tr>"; return; }
   // Populate the file-type filter once (from all types present).
@@ -2337,6 +2338,7 @@ async function deleteHistory(id) {
 }
 $("history-refresh").onclick = loadHistory;
 $("history-type").onchange = loadHistory;
+if ($("history-status")) $("history-status").onchange = loadHistory;
 $("history-sort").onchange = loadHistory;
 
 // ----- quick translate (Google-Translate-style text box) -----

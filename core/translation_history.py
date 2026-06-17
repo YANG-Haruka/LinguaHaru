@@ -186,18 +186,26 @@ class TranslationHistoryManager:
             return False
 
     def get_all_records(self, limit: Optional[int] = None, file_type: Optional[str] = None,
-                        sort_by: str = "start_time", descending: bool = True) -> List[Dict[str, Any]]:
-        """Records for the browse UI, optionally filtered by file_type and sorted
-        (by start_time / input_file / file_type / total_tokens / status)."""
+                        sort_by: str = "start_time", descending: bool = True,
+                        status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Records for the browse UI, optionally filtered by file_type and/or
+        status, and sorted (by start_time / input_file / file_type /
+        total_tokens / status)."""
         sort_col = sort_by if sort_by in {
             "start_time", "input_file", "file_type", "total_tokens", "status",
             "duration_seconds"} else "start_time"
         order = "DESC" if descending else "ASC"
         sql = "SELECT * FROM records"
         params: list = []
+        where = []
         if file_type:
-            sql += " WHERE file_type = ?"
+            where.append("file_type = ?")
             params.append(file_type.lower().lstrip("."))
+        if status:
+            where.append("status = ?")
+            params.append(status)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY {sort_col} {order}"
         if limit is not None:
             sql += " LIMIT ?"

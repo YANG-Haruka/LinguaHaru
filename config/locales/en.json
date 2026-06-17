@@ -1,4 +1,5 @@
 {
+  "All Statuses": "All Statuses",
   "Bilingual Comparison": "Bilingual (keep original)",
   "Save Next to Source": "Save next to source file",
   "Save Next to Source Tip": "Put the translated file in the same folder as the original (e.g. 1.mp4's subtitle lands next to 1.mp4). Desktop only — the web app keeps results under data/result.",

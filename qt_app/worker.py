@@ -371,6 +371,11 @@ class TranslationWorker(QThread):
         # result folder, bound to this run's context (so concurrent files don't
         # interleave). Nothing to set up here.
 
+        # The history DB must be the ONE global store the History page reads
+        # (data/log), NOT the per-run stamped subdir — otherwise records never
+        # show up and a resumed run can't update its original row. The per-project
+        # .log still lives in the run's result folder (opened by process()).
+        _, _, history_dir = backend.get_custom_paths()
         translator = translator_class(
             self.file_path, self.model, self.use_online, self.api_key,
             src_code, dst_code, self.continue_mode,
@@ -378,6 +383,7 @@ class TranslationWorker(QThread):
             thread_count=self.thread_count, glossary_path=gpath,
             temp_dir=temp_dir, result_dir=result_dir,
             session_lang=self.session_lang, log_dir=log_dir,
+            history_dir=history_dir,
         )
         translator.check_stop_requested = self._check_stop
         if self.resume_record_id:
