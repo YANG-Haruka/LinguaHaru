@@ -40,14 +40,23 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
         ```bash
         pip install -r requirements/base.txt
         ```
-    - Optional modules (install only what you need; the UI enables them automatically)
+    - Optional modules (install only what you need; the UI enables them automatically).
+      Their models (OCR / speech-to-text / diarization / PDF layout) download
+      automatically on first use into `data/models`.
         ```bash
+        # PDF translation (.pdf): layout-preserving, via BabelDOC
+        pip install -r requirements/pdf.txt
+
         # Image translation (.png/.jpg/...): OCR + render translation back onto the image
         pip install -r requirements/ocr.txt
 
-        # Video/audio subtitle translation (.mp4/.mp3/...): transcribe with Whisper, then translate
-        # ffmpeg is bundled (imageio-ffmpeg) — no PATH install needed; a PATH ffmpeg is used if present
+        # Video/audio subtitles (.mp4/.mp3/...): transcribe (Whisper / SenseVoice /
+        # Qwen-ASR) then translate. ffmpeg is bundled (imageio-ffmpeg) — no PATH
+        # install needed. Also powers real-time voice + optional speaker labels.
         pip install -r requirements/video.txt
+
+        # Quick-Translate voice: microphone input + read-aloud (edge-tts + shared STT)
+        pip install -r requirements/speechio.txt
         ```
 
 
