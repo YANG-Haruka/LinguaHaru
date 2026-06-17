@@ -146,6 +146,28 @@ class ModelDeleteWorker(QThread):
         self.finished_ok.emit(ok)
 
 
+class PluginSpaceWorker(QThread):
+    """Computes a plugin's library (pip deps) + model disk volumes off the UI
+    thread — the pip-deps stat-walk is slow (~seconds) the first time.
+
+    Signal:
+        result(str, dict) -- (plugin name, plugin_space() dict; {} on failure)
+    """
+
+    result = Signal(str, dict)
+
+    def __init__(self, module_name, parent=None):
+        super().__init__(parent)
+        self.module_name = module_name
+
+    def run(self):
+        try:
+            from core.optional_modules import plugin_space
+            self.result.emit(self.module_name, plugin_space(self.module_name))
+        except Exception:  # noqa: BLE001
+            self.result.emit(self.module_name, {})
+
+
 class ModuleUpdateCheckWorker(QThread):
     """Checks PyPI for a newer version of an installed module's package, off the
     UI thread (the network call can block for seconds).

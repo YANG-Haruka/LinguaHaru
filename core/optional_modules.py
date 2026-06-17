@@ -232,10 +232,12 @@ def download_plugin_model(name, model_id=None):
     return False
 
 
-def plugin_model_states(name):
+def plugin_model_states(name, with_size=False):
     """Per-model state for a plugin's catalog: each model's id/label/tags/size,
     whether it's downloaded on disk, and whether it's the active one. Powers the
-    'expand a model type -> install / delete / use' UI on both frontends."""
+    'expand a model type -> install / delete / use' UI on both frontends.
+    with_size=True adds disk_bytes/disk_human for downloaded models (walks dirs,
+    so opt-in)."""
     spec = _plugin_model_specs().get(name)
     if not spec:
         return []
@@ -248,12 +250,18 @@ def plugin_model_states(name):
         hits = {}
     out = []
     for m in spec["models"]:
-        downloaded = any(hits.get(s.lower()) for s in _MODEL_PROBES.get(m["id"], []))
-        out.append({
+        paths = {p for s in _MODEL_PROBES.get(m["id"], []) for p in hits.get(s.lower(), [])}
+        row = {
             "id": m["id"], "label": m["label"], "tags": m.get("tags", []),
             "size": m.get("size", m.get("info", "")), "vram": m.get("vram", ""),
-            "downloaded": bool(downloaded), "active": m["id"] == active,
-        })
+            "downloaded": bool(paths), "active": m["id"] == active,
+        }
+        if with_size and paths:
+            from core import model_store
+            b = sum(model_store._dir_size(p) for p in paths)
+            row["disk_bytes"] = b
+            row["disk_human"] = model_store.human_size(b)
+        out.append(row)
     return out
 
 
@@ -302,6 +310,52 @@ def _delete_pdf_model():
         shutil.rmtree(bd, ignore_errors=True)
         return True
     return False
+
+
+_LIB_SIZE_CACHE = {}   # plugin name -> (bytes, human); cleared on (un)install
+
+
+def clear_size_caches():
+    _LIB_SIZE_CACHE.clear()
+
+
+def plugin_lib_size(name):
+    """Approximate disk size of a plugin's pip dependency packages (summed via
+    importlib.metadata). Shared packages are counted per plugin (approximate).
+    Cached because stat-ing every file of e.g. paddlepaddle is slow (~seconds).
+    Returns (bytes, human)."""
+    if name in _LIB_SIZE_CACHE:
+        return _LIB_SIZE_CACHE[name]
+    import importlib.metadata as im
+    from core import model_store, module_manager
+    total, seen = 0, set()
+    for pkg in module_manager.MODULE_SPECS.get(name, (None, []))[1]:
+        try:
+            dist = im.distribution(pkg)
+        except Exception:  # noqa: BLE001 — not installed
+            continue
+        for f in (dist.files or []):
+            try:
+                p = os.path.realpath(dist.locate_file(f))
+                if p in seen:
+                    continue
+                seen.add(p)
+                total += os.path.getsize(p)
+            except OSError:
+                continue
+    res = (total, model_store.human_size(total))
+    _LIB_SIZE_CACHE[name] = res
+    return res
+
+
+def plugin_space(name):
+    """Library (pip deps) + model disk volumes for a plugin, for the card's
+    space summary. {'lib_human','model_human','lib_bytes','model_bytes'}."""
+    lib_b, lib_h = plugin_lib_size(name)
+    u = plugin_disk_usage(name)
+    return {"lib_bytes": lib_b, "lib_human": lib_h,
+            "model_bytes": u["total_bytes"], "model_human": u["total_human"],
+            "shared": u["shared"]}
 
 
 def plugin_disk_usage(name):
@@ -376,6 +430,7 @@ def uninstall_plugin(name):
     Returns (ok, message, freed_bytes)."""
     from core import module_manager
     ok, out = module_manager.uninstall_module(name)   # shared-aware pip removal
+    clear_size_caches()   # pip deps changed -> stale lib-size
     removed_models, freed = cleanup_plugin_models(name)
     if removed_models:
         out = f"{out} | removed models: {', '.join(removed_models)}"

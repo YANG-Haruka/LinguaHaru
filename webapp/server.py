@@ -324,6 +324,15 @@ def list_models():
             "stt": plugin_model_states("Video/Audio")}
 
 
+@app.get("/api/modules/models")
+def modules_models(name: str):
+    """A plugin's model catalog with per-model downloaded state + disk size +
+    which is active — powers the plugin card's model-management picker."""
+    from core.optional_modules import plugin_model_states, plugin_current_model
+    return {"models": plugin_model_states(name, with_size=True),
+            "current_model": plugin_current_model(name)}
+
+
 @app.post("/api/models/select")
 async def model_select(payload: dict):
     """Set the active model for a plugin (no download)."""
@@ -1216,15 +1225,17 @@ def module_status_endpoint(name: str):
 
 @app.get("/api/modules/usage")
 def modules_usage():
-    """Per-plugin downloaded models + on-disk size, for the plugin cards' space
-    info. Computed lazily (not in bootstrap) so it never slows page load."""
-    from core.optional_modules import plugin_disk_usage
+    """Per-plugin library (pip deps) + model disk volumes, for the plugin cards'
+    space summary. Computed lazily (not in bootstrap) + cached so it never slows
+    page load (lib-size stat-walk is a few seconds the first time)."""
+    from core.optional_modules import plugin_space
     out = {}
     for m in module_status():
-        u = plugin_disk_usage(m["name"])
+        s = plugin_space(m["name"])
         out[m["name"]] = {
-            "total_human": u["total_human"], "total_bytes": u["total_bytes"],
-            "shared": u["shared"], "models": [x["label"] for x in u["models"]],
+            "lib_human": s["lib_human"], "model_human": s["model_human"],
+            "lib_bytes": s["lib_bytes"], "model_bytes": s["model_bytes"],
+            "shared": s["shared"],
         }
     return {"usage": out}
 

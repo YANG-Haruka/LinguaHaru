@@ -717,6 +717,15 @@ td input { border: 1px solid transparent; background: transparent; padding: 7px 
 td input:hover { border-color: var(--border-2); background: var(--surface-2); }
 td input:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
 
+/* plugin model picker: per-model management rows (install/delete + size + active) */
+.picker-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 8px; }
+.picker-row.active { border-color: var(--accent); background: var(--surface-2); }
+.picker-main { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.picker-name { color: var(--text); font-size: 0.9rem; }
+.picker-size { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+.picker-act { flex: none; }
+
 /* history: expandable rows + detail panel */
 #history-table .hist-row { cursor: pointer; }
 #history-table .hist-row.expanded { background: var(--surface-2); }

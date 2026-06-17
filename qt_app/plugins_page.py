@@ -12,18 +12,21 @@ Two sections:
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QButtonGroup,
+    QWidget, QVBoxLayout, QHBoxLayout,
 )
 
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel,
     SimpleCardWidget, CardWidget, IconWidget, FluentIcon, FlowLayout,
     PushButton, HyperlinkButton, InfoBadge, InfoBar, InfoBarPosition,
-    RadioButton, MessageBoxBase,
+    MessageBox, MessageBoxBase,
 )
 
 from qt_app.i18n import tr
-from qt_app.worker import InstallWorker, ModuleUpdateCheckWorker, ModelDownloadWorker
+from qt_app.worker import (
+    InstallWorker, ModuleUpdateCheckWorker, ModelDownloadWorker,
+    ModelDeleteWorker, PluginSpaceWorker,
+)
 
 # Built-in format plugins (always available). (label, FluentIcon)
 _BUILTIN_FORMATS = [
@@ -72,46 +75,93 @@ class _BuiltinChip(SimpleCardWidget):
 
 
 class _ModelPickerDialog(MessageBoxBase):
-    """A small radio-button picker to switch a plugin's model.
+    """Per-model management for a plugin: each model shows its install status +
+    disk size with an Install / Delete button (white row = installed → Delete,
+    gray = not installed → Install). Clicking an installed model makes it the
+    active (in-use) one. Acts live (its own workers) and refreshes in place."""
 
-    Lists every model as ``label`` + a muted ``info`` caption (size / VRAM);
-    the current one is preselected. ``selected_id`` holds the chosen model id
-    after the user confirms (None if they pick the current one again / cancel).
-    """
-
-    def __init__(self, models, current_id, lang="en", parent=None):
+    def __init__(self, plugin, lang="en", parent=None):
         super().__init__(parent)
+        self._plugin = plugin
         self._lang = lang
-        self.selected_id = None
-        self._group = QButtonGroup(self)
-
+        self._workers = []
         self.titleLabel = StrongBodyLabel(tr("Select Model", lang), self)
         self.viewLayout.addWidget(self.titleLabel)
+        self._rows = QVBoxLayout()
+        self._rows.setSpacing(6)
+        self.viewLayout.addLayout(self._rows)
+        self.yesButton.setText(tr("Close", lang))
+        self.cancelButton.hide()
+        self.widget.setMinimumWidth(460)
+        self._build()
 
-        for m in models:
-            mid = m.get("id")
-            radio = RadioButton(m.get("label", mid or ""), self)
-            radio.setProperty("model_id", mid)
-            if mid == current_id:
-                radio.setChecked(True)
-            self._group.addButton(radio)
-            self.viewLayout.addWidget(radio)
-            info = m.get("info")
-            if info:
-                cap = CaptionLabel(info, self)
-                cap.setTextColor("#808080", "#a0a0a0")
-                cap.setContentsMargins(28, 0, 0, 4)
-                self.viewLayout.addWidget(cap)
+    @staticmethod
+    def _short(label):
+        for ch in ("（", "("):
+            i = (label or "").find(ch)
+            if i > 0:
+                return label[:i].strip()
+        return label
 
-        self.yesButton.setText(tr("Switch Model", lang))
-        self.cancelButton.setText(tr("Cancel", lang))
-        self.widget.setMinimumWidth(360)
+    def _build(self):
+        while self._rows.count():
+            it = self._rows.takeAt(0)
+            w = it.widget()
+            if w:
+                w.deleteLater()
+        from core.optional_modules import plugin_model_states, plugin_current_model
+        self._cur = plugin_current_model(self._plugin)
+        for st in plugin_model_states(self._plugin, with_size=True):
+            self._rows.addWidget(self._row(st))
 
-    def validate(self):
-        btn = self._group.checkedButton()
-        if btn is not None:
-            self.selected_id = btn.property("model_id")
-        return True
+    def _row(self, st):
+        row = QWidget()
+        row.setObjectName("pickRow")
+        h = QHBoxLayout(row)
+        h.setContentsMargins(10, 7, 10, 7)
+        h.setSpacing(8)
+        h.addWidget(StrongBodyLabel(self._short(st["label"])))
+        h.addStretch(1)
+        sz = CaptionLabel(st.get("disk_human", "") if st["downloaded"]
+                          else tr("Not Installed", self._lang))
+        sz.setTextColor("#808080", "#a0a0a0")
+        h.addWidget(sz)
+        if st["downloaded"]:
+            b = PushButton(tr("Delete", self._lang))
+            b.clicked.connect(lambda _=False, s=st: self._delete(s))
+        else:
+            b = PushButton(tr("Install", self._lang))
+            b.clicked.connect(lambda _=False, s=st: self._install(s))
+        h.addWidget(b)
+        active = st["id"] == self._cur
+        border = ("rgba(10,132,255,0.85)" if active else "rgba(128,128,128,0.28)")
+        row.setStyleSheet(f"#pickRow{{border:1px solid {border};border-radius:8px;}}")
+        if st["downloaded"] and not active:
+            row.setCursor(Qt.PointingHandCursor)
+            row.mousePressEvent = lambda _e, s=st: self._activate(s)
+        return row
+
+    def _activate(self, st):
+        from core.optional_modules import set_plugin_model
+        set_plugin_model(self._plugin, st["id"])
+        self._build()
+
+    def _install(self, st):
+        w = ModelDownloadWorker(self._plugin, st["id"], self)
+        self._workers.append(w)
+        w.finished_ok.connect(lambda _ok: self._build())
+        w.start()
+        self._build()   # reflect "downloading" by re-reading state shortly
+
+    def _delete(self, st):
+        box = MessageBox(tr("Delete", self._lang),
+                         tr("Delete Model Confirm", self._lang), self.window())
+        if not box.exec():
+            return
+        w = ModelDeleteWorker(self._plugin, st["id"], self)
+        self._workers.append(w)
+        w.finished_ok.connect(lambda _ok: self._build())
+        w.start()
 
 
 class OptionalPluginCard(CardWidget):
@@ -231,39 +281,41 @@ class OptionalPluginCard(CardWidget):
         return label
 
     def _refresh_usage(self):
-        """Fill the usage line: downloaded models + disk space (so the user can
-        manage space). Shared STT models are flagged. Best-effort."""
+        """Fill the usage line: library (pip deps) + model disk volumes, so the
+        user can manage space. Computed in a background thread — the pip-deps
+        stat-walk is slow the first time."""
         if self.status_caption is None:
             return
-        try:
-            from core.optional_modules import plugin_disk_usage
-            u = plugin_disk_usage(self._mod["name"])
-        except Exception:  # noqa: BLE001
+        self.status_caption.setText(tr("Calculating", self._lang) + "…")
+        w = PluginSpaceWorker(self._mod["name"], self)
+        self._space_worker = w
+        w.result.connect(self._on_space)
+        w.start()
+
+    def _on_space(self, name, space):
+        if self.status_caption is None or not space:
+            if self.status_caption is not None:
+                self.status_caption.setText("")
             return
-        if not u["models"]:
-            self.status_caption.setText(tr("No Model Downloaded", self._lang))
-            self.status_caption.setToolTip("")
-            return
-        labels = "、".join(self._short_label(m["label"]) for m in u["models"])
-        shared = f"（{tr('Shared', self._lang)}）" if u.get("shared") else ""
-        # Compact one-line summary: size (+shared) + models; full model list on
-        # hover so a long STT list never overflows the fixed-height card.
+        shared = (f"（{tr('Shared', self._lang)}）"
+                  if space.get("shared") and space.get("model_bytes") else "")
         self.status_caption.setText(
-            f"{tr('Disk Usage', self._lang)} {u['total_human']}{shared} · {labels}")
-        self.status_caption.setToolTip(
-            "、".join(self._short_label(m["label"]) for m in u["models"]))
+            f"{tr('Library Size', self._lang)} {space['lib_human']} · "
+            f"{tr('Models Size', self._lang)} {space['model_human']}{shared}")
 
     def _open_model_picker(self):
-        """Open the radio-button picker dialog; on confirm, switch the model."""
-        if self._busy_download or not callable(self._on_select_model):
+        """Open the per-model management dialog (install/delete + size + active).
+        The dialog acts live; afterwards refresh the card's model line + usage."""
+        if self._busy_download:
             return
-        dlg = _ModelPickerDialog(
-            self._models, self._mod.get("current_model"), self._lang,
-            parent=self.window())
-        if dlg.exec():
-            model_id = dlg.selected_id
-            if model_id and model_id != self._mod.get("current_model"):
-                self._on_select_model(self, model_id)
+        dlg = _ModelPickerDialog(self._mod["name"], self._lang, parent=self.window())
+        dlg.exec()
+        # Reflect any change (active model, install/delete) on the card.
+        from core.optional_modules import plugin_current_model
+        self._mod["current_model"] = plugin_current_model(self._mod["name"])
+        if self.model_link is not None:
+            self.model_link.setText(self._current_model_text())
+        self._refresh_usage()
 
     def set_download_busy(self, busy):
         """Show a 'downloading' status under the model line and lock the line."""
@@ -427,6 +479,14 @@ class PluginsPage(ScrollArea):
     def _start_install(self, card, action="install"):
         if self._worker is not None and self._worker.isRunning():
             return
+        if action == "uninstall":
+            # Confirm before removing; note shared models are kept.
+            box = MessageBox(tr("Uninstall", self._lang),
+                             tr("Uninstall Models Confirm", self._lang), self.window())
+            box.yesButton.setText(tr("Confirm", self._lang))
+            box.cancelButton.setText(tr("Cancel", self._lang))
+            if not box.exec():
+                return
         card.set_state(card._mod["available"], busy=True)
         verbs = {"uninstall": tr("Uninstalling", self._lang),
                  "upgrade": tr("Upgrading", self._lang),

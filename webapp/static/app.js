@@ -937,89 +937,112 @@ async function loadModuleUsage() {
   for (const el of document.querySelectorAll(".plugin-usage")) {
     const u = usage[el.dataset.plugin];
     if (!u) { el.textContent = ""; continue; }
-    if (!u.models || !u.models.length) {
-      el.textContent = _label("No Model Downloaded", "未下载模型");
-      continue;
-    }
-    const labels = u.models.map((s) => s.replace(/\s*[（(].*$/, "").trim()).join("、");
-    const shared = u.shared ? `（${_label("Shared", "共用")}）` : "";
-    el.textContent = `${_label("Disk Usage", "占用")} ${u.total_human}${shared} · ${labels}`;
+    // Two volumes only: library (pip deps) + models (the model list now lives in
+    // the per-model picker).
+    const shared = u.shared && u.model_bytes ? `（${_label("Shared", "共用")}）` : "";
+    el.textContent = `${_label("Library Size", "库")} ${u.lib_human} · ${_label("Models Size", "模型")} ${u.model_human}${shared}`;
   }
 }
 
-// Open the model picker modal for a plugin: a radio list of available models
-// (current one preselected, each with its size/VRAM info as a muted hint).
-// On "切换" the chosen model is persisted + downloaded/warmed (polled), then
-// the plugin's chip text is updated and the modal closes.
+// Open the plugin's model MANAGEMENT view: each model shows its install status +
+// disk size, with an Install / Delete button (white = installed → Delete, gray =
+// not installed → Install). Clicking an installed model makes it the active one
+// (the model the plugin uses). The card chip reflects the active model.
 function openPluginModelModal(m, chip, chipText) {
   $("plugin-model-title").textContent = m.name;
   $("plugin-model-status").textContent = "";
-  const list = $("plugin-model-list");
-  list.innerHTML = "";
-  for (const mdl of m.models) {
-    const row = document.createElement("label");
-    row.className = "model-radio";
-    const radio = document.createElement("input");
-    radio.type = "radio"; radio.name = "plugin-model-pick"; radio.value = mdl.id;
-    if (mdl.id === m.current_model) radio.checked = true;
-    const body = document.createElement("span"); body.className = "model-radio-body";
-    const lbl = document.createElement("span"); lbl.className = "model-radio-label"; lbl.textContent = mdl.label;
-    body.appendChild(lbl);
-    if (mdl.info) {
-      const info = document.createElement("span"); info.className = "model-radio-info"; info.textContent = mdl.info;
-      body.appendChild(info);
-    }
-    row.append(radio, body);
-    list.appendChild(row);
-  }
   const modal = $("plugin-model-modal");
   const switchBtn = $("plugin-model-switch");
-  switchBtn.disabled = false;
+  if (switchBtn) switchBtn.style.display = "none";   // per-row actions now
+  const cancel = $("plugin-model-cancel");
+  if (cancel) cancel.textContent = _label("Close", "关闭");
   const close = () => {
     modal.hidden = true;
-    switchBtn.onclick = null; $("plugin-model-cancel").onclick = null; modal.onclick = null;
+    cancel.onclick = null; modal.onclick = null;
+    if (switchBtn) switchBtn.style.display = "";
+    loadModuleUsage(); renderModules();   // sizes / active may have changed
   };
-  $("plugin-model-cancel").onclick = close;
+  cancel.onclick = close;
   modal.onclick = (e) => { if (e.target === modal) close(); };
-  switchBtn.onclick = () => {
-    const picked = list.querySelector('input[name="plugin-model-pick"]:checked');
-    if (!picked) return;
-    const modelId = picked.value;
-    if (modelId === m.current_model) { close(); return; }
-    switchPluginModel(m, modelId, { chip, chipText, switchBtn, close });
-  };
   modal.hidden = false;
+  refreshPickerRows(m, chipText);
 }
 
-async function switchPluginModel(m, modelId, ui) {
+async function refreshPickerRows(m, chipText) {
+  const list = $("plugin-model-list");
+  list.innerHTML = "";
+  let data;
+  try { data = await api("/api/modules/models?name=" + encodeURIComponent(m.name)); }
+  catch (e) { list.textContent = (e.message || "加载失败"); return; }
+  m.current_model = data.current_model;
+  for (const s of data.models) {
+    const row = document.createElement("div");
+    row.className = "picker-row" + (s.id === data.current_model ? " active" : "");
+    const main = document.createElement("div"); main.className = "picker-main";
+    const nm = document.createElement("span"); nm.className = "picker-name"; nm.textContent = s.label;
+    main.appendChild(nm);
+    (s.tags || []).forEach((t) => {
+      const c = document.createElement("span");
+      c.className = "model-tag" + (t === "Tag Recommended" ? " rec" : "");
+      c.textContent = _label(t, t); main.appendChild(c);
+    });
+    const size = document.createElement("span"); size.className = "picker-size";
+    size.textContent = s.downloaded ? (s.disk_human || "") : _label("Not Installed", "未安装");
+    const act = document.createElement("div"); act.className = "picker-act";
+    const b = document.createElement("button"); b.className = "mini" + (s.downloaded ? " danger" : "");
+    b.textContent = s.downloaded ? _label("Delete", "删除") : _label("Install", "安装");
+    b.onclick = (e) => {
+      e.stopPropagation();
+      if (s.downloaded) pickerDelete(m, s, chipText); else pickerInstall(m, s, chipText);
+    };
+    act.appendChild(b);
+    if (s.downloaded && s.id !== data.current_model) {
+      row.style.cursor = "pointer";
+      row.onclick = () => pickerActivate(m, s, chipText);
+    }
+    row.append(main, size, act);
+    list.appendChild(row);
+  }
+}
+
+async function pickerActivate(m, s, chipText) {
+  try {
+    await api("/api/models/select", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plugin: m.name, model_id: s.id }),
+    });
+    if (chipText) chipText.textContent = (s.label || s.id).replace(/\s*[（(].*$/, "").trim();
+    refreshPickerRows(m, chipText);
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+}
+
+async function pickerInstall(m, s, chipText) {
   const status = $("plugin-model-status");
-  ui.switchBtn.disabled = true;
-  status.innerHTML = pill("busy", _label("Downloading Model", "正在下载模型…"), "");
+  status.innerHTML = pill("busy", _label("Downloading Model", "正在下载模型…") + " " + s.label, "");
   try {
     await api("/api/modules/model", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: m.name, model_id: modelId }),
+      body: JSON.stringify({ name: m.name, model_id: s.id }),
     });
-  } catch (e) {
-    ui.switchBtn.disabled = false;
-    status.innerHTML = pill("bad", "失败", ICON.cross) + " " + (e.message || "").slice(-200);
-    return;
-  }
+  } catch (e) { status.innerHTML = pill("bad", "失败", ICON.cross); return; }
   const poll = setInterval(async () => {
-    const s = await api("/api/modules/status?name=" + encodeURIComponent(m.name));
-    if (s.status === "running") return;
+    const j = await api("/api/modules/status?name=" + encodeURIComponent(m.name));
+    if (j.status === "running") return;
     clearInterval(poll);
-    if (s.status === "done") {
-      status.innerHTML = pill("on", _label("Model Ready", "模型就绪"), ICON.check);
-      m.current_model = modelId;
-      const chosen = m.models.find((x) => x.id === modelId);
-      ui.chipText.textContent = chosen ? chosen.label : modelId;
-      setTimeout(ui.close, 600);
-    } else {
-      ui.switchBtn.disabled = false;
-      status.innerHTML = pill("bad", "失败", ICON.cross) + " " + (s.output || "").slice(-200);
-    }
+    status.textContent = "";
+    refreshPickerRows(m, chipText);
   }, 1500);
+}
+
+async function pickerDelete(m, s, chipText) {
+  if (!confirm(_label("Delete Model Confirm", "确定删除该模型的本地文件吗？"))) return;
+  try {
+    await api("/api/models/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ plugin: m.name, model_id: s.id }),
+    });
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+  refreshPickerRows(m, chipText);
 }
 
 // For an installed module, ask PyPI (server-side) whether a newer version
@@ -1040,6 +1063,11 @@ async function checkModuleUpdate(name, actTd, statTd) {
 const _MODULE_VERBS = { install: "安装", uninstall: "卸载", upgrade: "升级" };
 
 async function moduleAction(name, action, btn, statTd) {
+  if (action === "uninstall" &&
+      !confirm(_label("Uninstall Models Confirm",
+                      "是否一起卸载该插件的模型？被其他插件共用的模型不会删除。"))) {
+    return;
+  }
   btn.disabled = true;
   const verb = _MODULE_VERBS[action] || action;
   statTd.innerHTML = pill("busy", verb + "中", "");
