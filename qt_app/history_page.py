@@ -46,6 +46,8 @@ _STATUS_META = {
     "success": ("Status Success", "#2e7d32"),
     "failed": ("Status Failed", "#c62828"),
     "stopped": ("Status Stopped", "#ef6c00"),
+    "interrupted": ("Status Interrupted", "#ef6c00"),
+    "running": ("Status Running", "#1565c0"),
 }
 
 
@@ -79,7 +81,7 @@ def _resume_info(rec):
 
 
 def _is_resumable(rec):
-    return rec.get("status") in ("failed", "stopped") and bool(_resume_info(rec))
+    return rec.get("status") in ("failed", "stopped", "interrupted") and bool(_resume_info(rec))
 
 
 class HistoryPage(QWidget):
@@ -348,6 +350,7 @@ class HistoryPage(QWidget):
             bilingual_flags=info.get("bilingual_flags", {}),
             session_lang=self._lang,
             continue_mode=True, resume_dirs=resume_dirs,
+            resume_record_id=rec.get("id"),
         )
         worker.finished.connect(lambda *_: self._on_resume_done(True, ""))
         worker.failed.connect(lambda msg: self._on_resume_done(False, msg))

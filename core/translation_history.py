@@ -222,6 +222,20 @@ class TranslationHistoryManager:
         except Exception:  # noqa: BLE001
             return None
 
+    def mark_running_as_interrupted(self) -> int:
+        """Recovery sweep: any record still 'running' belongs to a previous
+        process that died without finishing (crash / force-quit), so flip it to
+        'interrupted' (resumable). Call once at app startup, before new runs.
+        Returns how many rows were recovered."""
+        try:
+            with self._connect() as conn:
+                cur = conn.execute(
+                    "UPDATE records SET status='interrupted' WHERE status='running'")
+                return cur.rowcount or 0
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"History recovery sweep failed: {e}")
+            return 0
+
     def delete_record(self, record_id: str) -> bool:
         try:
             with self._connect() as conn:

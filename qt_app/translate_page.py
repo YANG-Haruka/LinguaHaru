@@ -15,6 +15,7 @@ runs, a zip with a results.txt is produced). Stop cancels all in-flight files.
 
 import os
 import uuid
+from datetime import datetime
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -57,7 +58,7 @@ class TranslatePage(QStackedWidget):
         self._results = []          # successful output paths
         self._file_results = []     # (name, status, detail)
         self._coverage = []         # per-file coverage reports
-        self._run_subdir = None
+        self._run_stamp = None      # per-run output subfolder (start datetime)
         self._running = False
         self._total = 0
         self._tokens = 0
@@ -517,10 +518,14 @@ class TranslatePage(QStackedWidget):
                 self.on_open_interface()
             return
 
-        # Detect base-name collisions; only those files need isolation subdirs.
+        # Per-run output folder, named by the start datetime (to the second), so
+        # each translation task gets its own subfolder instead of all outputs
+        # piling into data/result.
+        self._run_stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Detect base-name collisions; only those files need a further isolation
+        # subdir nested inside the run folder.
         bases = [os.path.splitext(os.path.basename(p))[0] for p in self._files]
         self._needs_isolation = len(set(bases)) != len(bases)
-        self._run_subdir = ("run_" + uuid.uuid4().hex[:8]) if self._needs_isolation else None
 
         self._queue = list(self._files)
         self._total = len(self._files)
@@ -555,10 +560,8 @@ class TranslatePage(QStackedWidget):
         config = backend.read_config()
         use_online, model, api_key = self._active()
         flags = {k: sw.isChecked() for k, sw in self._bilingual_switches.items()}
-        # Isolate by a per-file subdir only when base names collide.
-        isolation = None
-        if self._needs_isolation:
-            isolation = os.path.join(self._run_subdir, uuid.uuid4().hex[:6])
+        # Within the run folder, isolate same-named files by a per-file hex subdir.
+        isolation = uuid.uuid4().hex[:6] if self._needs_isolation else None
         worker = TranslationWorker(
             file_path=file_path,
             model=model,
@@ -573,6 +576,7 @@ class TranslatePage(QStackedWidget):
             bilingual_flags=flags,
             session_lang=self._lang,
             isolation_subdir=isolation,
+            run_stamp=self._run_stamp,
         )
         worker._lh_file = file_path
         worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))

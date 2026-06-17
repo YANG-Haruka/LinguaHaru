@@ -2012,6 +2012,8 @@ const HSTATUS = {
   success: ["Status Success", "#2e7d32"],
   failed: ["Status Failed", "#c62828"],
   stopped: ["Status Stopped", "#ef6c00"],
+  interrupted: ["Status Interrupted", "#ef6c00"],
+  running: ["Status Running", "#1565c0"],
 };
 
 function _fmtDuration(sec) {
@@ -2024,7 +2026,7 @@ function _fmtDuration(sec) {
 }
 
 function _histResumable(r) {
-  if (!(r.status === "failed" || r.status === "stopped")) return false;
+  if (!(r.status === "failed" || r.status === "stopped" || r.status === "interrupted")) return false;
   try { return !!JSON.parse(r.resume_info || "{}").input_file_path; }
   catch (e) { return false; }
 }

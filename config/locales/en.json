@@ -62,6 +62,8 @@
   "Status Success": "Completed",
   "Status Failed": "Failed",
   "Status Stopped": "Stopped",
+  "Status Interrupted": "Interrupted",
+  "Status Running": "Running",
   "Continue Translation": "Continue Translation",
   "Download": "Download",
   "Delete Record": "Delete",

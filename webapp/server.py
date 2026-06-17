@@ -57,6 +57,21 @@ UPLOAD_DIR = os.path.join(backend.DATA_DIR, "web_uploads")
 app = FastAPI(title="LinguaHaru Web")
 
 
+@app.on_event("startup")
+def _recover_interrupted_history():
+    """Flip history rows left 'running' by a previous crash to 'interrupted' so
+    they show up and can be continued. Sweeps the global (local-mode) DB; LAN
+    per-session DBs are transient and skipped."""
+    try:
+        from core.translation_history import TranslationHistoryManager
+        n = TranslationHistoryManager(
+            log_dir=backend.get_custom_paths()[2]).mark_running_as_interrupted()
+        if n:
+            app_logger.info(f"Recovered {n} interrupted translation(s) from a previous run")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def server_mode_on():
     """Public-deploy mode: hide the key/model/admin UI, use the server's own
     key, and bind externally. On via the ``server_mode`` config flag, or
@@ -530,7 +545,7 @@ async def save_glossary(payload: dict):
 # --------------------------------------------------------------------------- #
 def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                    dst_lang, glossary_name, bilingual_flags, on_progress,
-                   continue_mode=False, resume_dirs=None):
+                   continue_mode=False, resume_dirs=None, resume_record_id=None):
     """Translate a single file; returns its output path. Raises on failure.
 
     Paths are scoped to ``session_id`` so concurrent users never collide, and a
@@ -576,6 +591,9 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
         session_lang="en", log_dir=log_dir,
         history_dir=history_log_dir(session_id),
     )
+    if resume_record_id:
+        # Resume reuses the original row (interrupted -> success), no duplicate.
+        translator.translation_id = resume_record_id
     # Captured into the history record if this run fails/stops, so a later
     # Continue can reconstruct THIS run (langs/model/glossary/bilingual + dirs).
     translator.resume_info = {
@@ -886,7 +904,8 @@ def _run_resume(task_id, session_id, rec, ui_lang="en"):
             info.get("src_lang"), info.get("dst_lang"),
             info.get("glossary_name", ""), info.get("bilingual_flags", {}),
             on_progress, continue_mode=True,
-            resume_dirs=(info["temp_dir"], info["result_dir"], info["log_dir"]))
+            resume_dirs=(info["temp_dir"], info["result_dir"], info["log_dir"]),
+            resume_record_id=rec.get("id"))
         with _TASKS_LOCK:
             t = TASKS.get(task_id, {})
             tp, tc, tt = t.get("tok_prompt", 0), t.get("tok_completion", 0), t.get("tokens", 0)
@@ -926,7 +945,7 @@ def history_resume(payload: dict, request: Request):
     rec = h.get_record_by_id(rid) if rid else None
     if not rec:
         raise HTTPException(404, "Record not found")
-    if rec.get("status") not in ("failed", "stopped"):
+    if rec.get("status") not in ("failed", "stopped", "interrupted"):
         raise HTTPException(400, "Only interrupted translations can be continued")
     try:
         info = json.loads(rec.get("resume_info") or "{}")

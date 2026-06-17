@@ -196,7 +196,9 @@ class DocumentTranslator:
                 translation_options=getattr(self, "topts", None),
                 error_reason=error_reason,
                 error_category=error_category,
-                resume_info=self._build_resume_info() if status in ("failed", "stopped") else None,
+                resume_info=(self._build_resume_info()
+                             if status in ("failed", "stopped", "running", "interrupted")
+                             else None),
             )
 
             # Save to history
@@ -1071,6 +1073,15 @@ class DocumentTranslator:
 
         # Record translation start time
         self.translation_start_time = datetime.now()
+        # Write the record up-front as "running" so even a hard crash / force-quit
+        # (which kills the process before any except: handler can run) still
+        # leaves a resumable entry. A startup sweep later flips orphaned "running"
+        # rows to "interrupted"; a graceful finish/fail/stop overwrites this row.
+        if not self.continue_mode:
+            try:
+                self._save_translation_summary(status="running")
+            except Exception as e:  # noqa: BLE001 — never block a run on history
+                app_logger.warning(f"Could not write start record: {e}")
         # A fresh run must not inherit a stale in-memory result buffer (same
         # process re-translating the same doc).
         invalidate_results(self.result_split_json_path)

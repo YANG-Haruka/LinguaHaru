@@ -73,6 +73,19 @@ def main():
     from qt_app.main_window import MainWindow
 
     _install_qt_log_filter()
+
+    # Recover history rows left "running" by a previous crash / force-quit:
+    # flip them to "interrupted" so they show up (and can be continued).
+    try:
+        from core import backend
+        from core.translation_history import TranslationHistoryManager
+        _n = TranslationHistoryManager(
+            log_dir=backend.get_custom_paths()[2]).mark_running_as_interrupted()
+        if _n:
+            print(f"Recovered {_n} interrupted translation(s) from a previous session")
+    except Exception:  # noqa: BLE001 — never block startup on history recovery
+        pass
+
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

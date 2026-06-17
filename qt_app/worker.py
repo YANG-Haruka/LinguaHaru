@@ -202,7 +202,8 @@ class TranslationWorker(QThread):
     def __init__(self, file_path, model, use_online, api_key, src_lang, dst_lang,
                  max_token, max_retries, thread_count, glossary_name,
                  bilingual_flags, session_lang="en", isolation_subdir=None,
-                 parent=None, continue_mode=False, resume_dirs=None):
+                 parent=None, continue_mode=False, resume_dirs=None, run_stamp=None,
+                 resume_record_id=None):
         super().__init__(parent)
         self.file_path = file_path
         self.model = model
@@ -226,6 +227,12 @@ class TranslationWorker(QThread):
         # already-translated segments are found instead of starting over.
         self.continue_mode = continue_mode
         self.resume_dirs = resume_dirs
+        # Per-run subfolder (e.g. "2026-06-17_14-30-05") so each task's outputs
+        # land in their own dir instead of all piling into data/result.
+        self.run_stamp = run_stamp
+        # Resume: reuse the original record's id so the run updates that history
+        # row (interrupted -> success) instead of adding a duplicate.
+        self.resume_record_id = resume_record_id
         self._stop = False
         # Coverage report for this file (filled after process(); read by the page)
         self.coverage = None
@@ -278,10 +285,16 @@ class TranslationWorker(QThread):
                 os.makedirs(d, exist_ok=True)
         else:
             temp_dir, result_dir, log_dir = backend.get_custom_paths()
-            if self.isolation_subdir:
-                temp_dir = os.path.join(temp_dir, self.isolation_subdir)
-                result_dir = os.path.join(result_dir, self.isolation_subdir)
-                log_dir = os.path.join(log_dir, self.isolation_subdir)
+            # One subfolder per run (start datetime), so each task's outputs are
+            # grouped instead of dumped together; same-name files inside a run
+            # still get the isolation_subdir nested below.
+            sub = os.path.join(self.run_stamp, self.isolation_subdir) if (
+                self.run_stamp and self.isolation_subdir) else (
+                self.run_stamp or self.isolation_subdir)
+            if sub:
+                temp_dir = os.path.join(temp_dir, sub)
+                result_dir = os.path.join(result_dir, sub)
+                log_dir = os.path.join(log_dir, sub)
                 for d in (temp_dir, result_dir, log_dir):
                     os.makedirs(d, exist_ok=True)
 
@@ -297,6 +310,8 @@ class TranslationWorker(QThread):
             session_lang=self.session_lang, log_dir=log_dir,
         )
         translator.check_stop_requested = self._check_stop
+        if self.resume_record_id:
+            translator.translation_id = self.resume_record_id
         # Captured into the history record if this run fails/stops, so a later
         # "Continue" can reconstruct THIS exact worker (display langs, glossary,
         # bilingual flags — things the translator itself doesn't keep).
