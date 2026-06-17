@@ -32,6 +32,7 @@ from webapp import sessions
 from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)
 from core.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
+from core.llm.online_translation import HardApiError, classify_fatal_error
 from core.optional_modules import (
     module_status, realtime_voice_available,
     quick_voice_available, ocr_models, get_selected_ocr_model)
@@ -604,6 +605,22 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     return output_path
 
 
+def _friendly_api_error(error, lang="en"):
+    """Localized, category-specific message for a fatal API error (matches the
+    Qt worker's wording so both frontends read the same)."""
+    category = getattr(error, "category", None) or classify_fatal_error(str(error))
+    keys = {
+        "insufficient_balance": "Err Insufficient Balance",
+        "invalid_key": "Err Invalid Key",
+        "server_error": "Err Server",
+    }
+    key = keys.get(category, "Err Api Generic")
+    labels = LABEL_TRANSLATIONS.get(lang) or {}
+    return (labels.get(key)
+            or LABEL_TRANSLATIONS.get("en", {}).get(key)
+            or "Translation stopped due to an API error.")
+
+
 def _run_translation(task_id, session_id, file_paths, model, use_online,
                      src_lang, dst_lang, glossary_name, bilingual_flags, ui_lang="en"):
     """Background worker: translate one or more files; zip when more than one."""
@@ -644,6 +661,14 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
                     task_id, session_id, fp, model, use_online, src_lang,
                     dst_lang, glossary_name, bilingual_flags, on_progress))
                 file_results.append((name, "success", ""))
+            except HardApiError as e:
+                # Account-level fault (insufficient balance / invalid key): every
+                # remaining file would fail the same way, so abort the whole batch
+                # with a clear, localized message instead of N identical errors.
+                msg = _friendly_api_error(e, ui_lang)
+                app_logger.error(f"Web translation aborted [{getattr(e,'category','api_error')}]: {e}")
+                set_state(status="error", error=msg)
+                return
             except RuntimeError as e:
                 if "__stopped__" in str(e):
                     raise

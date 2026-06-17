@@ -31,6 +31,11 @@ _FIELDS = [
     "cost_amount", "cost_currency",
     # Translation-mode snapshot (for reproducibility / "why did this run differ").
     "translation_mode", "translation_tone", "translation_length", "translation_style",
+    # Failure detail (status="failed"): short reason + category for a clear message.
+    "error_reason", "error_category",
+    # Resume payload (status="failed"/"stopped"): JSON of the params needed to
+    # re-run this exact file in continue_mode. Empty for finished runs.
+    "resume_info",
 ]
 
 
@@ -276,6 +281,9 @@ def create_translation_record(
     cost_amount: Optional[float] = None,
     cost_currency: Optional[str] = None,
     translation_options: Optional[Dict[str, Any]] = None,
+    error_reason: Optional[str] = None,
+    error_category: Optional[str] = None,
+    resume_info: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Create a translation/project record dictionary."""
     duration_seconds = int((end_time - start_time).total_seconds())
@@ -303,6 +311,9 @@ def create_translation_record(
         "translation_tone": opts.get("tone", ""),
         "translation_length": opts.get("length", ""),
         "translation_style": opts.get("style", ""),
+        "error_reason": (error_reason or "")[:500],
+        "error_category": error_category or "",
+        "resume_info": json.dumps(resume_info, ensure_ascii=False) if resume_info else "",
     }
 
 

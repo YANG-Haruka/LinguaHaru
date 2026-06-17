@@ -56,7 +56,7 @@ class VideoTranslator(DocumentTranslator):
         except Exception:
             return True
 
-    def process(self, file_name, file_extension, progress_callback=None):
+    def _process_impl(self, file_name, file_extension, progress_callback=None):
         if not self._translate_subtitles_enabled():
             # Transcribe-only: emit the source-language SRT, skip LLM translation.
             self.translation_start_time = datetime.now()
@@ -70,6 +70,6 @@ class VideoTranslator(DocumentTranslator):
             self._result_srt_path = os.path.join(self.result_dir, f"{base}_transcribed.srt")
             return self._result_srt_path, {}
 
-        _, missing_counts = super().process(file_name, file_extension, progress_callback)
+        _, missing_counts = super()._process_impl(file_name, file_extension, progress_callback)
         # The deliverable is the translated subtitle file, not a media file
         return self._result_srt_path, missing_counts

@@ -12,7 +12,15 @@ from core.paths import API_CONFIG_DIR as CONFIG_DIR, SYSTEM_CONFIG
 class HardApiError(Exception):
     """Unrecoverable API error (bad key/config/quota): retrying cannot help,
     so the whole translation should stop immediately instead of burning the
-    1-hour retry budget."""
+    1-hour retry budget.
+
+    ``category`` is a stable key the UI maps to a localized message:
+    "insufficient_balance" / "invalid_key" / "server_error" / "api_error".
+    """
+
+    def __init__(self, message, category="api_error"):
+        super().__init__(message)
+        self.category = category
 
 
 # --- multi-key rotation ----------------------------------------------------
@@ -45,7 +53,8 @@ def _pick_api_key(api_key):
     with _key_lock:
         usable = [k for k in keys if _key_usable(k, now)]
         if not usable:
-            raise HardApiError("All API keys failed authentication/quota checks")
+            raise HardApiError("All API keys failed authentication/quota checks",
+                               category="invalid_key")
         _key_counter += 1
         return usable[_key_counter % len(usable)]
 
@@ -244,8 +253,32 @@ def _parse_retry_after(exc, default=10):
 
 # Error substrings that mean "retrying with the same key cannot succeed"
 _HARD_ERROR_MARKERS = ("unauthorized", "401", "invalid api key", "invalid_api_key",
-                       "incorrect api key", "403", "forbidden",
-                       "insufficient", "quota", "exceeded your current quota")
+                       "incorrect api key", "authentication fails", "403", "forbidden",
+                       "insufficient", "insufficient balance", "quota",
+                       "exceeded your current quota", "402")
+
+
+def classify_fatal_error(error_msg):
+    """Map a provider error message to a stable category the UI localizes.
+
+    DeepSeek/OpenAI codes (api-docs.deepseek.com, platform.openai.com):
+      402 / "Insufficient Balance"      -> insufficient_balance  (most important)
+      401 / 403 / auth / invalid key    -> invalid_key
+      otherwise                         -> api_error
+    (500/503 server errors stay RETRYABLE — they're transient, not fatal.)
+    """
+    m = (error_msg or "").lower()
+    if ("402" in m or "insufficient balance" in m or "insufficient_balance" in m
+            or "insufficient funds" in m or "insufficient_quota" in m
+            or "quota" in m or "exceeded your current quota" in m
+            or "insufficient" in m):
+        return "insufficient_balance"
+    if ("401" in m or "403" in m or "unauthorized" in m or "forbidden" in m
+            or "invalid api key" in m or "invalid_api_key" in m
+            or "incorrect api key" in m or "authentication" in m
+            or "api key" in m):
+        return "invalid_key"
+    return "api_error"
 
 def load_model_config(model):
     """
@@ -579,13 +612,28 @@ def translate_online(api_key, messages, model, mode_params=None):
             _set_cooldown(model, cooldown)
             return f"Rate limit exceeded; backing off {cooldown}s", False, None
 
+        # Server errors (500 server fault / 503 overloaded): transient per
+        # DeepSeek/OpenAI docs — back off briefly and retry, don't abort.
+        if ("500" in error_msg or "502" in error_msg or "503" in error_msg
+                or "internal server error" in error_msg or "server error" in error_msg
+                or "service unavailable" in error_msg or "overloaded" in error_msg
+                or "bad gateway" in error_msg):
+            _limiter.record_overload()
+            _set_cooldown(model, 10)
+            app_logger.warning(f"API server error (retrying): {str(e)[:120]}")
+            return f"Server error, retrying: {str(e)}", False, None
+
         # Hard errors: retrying the same key is pointless. Quarantine the key;
         # if other keys remain the caller retries (soft) with the next key,
-        # otherwise abort the whole translation immediately.
+        # otherwise abort the whole translation immediately with a category the
+        # UI turns into a clear message (insufficient balance / invalid key).
         if any(marker in error_msg for marker in _HARD_ERROR_MARKERS):
             if len(_split_keys(api_key)) > 1 and _quarantine_key(api_key, used_key, str(e)[:80]):
                 return f"API key quarantined, retrying with next key: {str(e)}", False, None
-            raise HardApiError(f"Unrecoverable API error: {str(e)}")
+            category = classify_fatal_error(error_msg)
+            app_logger.error(
+                f"FATAL API error [{category}] — aborting translation: {str(e)[:200]}")
+            raise HardApiError(f"Unrecoverable API error: {str(e)}", category=category)
 
         # Soft errors: network / server hiccups - worth retrying.
         if "connection" in error_msg or "network" in error_msg:

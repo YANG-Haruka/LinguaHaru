@@ -399,7 +399,7 @@ class PdfTranslator(DocumentTranslator):
                 pass
         return on_progress
 
-    def process(self, file_name, file_extension, progress_callback=None):
+    def _process_impl(self, file_name, file_extension, progress_callback=None):
         """Run the single-pass BabelDOC translation."""
         from datetime import datetime
         self.translation_start_time = datetime.now()

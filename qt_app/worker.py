@@ -17,7 +17,7 @@ import subprocess
 
 from PySide6.QtCore import QThread, Signal
 
-from core.llm.online_translation import HardApiError
+from core.llm.online_translation import HardApiError, classify_fatal_error
 from core import backend
 
 
@@ -323,11 +323,15 @@ class TranslationWorker(QThread):
         missing = sorted(missing_counts) if missing_counts else []
         self.finished.emit(output_path, missing)
 
-    @staticmethod
-    def _friendly_api_error(error):
-        emsg = str(error).lower()
-        if "all api keys" in emsg:
-            return "All API keys failed (invalid or out of quota). Please replace the key(s)."
-        if any(m in emsg for m in ("quota", "insufficient", "balance", "402")):
-            return "Insufficient balance/quota. Please top up or switch to another key."
-        return "API key is invalid or expired. Please check the API Key in the Translate tab."
+    def _friendly_api_error(self, error):
+        """Localized, category-specific message for a fatal API error."""
+        from qt_app.i18n import tr
+        category = getattr(error, "category", None)
+        if category is None:
+            category = classify_fatal_error(str(error))
+        keys = {
+            "insufficient_balance": "Err Insufficient Balance",
+            "invalid_key": "Err Invalid Key",
+            "server_error": "Err Server",
+        }
+        return tr(keys.get(category, "Err Api Generic"), self.session_lang)

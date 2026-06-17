@@ -147,7 +147,8 @@ class DocumentTranslator:
         input_filename = os.path.basename(self.input_file_path)
         return os.path.join(self.log_dir, f"{input_filename}.log")
 
-    def _save_translation_summary(self, status, output_file_path=None):
+    def _save_translation_summary(self, status, output_file_path=None,
+                                  error_reason=None, error_category=None):
         """Save translation summary to history"""
         try:
             self.translation_end_time = datetime.now()
@@ -193,6 +194,9 @@ class DocumentTranslator:
                 cost_amount=cost_amount,
                 cost_currency=cost_currency,
                 translation_options=getattr(self, "topts", None),
+                error_reason=error_reason,
+                error_category=error_category,
+                resume_info=self._build_resume_info() if status in ("failed", "stopped") else None,
             )
 
             # Save to history
@@ -203,12 +207,32 @@ class DocumentTranslator:
         except Exception as e:
             app_logger.error(f"Error saving translation summary: {e}")
 
-    def save_failed_summary(self):
+    def _build_resume_info(self):
+        """Params needed to re-run THIS file in continue_mode. A frontend may
+        pre-set ``self.resume_info`` (e.g. bilingual flags / glossary name it
+        knows but the translator doesn't); those values win, and we fill in the
+        core params every resume needs."""
+        info = dict(getattr(self, "resume_info", {}) or {})
+        info.setdefault("input_file_path", self.input_file_path)
+        info.setdefault("src_lang", self.src_lang)
+        info.setdefault("dst_lang", self.dst_lang)
+        info.setdefault("model", self.model)
+        info.setdefault("use_online", self.use_online)
+        info.setdefault("temp_dir", self.temp_dir)
+        info.setdefault("result_dir", self.result_dir)
+        info.setdefault("log_dir", self.log_dir)
+        info.setdefault("max_token", self.max_token)
+        info.setdefault("max_retries", self.max_retries)
+        info.setdefault("thread_count", self.num_threads)
+        return info
+
+    def save_failed_summary(self, error_reason=None, error_category=None):
         """Save translation summary with failed status - called on error"""
         # Persist whatever was translated so far so the run is resumable.
         flush_results(self.result_split_json_path)
         if self.translation_start_time:
-            self._save_translation_summary(status="failed")
+            self._save_translation_summary(
+                status="failed", error_reason=error_reason, error_category=error_category)
 
     def save_stopped_summary(self):
         """Save translation summary with stopped status - called when user stops"""
@@ -1015,6 +1039,34 @@ class DocumentTranslator:
             app_logger.error(f"Error updating failed segments: {e}")
     
     def process(self, file_name, file_extension, progress_callback=None):
+        """Main processing method.
+
+        Thin wrapper around _process_impl that records the outcome in history
+        even when the run does NOT finish: a fatal API error (HardApiError) or
+        any unexpected exception -> a "failed" record (with the reason), a user
+        stop -> a "stopped" record. Both keep enough info to resume later. The
+        exception is always re-raised so callers still see the failure."""
+        try:
+            return self._process_impl(file_name, file_extension, progress_callback)
+        except HardApiError as e:
+            category = getattr(e, "category", "api_error")
+            app_logger.error(f"Translation aborted [{category}]: {e}")
+            self.save_failed_summary(error_reason=str(e), error_category=category)
+            raise
+        except BaseException as e:  # noqa: BLE001 — record, then re-raise
+            # Frontend stop exceptions propagate through here; match by name or
+            # the Web stop marker to avoid importing frontend modules into the
+            # backend (Qt _StopRequested, Web RuntimeError("__stopped__")).
+            if (type(e).__name__ in ("_StopRequested", "StopTranslationException")
+                    or "__stopped__" in str(e)):
+                app_logger.info("Translation stopped by user; saving resumable record")
+                self.save_stopped_summary()
+            else:
+                app_logger.error(f"Translation failed: {e}")
+                self.save_failed_summary(error_reason=str(e))
+            raise
+
+    def _process_impl(self, file_name, file_extension, progress_callback=None):
         """Main processing method"""
 
         # Record translation start time
