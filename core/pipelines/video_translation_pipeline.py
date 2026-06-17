@@ -616,9 +616,15 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
     return _clean_asr_text(_qwen_text(r)), detected
 
 
-def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en", check_stop=None):
+def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
+                     check_stop=None, checkpoint_path=None):
     """VAD-segment the audio (for SRT timing) then batch-recognize the segments
-    with Qwen3-ASR. Falls back to a single whole-file pass if VAD is unavailable."""
+    with Qwen3-ASR. Falls back to a single whole-file pass if VAD is unavailable.
+
+    Resumable: when a prior (stopped) run left a checkpoint, the already-recognized
+    segments are loaded and skipped — only the remaining ones are transcribed.
+    VAD is deterministic on the same audio, so segment boundaries line up across
+    runs and each is keyed by its (start_ms, end_ms)."""
     import wave
     import numpy as np
 
@@ -637,14 +643,35 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     if not segments:
         segments = [[0, len(audio) / sr * 1000.0]]
 
-    chunks, spans = [], []
+    chunks, spans, keys = [], [], []
     for s_ms, e_ms in segments:
         c = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
         if c.size:
             chunks.append((c, sr))
             spans.append((s_ms / 1000.0, e_ms / 1000.0))
+            keys.append((int(round(s_ms)), int(round(e_ms))))
 
-    out = []
+    # Resume: load segments a prior stopped run already recognized (keyed by their
+    # ms boundaries). texts[k] is None until segment k is transcribed.
+    done = {}
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    s_ms, e_ms, t = json.loads(line)
+                    done[(int(round(s_ms)), int(round(e_ms)))] = t
+        except Exception:  # noqa: BLE001 — a corrupt checkpoint just re-transcribes
+            done = {}
+    texts = [done.get(k) for k in keys]
+    total = len(chunks) or 1
+    todo = [k for k in range(len(chunks)) if texts[k] is None]
+    if done:
+        app_logger.info(f"Qwen3-ASR resume: {total - len(todo)}/{total} segments "
+                        f"already done, transcribing {len(todo)} more")
+
     # One model.transcribe() call is atomic (can't report sub-batch progress), so
     # the batch size sets how often the bar moves AND the Pause/Stop latency.
     # Group by AUDIO DURATION rather than a fixed chunk COUNT: VAD chunks vary from
@@ -654,33 +681,44 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     # progress. The 4090 (bf16) chews ~60s of audio in a few seconds; CPU keeps the
     # budget small so Stop still lands quickly.
     BUDGET = 60.0 if _stt_device() == "cuda" else 12.0   # seconds of audio per batch
-    total = len(chunks) or 1
-    i = 0
-    while i < len(chunks):
-        if check_stop:   # pause/stop between batches (see _transcribe_whisper)
-            check_stop()
-        # Take chunks until adding the next would exceed the budget (always >= 1).
-        j, acc = i, 0.0
-        while j < len(chunks):
-            d = spans[j][1] - spans[j][0]
-            if j > i and acc + d > BUDGET:
-                break
-            acc += d
-            j += 1
-        _bt = time.time()
-        results = model.transcribe(chunks[i:j])
-        if i == 0:   # first batch: log throughput so an early Stop still shows speed
-            app_logger.info(f"Qwen3-ASR first batch: {j - i} chunks "
-                            f"({acc:.0f}s audio) in {time.time() - _bt:.1f}s")
-        for (start, end), r in zip(spans[i:j], results):
-            txt = _clean_asr_text(_qwen_text(r))
-            if txt:
-                out.append((start, end, txt))
-        i = j
-        if progress_callback:
-            progress_callback(min(1.0, i / total),
-                              desc=f"{_tr('Transcribing', ui_lang)} {i}/{total}")
-    return out
+    ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
+    try:
+        p, first = 0, True
+        while p < len(todo):
+            if check_stop:   # pause/stop between batches (see _transcribe_whisper)
+                check_stop()
+            # Take todo segments until adding the next exceeds the budget (>= 1).
+            grp, acc = [], 0.0
+            while p < len(todo):
+                k = todo[p]
+                d = spans[k][1] - spans[k][0]
+                if grp and acc + d > BUDGET:
+                    break
+                grp.append(k)
+                acc += d
+                p += 1
+            _bt = time.time()
+            results = model.transcribe([chunks[k] for k in grp])
+            if first:   # log throughput so an early Stop still shows the speed
+                first = False
+                app_logger.info(f"Qwen3-ASR first batch: {len(grp)} chunks "
+                                f"({acc:.0f}s audio) in {time.time() - _bt:.1f}s")
+            for k, r in zip(grp, results):
+                txt = _clean_asr_text(_qwen_text(r))
+                texts[k] = txt
+                if ckpt_f:
+                    ckpt_f.write(json.dumps([keys[k][0], keys[k][1], txt]) + "\n")
+            if ckpt_f:
+                ckpt_f.flush()
+            if progress_callback:
+                got = sum(1 for t in texts if t is not None)
+                progress_callback(min(1.0, got / total),
+                                  desc=f"{_tr('Transcribing', ui_lang)} {got}/{total}")
+    finally:
+        if ckpt_f:
+            ckpt_f.close()
+
+    return [(spans[k][0], spans[k][1], texts[k]) for k in range(len(chunks)) if texts[k]]
 
 
 def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en", check_stop=None):
@@ -872,14 +910,15 @@ def _recognize_whisper(audio, src_lang, size="small"):
 
 # --- public entry point -----------------------------------------------------
 def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
-                       session_lang, model_id, check_stop=None):
+                       session_lang, model_id, check_stop=None, checkpoint_path=None):
     """Dispatch to the selected STT engine; log WHY on failure (download/load
     error) to the per-file log instead of failing silently, then re-raise."""
     try:
         if engine == "sensevoice":
             return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
         if engine == "qwen3asr":
-            return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
+            return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang,
+                                    check_stop, checkpoint_path)
         return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
     except Exception as e:  # noqa: BLE001
         app_logger.error(
@@ -946,8 +985,12 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
                 trans_cb, dia_cb = progress_callback, None
             if progress_callback:
                 progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
+            # Checkpoint survives a Stop (it lives in temp_dir, not the audio temp
+            # dir) so a Continue resumes transcription instead of redoing it.
+            ckpt_path = os.path.join(temp_dir, f"{filename}.asr_ckpt.jsonl")
             triples = _run_transcription(engine, size, wav_path, src_lang,
-                                         trans_cb, session_lang, model_id, check_stop)
+                                         trans_cb, session_lang, model_id, check_stop,
+                                         checkpoint_path=ckpt_path)
             # Optional speaker labels (also GPU) while we still hold the lock + wav.
             if triples and labels_on:
                 spk = diarize_triples(wav_path, triples, dia_cb, session_lang, check_stop)
@@ -970,6 +1013,13 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
     if transcript_copy_dir:
         os.makedirs(transcript_copy_dir, exist_ok=True)
         shutil.copyfile(srt_path, os.path.join(transcript_copy_dir, f"{filename}_transcribed.srt"))
+
+    # Transcription finished -> the checkpoint is spent; drop it so a fresh
+    # re-translation of this file doesn't reuse a stale partial transcript.
+    try:
+        os.remove(os.path.join(temp_dir, f"{filename}.asr_ckpt.jsonl"))
+    except OSError:
+        pass
 
     app_logger.info(f"Transcribed {len(triples)} segments via {model_id} -> {srt_path}")
     return srt_path
