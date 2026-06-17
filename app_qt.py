@@ -43,9 +43,12 @@ _patch_tiktoken()
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # Point all model libraries (whisper/funasr/babeldoc/OCR) at the unified
-# data/models cache BEFORE any of them are imported.
+# data/models cache BEFORE any of them are imported. defer_network=True skips
+# the slow HF-endpoint probe + legacy-cache migration here; main() runs them
+# (plus the local Ollama/LM Studio scan) in a background thread AFTER the window
+# is shown, so the UI appears instantly.
 from core.model_store import setup_model_env  # noqa: E402
-setup_model_env()
+setup_model_env(defer_network=True)
 
 
 def _install_qt_log_filter():
@@ -94,17 +97,61 @@ def main():
     except Exception:  # noqa: BLE001 — never block startup on history recovery
         pass
 
-    # Apply log + result disk retention (count / age / size limits).
+    # Build the UI WITHOUT the slow startup work: skip the local Ollama/LM Studio
+    # probe during page construction (it runs in the background warm-up below).
     try:
-        from core.retention import run_retention
-        run_retention()
+        from core.llm.offline_translation import defer_local_scan
+        defer_local_scan()
     except Exception:  # noqa: BLE001
         pass
 
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
+    # Now that the window is visible, do the deferred slow work off the UI thread
+    # (HF-endpoint probe, legacy-cache migration, local-model scan, disk retention)
+    # and refresh the affected pages when done — so startup feels instant.
+    _start_background_warmup(window)
     sys.exit(app.exec())
+
+
+def _start_background_warmup(window):
+    from PySide6.QtCore import QThread, QTimer
+
+    class _Warmup(QThread):
+        def run(self):
+            try:
+                from core.model_store import finish_model_env_setup
+                finish_model_env_setup()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                from core import backend
+                backend.scan_local_models(force_refresh=True)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                from core.retention import run_retention
+                run_retention()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _refresh():
+        # Reflect any local models found + the resolved active interface.
+        for fn in (
+            lambda: window.interface_page.reload(),
+            lambda: window.translate_page.refresh_active_interface(),
+        ):
+            try:
+                fn()
+            except Exception:  # noqa: BLE001
+                pass
+
+    w = _Warmup(window)            # parented -> Qt owns it (no GC-while-running)
+    w.finished.connect(_refresh)
+    window._warmup_worker = w      # keep a reference; closeEvent sweep waits on it
+    # Small delay so the first paint happens before we spin up the worker.
+    QTimer.singleShot(80, w.start)
 
 
 if __name__ == "__main__":

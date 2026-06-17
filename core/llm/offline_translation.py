@@ -464,6 +464,17 @@ def get_lm_studio_models():
         app_logger.error(f"Unexpected error fetching LM Studio models: {e}")
         return []
 
+def defer_local_scan():
+    """Mark the local-model cache as populated-but-empty WITHOUT probing, so the
+    Qt UI can build instantly (no Ollama/LM Studio socket+subprocess probes on
+    the main thread). A background warm-up later calls
+    populate_sum_model(force_refresh=True) to do the real scan and refresh the UI."""
+    global _CACHED_MODELS, _MODELS_CACHE_POPULATED
+    if not _MODELS_CACHE_POPULATED:
+        _CACHED_MODELS = None
+        _MODELS_CACHE_POPULATED = True
+
+
 def populate_sum_model(force_refresh=False):
     """
     Check local Ollama and LM Studio models and return a combined list with prefixes.

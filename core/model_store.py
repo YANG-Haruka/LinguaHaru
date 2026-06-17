@@ -65,10 +65,17 @@ def pick_hf_endpoint():
         return "https://hf-mirror.com"
 
 
-def setup_model_env():
+def setup_model_env(defer_network=False):
     """Point every model library's cache at the unified dir. Idempotent; uses
     setdefault so an explicit user env var still wins. Call at app startup,
     BEFORE the model libraries are imported (they read these env vars at import).
+
+    The env-var setup is instant. The HF-endpoint probe (a network call) and the
+    one-time legacy-cache migration (disk) are the slow parts — pass
+    defer_network=True to skip them here and run them later via
+    finish_model_env_setup() in a background thread, so a GUI can appear first.
+    hf libs only read HF_ENDPOINT when a model is actually downloaded (long after
+    the UI is up), so deferring it is safe.
 
     BabelDOC has no cache env var (its CACHE_FOLDER is a hardcoded module
     global); it is redirected separately by `redirect_babeldoc_cache()`, called
@@ -82,6 +89,15 @@ def setup_model_env():
     os.environ.setdefault("MODELSCOPE_CACHE", os.path.join(md, "modelscope"))
     # PaddleOCR / PaddleX official models (PP-OCRv6 etc.) -> md/paddlex/official_models
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", os.path.join(md, "paddlex"))
+    if not defer_network:
+        finish_model_env_setup()
+    return md
+
+
+def finish_model_env_setup():
+    """The slow part of setup_model_env (HF-endpoint network probe + one-time
+    legacy-cache migration). Idempotent; safe to run in a background thread after
+    the UI is shown."""
     # Pick the huggingface endpoint once (hf libs read HF_ENDPOINT at import).
     if "HF_ENDPOINT" not in os.environ:
         os.environ["HF_ENDPOINT"] = pick_hf_endpoint()
@@ -90,7 +106,6 @@ def setup_model_env():
         migrate_legacy_caches()
     except Exception as e:  # noqa: BLE001 — never let migration break startup
         app_logger.warning(f"Legacy cache migration skipped: {e}")
-    return md
 
 
 def _move_tree_contents(old, new, summary):
