@@ -626,7 +626,11 @@ class TranslatePage(QStackedWidget):
 
     def _aggregate_progress(self):
         # Finished files count as 1.0; in-flight files use their last fraction.
-        finished = self._total - len(self._workers) - len(self._queue)
+        # Subtract BOTH pending pools (normal queue + resume queue) — files still
+        # waiting to start are not finished (a resume-queued file was wrongly
+        # counted as done, jumping the bar e.g. to 25% on a 4-file resume).
+        pending = len(self._queue) + len(getattr(self, "_resume_queue", []))
+        finished = self._total - len(self._workers) - pending
         running_frac = sum(self._progress.values())
         total_frac = finished + running_frac
         return int((total_frac / self._total) * 100) if self._total else 0
