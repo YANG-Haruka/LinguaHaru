@@ -645,29 +645,41 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
             spans.append((s_ms / 1000.0, e_ms / 1000.0))
 
     out = []
-    # One model.transcribe() call is atomic (can't be interrupted mid-batch), so
-    # the batch size trades throughput vs Pause/Stop latency. On GPU each batch is
-    # fast (bf16), so a larger batch saturates the 4090 without hurting
-    # responsiveness; on CPU keep it tiny so Stop still lands quickly.
-    BATCH = 16 if _stt_device() == "cuda" else 2
+    # One model.transcribe() call is atomic (can't report sub-batch progress), so
+    # the batch size sets how often the bar moves AND the Pause/Stop latency.
+    # Group by AUDIO DURATION rather than a fixed chunk COUNT: VAD chunks vary from
+    # ~1s to ~30s, so a fixed count makes batches take wildly different wall-times
+    # (the bar races, then "sticks" on a batch full of long chunks). A fixed audio
+    # budget makes every batch ~the same compute time -> smooth, evenly-paced
+    # progress. The 4090 (bf16) chews ~60s of audio in a few seconds; CPU keeps the
+    # budget small so Stop still lands quickly.
+    BUDGET = 60.0 if _stt_device() == "cuda" else 12.0   # seconds of audio per batch
     total = len(chunks) or 1
-    for i in range(0, len(chunks), BATCH):
+    i = 0
+    while i < len(chunks):
         if check_stop:   # pause/stop between batches (see _transcribe_whisper)
             check_stop()
+        # Take chunks until adding the next would exceed the budget (always >= 1).
+        j, acc = i, 0.0
+        while j < len(chunks):
+            d = spans[j][1] - spans[j][0]
+            if j > i and acc + d > BUDGET:
+                break
+            acc += d
+            j += 1
         _bt = time.time()
-        results = model.transcribe(chunks[i:i + BATCH])
+        results = model.transcribe(chunks[i:j])
         if i == 0:   # first batch: log throughput so an early Stop still shows speed
-            _secs = sum(e - s for s, e in spans[:BATCH])
-            app_logger.info(f"Qwen3-ASR first batch: {len(chunks[:BATCH])} chunks "
-                            f"({_secs:.0f}s audio) in {time.time() - _bt:.1f}s")
-        for (start, end), r in zip(spans[i:i + BATCH], results):
+            app_logger.info(f"Qwen3-ASR first batch: {j - i} chunks "
+                            f"({acc:.0f}s audio) in {time.time() - _bt:.1f}s")
+        for (start, end), r in zip(spans[i:j], results):
             txt = _clean_asr_text(_qwen_text(r))
             if txt:
                 out.append((start, end, txt))
+        i = j
         if progress_callback:
-            done = min(i + BATCH, total)
-            progress_callback(min(1.0, done / total),
-                              desc=f"{_tr('Transcribing', ui_lang)} {done}/{total}")
+            progress_callback(min(1.0, i / total),
+                              desc=f"{_tr('Transcribing', ui_lang)} {i}/{total}")
     return out
 
 
