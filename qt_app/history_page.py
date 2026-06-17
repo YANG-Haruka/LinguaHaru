@@ -1,31 +1,52 @@
-"""History page: recent translations from TranslationHistoryManager."""
+"""History page: recent translations from TranslationHistoryManager.
+
+Layout: a compact table (status / file / type / time) keeps the list scannable;
+clicking a row fills a detail panel with the full record; right-clicking a row
+opens a menu — Open Folder (always), Continue Translation (interrupted runs
+only), Delete (record + all of its data). Interrupted runs (failed/stopped) are
+shown too, and can be resumed via continue_mode.
+"""
 
 import os
+import json
+import shutil
 import subprocess
 import platform
 from datetime import datetime
 
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QAction
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView,
 )
 
 from qfluentwidgets import (
     TableWidget, PushButton, StrongBodyLabel, ComboBox, BodyLabel, FluentIcon,
+    RoundMenu, StateToolTip, MessageBox, SimpleCardWidget, CaptionLabel,
 )
 
 from core import backend
+from core.api_keys import load_api_key_for_model
 from qt_app.i18n import tr
+from qt_app.worker import TranslationWorker
 from core.translation_history import (
-    TranslationHistoryManager, format_tokens,
+    TranslationHistoryManager, format_tokens, format_duration,
 )
 
-# label keys for the table header columns (resolved per UI language)
-_COLUMN_KEYS = ["Status", "Time", "File Type", "Tokens", "Cost",
-                "Source Language", "Model", "Upload File"]
+# Compact table columns (resolved per UI language). The full record shows in the
+# detail panel below, so the table stays uncluttered (no truncated columns).
+_COLUMN_KEYS = ["Status", "Upload File", "File Type", "Time"]
 # (sort_by, descending) per sort option, aligned with _SORT_KEYS
 _SORT_OPTIONS = [("start_time", True), ("start_time", False),
                  ("file_type", False), ("input_file", False), ("total_tokens", True)]
 _SORT_KEYS = ["Newest", "Oldest", "By Type", "By Name", "By Tokens"]
+
+# status -> (i18n key, color)
+_STATUS_META = {
+    "success": ("Status Success", "#2e7d32"),
+    "failed": ("Status Failed", "#c62828"),
+    "stopped": ("Status Stopped", "#ef6c00"),
+}
 
 
 def open_folder(path):
@@ -49,11 +70,25 @@ def open_folder(path):
         pass
 
 
+def _resume_info(rec):
+    """Parsed resume_info dict, or {} if absent/malformed."""
+    try:
+        return json.loads(rec.get("resume_info") or "") or {}
+    except (ValueError, TypeError):
+        return {}
+
+
+def _is_resumable(rec):
+    return rec.get("status") in ("failed", "stopped") and bool(_resume_info(rec))
+
+
 class HistoryPage(QWidget):
     def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
         self.setObjectName("HistoryPage")
         self._lang = lang
+        self._resume_worker = None
+        self._tip = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
@@ -78,10 +113,7 @@ class HistoryPage(QWidget):
         top.addWidget(self.sort_combo)
         self.refresh_btn = PushButton(FluentIcon.SYNC, tr("Refresh Records", lang))
         self.refresh_btn.clicked.connect(self.reload)
-        self.open_btn = PushButton(FluentIcon.FOLDER, tr("Open Output Folder", lang))
-        self.open_btn.clicked.connect(self.on_open_folder)
         top.addWidget(self.refresh_btn)
-        top.addWidget(self.open_btn)
         layout.addLayout(top)
         self._types_loaded = False
 
@@ -91,7 +123,28 @@ class HistoryPage(QWidget):
         self.table.setColumnCount(len(_COLUMN_KEYS))
         self._apply_headers()
         self.table.setSelectionBehavior(TableWidget.SelectRows)
+        self.table.setSelectionMode(TableWidget.SingleSelection)
+        self.table.setEditTriggers(TableWidget.NoEditTriggers)
+        # Single click -> show detail; right click -> action menu.
+        self.table.itemSelectionChanged.connect(self._on_row_selected)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.table, 1)
+
+        # Detail panel: full info for the selected row (hidden until a selection).
+        self.detail_card = SimpleCardWidget()
+        dlay = QVBoxLayout(self.detail_card)
+        dlay.setContentsMargins(16, 12, 16, 12)
+        dlay.setSpacing(4)
+        self.detail_title = StrongBodyLabel("")
+        self.detail_body = BodyLabel("")
+        self.detail_body.setWordWrap(True)
+        self.detail_hint = CaptionLabel("")
+        dlay.addWidget(self.detail_title)
+        dlay.addWidget(self.detail_body)
+        dlay.addWidget(self.detail_hint)
+        self.detail_card.hide()
+        layout.addWidget(self.detail_card)
 
         self._records = []
         self.reload()
@@ -104,7 +157,6 @@ class HistoryPage(QWidget):
         self._lang = lang
         self.title.setText(tr("Translation History", lang))
         self.refresh_btn.setText(tr("Refresh Records", lang))
-        self.open_btn.setText(tr("Open Output Folder", lang))
         self.type_label.setText(tr("File Type", lang))
         self.sort_label.setText(tr("Sort", lang))
         sort_idx = self.sort_combo.currentIndex()
@@ -115,6 +167,7 @@ class HistoryPage(QWidget):
         self.sort_combo.blockSignals(False)
         self._types_loaded = False   # rebuild "All Types" label in new language
         self._apply_headers()
+        self.detail_card.hide()
         self.reload()
 
     def _on_filter_changed(self, _idx=0):
@@ -141,36 +194,185 @@ class HistoryPage(QWidget):
         self._records = manager.get_all_records(
             limit=200, file_type=ftype, sort_by=sort_by, descending=descending)
         self.table.setRowCount(len(self._records))
-        status_icon = {"success": "OK", "failed": "FAIL", "stopped": "STOP"}
         for r, rec in enumerate(self._records):
-            start = rec.get("start_time", "")
-            try:
-                ts = datetime.fromisoformat(start).strftime("%Y-%m-%d %H:%M") if start else "-"
-            except ValueError:
-                ts = start[:16] if start else "-"
-            langs = f"{rec.get('src_lang_display', rec.get('src_lang', ''))} -> " \
-                    f"{rec.get('dst_lang_display', rec.get('dst_lang', ''))}"
-            mode = "Online" if rec.get("use_online") else "Offline"
-            cost = (f"{rec.get('cost_amount')} {rec.get('cost_currency')}"
-                    if rec.get("cost_amount") is not None and rec.get("cost_currency") else "-")
+            status = rec.get("status", "")
+            key, color = _STATUS_META.get(status, (status, None))
+            status_item = QTableWidgetItem(tr(key, self._lang) if key else status)
+            if color:
+                status_item.setForeground(QColor(color))
             cells = [
-                status_icon.get(rec.get("status", ""), rec.get("status", "")),
-                ts,
-                (rec.get("file_type", "") or "").upper(),
-                format_tokens(rec.get("total_tokens", 0)),
-                cost,
-                langs,
-                f"{rec.get('model', '')} ({mode})",
-                rec.get("input_file", ""),
+                status_item,
+                QTableWidgetItem(rec.get("input_file", "")),
+                QTableWidgetItem((rec.get("file_type", "") or "").upper()),
+                QTableWidgetItem(self._fmt_time(rec.get("start_time", ""))),
             ]
-            for c, val in enumerate(cells):
-                self.table.setItem(r, c, QTableWidgetItem(str(val)))
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            for c, item in enumerate(cells):
+                self.table.setItem(r, c, item)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        self.detail_card.hide()
 
-    def on_open_folder(self):
+    @staticmethod
+    def _fmt_time(start):
+        if not start:
+            return "-"
+        try:
+            return datetime.fromisoformat(start).strftime("%Y-%m-%d %H:%M")
+        except ValueError:
+            return start[:16]
+
+    # --- detail panel ----------------------------------------------------- #
+    def _on_row_selected(self):
         row = self.table.currentRow()
         if row < 0 or row >= len(self._records):
+            self.detail_card.hide()
             return
-        path = self._records[row].get("output_file_path", "")
-        if path:
-            open_folder(os.path.dirname(path))
+        rec = self._records[row]
+        L = self._lang
+        langs = f"{rec.get('src_lang_display', rec.get('src_lang', ''))} → " \
+                f"{rec.get('dst_lang_display', rec.get('dst_lang', ''))}"
+        mode = "Online" if rec.get("use_online") else "Offline"
+        cost = (f"{rec.get('cost_amount')} {rec.get('cost_currency')}"
+                if rec.get("cost_amount") is not None and rec.get("cost_currency") else "-")
+        dur = format_duration(int(rec.get("duration_seconds") or 0))
+        rows = [
+            (tr("Source Language", L), langs),
+            (tr("Model", L), f"{rec.get('model', '')} ({mode})"),
+            (tr("Tokens", L), format_tokens(rec.get("total_tokens", 0))),
+            (tr("Estimated cost", L), cost),
+            (tr("Duration", L), dur),
+            (tr("Output File", L), rec.get("output_file_path") or "-"),
+        ]
+        if rec.get("error_reason"):
+            rows.append((tr("Error Reason", L), rec.get("error_reason")))
+        self.detail_title.setText(rec.get("input_file", ""))
+        self.detail_body.setText(
+            "\n".join(f"<b>{k}:</b> {v}" for k, v in rows).replace("\n", "<br>"))
+        self.detail_hint.setText(tr("Resume Hint", L) if _is_resumable(rec) else "")
+        self.detail_card.show()
+
+    # --- context menu ----------------------------------------------------- #
+    def _on_context_menu(self, pos):
+        row = self.table.rowAt(pos.y())
+        if row < 0 or row >= len(self._records):
+            return
+        self.table.selectRow(row)
+        rec = self._records[row]
+        L = self._lang
+        menu = RoundMenu(parent=self.table)
+
+        open_act = QAction(tr("Open Folder", L), self)
+        open_act.triggered.connect(lambda: self._open_record_folder(rec))
+        menu.addAction(open_act)
+
+        if _is_resumable(rec):
+            cont_act = QAction(tr("Continue Translation", L), self)
+            cont_act.triggered.connect(lambda: self._continue_record(rec))
+            menu.addAction(cont_act)
+
+        del_act = QAction(tr("Delete Record", L), self)
+        del_act.triggered.connect(lambda: self._delete_record(rec))
+        menu.addAction(del_act)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _open_record_folder(self, rec):
+        # Prefer the output folder; fall back to the result dir from resume_info.
+        out = rec.get("output_file_path") or ""
+        if out:
+            open_folder(os.path.dirname(out))
+            return
+        info = _resume_info(rec)
+        if info.get("result_dir"):
+            open_folder(info["result_dir"])
+
+    # --- delete (record + all data) --------------------------------------- #
+    def _delete_record(self, rec):
+        L = self._lang
+        box = MessageBox(tr("Delete Record", L), tr("Delete Record Confirm", L), self.window())
+        if not box.exec():
+            return
+        # 1) Output + log files we generated (never the user's original input).
+        for key in ("output_file_path", "log_file_path"):
+            p = rec.get(key)
+            if p and os.path.isfile(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        # 2) The per-file temp working dir (partial JSON / extracted media).
+        info = _resume_info(rec)
+        temp_dir = info.get("temp_dir")
+        src = info.get("input_file_path") or rec.get("input_file")
+        if temp_dir and src:
+            file_dir = os.path.join(temp_dir, os.path.splitext(os.path.basename(src))[0])
+            if os.path.isdir(file_dir):
+                shutil.rmtree(file_dir, ignore_errors=True)
+        # 3) The DB row.
+        _, _, log_dir = backend.get_custom_paths()
+        TranslationHistoryManager(log_dir=log_dir).delete_record(rec.get("id"))
+        self.reload()
+
+    # --- continue (resume) ------------------------------------------------ #
+    def _continue_record(self, rec):
+        L = self._lang
+        if self._resume_worker is not None:
+            return  # one resume at a time
+        info = _resume_info(rec)
+        if not info:
+            self._toast(tr("No Resume Info", L), error=True)
+            return
+        src = info.get("input_file_path") or rec.get("input_file")
+        if not src or not os.path.exists(src):
+            self._toast(tr("Source File Missing", L), error=True)
+            return
+        model = info.get("model") or rec.get("model")
+        use_online = info.get("use_online", rec.get("use_online", True))
+        api_key = load_api_key_for_model(model) if use_online else ""
+        config = backend.read_config()
+        resume_dirs = (info.get("temp_dir"), info.get("result_dir"), info.get("log_dir"))
+        if not all(resume_dirs):
+            self._toast(tr("No Resume Info", L), error=True)
+            return
+
+        worker = TranslationWorker(
+            file_path=src, model=model, use_online=use_online, api_key=api_key,
+            src_lang=info.get("src_lang", rec.get("src_lang_display", "")),
+            dst_lang=info.get("dst_lang", rec.get("dst_lang_display", "")),
+            max_token=info.get("max_token", config.get("max_token", 768)),
+            max_retries=info.get("max_retries", config.get("max_retries", 4)),
+            thread_count=info.get("thread_count")
+            or backend.thread_count_for_mode(use_online, model),
+            glossary_name=info.get("glossary_name", ""),
+            bilingual_flags=info.get("bilingual_flags", {}),
+            session_lang=self._lang,
+            continue_mode=True, resume_dirs=resume_dirs,
+        )
+        worker.finished.connect(lambda *_: self._on_resume_done(True, ""))
+        worker.failed.connect(lambda msg: self._on_resume_done(False, msg))
+        self._resume_worker = worker
+        self._tip = StateToolTip(
+            tr("Resuming Translation", L), rec.get("input_file", ""), self.window())
+        self._tip.move(self._tip.getSuitablePos())
+        self._tip.show()
+        worker.start()
+
+    def _on_resume_done(self, ok, msg):
+        L = self._lang
+        if self._tip is not None:
+            self._tip.setContent(tr("Resume Done", L) if ok else (msg or ""))
+            self._tip.setState(True)   # auto-closes after a moment
+            self._tip = None
+        w = self._resume_worker
+        self._resume_worker = None
+        if w is not None:
+            w.wait(2000)
+        if not ok and msg:
+            self._toast(msg, error=True)
+        self.reload()
+
+    def _toast(self, text, error=False):
+        from qfluentwidgets import InfoBar
+        (InfoBar.error if error else InfoBar.success)(
+            title="", content=text, parent=self.window(), duration=4000)

@@ -202,7 +202,7 @@ class TranslationWorker(QThread):
     def __init__(self, file_path, model, use_online, api_key, src_lang, dst_lang,
                  max_token, max_retries, thread_count, glossary_name,
                  bilingual_flags, session_lang="en", isolation_subdir=None,
-                 parent=None):
+                 parent=None, continue_mode=False, resume_dirs=None):
         super().__init__(parent)
         self.file_path = file_path
         self.model = model
@@ -221,6 +221,11 @@ class TranslationWorker(QThread):
         # uploads that share a base name from colliding (file_dir is derived
         # from temp_dir/<basename>). None means use the shared dirs.
         self.isolation_subdir = isolation_subdir
+        # Resume: continue_mode reuses any partial temp/result files; resume_dirs
+        # (temp, result, log) pins the EXACT dirs of the interrupted run so the
+        # already-translated segments are found instead of starting over.
+        self.continue_mode = continue_mode
+        self.resume_dirs = resume_dirs
         self._stop = False
         # Coverage report for this file (filled after process(); read by the page)
         self.coverage = None
@@ -266,26 +271,43 @@ class TranslationWorker(QThread):
         src_code = backend.language_code(self.src_lang)
         dst_code = backend.language_code(self.dst_lang)
         gpath = backend.glossary_path(self.glossary_name) if self.glossary_name else None
-        temp_dir, result_dir, log_dir = backend.get_custom_paths()
-        if self.isolation_subdir:
-            temp_dir = os.path.join(temp_dir, self.isolation_subdir)
-            result_dir = os.path.join(result_dir, self.isolation_subdir)
-            log_dir = os.path.join(log_dir, self.isolation_subdir)
+        if self.resume_dirs:
+            # Resume: reuse the interrupted run's exact dirs (with its temp files).
+            temp_dir, result_dir, log_dir = self.resume_dirs
             for d in (temp_dir, result_dir, log_dir):
                 os.makedirs(d, exist_ok=True)
+        else:
+            temp_dir, result_dir, log_dir = backend.get_custom_paths()
+            if self.isolation_subdir:
+                temp_dir = os.path.join(temp_dir, self.isolation_subdir)
+                result_dir = os.path.join(result_dir, self.isolation_subdir)
+                log_dir = os.path.join(log_dir, self.isolation_subdir)
+                for d in (temp_dir, result_dir, log_dir):
+                    os.makedirs(d, exist_ok=True)
 
         from core.log_config import file_logger
         file_logger.create_file_log(os.path.basename(self.file_path), log_dir=log_dir)
 
         translator = translator_class(
             self.file_path, self.model, self.use_online, self.api_key,
-            src_code, dst_code, False,
+            src_code, dst_code, self.continue_mode,
             max_token=self.max_token, max_retries=self.max_retries,
             thread_count=self.thread_count, glossary_path=gpath,
             temp_dir=temp_dir, result_dir=result_dir,
             session_lang=self.session_lang, log_dir=log_dir,
         )
         translator.check_stop_requested = self._check_stop
+        # Captured into the history record if this run fails/stops, so a later
+        # "Continue" can reconstruct THIS exact worker (display langs, glossary,
+        # bilingual flags — things the translator itself doesn't keep).
+        translator.resume_info = {
+            "src_lang": self.src_lang, "dst_lang": self.dst_lang,
+            "model": self.model, "use_online": self.use_online,
+            "glossary_name": self.glossary_name,
+            "bilingual_flags": self.bilingual_flags,
+            "session_lang": self.session_lang,
+            "temp_dir": temp_dir, "result_dir": result_dir, "log_dir": log_dir,
+        }
 
         def progress_callback(value, desc=None):
             self._check_stop()
