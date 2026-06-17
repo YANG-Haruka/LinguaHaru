@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import tempfile
 import threading
+import time
 
 from core.log_config import app_logger
 
@@ -463,11 +464,13 @@ def _get_qwen(model_name):
                 except Exception:  # noqa: BLE001 — not cached yet -> download
                     return Qwen3ASRModel.from_pretrained(model_name, device_map=dm, **extra)
 
+            _t0 = time.time()
             try:
                 _qwen_models[model_name] = _load(accel)
             except Exception as e:  # noqa: BLE001 — accel kwarg unsupported (old pkg / no flash)
                 app_logger.warning(f"Qwen3-ASR accel load failed ({e}); loading without it")
                 _qwen_models[model_name] = _load({})
+            app_logger.info(f"{model_name} loaded in {time.time() - _t0:.1f}s")
     return _qwen_models[model_name]
 
 
@@ -642,16 +645,21 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
             spans.append((s_ms / 1000.0, e_ms / 1000.0))
 
     out = []
-    # Small batch so Pause/Stop take effect quickly: one model.transcribe() call
-    # is atomic and can't be interrupted, so a big batch = a long, uninterruptible
-    # chunk where pause appears dead. 4 keeps the GPU busy (bf16 makes each batch
-    # fast) while checking stop/pause roughly every few seconds of audio.
-    BATCH = 4
+    # One model.transcribe() call is atomic (can't be interrupted mid-batch), so
+    # the batch size trades throughput vs Pause/Stop latency. On GPU each batch is
+    # fast (bf16), so a larger batch saturates the 4090 without hurting
+    # responsiveness; on CPU keep it tiny so Stop still lands quickly.
+    BATCH = 16 if _stt_device() == "cuda" else 2
     total = len(chunks) or 1
     for i in range(0, len(chunks), BATCH):
         if check_stop:   # pause/stop between batches (see _transcribe_whisper)
             check_stop()
+        _bt = time.time()
         results = model.transcribe(chunks[i:i + BATCH])
+        if i == 0:   # first batch: log throughput so an early Stop still shows speed
+            _secs = sum(e - s for s, e in spans[:BATCH])
+            app_logger.info(f"Qwen3-ASR first batch: {len(chunks[:BATCH])} chunks "
+                            f"({_secs:.0f}s audio) in {time.time() - _bt:.1f}s")
         for (start, end), r in zip(spans[i:i + BATCH], results):
             txt = _clean_asr_text(_qwen_text(r))
             if txt:
