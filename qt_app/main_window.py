@@ -249,11 +249,22 @@ class MainWindow(FluentWindow):
             lambda: self.live_page.on_stop(),
             lambda: self.quick_page.shutdown(),
             lambda: self.translate_page.shutdown(),
+            lambda: self.plugins_page.shutdown(),
             lambda: (self._update_worker.isRunning() and self._update_worker.wait(2000)),
         ):
             try:
                 fn()
             except Exception:  # noqa: BLE001 — shutdown must never block exit
+                pass
+        # Backstop: wait on any QThread still running anywhere under the window
+        # (catches future/transient workers the per-page cleanup missed).
+        from PySide6.QtCore import QThread
+        for t in self.findChildren(QThread):
+            try:
+                if t.isRunning():
+                    t.requestInterruption()
+                    t.wait(2000)
+            except Exception:  # noqa: BLE001
                 pass
         super().closeEvent(event)
 

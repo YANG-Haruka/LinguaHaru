@@ -445,6 +445,26 @@ class PluginsPage(ScrollArea):
             if card.model_link is not None:
                 card.model_link.setText(card._current_model_text())
 
+    def shutdown(self):
+        """Wait for every background worker (disk-size probe, update check,
+        install, model download/delete) so closing the app doesn't destroy a
+        thread mid-run ('QThread: Destroyed while thread is still running')."""
+        workers = list(self._check_workers) + list(self._dl_workers)
+        if self._worker is not None:
+            workers.append(self._worker)
+        for card in self._opt_cards:
+            workers.extend(getattr(card, "_workers", []) or [])
+            sw = getattr(card, "_space_worker", None)
+            if sw is not None:
+                workers.append(sw)
+        for w in workers:
+            try:
+                if w is not None and w.isRunning():
+                    w.requestInterruption()
+                    w.wait(3000)
+            except RuntimeError:
+                pass   # C++ object already deleted
+
     def _start_update_check(self, card):
         """Ask PyPI (off the UI thread) whether this installed plugin has a
         newer version, and reveal the Upgrade button if so."""

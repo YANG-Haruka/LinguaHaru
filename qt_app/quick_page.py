@@ -546,7 +546,10 @@ class QuickPage(ScrollArea):
                 self._show_loading()
         except Exception:  # noqa: BLE001
             pass
-        self._stt = _RecognizeWorker(utt, _IN_RATE)
+        # Parent to the page so Qt owns it: a rapid next utterance replacing
+        # self._stt won't GC a still-running thread ("QThread: Destroyed while
+        # thread is still running").
+        self._stt = _RecognizeWorker(utt, _IN_RATE, self)
         self._stt.done.connect(self._on_recognized)
         self._stt.start()
 
