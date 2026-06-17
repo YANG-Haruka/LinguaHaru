@@ -693,7 +693,18 @@ $("stop-btn").onclick = async () => {
 
 let _progressES = null;
 function listenProgress(taskId) {
-  $("progress-wrap").hidden = false;
+  const wrap = $("progress-wrap");
+  wrap.hidden = false;
+  // Reset the dashboard so a previous run's numbers don't linger on screen.
+  ["m-files", "m-speed", "m-tokens", "m-eta", "m-threads"].forEach((id) => { $(id).textContent = "—"; });
+  $("progress-bar").style.width = "0%";
+  $("prog-ring").style.setProperty("--p", "0deg");
+  $("prog-pct").textContent = "0%";
+  $("progress-desc").textContent = "";
+  // Bring the dashboard into view — it sits below the upload form, so without
+  // this the user clicks 翻译 and sees nothing move (the Qt app switches to a
+  // full-screen progress view instead, which is why it felt like Web had none).
+  wrap.scrollIntoView({ behavior: "smooth", block: "center" });
   if (_progressES) { try { _progressES.close(); } catch (e) {} }   // don't leak a prior stream
   const es = new EventSource("/api/progress/" + taskId);
   _progressES = es;
@@ -707,6 +718,9 @@ function listenProgress(taskId) {
     // Parse the backend stats line into the dashboard metric cards.
     const desc = d.desc || "";
     const m = (re) => { const x = desc.match(re); return x ? x[1] : "—"; };
+    // File progress: "[2/3] name: ..." while running, "(2/3)" on the done line.
+    const fm = desc.match(/^\[(\d+)\/(\d+)\]/) || desc.match(/\((\d+)\/(\d+)\)/);
+    if (fm) $("m-files").textContent = fm[1] + "/" + fm[2];
     $("m-speed").textContent = m(/([\d.]+)\s*lines\/min/i);
     $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
     $("m-eta").textContent = m(/ETA\s+([\d:]+)/i);

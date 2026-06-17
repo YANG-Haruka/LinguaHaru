@@ -104,6 +104,7 @@
   "Failed": "失败",
   "Failed Requests": "失败请求数",
   "File Type": "文件类型",
+  "Files": "文件",
   "Files selected count": "已选 {count} 个文件：",
   "Generating output": "正在生成输出",
   "Generating translated PDF": "正在生成翻译后的PDF文件",
