@@ -1,10 +1,20 @@
 import logging
 import sys
 import os
+import threading
+import contextvars
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from colorama import Fore, Style, init
 
 init(autoreset=True)
+
+# The task whose per-project log the CURRENT execution context belongs to. Set at
+# the start of a translation and propagated into its ThreadPoolExecutor workers,
+# so concurrent translations each write to their OWN log file without interleaving
+# (the standard contextvars approach for per-request/per-task log isolation).
+_log_task = contextvars.ContextVar("log_task", default=None)
+
 
 class SimpleColoredFormatter(logging.Formatter):
     COLORS = {
@@ -21,16 +31,65 @@ class SimpleColoredFormatter(logging.Formatter):
         msg = super().format(record)
         return f"{log_color}[{levelname}] {msg}{Style.RESET_ALL}"
 
+
+_FILE_FMT = logging.Formatter(fmt='%(asctime)s - [%(levelname)s] - %(message)s',
+                              datefmt='%Y-%m-%d %H:%M:%S')
+
+
+class _TaskRoutingHandler(logging.Handler):
+    """Routes each log record to the file handler of the task bound to the
+    current context (``_log_task``). A record with no bound task is ignored here
+    (the console + system-log handlers still emit it). Thread-safe: several
+    translations can log concurrently, each to its own file, no interleaving."""
+
+    def __init__(self, level=logging.DEBUG):
+        super().__init__(level)
+        self._handlers = {}              # task_id -> FileHandler
+        self._lock = threading.Lock()
+        self.setFormatter(_FILE_FMT)
+
+    def open_task(self, task_id, path):
+        fh = logging.FileHandler(path, mode='a', encoding='utf-8')
+        fh.setLevel(self.level)
+        fh.setFormatter(self.formatter)
+        with self._lock:
+            old = self._handlers.pop(task_id, None)
+            self._handlers[task_id] = fh
+        if old:
+            old.close()
+
+    def close_task(self, task_id):
+        with self._lock:
+            fh = self._handlers.pop(task_id, None)
+        if fh:
+            fh.close()
+
+    def close(self):
+        """Close all per-task file handlers (called by logging.shutdown)."""
+        with self._lock:
+            handlers = list(self._handlers.values())
+            self._handlers.clear()
+        for fh in handlers:
+            try:
+                fh.close()
+            except Exception:  # noqa: BLE001
+                pass
+        super().close()
+
+    def emit(self, record):
+        tid = _log_task.get()
+        if tid is None:
+            return
+        with self._lock:
+            fh = self._handlers.get(tid)
+        if fh is not None:
+            fh.emit(record)             # FileHandler has its own lock
+
+
 class FileLogger:
     def __init__(self, name="app_logger", console_level=logging.INFO, file_level=logging.DEBUG):
-        """
-        Initialize the file logger with console and file handlers.
-        
-        Args:
-            name: Logger name
-            console_level: Logging level for console output
-            file_level: Logging level for file output
-        """
+        """Console (colored, INFO) + an always-on rotating system log + a
+        per-task routing handler (full DEBUG detail, isolated per translation)."""
         self.name = name
         self.console_level = console_level
         self.file_level = file_level
@@ -41,30 +100,28 @@ class FileLogger:
         # would otherwise re-print every app_logger line (incl. DEBUG API
         # request/response dumps) in the ugly default format + duplicate INFO.
         self.logger.propagate = False
-        self.file_handler = None          # per-project log (swapped per run)
-        self.current_log_file = None      # path of the active per-project log
+        self._routing = None             # _TaskRoutingHandler (per-project logs)
 
-        # Set up console handler + the always-on SYSTEM log (only once)
         if not self.logger.hasHandlers():
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(console_level)
-            console_formatter = SimpleColoredFormatter(fmt='%(message)s')
-            console_handler.setFormatter(console_formatter)
+            console_handler.setFormatter(SimpleColoredFormatter(fmt='%(message)s'))
             self.logger.addHandler(console_handler)
             self._setup_system_log()
+            self._routing = _TaskRoutingHandler(level=file_level)
+            self.logger.addHandler(self._routing)
 
         # Quiet noisy third-party loggers (some get pulled to DEBUG by the
         # speech stack's root basicConfig) so the console stays readable.
         for _noisy in ("httpx", "httpcore", "openai", "urllib3", "asyncio",
                        "modelscope", "funasr", "matplotlib", "numba"):
             logging.getLogger(_noisy).setLevel(logging.WARNING)
-    
+
     def _setup_system_log(self):
         """One always-on, size-bounded system log so a system-level error is
         always captured even when no translation is running. Kept simple: a
         single rotating file under data/log."""
         try:
-            from logging.handlers import RotatingFileHandler
             from core.paths import DATA_DIR
             log_dir = os.path.join(DATA_DIR, "log")
             os.makedirs(log_dir, exist_ok=True)
@@ -72,62 +129,50 @@ class FileLogger:
                 os.path.join(log_dir, "system.log"),
                 maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8")
             h.setLevel(logging.INFO)
-            h.setFormatter(logging.Formatter(
-                fmt='%(asctime)s - [%(levelname)s] - %(message)s',
-                datefmt='%Y-%m-%d %H:%M:%S'))
+            h.setFormatter(_FILE_FMT)
             self.logger.addHandler(h)
         except Exception:  # noqa: BLE001 — never let logging setup break startup
             pass
 
-    def create_file_log(self, filename, log_dir):
-        """
-        Create a new log file for the specified filename.
-        
-        Args:
-            filename: Name of the file being processed
-            
-        Returns:
-            Path to the created log file
-        """
-        # Remove existing file handler if present
-        if self.file_handler and self.file_handler in self.logger.handlers:
-            self.logger.removeHandler(self.file_handler)
-            self.file_handler.close()
-        
-        # Create log directory if it doesn't exist
-        log_dir = log_dir
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
-        
-        # Clean filename, remove unsafe characters
-        safe_filename = os.path.basename(filename)
-        # Remove characters that may cause invalid filenames
-        safe_filename = ''.join(c for c in safe_filename if c.isalnum() or c in '._- ')
-        
-        # Generate timestamp for log filename
-        current_time = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        log_file = os.path.join(log_dir, f"{current_time}_{safe_filename}.log")
-        
-        # Create new file handler
-        self.file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
-        self.file_handler.setLevel(self.file_level)
-        file_formatter = logging.Formatter(fmt='%(asctime)s - [%(levelname)s] - %(message)s', 
-                                           datefmt='%Y-%m-%d %H:%M:%S')
-        self.file_handler.setFormatter(file_formatter)
-        self.logger.addHandler(self.file_handler)
-        self.current_log_file = log_file
+    # --- per-task (per-project) logs ------------------------------------- #
+    def open_task_log(self, task_id, log_dir, filename):
+        """Start a per-project log file for ``task_id`` under ``log_dir`` (the
+        project's result folder). Returns the log file path."""
+        os.makedirs(log_dir, exist_ok=True)
+        safe = os.path.basename(filename)
+        safe = ''.join(c for c in safe if c.isalnum() or c in '._- ')
+        stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        path = os.path.join(log_dir, f"{stamp}_{safe}.log")
+        if self._routing is not None:
+            self._routing.open_task(task_id, path)
+        return path
 
-        self.logger.info(f"Started processing file: {safe_filename}")
-        return log_file
-    
+    def close_task_log(self, task_id):
+        if self._routing is not None:
+            self._routing.close_task(task_id)
+
+    @staticmethod
+    def bind_task(task_id):
+        """Bind this context (current thread) to ``task_id`` so its logs route to
+        that task's file. Returns a token for unbind_task()."""
+        return _log_task.set(task_id)
+
+    @staticmethod
+    def unbind_task(token):
+        try:
+            _log_task.reset(token)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @staticmethod
+    def worker_initializer(task_id):
+        """ThreadPoolExecutor initializer: bind each worker thread to the task so
+        segment-translation logs route to the task's file too."""
+        _log_task.set(task_id)
+
     def get_logger(self):
-        """
-        Get the configured logger instance.
-        
-        Returns:
-            Logger instance
-        """
         return self.logger
+
 
 # Create file logger instance
 file_logger = FileLogger(console_level=logging.INFO, file_level=logging.DEBUG)

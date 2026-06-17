@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import RLock
-from core.log_config import app_logger
+from core.log_config import app_logger, file_logger
 from .calculation_tokens import num_tokens_from_string
 from core.translation_history import TranslationHistoryManager, create_translation_record
 
@@ -139,13 +139,14 @@ class DocumentTranslator:
         return lang_code
 
     def _get_current_log_file_path(self):
-        """Get the current log file path"""
-        from core.log_config import file_logger
-        if hasattr(file_logger, 'current_log_file') and file_logger.current_log_file:
-            return file_logger.current_log_file
+        """This run's per-project log file (in the result folder), set by
+        process() when it opened the task log."""
+        path = getattr(self, "_task_log_path", None)
+        if path:
+            return path
         # Fallback: construct a reasonable path
         input_filename = os.path.basename(self.input_file_path)
-        return os.path.join(self.log_dir, f"{input_filename}.log")
+        return os.path.join(self.result_dir, f"{input_filename}.log")
 
     def _save_translation_summary(self, status, output_file_path=None,
                                   error_reason=None, error_category=None):
@@ -472,7 +473,10 @@ class DocumentTranslator:
                     continue
 
         # Translate segments in parallel
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
+        with ThreadPoolExecutor(
+                max_workers=self.num_threads,
+                initializer=file_logger.worker_initializer,
+                initargs=(self.translation_id,)) as executor:
             futures = []
             for seg in all_segments:
                 future = executor.submit(process_segment, seg)
@@ -735,7 +739,10 @@ class DocumentTranslator:
                     continue
 
         # Process failed segments in parallel
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
+        with ThreadPoolExecutor(
+                max_workers=self.num_threads,
+                initializer=file_logger.worker_initializer,
+                initargs=(self.translation_id,)) as executor:
             futures = []
             for seg in all_failed_segments:
                 future = executor.submit(process_failed_segment, seg, last_try)
@@ -1050,7 +1057,17 @@ class DocumentTranslator:
         even when the run does NOT finish: a fatal API error (HardApiError) or
         any unexpected exception -> a "failed" record (with the reason), a user
         stop -> a "stopped" record. Both keep enough info to resume later. The
-        exception is always re-raised so callers still see the failure."""
+        exception is always re-raised so callers still see the failure.
+
+        This is also where the per-project log is started: an isolated log file in
+        the result folder, bound to THIS task's context so its (and its worker
+        threads') logs route there even when several files translate at once."""
+        from core import log_config
+        flog = log_config.file_logger
+        self._task_log_path = flog.open_task_log(
+            self.translation_id, self.result_dir,
+            os.path.basename(self.input_file_path))
+        token = flog.bind_task(self.translation_id)
         try:
             return self._process_impl(file_name, file_extension, progress_callback)
         except HardApiError as e:
@@ -1070,6 +1087,9 @@ class DocumentTranslator:
                 app_logger.error(f"Translation failed: {e}")
                 self.save_failed_summary(error_reason=str(e))
             raise
+        finally:
+            flog.unbind_task(token)
+            flog.close_task_log(self.translation_id)
 
     def _process_impl(self, file_name, file_extension, progress_callback=None):
         """Main processing method"""
