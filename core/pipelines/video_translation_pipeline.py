@@ -420,6 +420,27 @@ _QWEN_LANG_CODE = {"Chinese": "zh", "English": "en", "Japanese": "ja",
                    "Korean": "ko", "Cantonese": "zh"}
 
 
+def _qwen_accel_kwargs():
+    """GPU acceleration kwargs for Qwen3-ASR load (per the official repo): bf16 +
+    FlashAttention 2 if flash-attn is installed, else PyTorch SDPA — both far
+    faster than the fp32/eager default. CPU keeps defaults. Returned separately
+    so we can retry without them if the installed qwen-asr/transformers rejects
+    a kwarg."""
+    if _stt_device() != "cuda":
+        return {}
+    kw = {}
+    try:
+        import torch
+        if torch.cuda.is_bf16_supported():
+            kw["dtype"] = torch.bfloat16
+    except Exception:  # noqa: BLE001
+        pass
+    import importlib.util
+    kw["attn_implementation"] = (
+        "flash_attention_2" if importlib.util.find_spec("flash_attn") else "sdpa")
+    return kw
+
+
 def _get_qwen(model_name):
     if model_name in _qwen_models:
         return _qwen_models[model_name]
@@ -427,15 +448,26 @@ def _get_qwen(model_name):
         if model_name not in _qwen_models:   # double-check inside the lock
             from qwen_asr import Qwen3ASRModel
             dm = "cuda:0" if _stt_device() == "cuda" else "cpu"
-            app_logger.info(f"Loading {model_name} on {dm} (downloads on first use)...")
-            # Local-first: skip the network metadata check when cached; fall back
-            # to a normal (downloading) load if offline-load isn't supported or
-            # the model isn't cached yet.
+            accel = _qwen_accel_kwargs()
+            app_logger.info(f"Loading {model_name} on {dm} "
+                            f"({accel.get('attn_implementation', 'default')}, "
+                            f"{'bf16' if accel.get('dtype') is not None else 'default dtype'})...")
+
+            def _load(extra):
+                # Local-first: skip the network metadata check when cached.
+                try:
+                    return Qwen3ASRModel.from_pretrained(
+                        model_name, device_map=dm, local_files_only=True, **extra)
+                except TypeError:
+                    raise   # bad kwarg -> let the caller retry with fewer
+                except Exception:  # noqa: BLE001 — not cached yet -> download
+                    return Qwen3ASRModel.from_pretrained(model_name, device_map=dm, **extra)
+
             try:
-                _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(
-                    model_name, device_map=dm, local_files_only=True)
-            except Exception:  # noqa: BLE001
-                _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(model_name, device_map=dm)
+                _qwen_models[model_name] = _load(accel)
+            except Exception as e:  # noqa: BLE001 — accel kwarg unsupported (old pkg / no flash)
+                app_logger.warning(f"Qwen3-ASR accel load failed ({e}); loading without it")
+                _qwen_models[model_name] = _load({})
     return _qwen_models[model_name]
 
 
@@ -610,7 +642,11 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
             spans.append((s_ms / 1000.0, e_ms / 1000.0))
 
     out = []
-    BATCH = 16
+    # Small batch so Pause/Stop take effect quickly: one model.transcribe() call
+    # is atomic and can't be interrupted, so a big batch = a long, uninterruptible
+    # chunk where pause appears dead. 4 keeps the GPU busy (bf16 makes each batch
+    # fast) while checking stop/pause roughly every few seconds of audio.
+    BATCH = 4
     total = len(chunks) or 1
     for i in range(0, len(chunks), BATCH):
         if check_stop:   # pause/stop between batches (see _transcribe_whisper)
