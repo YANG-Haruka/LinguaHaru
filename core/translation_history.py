@@ -111,7 +111,14 @@ class TranslationHistoryManager:
                 have = {r[1] for r in conn.execute("PRAGMA table_info(records)").fetchall()}
                 for col in _FIELDS:
                     if col not in have:
-                        conn.execute(f"ALTER TABLE records ADD COLUMN {col} TEXT")
+                        try:
+                            conn.execute(f"ALTER TABLE records ADD COLUMN {col} TEXT")
+                        except sqlite3.OperationalError as e:
+                            # Concurrent tasks may init the same DB at once: another
+                            # connection can add the column between our PRAGMA read
+                            # and this ALTER ("duplicate column name"). Harmless.
+                            if "duplicate column" not in str(e).lower():
+                                raise
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_start ON records(start_time)")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_ftype ON records(file_type)")
         except Exception as e:  # noqa: BLE001
