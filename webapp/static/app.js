@@ -881,6 +881,7 @@ function renderModules() {
     // Current model: a compact clickable chip that opens the picker modal.
     // Plugins without models (PDF) show a muted dash.
     const modelTd = document.createElement("td");
+    const modelMain = document.createElement("div");
     if (m.models && m.models.length) {
       const chip = document.createElement("button");
       chip.type = "button";
@@ -889,13 +890,20 @@ function renderModules() {
       const aff = document.createElement("span"); aff.className = "model-chip-aff"; aff.innerHTML = ICON.chevron;
       chip.append(txt, aff);
       chip.onclick = () => openPluginModelModal(m, chip, txt);
-      modelTd.appendChild(chip);
+      modelMain.appendChild(chip);
     } else if (m.fixed_model) {
       // Fixed (non-selectable) model, e.g. PDF's DocLayout — shown read-only.
-      modelTd.className = "plugin-sub"; modelTd.textContent = m.fixed_model;
+      modelMain.className = "plugin-sub"; modelMain.textContent = m.fixed_model;
     } else {
-      modelTd.className = "plugin-sub"; modelTd.textContent = "—";
+      modelMain.className = "plugin-sub"; modelMain.textContent = "—";
     }
+    modelTd.appendChild(modelMain);
+    // Disk-usage line (filled by loadModuleUsage): downloaded models + size.
+    const usageEl = document.createElement("div");
+    usageEl.className = "plugin-sub plugin-usage";
+    usageEl.dataset.plugin = m.name;
+    usageEl.style.marginTop = "4px";
+    modelTd.appendChild(usageEl);
 
     const statTd = document.createElement("td"); statTd.innerHTML = m.available ? pill("on", "已安装", ICON.check) : pill("off", "未安装", ICON.cross);
 
@@ -908,6 +916,34 @@ function renderModules() {
     tr.append(nameTd, modelTd, statTd, actTd);
     t.appendChild(tr);
     if (m.available) checkModuleUpdate(m.name, actTd, statTd);
+  }
+  loadModuleUsage();
+}
+
+function humanSize(n) {
+  let s = Number(n) || 0;
+  for (const u of ["B", "KB", "MB", "GB", "TB"]) {
+    if (s < 1024 || u === "TB") return (u === "B" ? s : s.toFixed(1)) + " " + u;
+    s /= 1024;
+  }
+}
+
+// Fill each plugin's disk-usage line (downloaded models + size) so the user can
+// manage space. Lazy (separate from bootstrap) so it never slows page load.
+async function loadModuleUsage() {
+  let data;
+  try { data = await api("/api/modules/usage"); } catch (e) { return; }
+  const usage = data.usage || {};
+  for (const el of document.querySelectorAll(".plugin-usage")) {
+    const u = usage[el.dataset.plugin];
+    if (!u) { el.textContent = ""; continue; }
+    if (!u.models || !u.models.length) {
+      el.textContent = _label("No Model Downloaded", "未下载模型");
+      continue;
+    }
+    const labels = u.models.map((s) => s.replace(/\s*[（(].*$/, "").trim()).join("、");
+    const shared = u.shared ? `（${_label("Shared", "共用")}）` : "";
+    el.textContent = `${_label("Disk Usage", "占用")} ${u.total_human}${shared} · ${labels}`;
   }
 }
 
@@ -1016,9 +1052,17 @@ async function moduleAction(name, action, btn, statTd) {
     btn.disabled = false;
     if (s.status === "done") {
       statTd.innerHTML = pill("on", "完成", ICON.check);
-      let msg = `${name} ${verb}完成 —— 请重启程序以生效。`;
-      if (action === "install") msg += " " + _label("Downloading Model", "正在下载模型…");
+      let msg;
+      if (action === "uninstall") {
+        msg = `${name} ${_label("Cleanup Done", "清理完成")}`;
+        if (s.freed_bytes > 0) msg += ` · ${_label("Freed", "已释放")} ${humanSize(s.freed_bytes)}`;
+        msg += " —— 请重启程序以生效。";
+      } else {
+        msg = `${name} ${verb}完成 —— 请重启程序以生效。`;
+        if (action === "install") msg += " " + _label("Downloading Model", "正在下载模型…");
+      }
       $("modules-status").textContent = msg;
+      loadModuleUsage();   // disk usage changed
     } else {
       statTd.innerHTML = pill("bad", "失败", ICON.cross);
       $("modules-status").textContent = `${name} 操作失败：` + (s.output || "").slice(-300);

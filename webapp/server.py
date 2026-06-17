@@ -1139,12 +1139,15 @@ MODULE_JOBS = {}  # name -> {"status": running|done|error, "output": str}
 
 def _run_module_job(name, action):
     from core.module_manager import install_module, upgrade_module
-    # Uninstall goes through optional_modules.uninstall_plugin so it removes only
-    # NON-shared deps and deletes non-shared models (shared STT stack is kept).
-    from core.optional_modules import uninstall_plugin
-    fn = {"install": install_module, "uninstall": uninstall_plugin,
-          "upgrade": upgrade_module}[action]
-    ok, out = fn(name)
+    freed = 0
+    if action == "uninstall":
+        # Shared-aware: removes only NON-shared deps + deletes non-shared models
+        # (shared STT stack is kept); reports freed disk space.
+        from core.optional_modules import uninstall_plugin
+        ok, out, freed = uninstall_plugin(name)
+    else:
+        fn = {"install": install_module, "upgrade": upgrade_module}[action]
+        ok, out = fn(name)
     # On a successful install, best-effort warm the plugin's DEFAULT model so the
     # user doesn't pay the download cost on first use. A just-pip-installed
     # package often can't be imported until restart, so swallow any failure —
@@ -1156,7 +1159,8 @@ def _run_module_job(name, action):
         except Exception:  # noqa: BLE001 — needs restart / import not ready yet
             pass
     with _TASKS_LOCK:
-        MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": out}
+        MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": out,
+                             "freed_bytes": freed}
 
 
 def _run_model_job(name, model_id):
@@ -1208,6 +1212,21 @@ def module_status_endpoint(name: str):
     avail = {m["name"]: m["available"] for m in module_status()}
     job["available"] = avail.get(name, False)
     return job
+
+
+@app.get("/api/modules/usage")
+def modules_usage():
+    """Per-plugin downloaded models + on-disk size, for the plugin cards' space
+    info. Computed lazily (not in bootstrap) so it never slows page load."""
+    from core.optional_modules import plugin_disk_usage
+    out = {}
+    for m in module_status():
+        u = plugin_disk_usage(m["name"])
+        out[m["name"]] = {
+            "total_human": u["total_human"], "total_bytes": u["total_bytes"],
+            "shared": u["shared"], "models": [x["label"] for x in u["models"]],
+        }
+    return {"usage": out}
 
 
 @app.get("/api/modules/update-check")

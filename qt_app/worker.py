@@ -37,6 +37,7 @@ class InstallWorker(QThread):
         super().__init__(parent)
         self.module_name = module_name
         self.action = action
+        self.freed_bytes = 0   # disk space freed by model cleanup (uninstall)
 
     def run(self):
         import sys
@@ -60,7 +61,8 @@ class InstallWorker(QThread):
             # Delete this plugin's NON-shared models (OCR/PDF); shared STT kept.
             try:
                 from core.optional_modules import cleanup_plugin_models
-                removed = cleanup_plugin_models(self.module_name)
+                removed, freed = cleanup_plugin_models(self.module_name)
+                self.freed_bytes = freed
                 if removed:
                     self.line.emit("Removed models: " + ", ".join(removed))
             except Exception as e:  # noqa: BLE001

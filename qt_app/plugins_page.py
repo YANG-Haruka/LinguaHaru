@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from qfluentwidgets import (
-    ScrollArea, TitleLabel, CaptionLabel, StrongBodyLabel,
+    ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel,
     SimpleCardWidget, CardWidget, IconWidget, FluentIcon, FlowLayout,
     PushButton, HyperlinkButton, InfoBadge, InfoBar, InfoBarPosition,
     RadioButton, MessageBoxBase,
@@ -49,7 +49,7 @@ _OPTIONAL_ICONS = {
 # room for the (optional) model line + download status so model and non-model
 # cards line up.
 CARD_WIDTH = 250
-CARD_HEIGHT = 188
+CARD_HEIGHT = 198   # room for the model line + a one-line disk-usage line
 
 
 class _BuiltinChip(SimpleCardWidget):
@@ -162,22 +162,25 @@ class OptionalPluginCard(CardWidget):
 
         layout.addStretch(1)
 
-        # One compact clickable model line (model plugins only). Clicking it
-        # opens a picker dialog; no inline ComboBox clutters the card.
+        # Model line (line 1): a clickable link for plugins with a selectable
+        # model, a plain (normal-color) label for a fixed model like PDF's
+        # DocLayout — same slot/position on every card.
         if self._models:
             self.model_link = HyperlinkButton("", "", self)
             self.model_link.setText(self._current_model_text())
             self.model_link.clicked.connect(self._open_model_picker)
             layout.addWidget(self.model_link, 0, Qt.AlignLeft)
-            self.status_caption = CaptionLabel("", self)
-            self.status_caption.setTextColor("#808080", "#a0a0a0")
-            layout.addWidget(self.status_caption)
         elif self._mod.get("fixed_model"):
-            # Fixed (non-selectable) model, e.g. PDF's DocLayout — read-only line
-            # so every plugin shows the model it uses.
-            fixed = CaptionLabel(f"{tr('Model', lang)}: {self._mod['fixed_model']}", self)
-            fixed.setTextColor("#808080", "#a0a0a0")
-            layout.addWidget(fixed, 0, Qt.AlignLeft)
+            layout.addWidget(
+                BodyLabel(f"{tr('Model', lang)}: {self._mod['fixed_model']}", self),
+                0, Qt.AlignLeft)
+        # Usage line (line 2, every card): downloaded models + disk space, so the
+        # user can manage space. Overwritten with the download status while a
+        # model is downloading, then refreshed.
+        self.status_caption = CaptionLabel("", self)
+        self.status_caption.setTextColor("#808080", "#a0a0a0")
+        layout.addWidget(self.status_caption)
+        self._refresh_usage()
 
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
@@ -219,6 +222,37 @@ class OptionalPluginCard(CardWidget):
                 break
         return f"{tr('Model', self._lang)}: {label}"
 
+    @staticmethod
+    def _short_label(label):
+        for ch in ("（", "("):
+            idx = (label or "").find(ch)
+            if idx > 0:
+                return label[:idx].strip()
+        return label
+
+    def _refresh_usage(self):
+        """Fill the usage line: downloaded models + disk space (so the user can
+        manage space). Shared STT models are flagged. Best-effort."""
+        if self.status_caption is None:
+            return
+        try:
+            from core.optional_modules import plugin_disk_usage
+            u = plugin_disk_usage(self._mod["name"])
+        except Exception:  # noqa: BLE001
+            return
+        if not u["models"]:
+            self.status_caption.setText(tr("No Model Downloaded", self._lang))
+            self.status_caption.setToolTip("")
+            return
+        labels = "、".join(self._short_label(m["label"]) for m in u["models"])
+        shared = f"（{tr('Shared', self._lang)}）" if u.get("shared") else ""
+        # Compact one-line summary: size (+shared) + models; full model list on
+        # hover so a long STT list never overflows the fixed-height card.
+        self.status_caption.setText(
+            f"{tr('Disk Usage', self._lang)} {u['total_human']}{shared} · {labels}")
+        self.status_caption.setToolTip(
+            "、".join(self._short_label(m["label"]) for m in u["models"]))
+
     def _open_model_picker(self):
         """Open the radio-button picker dialog; on confirm, switch the model."""
         if self._busy_download or not callable(self._on_select_model):
@@ -246,9 +280,8 @@ class OptionalPluginCard(CardWidget):
             self.model_link.setEnabled(True)
             self.model_link.setText(self._current_model_text())
         self._busy_download = False
-        if self.status_caption is not None:
-            self.status_caption.setText(
-                tr("Model Ready", self._lang) if ok else "")
+        # Refresh the usage line so the newly-downloaded model's size shows.
+        self._refresh_usage()
 
     def show_upgrade(self, current, latest):
         """Reveal the Upgrade button with the available version transition."""
@@ -403,10 +436,11 @@ class PluginsPage(ScrollArea):
         worker = InstallWorker(card._mod["name"], action=action)
         self._worker = worker
         worker.line.connect(lambda text: card.install_btn.setToolTip(text[-200:]))
-        worker.finished_ok.connect(lambda ok, msg, c=card, a=action: self._install_done(c, ok, msg, a))
+        worker.finished_ok.connect(
+            lambda ok, msg, c=card, a=action, w=worker: self._install_done(c, ok, msg, a, w))
         worker.start()
 
-    def _install_done(self, card, ok, msg, action="install"):
+    def _install_done(self, card, ok, msg, action="install", worker=None):
         # Re-probe availability so the card reflects reality.
         from importlib import reload
         import core.optional_modules as om
@@ -418,6 +452,18 @@ class PluginsPage(ScrollArea):
         if card.model_link is not None:
             card.model_link.setText(card._current_model_text())
         card.set_state(mod["available"])
+        card._refresh_usage()   # disk usage changed (model deleted / downloaded)
+        if action == "uninstall":
+            # Cleanup report: "Cleanup done, freed N MB" (freed=0 when everything
+            # was shared and kept).
+            from core.model_store import human_size
+            freed = getattr(worker, "freed_bytes", 0) or 0
+            note = f"{tr('Cleanup Done', self._lang)}"
+            if freed > 0:
+                note += f" · {tr('Freed', self._lang)} {human_size(freed)}"
+            self._info(card._mod["name"], note)
+            self._worker = None
+            return
         if ok and mod["available"]:
             if action == "upgrade":
                 card.hide_upgrade()  # now on the latest version

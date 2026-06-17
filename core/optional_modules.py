@@ -304,25 +304,65 @@ def _delete_pdf_model():
     return False
 
 
+def plugin_disk_usage(name):
+    """A plugin's DOWNLOADED models and the disk space they occupy, for space
+    management. Returns {'models': [{'id','label','bytes'}], 'total_bytes',
+    'total_human', 'shared': bool}. ``shared`` flags the STT plugins whose model
+    files are shared (so the size is one copy, not freed by uninstalling one)."""
+    from core import model_store
+    models, total, seen = [], 0, set()
+    if name == "PDF":
+        bd = os.path.join(model_store.current_dir(), "babeldoc")
+        sz = model_store._dir_size(bd) if os.path.isdir(bd) else 0
+        if sz:
+            models.append({"id": "doclayout", "label": "DocLayout", "bytes": sz})
+            total = sz
+    else:
+        for st in plugin_model_states(name):
+            if not st.get("downloaded"):
+                continue
+            sz = 0
+            for paths in model_store.find_model_dirs(_MODEL_PROBES.get(st["id"], [])).values():
+                for p in paths:
+                    if p in seen:
+                        continue
+                    seen.add(p)
+                    sz += model_store._dir_size(p)
+            if sz:
+                models.append({"id": st["id"], "label": st["label"], "bytes": sz})
+                total += sz
+    return {"models": models, "total_bytes": total,
+            "total_human": model_store.human_size(total),
+            "shared": name in _SHARED_MODEL_PLUGINS}
+
+
 def cleanup_plugin_models(name):
     """Delete a plugin's model files on uninstall, but ONLY when they aren't
     shared: OCR/PDF models are removed; the STT models are kept (Video/Audio +
-    Real-Time Voice + 翻译语音输入 share them). Returns the list of removed model
-    ids/labels. Never raises."""
-    removed = []
+    Real-Time Voice + 翻译语音输入 share them). Returns (removed_labels,
+    freed_bytes). Never raises."""
+    from core import model_store
+    removed, freed = [], 0
     try:
         if name == "Image OCR":
             for st in plugin_model_states(name):
-                if st.get("downloaded") and delete_plugin_model(name, st["id"]):
-                    removed.append(st["id"])
+                if not st.get("downloaded"):
+                    continue
+                sz = sum(model_store._dir_size(p)
+                         for paths in model_store.find_model_dirs(
+                             _MODEL_PROBES.get(st["id"], [])).values() for p in paths)
+                if delete_plugin_model(name, st["id"]):
+                    removed.append(st["id"]); freed += sz
         elif name == "PDF":
+            bd = os.path.join(model_store.current_dir(), "babeldoc")
+            sz = model_store._dir_size(bd) if os.path.isdir(bd) else 0
             if _delete_pdf_model():
-                removed.append("DocLayout")
+                removed.append("DocLayout"); freed += sz
         # STT plugins (_SHARED_MODEL_PLUGINS): models shared -> kept on purpose.
     except Exception as e:  # noqa: BLE001 — model cleanup must not fail the uninstall
         from core.log_config import app_logger
         app_logger.warning(f"cleanup_plugin_models({name}) failed: {e}")
-    return removed
+    return removed, freed
 
 
 def uninstall_plugin(name):
@@ -333,13 +373,13 @@ def uninstall_plugin(name):
       removed; the STT models stay because Video/Audio + Real-Time Voice +
       翻译语音输入 share them — they can be deleted in Model Management once no
       voice plugin needs them).
-    Returns (ok, message)."""
+    Returns (ok, message, freed_bytes)."""
     from core import module_manager
     ok, out = module_manager.uninstall_module(name)   # shared-aware pip removal
-    removed_models = cleanup_plugin_models(name)
+    removed_models, freed = cleanup_plugin_models(name)
     if removed_models:
         out = f"{out} | removed models: {', '.join(removed_models)}"
-    return ok, out
+    return ok, out, freed
 
 
 def module_status():
