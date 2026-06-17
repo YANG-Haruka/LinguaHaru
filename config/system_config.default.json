@@ -4,7 +4,7 @@
     "img_height": 250,
     "default_local_model": "",
     "default_online_model": "(Deepseek) DeepSeek-V4-Flash",
-    "max_token": 768,
+    "max_token": 4096,
     "max_retries": 4,
     "lan_mode": false,
     "default_online": true,

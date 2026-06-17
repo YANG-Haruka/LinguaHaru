@@ -6,5 +6,7 @@
     "presence_penalty": 0.0,
     "frequency_penalty": 0.0,
     "rpm": 500,
-    "thread_count": 8
+    "thread_count": 8,
+    "max_token": 4096,
+    "max_completion_tokens": 8192
 }

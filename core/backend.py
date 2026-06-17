@@ -157,7 +157,11 @@ CONFIG_PATH = SYSTEM_CONFIG
 _DEFAULT_CONFIG = {
     "lan_mode": False,
     "default_online": False,
-    "max_token": 768,
+    # Per-request input batch budget (prompt + source text). Bigger = fewer API
+    # requests for the same document, which cuts overhead and rate-limit/429
+    # pressure and gives the model more context. DeepSeek's 64K window leaves
+    # plenty of room; we keep output bounded via each model's max_completion_tokens.
+    "max_token": 4096,
     "max_retries": 4,
     "excel_mode_2": False,
     "excel_bilingual_mode": False,
@@ -319,6 +323,22 @@ def max_retries_for_model(model=None):
             except (TypeError, ValueError):
                 pass
     return read_config().get("max_retries", 4)
+
+
+def max_token_for_model(model=None):
+    """Per-request input batch budget. A per-model "max_token" in the interface
+    config wins (so a big-context model can batch more text per request); else the
+    global config "max_token" (default 4096). Bigger batches => far fewer requests
+    for a document => less rate-limit/429 pressure + better context."""
+    if model:
+        mc = read_api_config(model) or {}
+        mt = mc.get("max_token")
+        if mt:
+            try:
+                return max(128, int(mt))
+            except (TypeError, ValueError):
+                pass
+    return read_config().get("max_token", 4096)
 
 
 # --- Model list discovery (mirrors app.py startup logic) ---------------------

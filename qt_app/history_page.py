@@ -574,7 +574,7 @@ class HistoryPage(QWidget):
             file_path=src, model=model, use_online=use_online, api_key=api_key,
             src_lang=info.get("src_lang", rec.get("src_lang_display", "")),
             dst_lang=info.get("dst_lang", rec.get("dst_lang_display", "")),
-            max_token=info.get("max_token", config.get("max_token", 768)),
+            max_token=backend.max_token_for_model(model if use_online else None),
             max_retries=info.get("max_retries", config.get("max_retries", 4)),
             thread_count=info.get("thread_count")
             or backend.thread_count_for_mode(use_online, model),

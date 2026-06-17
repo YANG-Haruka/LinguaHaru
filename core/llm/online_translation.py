@@ -532,6 +532,11 @@ def translate_online(api_key, messages, model, mode_params=None):
     presence_penalty = model_config.get("presence_penalty")
     frequency_penalty = model_config.get("frequency_penalty")
     thinking_type = model_config.get("thinking_type")
+    # Output cap. With larger input batches the reply (a translation ~ as long as
+    # the source) can exceed a provider's small default (DeepSeek defaults to 4K),
+    # truncating the JSON and forcing a retry. Let a model raise it (DeepSeek max
+    # 8192). Only sent when configured, so providers that reject it are unaffected.
+    max_completion_tokens = model_config.get("max_completion_tokens")
 
     if not base_url or not api_model:
         app_logger.error(f"Invalid model config: {model}")
@@ -567,6 +572,11 @@ def translate_online(api_key, messages, model, mode_params=None):
         extra_body = {}
         
         # Add standard OpenAI parameters directly to params
+        if max_completion_tokens is not None:
+            try:
+                params["max_tokens"] = int(max_completion_tokens)
+            except (TypeError, ValueError):
+                pass
         if top_p is not None:
             params["top_p"] = top_p
         if temperature is not None:
