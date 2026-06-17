@@ -349,7 +349,7 @@
   "Clear History Note": "\"Clear history\" only removes the list; \"Clear history and files\" also deletes the output/log files those records produced (your original files are kept).",
   "Model Management Sub": "location · downloaded list · Video/Audio subtitle STT",
   "Mode Picker Hint": "Precise = faithful, low temperature (docs/technical/contracts, recommended); Natural = smoother; Polish = more idiomatic (with a second polish pass); Subtitle = short spoken lines for captions.",
-  "Advanced Options": "Advanced (tone / length / style guide)",
+  "Advanced Options": "Advanced",
   "Style Guide Label": "Style guide (free text, appended to the translation instruction)",
   "Style Guide Placeholder": "e.g. use Taiwan terminology; keep brand names in English",
   "Auto Glossary Label": "AI glossary extraction (auto-extract terms from the document before translating)",

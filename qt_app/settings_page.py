@@ -141,10 +141,16 @@ class SettingsPage(ScrollArea):
         self.card_run.body.addLayout(admin_row)
 
         # --- Card 2: Translation Options ---
+        # Three tiers: common (this card), Advanced, and Real-Time Voice — so the
+        # frequently-used options stay visible and the rest fold away.
         self.card_options = _CollapsibleCard(tr("Translation Options", lang))
         layout.addWidget(self.card_options)
-        gl_form = QFormLayout()
+        gl_form = QFormLayout()          # COMMON
         gl_form.setSpacing(12)
+        adv_form = QFormLayout()         # ADVANCED (tone/length/style + glossary/dedup/type-ctx)
+        adv_form.setSpacing(12)
+        live_form = QFormLayout()        # REAL-TIME VOICE (stream + VAD tuning)
+        live_form.setSpacing(12)
         # Translation mode (precise / natural / polish / subtitle)
         self._modes = []
         self.mode_combo = ComboBox()
@@ -168,7 +174,7 @@ class SettingsPage(ScrollArea):
         self.auto_glossary.checkedChanged.connect(
             lambda v: backend.set_config("auto_extract_glossary", v))
         self.auto_glossary_label = BodyLabel(tr("AI Glossary Extraction", lang))
-        gl_form.addRow(self.auto_glossary_label, self.auto_glossary)
+        adv_form.addRow(self.auto_glossary_label, self.auto_glossary)
         self.mask_ph = SwitchButton()
         self.mask_ph.setChecked(config.get("mask_placeholders", True))
         self.mask_ph.checkedChanged.connect(
@@ -180,13 +186,13 @@ class SettingsPage(ScrollArea):
         self.dedup_ctx.checkedChanged.connect(
             lambda v: backend.set_config("dedup_context", v))
         self.dedup_ctx_label = BodyLabel(tr("Context-aware Dedup", lang))
-        gl_form.addRow(self.dedup_ctx_label, self.dedup_ctx)
+        adv_form.addRow(self.dedup_ctx_label, self.dedup_ctx)
         self.with_ctx = SwitchButton()
         self.with_ctx.setChecked(config.get("translate_with_context", False))
         self.with_ctx.checkedChanged.connect(
             lambda v: backend.set_config("translate_with_context", v))
         self.with_ctx_label = BodyLabel(tr("Type Context", lang))
-        gl_form.addRow(self.with_ctx_label, self.with_ctx)
+        adv_form.addRow(self.with_ctx_label, self.with_ctx)
         # Advanced modifiers: tone / length / free-text style guide.
         self._tones = [("", tr("Default", lang)), ("formal", tr("Formal", lang)),
                        ("casual", tr("Casual", lang))]
@@ -200,7 +206,7 @@ class SettingsPage(ScrollArea):
         self.tone_combo.currentIndexChanged.connect(
             lambda i: backend.set_config("translation_tone", self._tones[i][0]) if 0 <= i < len(self._tones) else None)
         self.tone_label = BodyLabel(tr("Tone", lang))
-        gl_form.addRow(self.tone_label, self.tone_combo)
+        adv_form.addRow(self.tone_label, self.tone_combo)
         self._lengths = [("", tr("Default", lang)), ("keep", tr("Keep Length", lang)),
                          ("expand", tr("Allow Longer", lang)), ("short", tr("Concise", lang))]
         self.length_combo = ComboBox()
@@ -213,14 +219,14 @@ class SettingsPage(ScrollArea):
         self.length_combo.currentIndexChanged.connect(
             lambda i: backend.set_config("translation_length", self._lengths[i][0]) if 0 <= i < len(self._lengths) else None)
         self.length_label = BodyLabel(tr("Length", lang))
-        gl_form.addRow(self.length_label, self.length_combo)
+        adv_form.addRow(self.length_label, self.length_combo)
         self.style_edit = LineEdit()
         self.style_edit.setText(config.get("translation_style", ""))
         self.style_edit.setClearButtonEnabled(True)
         self.style_edit.editingFinished.connect(
             lambda: backend.set_config("translation_style", self.style_edit.text().strip()))
         self.style_label = BodyLabel(tr("Style Guide", lang))
-        gl_form.addRow(self.style_label, self.style_edit)
+        adv_form.addRow(self.style_label, self.style_edit)
         # Bilingual: bold + color the translated text so it stands out (subtitles).
         self.bi_bold = SwitchButton()
         self.bi_bold.setChecked(config.get("bilingual_bold", True))
@@ -248,7 +254,7 @@ class SettingsPage(ScrollArea):
         self.live_stream.checkedChanged.connect(
             lambda v: backend.set_config("live_stream_translation", v))
         self.live_stream_label = BodyLabel(tr("Stream Translation", lang))
-        gl_form.addRow(self.live_stream_label, self.live_stream)
+        live_form.addRow(self.live_stream_label, self.live_stream)
         # Real-time caption sentence-splitting: how long a pause ends an
         # utterance. Slower speakers need a longer pause so their natural
         # between-phrase gaps don't chop a sentence into fragments.
@@ -264,7 +270,7 @@ class SettingsPage(ScrollArea):
         self.hang_combo.currentIndexChanged.connect(
             lambda i: backend.set_config("live_vad_hang_ms", int(self._hangs[i][0])) if 0 <= i < len(self._hangs) else None)
         self.hang_label = BodyLabel(tr("Segmentation Pause", lang))
-        gl_form.addRow(self.hang_label, self.hang_combo)
+        live_form.addRow(self.hang_label, self.hang_combo)
         # Mic sensitivity (onset / neural-VAD threshold).
         self._sens = [("high", tr("Sens High", lang)), ("standard", tr("Sens Standard", lang)),
                       ("low", tr("Sens Low", lang))]
@@ -278,7 +284,7 @@ class SettingsPage(ScrollArea):
         self.sens_combo.currentIndexChanged.connect(
             lambda i: backend.set_config("live_vad_sensitivity", self._sens[i][0]) if 0 <= i < len(self._sens) else None)
         self.sens_label = BodyLabel(tr("Mic Sensitivity", lang))
-        gl_form.addRow(self.sens_label, self.sens_combo)
+        live_form.addRow(self.sens_label, self.sens_combo)
         # Force-cut ceiling: hard cap on one utterance's length.
         self._maxsegs = [("15000", tr("MaxSeg 15s", lang)), ("30000", tr("MaxSeg 30s", lang)),
                          ("60000", tr("MaxSeg 60s", lang))]
@@ -292,8 +298,18 @@ class SettingsPage(ScrollArea):
         self.maxseg_combo.currentIndexChanged.connect(
             lambda i: backend.set_config("live_vad_max_seg_ms", int(self._maxsegs[i][0])) if 0 <= i < len(self._maxsegs) else None)
         self.maxseg_label = BodyLabel(tr("Force Cut", lang))
-        gl_form.addRow(self.maxseg_label, self.maxseg_combo)
+        live_form.addRow(self.maxseg_label, self.maxseg_combo)
         self.card_options.body.addLayout(gl_form)
+
+        # --- Card 2b: Advanced translation options (folded) ---
+        self.card_advanced = _CollapsibleCard(tr("Advanced Options", lang))
+        layout.addWidget(self.card_advanced)
+        self.card_advanced.body.addLayout(adv_form)
+
+        # --- Card 2c: Real-Time Voice settings (folded) ---
+        self.card_live = _CollapsibleCard(tr("Real-Time Voice", lang))
+        layout.addWidget(self.card_live)
+        self.card_live.body.addLayout(live_form)
 
         # --- Card 3: Data & Storage (output folder + history retention/clear) ---
         self.card_data = _CollapsibleCard(tr("Data & Storage", lang))
@@ -762,6 +778,8 @@ class SettingsPage(ScrollArea):
         self.lan_hint.setText(tr("LAN access hint", lang))
         self.lan_admin_label.setText(tr("LAN admin password", lang))
         self.card_options.set_title(tr("Translation Options", lang))
+        self.card_advanced.set_title(tr("Advanced Options", lang))
+        self.card_live.set_title(tr("Real-Time Voice", lang))
         self.mode_label.setText(tr("Translation Mode", lang))
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
         self.mask_ph_label.setText(tr("Placeholder Protection", lang))

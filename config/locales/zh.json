@@ -348,7 +348,7 @@
   "Clear History Note": "「清空历史记录」仅删除列表；「清空历史及相关文件」会同时删除这些记录生成的译文/日志文件（不会删除你的原始文件）。",
   "Model Management Sub": "模型位置 · 已下载列表 · 视频/音频字幕 STT",
   "Mode Picker Hint": "精准=忠实低温（文档/技术/合同，推荐）；自然=更通顺；润色=更地道（含二次润色）；字幕精简=短句口语，适合字幕。",
-  "Advanced Options": "高级（语气 / 长度 / 风格指南）",
+  "Advanced Options": "高级",
   "Style Guide Label": "风格指南（自由填写，会附加到翻译指令）",
   "Style Guide Placeholder": "例如：使用台湾用语；保持品牌名英文不译",
   "Auto Glossary Label": "AI 术语提取（翻译前自动从文档抽取术语表）",

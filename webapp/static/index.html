@@ -551,12 +551,25 @@
       <details class="card set-card">
         <summary><span class="set-card-title" data-i18n="Translation Options">翻译选项</span><span class="set-card-sub" data-i18n="Translation Options Sub">AI 术语提取 · 占位符保护 · 上下文区分去重</span></summary>
         <div class="set-card-body">
+          <!-- COMMON: mode, placeholder protection, bilingual style. Each option's
+               explanation is a hover tooltip (data-i18n-title) — short labels keep
+               the panel clean; see the UI hint rule. -->
           <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Mode" data-i18n-title="Translation Mode Tip">翻译模式</span>
             <select id="set-translation-mode" style="width:auto"></select>
           </label>
-          <div class="muted" style="margin-bottom:12px; font-size:0.8rem" data-i18n="Mode Picker Hint">精准=忠实低温（文档/技术/合同，推荐）；自然=更通顺；润色=更地道（含二次润色）；字幕精简=短句口语，适合字幕。</div>
-          <details style="margin-bottom:12px">
-            <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem" data-i18n="Advanced Options">高级（语气 / 长度 / 风格指南）</summary>
+          <label class="check"><input type="checkbox" id="set-mask-ph" /> <span data-i18n="Placeholder Protection" data-i18n-title="Placeholder Protection Tip">占位符保护</span></label>
+          <div style="margin-top:12px; display:flex; gap:18px; align-items:center; flex-wrap:wrap">
+            <label class="check" style="margin:0"><input type="checkbox" id="set-bi-bold" /> <span data-i18n="Bilingual Bold" data-i18n-title="Bilingual Bold Tip">双语对照：译文加粗</span></label>
+            <label style="display:flex; align-items:center; gap:8px; margin:0; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Color" data-i18n-title="Translation Color Tip">译文颜色</span>
+              <select id="set-bi-color" style="width:auto">
+                <option value="" data-i18n="None">无</option><option value="C00000" data-i18n="Red">红</option><option value="1F4E79" data-i18n="Blue">蓝</option><option value="2E7D32" data-i18n="Green">绿</option><option value="B36B00" data-i18n="Orange">橙</option>
+              </select>
+            </label>
+          </div>
+
+          <!-- ADVANCED: tone / length / style + glossary / dedup / type-context. -->
+          <details style="margin-top:14px">
+            <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem" data-i18n="Advanced Options">高级</summary>
             <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px">
               <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Tone" data-i18n-title="Tone Tip">语气</span>
                 <select id="set-tone" style="width:auto"><option value="" data-i18n="Default">默认</option><option value="formal" data-i18n="Formal">正式</option><option value="casual" data-i18n="Casual">口语</option></select>
@@ -567,53 +580,47 @@
               <label style="display:flex; flex-direction:column; gap:4px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Style Guide Label">风格指南（自由填写，会附加到翻译指令）</span>
                 <textarea id="set-style" rows="2" data-i18n-ph="Style Guide Placeholder" placeholder="例如：使用台湾用语；保持品牌名英文不译" style="resize:vertical"></textarea>
               </label>
+              <label class="check"><input type="checkbox" id="set-auto-glossary" /> <span data-i18n="AI Glossary Extraction" data-i18n-title="AI Glossary Extraction Tip">AI 术语提取</span></label>
+              <label class="check"><input type="checkbox" id="set-dedup-context" /> <span data-i18n="Context-aware Dedup" data-i18n-title="Context-aware Dedup Tip">上下文区分去重</span></label>
+              <label class="check"><input type="checkbox" id="set-with-context" /> <span data-i18n="Type Context" data-i18n-title="Type Context Tip">附带类型上下文（实验）</span></label>
             </div>
           </details>
-          <label class="check"><input type="checkbox" id="set-auto-glossary" /> <span data-i18n="Auto Glossary Label">AI 术语提取（翻译前自动从文档抽取术语表）</span></label>
-          <label class="check" style="margin-top:10px"><input type="checkbox" id="set-mask-ph" /> <span data-i18n="Placeholder Protection Label">占位符保护（翻译前屏蔽 %s / ${var} / {占位符}，避免被改写；推荐开启）</span></label>
-          <label class="check" style="margin-top:10px"><input type="checkbox" id="set-dedup-context" /> <span data-i18n="Context Dedup Label">上下文区分去重（相同文本但不同位置/类型分别翻译，更准但更费 token）</span></label>
-          <label class="check" style="margin-top:10px"><input type="checkbox" id="set-with-context" /> <span data-i18n="Type Context Label">附带类型上下文（实验：把每段的类型作为消歧提示发给模型，更费 token）</span></label>
-          <div style="margin-top:12px; display:flex; gap:18px; align-items:center; flex-wrap:wrap">
-            <label class="check" style="margin:0"><input type="checkbox" id="set-bi-bold" /> <span data-i18n="Bilingual Bold Label">双语对照：译文加粗</span></label>
-            <label style="display:flex; align-items:center; gap:8px; margin:0; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Color" data-i18n-title="Translation Color Tip">译文颜色</span>
-              <select id="set-bi-color" style="width:auto">
-                <option value="" data-i18n="None">无</option><option value="C00000" data-i18n="Red">红</option><option value="1F4E79" data-i18n="Blue">蓝</option><option value="2E7D32" data-i18n="Green">绿</option><option value="B36B00" data-i18n="Orange">橙</option>
-              </select>
-            </label>
-          </div>
-          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Bilingual Style Note">仅在「双语对照」翻译时生效（字幕 SRT/VTT；Word/网页等格式后续支持）。</div>
-          <label class="check" style="margin-top:12px"><input type="checkbox" id="set-live-stream" /> <span data-i18n="Live Stream Label">实时语音：流式译文（译文逐字蹦出，仅在线模型）</span></label>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Web Realtime VAD">Web 实时语音 VAD</span>
-            <select id="set-web-vad" style="width:auto">
-              <option value="energy" data-i18n="VAD Energy">能量（默认·延迟最低·抗噪一般）</option>
-              <option value="silero" data-i18n="VAD Silero">Silero 神经（抗噪更强·首次需联网加载）</option>
-            </select>
-          </label>
-          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Web VAD Note">仅影响 Web 端实时语音断句；Qt 端固定使用 TEN-VAD。</div>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Segmentation Pause" data-i18n-title="Segmentation Pause Tip">实时语音断句停顿</span>
-            <select id="set-vad-hang" style="width:auto">
-              <option value="600" data-i18n="Hang Sensitive">灵敏（停顿短就断句·延迟最低）</option>
-              <option value="900" data-i18n="Hang Standard">标准（推荐）</option>
-              <option value="1200" data-i18n="Hang Relaxed">宽松（说话慢·不易被切断）</option>
-              <option value="1600" data-i18n="Hang Very Relaxed">很宽松（停顿很久才断句）</option>
-            </select>
-          </label>
-          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Hang Note">停顿多久算一句结束。说话慢、句间停顿多时调大，避免一句被切成几段（下次开始识别时生效）。</div>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Mic Sensitivity" data-i18n-title="Mic Sensitivity Tip">麦克风灵敏度</span>
-            <select id="set-vad-sens" style="width:auto">
-              <option value="high" data-i18n="Sens High">高（拾取轻声·安静环境）</option>
-              <option value="standard" data-i18n="Sens Standard">标准（推荐）</option>
-              <option value="low" data-i18n="Sens Low">低（只收大声·嘈杂环境）</option>
-            </select>
-          </label>
-          <label style="display:flex; align-items:center; gap:8px; margin-top:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Force Cut" data-i18n-title="Force Cut Tip">强制断句上限</span>
-            <select id="set-vad-maxseg" style="width:auto">
-              <option value="15000" data-i18n="MaxSeg 15s">15 秒</option>
-              <option value="30000" data-i18n="MaxSeg 30s">30 秒（推荐）</option>
-              <option value="60000" data-i18n="MaxSeg 60s">60 秒</option>
-            </select>
-          </label>
-          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="MaxSeg Note">一句最长说多久就强制断一次（即使没停顿），防止超长不断句。</div>
+
+          <!-- REAL-TIME VOICE: its own group (not really a translation option). -->
+          <details style="margin-top:12px">
+            <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem" data-i18n="Real-Time Voice">实时语音</summary>
+            <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px">
+              <label class="check"><input type="checkbox" id="set-live-stream" /> <span data-i18n="Stream Translation" data-i18n-title="Stream Translation Tip">实时语音：流式译文</span></label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Web Realtime VAD" data-i18n-title="Web VAD Note">Web 实时语音 VAD</span>
+                <select id="set-web-vad" style="width:auto">
+                  <option value="energy" data-i18n="VAD Energy">能量（默认·延迟最低·抗噪一般）</option>
+                  <option value="silero" data-i18n="VAD Silero">Silero 神经（抗噪更强·首次需联网加载）</option>
+                </select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Segmentation Pause" data-i18n-title="Segmentation Pause Tip">实时语音断句停顿</span>
+                <select id="set-vad-hang" style="width:auto">
+                  <option value="600" data-i18n="Hang Sensitive">灵敏（停顿短就断句·延迟最低）</option>
+                  <option value="900" data-i18n="Hang Standard">标准（推荐）</option>
+                  <option value="1200" data-i18n="Hang Relaxed">宽松（说话慢·不易被切断）</option>
+                  <option value="1600" data-i18n="Hang Very Relaxed">很宽松（停顿很久才断句）</option>
+                </select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Mic Sensitivity" data-i18n-title="Mic Sensitivity Tip">麦克风灵敏度</span>
+                <select id="set-vad-sens" style="width:auto">
+                  <option value="high" data-i18n="Sens High">高（拾取轻声·安静环境）</option>
+                  <option value="standard" data-i18n="Sens Standard">标准（推荐）</option>
+                  <option value="low" data-i18n="Sens Low">低（只收大声·嘈杂环境）</option>
+                </select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Force Cut" data-i18n-title="Force Cut Tip">强制断句上限</span>
+                <select id="set-vad-maxseg" style="width:auto">
+                  <option value="15000" data-i18n="MaxSeg 15s">15 秒</option>
+                  <option value="30000" data-i18n="MaxSeg 30s">30 秒（推荐）</option>
+                  <option value="60000" data-i18n="MaxSeg 60s">60 秒</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </div>
       </details>
       <details class="card set-card">
