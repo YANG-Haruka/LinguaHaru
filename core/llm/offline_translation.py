@@ -56,10 +56,11 @@ def _detect_lm_studio_port():
     # First try to get the port from lms server status command
     try:
         result = subprocess.run(
-            ['lms', 'server', 'status'], 
-            capture_output=True, 
-            text=True, 
+            ['lms', 'server', 'status'],
+            capture_output=True,
+            text=True,
             check=False,
+            timeout=3,   # the `lms` CLI can hang; never block startup on it
         )
         
         if result.returncode == 0:
@@ -92,7 +93,7 @@ def _detect_lm_studio_port():
         try:
             # Try to connect to the port
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(1)
+            sock.settimeout(0.6)
             result = sock.connect_ex((LM_STUDIO_HOST, int(port)))
             sock.close()
             
@@ -354,8 +355,9 @@ def fix_json_format(text):
         # Last resort: wrap everything in a JSON object
         return json.dumps({"translated_text": text}, ensure_ascii=False)
 
-def is_ollama_running(timeout=1):
-    """Check if Ollama service is running by attempting to connect to its API port."""
+def is_ollama_running(timeout=0.6):
+    """Check if Ollama service is running by attempting to connect to its API port.
+    Short localhost timeout so a one-time startup probe doesn't stall the UI."""
     try:
         port_int = int(OLLAMA_PORT)
         
@@ -368,7 +370,7 @@ def is_ollama_running(timeout=1):
         app_logger.debug(f"Error checking Ollama service: {e}")
         return False
 
-def is_lm_studio_running(timeout=1):
+def is_lm_studio_running(timeout=0.6):
     """Check if LM Studio service is running by attempting to connect to its API port."""
     # Lazy detection of LM Studio port
     _detect_lm_studio_port()
