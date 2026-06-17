@@ -513,17 +513,22 @@ class PluginsPage(ScrollArea):
             card.model_link.setText(card._current_model_text())
         card.set_state(mod["available"])
         card._refresh_usage()   # disk usage changed (model deleted / downloaded)
+        from core.log_config import system_event
+        from core.model_store import human_size
         if action == "uninstall":
             # Cleanup report: "Cleanup done, freed N MB" (freed=0 when everything
             # was shared and kept).
-            from core.model_store import human_size
             freed = getattr(worker, "freed_bytes", 0) or 0
             note = f"{tr('Cleanup Done', self._lang)}"
             if freed > 0:
                 note += f" · {tr('Freed', self._lang)} {human_size(freed)}"
             self._info(card._mod["name"], note)
+            system_event(f"Plugin uninstall: {card._mod['name']}"
+                         + (f" | freed {human_size(freed)}" if freed else ""))
             self._worker = None
             return
+        if ok and mod["available"]:
+            system_event(f"Plugin {action}: {card._mod['name']}")
         if ok and mod["available"]:
             if action == "upgrade":
                 card.hide_upgrade()  # now on the latest version

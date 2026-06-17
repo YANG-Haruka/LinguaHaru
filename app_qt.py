@@ -74,6 +74,14 @@ def main():
 
     _install_qt_log_filter()
 
+    # Record uncaught exceptions (main + worker threads) in the system log.
+    try:
+        from core.log_config import install_excepthooks, system_event
+        install_excepthooks()
+        system_event("LinguaHaru desktop starting")
+    except Exception:  # noqa: BLE001
+        pass
+
     # Recover history rows left "running" by a previous crash / force-quit:
     # flip them to "interrupted" so they show up (and can be continued).
     try:

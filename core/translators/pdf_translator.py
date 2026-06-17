@@ -34,6 +34,12 @@ from core.engine.translation_checker import clean_json
 from core.log_config import app_logger
 from core import model_store
 
+# Only ONE PDF at a time may claim the per-project log "fallback" (BabelDOC's
+# internal threads carry no task context). A concurrent PDF skips it (its
+# babeldoc warnings still reach system.log) rather than corrupting the first
+# PDF's log — and without blocking, so the 2nd PDF isn't stalled.
+_BABELDOC_FALLBACK_LOCK = threading.Lock()
+
 # Redirect BabelDOC's hardcoded ~/.cache/babeldoc into the unified models dir
 # BEFORE init / first download, so the PDF layout model + fonts live alongside
 # the other engines' models (data/models, or the user-chosen location).
@@ -429,12 +435,16 @@ class PdfTranslator(DocumentTranslator):
             f"(workers={self.num_threads}): {self.input_file_path}"
         )
 
-        # Capture BabelDOC's own logs into THIS project's log: route its logger
-        # into our per-task + system logs, and set a fallback task so its internal
-        # worker threads (which don't carry our contextvar) land in this file too.
+        # Capture BabelDOC's own logs: always route its logger into the system
+        # log (WARNING+) so failures are monitorable. To also land its internal
+        # worker threads' logs in THIS project's log, claim the fallback — but
+        # only if no other PDF holds it (non-blocking), so concurrent PDFs never
+        # corrupt each other's log.
         from core import log_config
         log_config.file_logger.attach_to_logger("babeldoc")
-        log_config.file_logger.set_fallback_task(self.translation_id)
+        got_fallback = _BABELDOC_FALLBACK_LOCK.acquire(blocking=False)
+        if got_fallback:
+            log_config.file_logger.set_fallback_task(self.translation_id)
 
         try:
             stages = get_translation_stage(config)
@@ -461,7 +471,9 @@ class PdfTranslator(DocumentTranslator):
             app_logger.error(f"PDF translation failed: {e}")
             raise
         finally:
-            log_config.file_logger.clear_fallback_task()
+            if got_fallback:
+                log_config.file_logger.clear_fallback_task()
+                _BABELDOC_FALLBACK_LOCK.release()
             self.cleanup()
 
         if progress_callback:

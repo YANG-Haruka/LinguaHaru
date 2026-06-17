@@ -3,6 +3,7 @@ import shutil
 import json
 import time
 import uuid
+import logging
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import RLock
@@ -1076,15 +1077,29 @@ class DocumentTranslator:
         threads') logs route there even when several files translate at once."""
         from core import log_config
         flog = log_config.file_logger
-        self._task_log_path = flog.open_task_log(
-            self.translation_id, self.result_dir,
-            os.path.basename(self.input_file_path))
+        base = os.path.basename(self.input_file_path)
+        self._task_log_path = flog.open_task_log(self.translation_id, self.result_dir, base)
         token = flog.bind_task(self.translation_id)
+        # One standardized run-start line (project + system log) — no source text.
+        log_config.system_event(
+            f"Run start: {base} [{file_extension}] {self.src_lang}->{self.dst_lang} | "
+            f"{self.model} ({'online' if self.use_online else 'offline'}) | "
+            f"threads={self.num_threads} max_token={self.max_token} | out={self.result_dir}")
+        start_t = time.time()
         try:
-            return self._process_impl(file_name, file_extension, progress_callback)
+            result = self._process_impl(file_name, file_extension, progress_callback)
+            out = result[0] if isinstance(result, (tuple, list)) else result
+            missing = result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
+            log_config.system_event(
+                f"Run finish: {base} | success | {int(time.time() - start_t)}s | "
+                f"tokens={self.total_tokens} | missing={len(missing or [])} | "
+                f"out={os.path.basename(str(out))}")
+            return result
         except HardApiError as e:
             category = getattr(e, "category", "api_error")
-            app_logger.error(f"Translation aborted [{category}]: {e}")
+            log_config.system_event(
+                f"Run finish: {base} | aborted [{category}] | {int(time.time()-start_t)}s | "
+                f"tokens={self.total_tokens}", level=logging.ERROR)
             self.save_failed_summary(error_reason=str(e), error_category=category)
             raise
         except BaseException as e:  # noqa: BLE001 — record, then re-raise
@@ -1093,10 +1108,13 @@ class DocumentTranslator:
             # backend (Qt _StopRequested, Web RuntimeError("__stopped__")).
             if (type(e).__name__ in ("_StopRequested", "StopTranslationException")
                     or "__stopped__" in str(e)):
-                app_logger.info("Translation stopped by user; saving resumable record")
+                log_config.system_event(f"Run finish: {base} | stopped by user | "
+                                        f"{int(time.time()-start_t)}s")
                 self.save_stopped_summary()
             else:
-                app_logger.error(f"Translation failed: {e}")
+                log_config.system_event(
+                    f"Run finish: {base} | failed | {int(time.time()-start_t)}s | {e}",
+                    level=logging.ERROR)
                 self.save_failed_summary(error_reason=str(e))
             raise
         finally:

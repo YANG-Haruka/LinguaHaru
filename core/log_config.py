@@ -225,3 +225,32 @@ def system_event(msg, level=logging.INFO):
     Flagged so it passes the system-log filter; also appears in the console and
     (if a task is bound) the project log."""
     app_logger.log(level, msg, extra={"sysevent": True})
+
+
+def install_excepthooks():
+    """Record otherwise-uncaught exceptions (main thread + worker threads) in the
+    system log so a crash is always reconstructable. Chains to the originals so
+    the normal traceback still prints. Idempotent."""
+    import traceback
+    if getattr(install_excepthooks, "_done", False):
+        return
+    install_excepthooks._done = True
+    _orig = sys.excepthook
+
+    def _hook(exc_type, exc, tb):
+        try:
+            system_event("Uncaught exception:\n" + "".join(
+                traceback.format_exception(exc_type, exc, tb)).strip(), level=logging.ERROR)
+        except Exception:  # noqa: BLE001
+            pass
+        _orig(exc_type, exc, tb)
+    sys.excepthook = _hook
+
+    def _thook(args):
+        try:
+            system_event(f"Uncaught exception in thread {args.thread.name}:\n" + "".join(
+                traceback.format_exception(args.exc_type, args.exc_value,
+                                           args.exc_traceback)).strip(), level=logging.ERROR)
+        except Exception:  # noqa: BLE001
+            pass
+    threading.excepthook = _thook

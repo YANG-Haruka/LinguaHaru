@@ -76,6 +76,15 @@ def _recover_interrupted_history():
         run_retention()   # apply log + result disk retention
     except Exception:  # noqa: BLE001
         pass
+    try:
+        import logging as _lg
+        from core.log_config import install_excepthooks, file_logger, system_event
+        install_excepthooks()
+        # uvicorn server errors -> system log (NOT uvicorn.access — too noisy).
+        file_logger.attach_to_logger("uvicorn.error", _lg.WARNING)
+        system_event("LinguaHaru web server started")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def server_mode_on():
@@ -817,6 +826,12 @@ async def translate(
         "excel_bilingual_mode", "word_bilingual_mode", "pdf_bilingual_mode",
         "subtitle_bilingual_mode", "txt_bilingual_mode", "md_bilingual_mode",
         "epub_bilingual_mode", "html_bilingual_mode")}
+    # System-log the enqueue (no source text): short ids, file count, model, langs.
+    from core.log_config import system_event
+    system_event(f"Web task {task_id[:6]} (session {session_id[:6]}): "
+                 f"{len(dests)} file(s), {written // 1024} KB, "
+                 f"{model} ({'online' if use_online else 'offline'}), "
+                 f"{src_lang}->{dst_lang}")
     threading.Thread(target=_run_translation, args=(
         task_id, session_id, dests, model, use_online, src_lang, dst_lang,
         glossary, flags, ui_lang), daemon=True).start()
@@ -1167,6 +1182,11 @@ def _run_module_job(name, action):
             download_plugin_model(name)
         except Exception:  # noqa: BLE001 — needs restart / import not ready yet
             pass
+    if ok:
+        from core.log_config import system_event
+        from core.model_store import human_size
+        extra = f" | freed {human_size(freed)}" if (action == "uninstall" and freed) else ""
+        system_event(f"Plugin {action}: {name}{extra}")
     with _TASKS_LOCK:
         MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": out,
                              "freed_bytes": freed}
