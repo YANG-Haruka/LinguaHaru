@@ -103,6 +103,19 @@ def _get_ocr_engine(src_lang=None):
         return _load_ocr_engine(key, lang, size)
 
 
+def _paddle_device():
+    """Use the GPU for PaddleOCR when a CUDA paddle build is present. The default
+    pip `paddlepaddle` is CPU-only — install `paddlepaddle-gpu` (matching your
+    CUDA) to make OCR run on the GPU. Harmless on the CPU build (returns 'cpu')."""
+    try:
+        import paddle
+        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+            return "gpu"
+    except Exception:  # noqa: BLE001
+        pass
+    return "cpu"
+
+
 def _load_ocr_engine(key, lang, size):
     try:
         # DLL load-order fix: paddle's oneDNN/MKL DLLs break ctranslate2
@@ -115,6 +128,9 @@ def _load_ocr_engine(key, lang, size):
         from paddleocr import PaddleOCR
         common = dict(use_doc_orientation_classify=False, use_doc_unwarping=False,
                       use_textline_orientation=True,
+                      # Run on the GPU when a CUDA paddle build is installed
+                      # (much faster); CPU build -> "cpu" (unchanged).
+                      device=_paddle_device(),
                       # paddle 3.3.1 oneDNN hits an unimplemented PIR op on
                       # Windows CPU (ConvertPirAttribute2RuntimeAttribute)
                       enable_mkldnn=False)
