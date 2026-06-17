@@ -730,11 +730,21 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
 #history-table .hist-row { cursor: pointer; }
 #history-table .hist-row.expanded { background: var(--surface-2); }
 #history-table .hist-detail td { background: var(--surface-2); padding: 0; }
-.hist-detail-box { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
-  justify-content: space-between; padding: 12px 16px; }
+.hist-detail-box { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; }
 .hist-detail-info { display: grid; gap: 3px; font-size: 0.84rem; color: var(--muted); min-width: 240px; }
 .hist-detail-info b { color: var(--text); font-weight: 500; }
-.hist-detail-acts { display: flex; gap: 8px; flex-wrap: wrap; align-self: center; }
+/* Card-block stat chips (语言/模型/Tokens/费用/用时). */
+.hist-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.hist-chip { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 13px; }
+.hist-chip-k { font-size: 0.74rem; color: var(--muted); }
+.hist-chip-v { font-size: 0.95rem; font-weight: 600; color: var(--text); margin-top: 2px; word-break: break-word; }
+.hist-pill { color: #fff; border-radius: 9px; padding: 2px 11px; font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
+.hist-files { display: flex; flex-direction: column; gap: 6px; }
+.hist-file-row { display: flex; align-items: center; gap: 8px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; }
+.hist-file-name { flex: 1; font-size: 0.86rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-err { font-size: 0.82rem; color: #c62828; word-break: break-word; }
+.hist-detail-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .hist-act { font-size: 0.8rem; padding: 6px 14px; border-radius: var(--r-sm);
   border: 1px solid var(--border-2); background: var(--surface); color: var(--text); cursor: pointer; }
 .hist-act:hover { border-color: var(--accent); }

@@ -576,7 +576,7 @@ async def save_glossary(payload: dict):
 def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                    dst_lang, glossary_name, bilingual_flags, on_progress,
                    continue_mode=False, resume_dirs=None, resume_record_id=None,
-                   run_subdir=None):
+                   run_subdir=None, translation_id=None, batch_id=None, batch_size=None):
     """Translate a single file; returns its output path. Raises on failure.
 
     Paths are scoped to ``session_id`` so concurrent users never collide, and a
@@ -623,10 +623,12 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
         glossary_path=gpath, temp_dir=temp_dir, result_dir=result_dir,
         session_lang="en", log_dir=log_dir,
         history_dir=history_log_dir(session_id),
+        batch_id=batch_id, batch_size=batch_size,
     )
-    if resume_record_id:
-        # Resume reuses the original row (interrupted -> success), no duplicate.
-        translator.translation_id = resume_record_id
+    # Reuse a pre-assigned id (batch pre-registration) or the resume row's id, so
+    # this file's records update that exact history row instead of duplicating.
+    if translation_id or resume_record_id:
+        translator.translation_id = translation_id or resume_record_id
     # Expose THIS file's history-row id on the task so /api/pause and /api/resume
     # can mirror the live status (running <-> paused) onto its record.
     with _TASKS_LOCK:
@@ -701,6 +703,44 @@ def _friendly_api_error(error, lang="en"):
             or "Translation stopped due to an API error.")
 
 
+def _precreate_web_batch(session_id, batch_id, file_paths, file_ids, model,
+                         use_online, src_lang, dst_lang, glossary_name, bilingual_flags):
+    """Register a 'queued' history row per file (one batch = this task) so the
+    History page shows all files grouped under one parent immediately."""
+    try:
+        from core.translation_history import (
+            TranslationHistoryManager, create_translation_record)
+        mgr = TranslationHistoryManager(log_dir=history_log_dir(session_id))
+        src_code, dst_code = backend.language_code(src_lang), backend.language_code(dst_lang)
+        now = datetime.now()
+        n = len(file_paths)
+        for fp, tid in zip(file_paths, file_ids):
+            mgr.add_record(create_translation_record(
+                translation_id=tid, start_time=now, end_time=now, total_tokens=0,
+                src_lang=src_code, src_lang_display=src_lang,
+                dst_lang=dst_code, dst_lang_display=dst_lang,
+                model=model, use_online=use_online,
+                input_file=os.path.basename(fp), output_file_path="", log_file_path="",
+                status="queued",
+                resume_info={"input_file_path": fp, "src_lang": src_lang,
+                             "dst_lang": dst_lang, "model": model, "use_online": use_online,
+                             "glossary_name": glossary_name, "bilingual_flags": bilingual_flags},
+                batch_id=batch_id, batch_size=n))
+    except Exception:  # noqa: BLE001 — pre-registration must never block a run
+        pass
+
+
+def _mark_web_queued_stopped(session_id, file_ids):
+    """Flip still-'queued' rows (files that never started) to 'stopped'."""
+    try:
+        from core.translation_history import TranslationHistoryManager
+        mgr = TranslationHistoryManager(log_dir=history_log_dir(session_id))
+        for tid in file_ids:
+            mgr.set_status(tid, "stopped")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _run_translation(task_id, session_id, file_paths, model, use_online,
                      src_lang, dst_lang, glossary_name, bilingual_flags, ui_lang="en"):
     """Background worker: translate one or more files; zip when more than one."""
@@ -730,6 +770,11 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
     # task's outputs land in their own dir instead of all piling into the session
     # result folder — matches the Qt desktop layout.
     run_folder = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{task_id[:6]}"
+    # One batch = this task: pre-register a "queued" row per file so the History
+    # page shows all N grouped under one parent from the start.
+    file_ids = [uuid.uuid4().hex for _ in file_paths]
+    _precreate_web_batch(session_id, task_id, file_paths, file_ids, model,
+                         use_online, src_lang, dst_lang, glossary_name, bilingual_flags)
     outputs, file_results = [], []
     try:
         for idx, fp in enumerate(file_paths):
@@ -744,7 +789,8 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
                 outputs.append(_translate_one(
                     task_id, session_id, fp, model, use_online, src_lang,
                     dst_lang, glossary_name, bilingual_flags, on_progress,
-                    run_subdir=run_folder))
+                    run_subdir=run_folder, translation_id=file_ids[idx],
+                    batch_id=task_id, batch_size=total))
                 file_results.append((name, "success", ""))
             except HardApiError as e:
                 # Account-level fault (insufficient balance / invalid key): every
@@ -752,6 +798,7 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
                 # with a clear, localized message instead of N identical errors.
                 msg = _friendly_api_error(e, ui_lang)
                 app_logger.error(f"Web translation aborted [{getattr(e,'category','api_error')}]: {e}")
+                _mark_web_queued_stopped(session_id, file_ids[idx:])
                 set_state(status="error", error=msg)
                 return
             except RuntimeError as e:
@@ -777,6 +824,9 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
                       tokens=u["tokens"], cost=u["cost"])
     except RuntimeError as e:
         if "__stopped__" in str(e):
+            # Files not yet processed never started — flip their queued rows to
+            # stopped (the in-flight file's translator already wrote "stopped").
+            _mark_web_queued_stopped(session_id, file_ids[len(file_results):])
             set_state(status="stopped", desc="Stopped")
         else:
             app_logger.exception("Web translation error")

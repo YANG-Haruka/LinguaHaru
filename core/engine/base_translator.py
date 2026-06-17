@@ -34,8 +34,11 @@ RESULT_JSON_PATH = "dst_translated.json"
 MAX_PREVIOUS_TOKENS = 128
 
 class DocumentTranslator:
-    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir, session_lang="en", log_dir="log", history_dir=None):
+    def __init__(self, input_file_path, model, use_online, api_key, src_lang, dst_lang, continue_mode, max_token, max_retries, thread_count, glossary_path, temp_dir, result_dir, session_lang="en", log_dir="log", history_dir=None, batch_id=None, batch_size=None):
         self.input_file_path = input_file_path
+        # Batch grouping: files from one run share batch_id; batch_size = N files.
+        self.batch_id = batch_id
+        self.batch_size = batch_size
         self.model = model
         self.src_lang = src_lang
         self.dst_lang = dst_lang
@@ -213,6 +216,8 @@ class DocumentTranslator:
                 resume_info=(self._build_resume_info()
                              if status in ("failed", "stopped", "running", "interrupted")
                              else None),
+                batch_id=self.batch_id,
+                batch_size=self.batch_size,
             )
 
             # Save to history

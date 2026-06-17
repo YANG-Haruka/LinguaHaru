@@ -15,8 +15,10 @@ import platform
 from datetime import datetime
 
 from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView,
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QTableWidgetItem, QHeaderView,
+    QFrame, QLabel,
 )
 
 from qfluentwidgets import (
@@ -48,9 +50,58 @@ _STATUS_META = {
     "interrupted": ("Status Interrupted", "#ef6c00"),
     "running": ("Status Running", "#1565c0"),
     "paused": ("Status Paused", "#8e8e93"),
+    "queued": ("Status Queued", "#6b7280"),
 }
 # Order for the status filter dropdown.
-_STATUS_FILTER = ["success", "failed", "stopped", "interrupted", "running", "paused"]
+_STATUS_FILTER = ["success", "failed", "stopped", "interrupted", "running", "paused", "queued"]
+
+
+def _stat_block(label, value, accent=None):
+    """A small rounded 'stat chip' (muted caption + bold value) for the detail
+    panel — gives the record detail a card-block look instead of flat text."""
+    f = QFrame()
+    f.setObjectName("statBlock")
+    f.setStyleSheet(
+        "#statBlock{background:rgba(128,128,128,0.10);"
+        "border:1px solid rgba(128,128,128,0.20);border-radius:10px;}")
+    v = QVBoxLayout(f)
+    v.setContentsMargins(14, 9, 14, 9)
+    v.setSpacing(2)
+    cap = CaptionLabel(label)
+    cap.setStyleSheet("color:rgba(140,140,140,0.95);")
+    val = StrongBodyLabel(str(value))
+    val.setWordWrap(True)
+    if accent:
+        val.setStyleSheet(f"color:{accent};")
+    v.addWidget(cap)
+    v.addWidget(val)
+    return f
+
+
+def _status_pill(text, color):
+    """A colored, rounded status badge."""
+    lbl = QLabel(text)
+    lbl.setStyleSheet(
+        f"background:{color or '#888'};color:white;border-radius:9px;"
+        "padding:2px 12px;font-weight:600;")
+    return lbl
+
+
+def _agg_status(records):
+    """Aggregate status for a batch: active (running/queued/paused) wins, else a
+    terminal status (all-success / any-failed / stopped / interrupted)."""
+    statuses = [r.get("status", "") for r in records]
+    s = set(statuses)
+    if s & {"running", "queued"}:
+        return "running"
+    if "paused" in s:
+        return "paused"
+    if statuses and all(x == "success" for x in statuses):
+        return "success"
+    for k in ("failed", "stopped", "interrupted"):
+        if k in s:
+            return k
+    return statuses[0] if statuses else ""
 
 
 def open_folder(path):
@@ -149,23 +200,39 @@ class HistoryPage(QWidget):
         # the web frontend, no right-click needed.
         self.detail_card = SimpleCardWidget()
         dlay = QVBoxLayout(self.detail_card)
-        dlay.setContentsMargins(16, 12, 16, 12)
-        dlay.setSpacing(4)
+        dlay.setContentsMargins(18, 14, 18, 14)
+        dlay.setSpacing(10)
+        # Header: title + colored status pill.
+        head = QHBoxLayout()
+        head.setSpacing(10)
         self.detail_title = StrongBodyLabel("")
-        self.detail_body = BodyLabel("")
-        self.detail_body.setWordWrap(True)
+        head.addWidget(self.detail_title)
+        self.detail_status = QLabel("")
+        self.detail_status.hide()
+        head.addWidget(self.detail_status)
+        head.addStretch(1)
+        dlay.addLayout(head)
+        # Stat-block grid (语言 / 模型 / Tokens / 费用 / 用时 / 输出).
+        self.detail_grid = QGridLayout()
+        self.detail_grid.setHorizontalSpacing(10)
+        self.detail_grid.setVerticalSpacing(10)
+        dlay.addLayout(self.detail_grid)
+        # Per-file rows (multi-file batches only).
+        self.detail_files = QVBoxLayout()
+        self.detail_files.setSpacing(6)
+        dlay.addLayout(self.detail_files)
         self.detail_hint = CaptionLabel("")
-        dlay.addWidget(self.detail_title)
-        dlay.addWidget(self.detail_body)
+        self.detail_hint.setWordWrap(True)
         dlay.addWidget(self.detail_hint)
         self.detail_acts = QHBoxLayout()
         self.detail_acts.setSpacing(8)
-        self.detail_acts.setContentsMargins(0, 8, 0, 0)
+        self.detail_acts.setContentsMargins(0, 4, 0, 0)
         dlay.addLayout(self.detail_acts)
         self.detail_card.hide()
         layout.addWidget(self.detail_card)
 
         self._records = []
+        self._batches = []
         self.reload()
 
     def _apply_headers(self):
@@ -226,35 +293,56 @@ class HistoryPage(QWidget):
         fstatus = self.status_combo.currentData() or None
         sort_by, descending = _SORT_OPTIONS[max(0, self.sort_combo.currentIndex())]
         self._records = manager.get_all_records(
-            limit=200, file_type=ftype, sort_by=sort_by, descending=descending,
+            limit=400, file_type=ftype, sort_by=sort_by, descending=descending,
             status=fstatus)
+        # Group into batches: files from ONE run (shared batch_id) fold into one
+        # row. Each batch keeps first-seen order so sorting is preserved.
+        self._batches = self._group_batches(self._records)
         # Repopulate without the row changes firing _on_row_selected mid-rebuild
         # (which made the panel "auto-jump" to another row after a delete).
         self.table.blockSignals(True)
-        self.table.setRowCount(len(self._records))
-        for r, rec in enumerate(self._records):
-            status = rec.get("status", "")
-            key, color = _STATUS_META.get(status, (status, None))
-            status_item = QTableWidgetItem(tr(key, self._lang) if key else status)
+        self.table.setRowCount(len(self._batches))
+        L = self._lang
+        for r, recs in enumerate(self._batches):
+            agg = _agg_status(recs)
+            key, color = _STATUS_META.get(agg, (agg, None))
+            status_item = QTableWidgetItem(tr(key, L) if key else agg)
             if color:
                 status_item.setForeground(QColor(color))
-            cells = [
+            if len(recs) == 1:
+                name = recs[0].get("input_file", "")
+                ftype_txt = (recs[0].get("file_type", "") or "").upper()
+            else:
+                name = tr("Files Count", L).format(n=len(recs))
+                types = {(rr.get("file_type", "") or "").upper() for rr in recs}
+                ftype_txt = types.pop() if len(types) == 1 else "—"
+            for c, item in enumerate((
                 status_item,
-                QTableWidgetItem(rec.get("input_file", "")),
-                QTableWidgetItem((rec.get("file_type", "") or "").upper()),
-                QTableWidgetItem(self._fmt_time(rec.get("start_time", ""))),
-            ]
-            for c, item in enumerate(cells):
+                QTableWidgetItem(name),
+                QTableWidgetItem(ftype_txt),
+                QTableWidgetItem(self._fmt_time(recs[0].get("start_time", ""))),
+            )):
                 self.table.setItem(r, c, item)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
-        # Clear any leftover selection so the next click is always a fresh one
-        # (so even the last remaining row reliably opens its detail).
         self.table.clearSelection()
         self.table.setCurrentCell(-1, -1)
         self.table.blockSignals(False)
         self.detail_card.hide()
+
+    @staticmethod
+    def _group_batches(records):
+        """Group flat records into batches by batch_id (preserving order).
+        A record with no batch_id (legacy / single) is its own batch."""
+        order, by_key = [], {}
+        for rec in records:
+            bid = rec.get("batch_id") or ("__solo__" + str(rec.get("id")))
+            if bid not in by_key:
+                by_key[bid] = []
+                order.append(bid)
+            by_key[bid].append(rec)
+        return [by_key[k] for k in order]
 
     @staticmethod
     def _fmt_time(start):
@@ -266,58 +354,136 @@ class HistoryPage(QWidget):
             return start[:16]
 
     # --- detail panel ----------------------------------------------------- #
+    def _clear_layout(self, lay):
+        while lay.count():
+            item = lay.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    def _set_status_pill(self, status):
+        key, color = _STATUS_META.get(status, (status, None))
+        self.detail_status.setText(tr(key, self._lang) if key else status)
+        self.detail_status.setStyleSheet(
+            f"background:{color or '#888'};color:white;border-radius:9px;"
+            "padding:2px 12px;font-weight:600;")
+        self.detail_status.show()
+
+    def _fill_grid(self, pairs):
+        for i, p in enumerate(pairs):
+            block = _stat_block(p[0], p[1], p[2] if len(p) > 2 else None)
+            self.detail_grid.addWidget(block, i // 2, i % 2)
+
     def _on_row_selected(self):
         row = self.table.currentRow()
-        if row < 0 or row >= len(self._records):
+        if row < 0 or row >= len(self._batches):
             self.detail_card.hide()
             return
-        rec = self._records[row]
+        for lay in (self.detail_grid, self.detail_files, self.detail_acts):
+            self._clear_layout(lay)
+        recs = self._batches[row]
+        if len(recs) == 1:
+            self._show_single_detail(recs[0])
+        else:
+            self._show_batch_detail(recs)
+        self.detail_card.show()
+
+    def _show_single_detail(self, rec):
         L = self._lang
-        langs = f"{rec.get('src_lang_display', rec.get('src_lang', ''))} → " \
-                f"{rec.get('dst_lang_display', rec.get('dst_lang', ''))}"
+        self.detail_title.setText(rec.get("input_file", ""))
+        self._set_status_pill(rec.get("status", ""))
+        langs = (f"{rec.get('src_lang_display') or rec.get('src_lang', '')} → "
+                 f"{rec.get('dst_lang_display') or rec.get('dst_lang', '')}")
         mode = "Online" if rec.get("use_online") else "Offline"
         cost = (f"{rec.get('cost_amount')} {rec.get('cost_currency')}"
-                if rec.get("cost_amount") is not None and rec.get("cost_currency") else "-")
-        dur = format_duration(int(rec.get("duration_seconds") or 0))
-        rows = [
+                if rec.get("cost_amount") is not None and rec.get("cost_currency") else "—")
+        self._fill_grid([
             (tr("Source Language", L), langs),
             (tr("Model", L), f"{rec.get('model', '')} ({mode})"),
             (tr("Tokens", L), format_tokens(rec.get("total_tokens", 0))),
             (tr("Estimated cost", L), cost),
-            (tr("Duration", L), dur),
-            (tr("Output File", L), rec.get("output_file_path") or "-"),
-        ]
+            (tr("Duration", L), format_duration(int(rec.get("duration_seconds") or 0))),
+            (tr("Output File", L), os.path.basename(rec.get("output_file_path") or "") or "—"),
+        ])
         if rec.get("error_reason"):
-            rows.append((tr("Error Reason", L), rec.get("error_reason")))
-        self.detail_title.setText(rec.get("input_file", ""))
-        self.detail_body.setText(
-            "\n".join(f"<b>{k}:</b> {v}" for k, v in rows).replace("\n", "<br>"))
+            err = CaptionLabel("⚠ " + str(rec.get("error_reason"))[:300])
+            err.setWordWrap(True)
+            err.setStyleSheet("color:#c62828;")
+            self.detail_files.addWidget(err)
         self.detail_hint.setText(tr("Resume Hint", L) if _is_resumable(rec) else "")
-        self._build_detail_actions(rec)
-        self.detail_card.show()
-
-    def _build_detail_actions(self, rec):
-        """(Re)build the inline action buttons for the selected record: Open
-        Folder (always), Continue (interrupted only), Delete — same as web, no
-        right-click needed."""
-        # Clear any buttons from the previous selection.
-        while self.detail_acts.count():
-            item = self.detail_acts.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-        L = self._lang
+        # Actions
+        self.detail_acts.addStretch(1)
         open_btn = PushButton(FluentIcon.FOLDER, tr("Open Folder", L))
         open_btn.clicked.connect(lambda: self._open_record_folder(rec))
         self.detail_acts.addWidget(open_btn)
         if _is_resumable(rec):
-            cont_btn = PrimaryPushButton(FluentIcon.PLAY, tr("Continue Translation", L))
-            cont_btn.clicked.connect(lambda: self._continue_record(rec))
-            self.detail_acts.addWidget(cont_btn)
+            cont = PrimaryPushButton(FluentIcon.PLAY, tr("Continue Translation", L))
+            cont.clicked.connect(lambda: self._continue_record(rec))
+            self.detail_acts.addWidget(cont)
         del_btn = PushButton(FluentIcon.DELETE, tr("Delete Record", L))
         del_btn.clicked.connect(lambda: self._delete_record(rec))
         self.detail_acts.addWidget(del_btn)
+
+    def _show_batch_detail(self, recs):
+        L = self._lang
+        self.detail_title.setText(tr("Files Count", L).format(n=len(recs)))
+        self._set_status_pill(_agg_status(recs))
+        done = sum(1 for r in recs if r.get("status") == "success")
+        total_tokens = sum(int(r.get("total_tokens") or 0) for r in recs)
+        cost_amt = sum(float(r.get("cost_amount") or 0) for r in recs)
+        ccy = next((r.get("cost_currency") for r in recs if r.get("cost_currency")), "")
+        langs = (f"{recs[0].get('src_lang_display') or ''} → "
+                 f"{recs[0].get('dst_lang_display') or ''}")
+        self._fill_grid([
+            (tr("Completed Files", L).replace("{done}", str(done)).replace("{total}", str(len(recs)))
+             if "{done}" in tr("Completed Files", L) else f"{done}/{len(recs)}",
+             f"{done}/{len(recs)}"),
+            (tr("Source Language", L), langs),
+            (tr("Model", L), recs[0].get("model", "")),
+            (tr("Tokens", L), format_tokens(total_tokens)),
+            (tr("Estimated cost", L), f"{cost_amt:.4f} {ccy}" if cost_amt else "—"),
+            (tr("Duration", L), format_duration(
+                sum(int(r.get("duration_seconds") or 0) for r in recs))),
+        ])
+        # Per-file rows: name + colored status pill + per-file continue.
+        for r in recs:
+            row = QFrame()
+            row.setObjectName("fileRow")
+            row.setStyleSheet("#fileRow{background:rgba(128,128,128,0.07);border-radius:8px;}")
+            h = QHBoxLayout(row)
+            h.setContentsMargins(12, 5, 10, 5)
+            h.setSpacing(8)
+            nm = BodyLabel(r.get("input_file", ""))
+            nm.setWordWrap(False)
+            h.addWidget(nm)
+            h.addStretch(1)
+            key, color = _STATUS_META.get(r.get("status", ""), (r.get("status", ""), None))
+            h.addWidget(_status_pill(tr(key, L) if key else r.get("status", ""), color))
+            if _is_resumable(r):
+                cb = PushButton(FluentIcon.PLAY, tr("Continue Translation", L))
+                cb.clicked.connect(lambda _=False, rr=r: self._continue_record(rr))
+                h.addWidget(cb)
+            self.detail_files.addWidget(row)
+        self.detail_hint.setText("")
+        # Batch actions: open the run folder + delete the whole batch.
         self.detail_acts.addStretch(1)
+        open_btn = PushButton(FluentIcon.FOLDER, tr("Open Folder", L))
+        open_btn.clicked.connect(lambda: self._open_batch_folder(recs))
+        self.detail_acts.addWidget(open_btn)
+        del_btn = PushButton(FluentIcon.DELETE, tr("Delete Record", L))
+        del_btn.clicked.connect(lambda: self._delete_batch(recs))
+        self.detail_acts.addWidget(del_btn)
+
+    def _open_batch_folder(self, recs):
+        for r in recs:
+            out = r.get("output_file_path") or ""
+            if out and os.path.exists(os.path.dirname(out)):
+                open_folder(os.path.dirname(out))
+                return
+            info = _resume_info(r)
+            if info.get("result_dir") and os.path.exists(info["result_dir"]):
+                open_folder(info["result_dir"])
+                return
 
     def _open_record_folder(self, rec):
         # Prefer the output folder; fall back to the result dir from resume_info.
@@ -356,6 +522,32 @@ class HistoryPage(QWidget):
         TranslationHistoryManager(log_dir=log_dir).delete_record(rec.get("id"))
         self.reload()
 
+    def _delete_batch(self, recs):
+        """Delete a whole batch (all its files' records + generated files)."""
+        L = self._lang
+        box = MessageBox(tr("Delete Record", L), tr("Delete Record Confirm", L), self.window())
+        if not box.exec():
+            return
+        _, _, log_dir = backend.get_custom_paths()
+        mgr = TranslationHistoryManager(log_dir=log_dir)
+        for rec in recs:
+            for key in ("output_file_path", "log_file_path"):
+                p = rec.get(key)
+                if p and os.path.isfile(p):
+                    try:
+                        os.remove(p)
+                    except OSError:
+                        pass
+            info = _resume_info(rec)
+            temp_dir = info.get("temp_dir")
+            src = info.get("input_file_path") or rec.get("input_file")
+            if temp_dir and src:
+                file_dir = os.path.join(temp_dir, os.path.splitext(os.path.basename(src))[0])
+                if os.path.isdir(file_dir):
+                    shutil.rmtree(file_dir, ignore_errors=True)
+            mgr.delete_record(rec.get("id"))
+        self.reload()
+
     # --- continue (resume) ------------------------------------------------ #
     def _continue_record(self, rec):
         L = self._lang
@@ -374,9 +566,10 @@ class HistoryPage(QWidget):
         api_key = load_api_key_for_model(model) if use_online else ""
         config = backend.read_config()
         resume_dirs = (info.get("temp_dir"), info.get("result_dir"), info.get("log_dir"))
-        if not all(resume_dirs):
-            self._toast(tr("No Resume Info", L), error=True)
-            return
+        # A "queued" row that never started has no dirs/partial data -> run it
+        # fresh (continue_mode off, new dirs) but reuse the same history id so it
+        # updates in place. A stopped/failed row with dirs resumes its partial work.
+        fresh = not all(resume_dirs)
 
         worker = TranslationWorker(
             file_path=src, model=model, use_online=use_online, api_key=api_key,
@@ -389,8 +582,10 @@ class HistoryPage(QWidget):
             glossary_name=info.get("glossary_name", ""),
             bilingual_flags=info.get("bilingual_flags", {}),
             session_lang=self._lang,
-            continue_mode=True, resume_dirs=resume_dirs,
+            continue_mode=not fresh, resume_dirs=None if fresh else resume_dirs,
             resume_record_id=rec.get("id"),
+            batch_id=rec.get("batch_id") or None,
+            batch_size=rec.get("batch_size") or 1,
         )
         # Prefer running on the Translate page's dashboard (web parity: continuing
         # a stopped run jumps back to the progress view). Falls back to the

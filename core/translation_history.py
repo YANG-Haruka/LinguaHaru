@@ -36,6 +36,10 @@ _FIELDS = [
     # Resume payload (status="failed"/"stopped"): JSON of the params needed to
     # re-run this exact file in continue_mode. Empty for finished runs.
     "resume_info",
+    # Batch grouping: every file from ONE run (the user clicked "translate" once
+    # on N files) shares a batch_id; batch_size is N. The history UI folds a
+    # batch into one expandable parent task. Single-file runs: batch_size=1.
+    "batch_id", "batch_size",
 ]
 
 
@@ -257,7 +261,7 @@ class TranslationHistoryManager:
             with self._connect() as conn:
                 cur = conn.execute(
                     "UPDATE records SET status='interrupted' "
-                    "WHERE status IN ('running', 'paused')")
+                    "WHERE status IN ('running', 'paused', 'queued')")
                 return cur.rowcount or 0
         except Exception as e:  # noqa: BLE001
             app_logger.warning(f"History recovery sweep failed: {e}")
@@ -325,6 +329,8 @@ def create_translation_record(
     error_reason: Optional[str] = None,
     error_category: Optional[str] = None,
     resume_info: Optional[Dict[str, Any]] = None,
+    batch_id: Optional[str] = None,
+    batch_size: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Create a translation/project record dictionary."""
     duration_seconds = int((end_time - start_time).total_seconds())
@@ -355,6 +361,8 @@ def create_translation_record(
         "error_reason": (error_reason or "")[:500],
         "error_category": error_category or "",
         "resume_info": json.dumps(resume_info, ensure_ascii=False) if resume_info else "",
+        "batch_id": batch_id or "",
+        "batch_size": int(batch_size) if batch_size else 1,
     }
 
 

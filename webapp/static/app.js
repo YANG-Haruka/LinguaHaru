@@ -2216,44 +2216,126 @@ function _histResumable(r) {
   catch (e) { return false; }
 }
 
+// --- batch grouping + pretty (card-block) detail ---
+function _aggStatus(recs) {
+  const s = new Set(recs.map((r) => r.status || ""));
+  if (s.has("running") || s.has("queued")) return "running";
+  if (s.has("paused")) return "paused";
+  if (recs.every((r) => r.status === "success")) return "success";
+  for (const k of ["failed", "stopped", "interrupted"]) if (s.has(k)) return k;
+  return recs[0] ? recs[0].status : "";
+}
+function _groupBatches(records) {
+  const order = [], by = {};
+  for (const r of records) {
+    const bid = r.batch_id || ("__solo__" + r.id);
+    if (!by[bid]) { by[bid] = []; order.push(bid); }
+    by[bid].push(r);
+  }
+  return order.map((k) => by[k]);
+}
+function _fmtTok(n) { n = n || 0; return n >= 1000 ? (n / 1000).toFixed(1) + "K" : String(n); }
+function _statusPillEl(status) {
+  const [key, color] = HSTATUS[status] || [null, null];
+  const s = document.createElement("span"); s.className = "hist-pill";
+  s.textContent = key ? _label(key, status) : (status || "");
+  s.style.background = color || "#888";
+  return s;
+}
+function _statChips(pairs) {
+  const g = document.createElement("div"); g.className = "hist-stats";
+  for (const [k, v] of pairs) {
+    const c = document.createElement("div"); c.className = "hist-chip";
+    const lk = document.createElement("div"); lk.className = "hist-chip-k"; lk.textContent = k;
+    const lv = document.createElement("div"); lv.className = "hist-chip-v"; lv.textContent = v;
+    c.append(lk, lv); g.appendChild(c);
+  }
+  return g;
+}
+function _histActBtn(acts, text, fn, cls) {
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "hist-act" + (cls ? " " + cls : "");
+  b.textContent = text;
+  b.onclick = (e) => { e.stopPropagation(); fn(); };
+  acts.appendChild(b);
+}
+
 function buildHistoryDetail(r) {
   const box = document.createElement("div"); box.className = "hist-detail-box";
-  const cost = (r.cost_amount != null && r.cost_currency) ? `${r.cost_amount} ${r.cost_currency}` : "-";
-  const rows = [
+  const cost = (r.cost_amount != null && r.cost_currency) ? `${r.cost_amount} ${r.cost_currency}` : "—";
+  box.appendChild(_statChips([
     [_label("Source Language", "语言"), `${r.src_lang_display || r.src_lang || ""} → ${r.dst_lang_display || r.dst_lang || ""}`],
     [_label("Model", "模型"), `${r.model || ""} (${r.use_online ? "Online" : "Offline"})`],
-    [_label("Tokens", "Tokens"), r.total_tokens != null ? String(r.total_tokens) : "-"],
+    [_label("Tokens", "Tokens"), _fmtTok(r.total_tokens)],
     [_label("Estimated cost", "费用"), cost],
     [_label("Duration", "用时"), _fmtDuration(r.duration_seconds)],
-  ];
-  if (r.error_reason) rows.push([_label("Error Reason", "原因"), r.error_reason]);
-  const info = document.createElement("div"); info.className = "hist-detail-info";
-  for (const [k, v] of rows) {
-    const line = document.createElement("div");
-    const b = document.createElement("b"); b.textContent = k + ": ";
-    line.appendChild(b); line.appendChild(document.createTextNode(v));
-    info.appendChild(line);
+  ]));
+  if (r.error_reason) {
+    const e = document.createElement("div"); e.className = "hist-err";
+    e.textContent = "⚠ " + r.error_reason; box.appendChild(e);
   }
-  box.appendChild(info);
-
   const acts = document.createElement("div"); acts.className = "hist-detail-acts";
-  const mkBtn = (text, fn, cls) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "hist-act" + (cls ? " " + cls : "");
-    b.textContent = text;
-    b.onclick = (e) => { e.stopPropagation(); fn(); };
-    acts.appendChild(b);
-  };
   if (r.output_file_path) {
-    mkBtn(_label("Download", "下载"),
+    _histActBtn(acts, _label("Download", "下载"),
       () => window.open("/api/history/download?id=" + encodeURIComponent(r.id), "_blank"));
   }
-  if (_histResumable(r)) {
-    mkBtn(_label("Continue Translation", "继续翻译"), () => resumeHistory(r.id), "primary");
-  }
-  mkBtn(_label("Delete Record", "删除"), () => deleteHistory(r.id), "danger");
+  if (_histResumable(r)) _histActBtn(acts, _label("Continue Translation", "继续翻译"), () => resumeHistory(r.id), "primary");
+  _histActBtn(acts, _label("Delete Record", "删除"), () => deleteHistory(r.id), "danger");
   box.appendChild(acts);
   return box;
+}
+
+function buildBatchDetail(recs) {
+  const box = document.createElement("div"); box.className = "hist-detail-box";
+  const done = recs.filter((r) => r.status === "success").length;
+  const tokens = recs.reduce((a, r) => a + (r.total_tokens || 0), 0);
+  const costAmt = recs.reduce((a, r) => a + (r.cost_amount || 0), 0);
+  const ccy = (recs.find((r) => r.cost_currency) || {}).cost_currency || "";
+  box.appendChild(_statChips([
+    [_label("Files", "文件"), `${done}/${recs.length}`],
+    [_label("Source Language", "语言"), `${recs[0].src_lang_display || ""} → ${recs[0].dst_lang_display || ""}`],
+    [_label("Model", "模型"), recs[0].model || ""],
+    [_label("Tokens", "Tokens"), _fmtTok(tokens)],
+    [_label("Estimated cost", "费用"), costAmt ? `${costAmt.toFixed(4)} ${ccy}` : "—"],
+  ]));
+  const list = document.createElement("div"); list.className = "hist-files";
+  for (const r of recs) {
+    const row = document.createElement("div"); row.className = "hist-file-row";
+    const nm = document.createElement("span"); nm.className = "hist-file-name"; nm.textContent = r.input_file || "";
+    row.appendChild(nm);
+    row.appendChild(_statusPillEl(r.status));
+    if (r.output_file_path) {
+      const d = document.createElement("button"); d.type = "button"; d.className = "hist-act";
+      d.textContent = _label("Download", "下载");
+      d.onclick = (e) => { e.stopPropagation(); window.open("/api/history/download?id=" + encodeURIComponent(r.id), "_blank"); };
+      row.appendChild(d);
+    }
+    if (_histResumable(r)) {
+      const b = document.createElement("button"); b.type = "button"; b.className = "hist-act primary";
+      b.textContent = _label("Continue Translation", "继续翻译");
+      b.onclick = (e) => { e.stopPropagation(); resumeHistory(r.id); };
+      row.appendChild(b);
+    }
+    list.appendChild(row);
+  }
+  box.appendChild(list);
+  const acts = document.createElement("div"); acts.className = "hist-detail-acts";
+  _histActBtn(acts, _label("Delete Record", "删除"), () => deleteBatch(recs), "danger");
+  box.appendChild(acts);
+  return box;
+}
+
+async function deleteBatch(recs) {
+  if (!confirm(_label("Delete Record Confirm", "删除该记录及其全部数据？"))) return;
+  for (const r of recs) {
+    try {
+      await api("/api/history/delete", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: r.id }),
+      });
+    } catch (e) { /* keep deleting the rest */ }
+  }
+  loadHistory();
 }
 
 async function loadHistory() {
@@ -2280,21 +2362,28 @@ async function loadHistory() {
     return;
   }
   t.innerHTML = `<tr><th>${_label("Status", "状态")}</th><th>${_label("Upload File", "文件")}</th><th>${_label("File Type", "类型")}</th><th>${_label("Time", "时间")}</th></tr>`;
-  for (const r of data.records) {
+  // One run = one batch (shared batch_id): fold its files into one parent row.
+  for (const recs of _groupBatches(data.records)) {
+    const single = recs.length === 1;
+    const agg = _aggStatus(recs);
     const tr = document.createElement("tr");
     tr.className = "hist-row";
-    const [key, color] = HSTATUS[r.status] || [null, null];
+    const [key, color] = HSTATUS[agg] || [null, null];
     const st = document.createElement("td");
-    st.textContent = key ? _label(key, r.status) : (r.status || "");
+    st.textContent = key ? _label(key, agg) : (agg || "");
     if (color) st.style.color = color;
-    const f = document.createElement("td"); f.textContent = r.input_file || "";
-    const ty = document.createElement("td"); ty.textContent = (r.file_type || "").toUpperCase();
-    const tm = document.createElement("td"); tm.textContent = (r.start_time || "").replace("T", " ").slice(0, 16);  // YYYY-MM-DD HH:MM (matches Qt)
+    const f = document.createElement("td");
+    f.textContent = single ? (recs[0].input_file || "")
+      : _label("Files Count", "{n} 个文件").replace("{n}", recs.length);
+    const ty = document.createElement("td");
+    if (single) { ty.textContent = (recs[0].file_type || "").toUpperCase(); }
+    else { const ts = new Set(recs.map((r) => (r.file_type || "").toUpperCase())); ty.textContent = ts.size === 1 ? [...ts][0] : "—"; }
+    const tm = document.createElement("td"); tm.textContent = (recs[0].start_time || "").replace("T", " ").slice(0, 16);
     tr.append(st, f, ty, tm);
 
     const det = document.createElement("tr"); det.className = "hist-detail"; det.hidden = true;
     const dtd = document.createElement("td"); dtd.colSpan = 4;
-    dtd.appendChild(buildHistoryDetail(r));
+    dtd.appendChild(single ? buildHistoryDetail(recs[0]) : buildBatchDetail(recs));
     det.appendChild(dtd);
     tr.onclick = () => {
       const opening = det.hidden;

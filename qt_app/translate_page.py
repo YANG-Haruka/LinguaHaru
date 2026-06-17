@@ -531,6 +531,11 @@ class TranslatePage(QStackedWidget):
         # LLM concurrency for this run (same for all files: same model) — shown
         # on the dashboard's Thread Count card.
         self._thread_count = backend.thread_count_for_mode(use_online, model)
+        # One run = one batch: register a "queued" history row for every file now
+        # (so all show up, grouped, even before their worker gets a GPU slot).
+        self._batch_id = uuid.uuid4().hex[:12]
+        self._task_ids = {}
+        self._precreate_batch_records(use_online, model)
         self._running = True
         self.translate_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -543,6 +548,36 @@ class TranslatePage(QStackedWidget):
         pool = min(self._total, backend.MAX_CONCURRENT_TASKS)
         for _ in range(pool):
             self._start_next()
+
+    def _precreate_batch_records(self, use_online, model):
+        """Register a 'queued' history row per file at run start (one batch), so
+        the History page shows all N files immediately under one parent task."""
+        try:
+            from core.translation_history import (
+                TranslationHistoryManager, create_translation_record)
+            _, _, log_dir = backend.get_custom_paths()
+            mgr = TranslationHistoryManager(log_dir=log_dir)
+            src_disp, dst_disp = self.src_combo.currentText(), self.dst_combo.currentText()
+            src_code, dst_code = backend.language_code(src_disp), backend.language_code(dst_disp)
+            flags = {k: self.bilingual_switch.isChecked() for k in backend.BILINGUAL_LABEL}
+            now = datetime.now()
+            for fp in self._files:
+                tid = uuid.uuid4().hex
+                self._task_ids[fp] = tid
+                mgr.add_record(create_translation_record(
+                    translation_id=tid, start_time=now, end_time=now, total_tokens=0,
+                    src_lang=src_code, src_lang_display=src_disp,
+                    dst_lang=dst_code, dst_lang_display=dst_disp,
+                    model=model, use_online=use_online,
+                    input_file=os.path.basename(fp), output_file_path="", log_file_path="",
+                    status="queued",
+                    resume_info={"input_file_path": fp, "src_lang": src_disp,
+                                 "dst_lang": dst_disp, "model": model, "use_online": use_online,
+                                 "glossary_name": self.glossary_combo.currentText(),
+                                 "bilingual_flags": flags, "session_lang": self._lang},
+                    batch_id=self._batch_id, batch_size=self._total))
+        except Exception:  # noqa: BLE001 — pre-registration must never block a run
+            self._task_ids = {}
 
     def _start_next(self):
         if not self._queue:
@@ -573,6 +608,8 @@ class TranslatePage(QStackedWidget):
             session_lang=self._lang,
             isolation_subdir=isolation,
             run_stamp=self._run_stamp,
+            translation_id=self._task_ids.get(file_path),
+            batch_id=self._batch_id, batch_size=self._total,
         )
         worker._lh_file = file_path
         worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
@@ -660,8 +697,25 @@ class TranslatePage(QStackedWidget):
         for worker in list(self._workers):
             if worker.isRunning():
                 worker.request_stop()
+        # Files still queued never started — flip their pre-created rows from
+        # "queued" to "stopped" (started ones write their own stopped record).
+        self._mark_queued_stopped(self._queue)
         # Drop anything not yet started so the pool drains.
         self._queue = []
+
+    def _mark_queued_stopped(self, files):
+        if not files:
+            return
+        try:
+            from core.translation_history import TranslationHistoryManager
+            _, _, log_dir = backend.get_custom_paths()
+            mgr = TranslationHistoryManager(log_dir=log_dir)
+            for fp in files:
+                tid = self._task_ids.get(fp)
+                if tid:
+                    mgr.set_status(tid, "stopped")
+        except Exception:  # noqa: BLE001
+            pass
 
     def on_pause(self):
         """Freeze the run in place. Threads/process/models stay alive, so resume
@@ -752,6 +806,7 @@ class TranslatePage(QStackedWidget):
             self.dashboard.set_status(tr("Stopping", self._lang) + "...")
             for w in live:
                 w.request_stop()
+            self._mark_queued_stopped(self._queue)
             self._queue = []
         self.setCurrentWidget(self._controls)
 

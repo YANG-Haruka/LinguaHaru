@@ -253,7 +253,8 @@ class TranslationWorker(QThread):
                  max_token, max_retries, thread_count, glossary_name,
                  bilingual_flags, session_lang="en", isolation_subdir=None,
                  parent=None, continue_mode=False, resume_dirs=None, run_stamp=None,
-                 resume_record_id=None):
+                 resume_record_id=None, translation_id=None,
+                 batch_id=None, batch_size=None):
         super().__init__(parent)
         self.file_path = file_path
         self.model = model
@@ -283,11 +284,15 @@ class TranslationWorker(QThread):
         # Resume: reuse the original record's id so the run updates that history
         # row (interrupted -> success) instead of adding a duplicate.
         self.resume_record_id = resume_record_id
+        # Batch grouping: files from one run share a batch_id (batch_size = N).
+        self.batch_id = batch_id
+        self.batch_size = batch_size
         # Stable id for THIS task's history row, known before the run starts so
-        # the page can update its status live (e.g. running -> paused). A resume
-        # reuses the original row's id; a fresh run gets a new one.
+        # the page can pre-create it ("queued") and update its status live
+        # (queued -> running -> paused -> success). A resume reuses the original
+        # row's id; otherwise use the page's pre-assigned id, else a fresh one.
         import uuid as _uuid
-        self.translation_id = resume_record_id or _uuid.uuid4().hex
+        self.translation_id = translation_id or resume_record_id or _uuid.uuid4().hex
         self._stop = False
         self._paused = False
         # Coverage report for this file (filled after process(); read by the page)
@@ -389,6 +394,7 @@ class TranslationWorker(QThread):
             temp_dir=temp_dir, result_dir=result_dir,
             session_lang=self.session_lang, log_dir=log_dir,
             history_dir=history_dir,
+            batch_id=self.batch_id, batch_size=self.batch_size,
         )
         translator.check_stop_requested = self._check_stop
         translator.translation_id = self.translation_id
