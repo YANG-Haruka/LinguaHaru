@@ -1505,9 +1505,18 @@ function hideModelLoading() {
 async function startLocal() {
   liveSessionTokens = 0;
   liveUttSpeaker = 0; liveSpkNeedReset = true;   // renumber speakers for this session
+  // Create the AudioContext NOW, while we're still inside the click's user
+  // gesture. If we create it AFTER the model-preload await below (which can take
+  // many seconds), the gesture activation is gone and the context starts
+  // 'suspended' — no audio flows and the user has to click a second time. (Qt
+  // has no browser gesture rule, which is why only Web showed this.)
+  liveCtx = new AudioContext();
   try {
     liveStream = await acquireLiveStream();
-  } catch (e) { setLiveStatus("无法访问输入设备：" + e.message); return; }
+  } catch (e) {
+    setLiveStatus("无法访问输入设备：" + e.message);
+    try { liveCtx.close(); } catch (e2) {} liveCtx = null; return;
+  }
   $("live-input").textContent = ""; $("live-output").textContent = "";
   // Preload the local model so the first sentence isn't blocked on a slow load.
   setLiveStatus("正在加载本地模型…（首次需下载/加载，请稍候）");
@@ -1515,7 +1524,9 @@ async function startLocal() {
   try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "live" }) }); }
   catch (e) { /* load lazily */ }
   finally { hideModelLoading(); }
-  liveCtx = new AudioContext();
+  // The long await may have dropped the gesture activation; ensure the context
+  // is actually running before wiring up the mic graph.
+  if (liveCtx.state === "suspended") { try { await liveCtx.resume(); } catch (e) {} }
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
   try {

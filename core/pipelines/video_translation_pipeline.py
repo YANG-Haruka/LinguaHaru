@@ -339,12 +339,24 @@ def _sensevoice_local_dir():
     root = None
     for fname in _SENSEVOICE_FILES:
         last = None
-        for _ in range(4):
-            try:
-                last = hf_hub_download(_SENSEVOICE_HF_REPO, fname, cache_dir=cache_dir)
-                break
-            except Exception:  # noqa: BLE001 - transient mirror hiccup, retry
-                last = None
+        # Fast path: if the file is already cached, resolve it with NO network
+        # call. Otherwise hf_hub_download does a metadata HEAD against HF_ENDPOINT
+        # on EVERY launch — fine on a fast link, but on a slow/blocked network
+        # (e.g. huggingface.co from China) each of the 5 files can take seconds
+        # and retry, turning a ~12s load into ~1 min. The model rarely changes,
+        # so trusting the cache is the right default.
+        try:
+            last = hf_hub_download(_SENSEVOICE_HF_REPO, fname, cache_dir=cache_dir,
+                                   local_files_only=True)
+        except Exception:  # noqa: BLE001 — not cached yet; fall through to download
+            last = None
+        if not last:
+            for _ in range(4):
+                try:
+                    last = hf_hub_download(_SENSEVOICE_HF_REPO, fname, cache_dir=cache_dir)
+                    break
+                except Exception:  # noqa: BLE001 - transient mirror hiccup, retry
+                    last = None
         if not last:
             return None
         root = os.path.dirname(last)
