@@ -463,6 +463,76 @@ def _get_vad():
     return _vad_only
 
 
+# TEN-VAD offline segmentation — the same neural VAD the real-time path uses
+# (noise-robust, rejects music/silence/non-speech better than the old energy VAD).
+# Offline we see the whole file, so the live VAD's pre-roll/partial/progressive-
+# silence machinery isn't needed — just merge per-frame speech flags into segments.
+_TEN_HOP = 256          # 16 ms @ 16 kHz (TEN-VAD's frame size)
+_TEN_THRESHOLD = 0.5
+_TEN_HANG_MS = 300.0    # bridge silences shorter than this inside one segment
+_TEN_MIN_MS = 280.0     # drop blips shorter than this (matches the live VAD floor)
+_TEN_MAX_MS = 30000.0   # cap a segment (also keeps Qwen/SenseVoice batches even)
+_TEN_PAD_MS = 100.0     # keep a little lead-in/out so boundary words aren't clipped
+
+
+def _ten_vad_segments(audio_i16, sr=16000, check_stop=None):
+    """Segment 16 kHz mono int16 audio into [[s_ms, e_ms], ...] speech regions with
+    TEN-VAD. Returns None if ten_vad is unavailable / errors, so the caller falls
+    back to fsmn-vad. Deterministic (fixed threshold) so resume keys stay stable."""
+    import numpy as np
+    try:
+        from ten_vad import TenVad
+        vad = TenVad(hop_size=_TEN_HOP, threshold=_TEN_THRESHOLD)
+    except Exception:  # noqa: BLE001 — lib missing -> caller uses fsmn-vad
+        return None
+    frame_ms = _TEN_HOP / sr * 1000.0
+    n = len(audio_i16) // _TEN_HOP
+    segs = []
+    on, start_f, sil = False, 0, 0
+
+    def _flush(end_f):
+        s_ms, e_ms = start_f * frame_ms, end_f * frame_ms
+        if e_ms - s_ms >= _TEN_MIN_MS:
+            segs.append([max(0.0, s_ms - _TEN_PAD_MS),
+                         min(n * frame_ms, e_ms + _TEN_PAD_MS)])
+
+    for i in range(n):
+        if check_stop and (i & 0x3FF) == 0:   # interruptible every ~16s of audio
+            check_stop()
+        fr = np.ascontiguousarray(audio_i16[i * _TEN_HOP:(i + 1) * _TEN_HOP])
+        try:
+            _p, flag = vad.process(fr)
+        except Exception:  # noqa: BLE001 — bail to fsmn-vad
+            return None
+        if not on:
+            if flag:
+                on, start_f, sil = True, i, 0
+        else:
+            sil = 0 if flag else sil + 1
+            dur_ms = (i - start_f + 1) * frame_ms
+            if sil * frame_ms >= _TEN_HANG_MS or dur_ms >= _TEN_MAX_MS:
+                _flush(i - sil + 1)
+                on, sil = False, 0
+    if on:
+        _flush(n)
+    return segs
+
+
+def _segment_speech(wav_path, audio_i16, sr, check_stop=None):
+    """Speech segments [[s_ms, e_ms], ...] for the external-VAD engines. Prefers
+    TEN-VAD (noise-robust neural VAD, shared with real-time); falls back to
+    fsmn-vad, then to one whole-file segment."""
+    segs = _ten_vad_segments(audio_i16, sr, check_stop)
+    if segs is not None:
+        app_logger.info(f"TEN-VAD: {len(segs)} speech segments")
+        return segs
+    try:
+        vad_res = _get_vad().generate(input=wav_path)
+        return (vad_res[0].get("value") if vad_res else None) or []
+    except Exception:  # noqa: BLE001 — no funasr/VAD -> caller uses one big segment
+        return []
+
+
 # --- Qwen3-ASR engine (qwen-asr) -------------------------------------------
 _QWEN_LANG_CODE = {"Chinese": "zh", "English": "en", "Japanese": "ja",
                    "Korean": "ko", "Cantonese": "zh"}
@@ -679,14 +749,11 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     with wave.open(wav_path, "rb") as wf:
         sr = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
-    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    audio_i16 = np.frombuffer(raw, dtype=np.int16)
+    audio = audio_i16.astype(np.float32) / 32768.0
     if progress_callback:   # VAD on a long file takes a while with no inner ticks
         progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
-    try:
-        vad_res = _get_vad().generate(input=wav_path)
-        segments = (vad_res[0].get("value") if vad_res else None) or []
-    except Exception:  # noqa: BLE001 — no funasr/VAD -> one big segment
-        segments = []
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop)
     if not segments:
         segments = [[0, len(audio) / sr * 1000.0]]
 
@@ -782,13 +849,18 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
     asr, vad = _get_sensevoice(model_name)
     if progress_callback:
         progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
-    vad_res = vad.generate(input=wav_path)
-    segments = (vad_res[0].get("value") if vad_res else None) or []
 
     with wave.open(wav_path, "rb") as wf:
         sr = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
-    audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    audio_i16 = np.frombuffer(raw, dtype=np.int16)
+    audio = audio_i16.astype(np.float32) / 32768.0
+
+    # TEN-VAD (noise-robust) first; fall back to SenseVoice's own fsmn-vad.
+    segments = _ten_vad_segments(audio_i16, sr, check_stop)
+    if segments is None:
+        vad_res = vad.generate(input=wav_path)
+        segments = (vad_res[0].get("value") if vad_res else None) or []
 
     lang = _sensevoice_lang(src_lang)
     total = len(segments) or 1
