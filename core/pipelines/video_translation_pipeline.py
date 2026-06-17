@@ -272,8 +272,16 @@ def _get_whisper_model(size):
             app_logger.info(
                 f"Loading faster-whisper '{size}' on {dev} ({ctype})...")
             # download_root keeps whisper models in the unified data/models dir.
-            _whisper_models[size] = WhisperModel(
-                size, device=dev, compute_type=ctype, download_root=whisper_dir())
+            # Prefer the cache with NO network check (local_files_only) so a
+            # slow/blocked HF link doesn't stall every launch; only hit the
+            # network when the model isn't cached yet.
+            try:
+                _whisper_models[size] = WhisperModel(
+                    size, device=dev, compute_type=ctype,
+                    download_root=whisper_dir(), local_files_only=True)
+            except Exception:  # noqa: BLE001 — not cached yet -> download
+                _whisper_models[size] = WhisperModel(
+                    size, device=dev, compute_type=ctype, download_root=whisper_dir())
     return _whisper_models[size]
 
 
@@ -415,7 +423,14 @@ def _get_qwen(model_name):
             from qwen_asr import Qwen3ASRModel
             dm = "cuda:0" if _stt_device() == "cuda" else "cpu"
             app_logger.info(f"Loading {model_name} on {dm} (downloads on first use)...")
-            _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(model_name, device_map=dm)
+            # Local-first: skip the network metadata check when cached; fall back
+            # to a normal (downloading) load if offline-load isn't supported or
+            # the model isn't cached yet.
+            try:
+                _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(
+                    model_name, device_map=dm, local_files_only=True)
+            except Exception:  # noqa: BLE001
+                _qwen_models[model_name] = Qwen3ASRModel.from_pretrained(model_name, device_map=dm)
     return _qwen_models[model_name]
 
 
