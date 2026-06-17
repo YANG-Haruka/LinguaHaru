@@ -1133,6 +1133,134 @@ def history_resume(payload: dict, request: Request):
     return {"task_id": task_id}
 
 
+def _run_resume_batch(task_id, session_id, recs, ui_lang="en"):
+    """Continue MULTIPLE records (a whole batch) as one task, processed
+    sequentially — mirrors _run_translation but resumes each record from its own
+    resume_info (continue_mode if it has dirs, else a fresh run reusing its id)."""
+    def set_state(**kw):
+        with _TASKS_LOCK:
+            if task_id in TASKS:
+                TASKS[task_id].update(kw)
+                if kw.get("status") in ("done", "error", "stopped"):
+                    TASKS[task_id]["ended_at"] = time.time()
+
+    total = len(recs)
+    run_folder = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{task_id[:6]}"
+    outputs, file_results = [], []
+    last_model, last_online = "", False
+    try:
+        for idx, rec in enumerate(recs):
+            try:
+                info = json.loads(rec.get("resume_info") or "{}")
+            except (ValueError, TypeError):
+                info = {}
+            src = info.get("input_file_path")
+            name = os.path.basename(src or rec.get("input_file") or "file")
+            model = info.get("model") or rec.get("model")
+            use_online = info.get("use_online", rec.get("use_online", True))
+            last_model, last_online = model, use_online
+            dirs = (info.get("temp_dir"), info.get("result_dir"), info.get("log_dir"))
+            fresh = not all(dirs)
+
+            def on_progress(v, desc=None, _i=idx, _n=name):
+                set_state(progress=(_i + float(v)) / total,
+                          desc=(f"[{_i+1}/{total}] {_n}: " + (desc or "")))
+
+            on_progress(0.0, "Extracting text...")
+            try:
+                outputs.append(_translate_one(
+                    task_id, session_id, src, model, use_online,
+                    info.get("src_lang"), info.get("dst_lang"),
+                    info.get("glossary_name", ""), info.get("bilingual_flags", {}),
+                    on_progress, continue_mode=not fresh,
+                    resume_dirs=None if fresh else dirs,
+                    resume_record_id=rec.get("id"),
+                    run_subdir=(run_folder if fresh else None),
+                    batch_id=rec.get("batch_id") or None,
+                    batch_size=rec.get("batch_size") or total))
+                file_results.append((name, "success", ""))
+            except HardApiError as e:
+                set_state(status="error", error=_friendly_api_error(e, ui_lang))
+                return
+            except RuntimeError as e:
+                if "__stopped__" in str(e):
+                    raise
+                file_results.append((name, "failed", str(e)))
+            except Exception as e:  # noqa: BLE001
+                app_logger.exception(f"Web batch-resume error for {name}")
+                file_results.append((name, "failed", str(e)))
+
+        with _TASKS_LOCK:
+            t = TASKS.get(task_id, {})
+            tp, tc, tt = t.get("tok_prompt", 0), t.get("tok_completion", 0), t.get("tokens", 0)
+        cost = None
+        if last_online and tt > 0:
+            try:
+                from core.pricing import estimate_cost
+                amt, sym, ccy = estimate_cost(last_model, tp, tc, ui_lang)
+                cost = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
+            except Exception:  # noqa: BLE001
+                pass
+        if not outputs:
+            set_state(status="error", error="All files failed. See log.")
+        elif total == 1:
+            set_state(status="done", progress=1.0, desc="Translation completed",
+                      output=outputs[0], tokens=tt, cost=cost)
+        else:
+            zip_path = backend.zip_results(outputs, file_results)
+            ok = sum(1 for _, s, _ in file_results if s == "success")
+            set_state(status="done", progress=1.0,
+                      desc=f"Translation completed ({ok}/{total})", output=zip_path,
+                      tokens=tt, cost=cost)
+    except RuntimeError as e:
+        if "__stopped__" in str(e):
+            set_state(status="stopped", desc="Stopped")
+        else:
+            app_logger.exception("Web batch-resume error")
+            set_state(status="error", error=str(e))
+
+
+@app.post("/api/history/resume-batch")
+def history_resume_batch(payload: dict, request: Request):
+    """Continue ALL resumable records of a batch at once (one task, sequential)."""
+    sid = request.state.session_id
+    ids = (payload or {}).get("ids") or []
+    ui_lang = (payload or {}).get("ui_lang", "en")
+    from core.translation_history import TranslationHistoryManager
+    h = TranslationHistoryManager(log_dir=history_log_dir(sid))
+    recs = []
+    for rid in ids:
+        rec = h.get_record_by_id(rid)
+        if not rec or rec.get("status") not in ("failed", "stopped", "interrupted"):
+            continue
+        try:
+            info = json.loads(rec.get("resume_info") or "{}")
+        except (ValueError, TypeError):
+            info = {}
+        src = info.get("input_file_path")
+        if info and src and os.path.exists(src):   # skip records whose upload is gone
+            recs.append(rec)
+    if not recs:
+        labels = LABEL_TRANSLATIONS.get(ui_lang) or LABEL_TRANSLATIONS.get("en", {})
+        raise HTTPException(409, labels.get("Source File Missing",
+                                            "The source file no longer exists."))
+    _prune_tasks()
+    with _TASKS_LOCK:
+        running = [t for t in TASKS.values() if t.get("status") == "running"]
+        if len(running) >= MAX_ACTIVE_TASKS:
+            raise HTTPException(429, "Server is busy. Please retry shortly.")
+        if sum(1 for t in running if t.get("session_id") == sid) >= MAX_ACTIVE_TASKS_PER_SESSION:
+            raise HTTPException(429, "You already have the maximum number of translations running.")
+    task_id = uuid.uuid4().hex[:12]
+    with _TASKS_LOCK:
+        TASKS[task_id] = {"progress": 0.0, "desc": "Queued...", "status": "running",
+                          "output": None, "error": None, "stop": False,
+                          "paused": False, "session_id": sid}
+    threading.Thread(target=_run_resume_batch, args=(task_id, sid, recs, ui_lang),
+                     daemon=True).start()
+    return {"task_id": task_id}
+
+
 @app.post("/api/history/delete")
 def history_delete(payload: dict, request: Request):
     """Delete one record AND all of its data: the output + log files we

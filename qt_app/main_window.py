@@ -262,6 +262,13 @@ class MainWindow(FluentWindow):
                 return True
             return False
         self.history_page.on_continue_resume = _continue_on_dashboard
+
+        def _continue_batch_on_dashboard(workers):
+            if self.translate_page.adopt_resume_batch(workers):
+                self.switchTo(self.translate_page)
+                return True
+            return False
+        self.history_page.on_continue_resume_batch = _continue_batch_on_dashboard
         self._auto_nav(animate=False)
 
     def closeEvent(self, event):

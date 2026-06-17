@@ -516,6 +516,7 @@ class TranslatePage(QStackedWidget):
         self._needs_isolation = len(set(bases)) != len(bases)
 
         self._queue = list(self._files)
+        self._resume_queue = []     # only used by batch resume
         self._total = len(self._files)
         self._results = []
         self._file_results = []
@@ -660,11 +661,15 @@ class TranslatePage(QStackedWidget):
             self._workers.remove(worker)
         self._progress.pop(worker, None)
         worker.wait(2000)
-        # Launch the next queued file to keep the pool full.
-        if self._queue and self._running:
-            self._start_next()
+        # Keep the pool full from whichever queue is active (fresh files or a
+        # batch resume of pre-built workers).
+        if self._running:
+            if getattr(self, "_resume_queue", None):
+                self._start_resume_next()
+            elif self._queue:
+                self._start_next()
         self._refresh_dashboard()
-        if not self._workers and not self._queue:
+        if not self._workers and not self._queue and not getattr(self, "_resume_queue", None):
             self._finish_all()
 
     def on_file_finished(self, worker, output_path, missing):
@@ -700,8 +705,10 @@ class TranslatePage(QStackedWidget):
         # Files still queued never started — flip their pre-created rows from
         # "queued" to "stopped" (started ones write their own stopped record).
         self._mark_queued_stopped(self._queue)
+        self._mark_resume_queue_stopped()
         # Drop anything not yet started so the pool drains.
         self._queue = []
+        self._resume_queue = []
 
     def _mark_queued_stopped(self, files):
         if not files:
@@ -712,6 +719,23 @@ class TranslatePage(QStackedWidget):
             mgr = TranslationHistoryManager(log_dir=log_dir)
             for fp in files:
                 tid = self._task_ids.get(fp)
+                if tid:
+                    mgr.set_status(tid, "stopped")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _mark_resume_queue_stopped(self):
+        """Pre-built resume workers that never started -> flip their rows back to
+        stopped (they keep their original resume_record_id)."""
+        pending = getattr(self, "_resume_queue", None)
+        if not pending:
+            return
+        try:
+            from core.translation_history import TranslationHistoryManager
+            _, _, log_dir = backend.get_custom_paths()
+            mgr = TranslationHistoryManager(log_dir=log_dir)
+            for w in pending:
+                tid = getattr(w, "translation_id", None)
                 if tid:
                     mgr.set_status(tid, "stopped")
         except Exception:  # noqa: BLE001
@@ -773,6 +797,7 @@ class TranslatePage(QStackedWidget):
         self.stop_btn.setEnabled(True)
         self.dashboard.start()
         self.setCurrentWidget(self.dashboard)
+        self._resume_queue = []
         worker._lh_file = file_path
         worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
         worker.finished.connect(lambda p, m, w=worker: self.on_file_finished(w, p, m))
@@ -783,6 +808,53 @@ class TranslatePage(QStackedWidget):
         self.dashboard.set_status(tr("Resuming Translation", self._lang) + "...")
         self._refresh_dashboard()
         return True
+
+    def adopt_resume_batch(self, workers):
+        """Resume a WHOLE batch (multiple files) as one run on the dashboard,
+        using the same concurrency pool as a normal multi-file run. `workers` are
+        pre-built by the History page from the batch's resumable records."""
+        workers = [w for w in (workers or []) if w is not None]
+        if self._running or not workers:
+            return False
+        self._run_stamp = None
+        self._needs_isolation = False
+        self._queue = []
+        self._resume_queue = list(workers)
+        self._total = len(workers)
+        self._results = []
+        self._file_results = []
+        self._coverage = []
+        self._workers = []
+        self._progress = {}
+        self._tokens = 0
+        self._exact_tokens = 0
+        self._prompt_tokens = 0
+        self._completion_tokens = 0
+        self._run_model = getattr(workers[0], "model", "")
+        self._run_online = getattr(workers[0], "use_online", False)
+        self._thread_count = getattr(workers[0], "thread_count", 0)
+        self._running = True
+        self.translate_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.dashboard.start()
+        self.setCurrentWidget(self.dashboard)
+        for _ in range(min(self._total, backend.MAX_CONCURRENT_TASKS)):
+            self._start_resume_next()
+        self.dashboard.set_status(tr("Resuming Translation", self._lang) + "...")
+        self._refresh_dashboard()
+        return True
+
+    def _start_resume_next(self):
+        if not getattr(self, "_resume_queue", None):
+            return
+        worker = self._resume_queue.pop(0)
+        worker._lh_file = getattr(worker, "file_path", "")
+        worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
+        worker.finished.connect(lambda p, m, w=worker: self.on_file_finished(w, p, m))
+        worker.failed.connect(lambda msg, w=worker: self.on_file_failed(w, msg))
+        self._workers.append(worker)
+        self._progress[worker] = 0.0
+        worker.start()
 
     def shutdown(self):
         """Stop in-flight translations and wait briefly, so document-translation
@@ -807,7 +879,9 @@ class TranslatePage(QStackedWidget):
             for w in live:
                 w.request_stop()
             self._mark_queued_stopped(self._queue)
+            self._mark_resume_queue_stopped()
             self._queue = []
+            self._resume_queue = []
         self.setCurrentWidget(self._controls)
 
     def _finish_all(self):

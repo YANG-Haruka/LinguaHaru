@@ -2320,6 +2320,9 @@ function buildBatchDetail(recs) {
   }
   box.appendChild(list);
   const acts = document.createElement("div"); acts.className = "hist-detail-acts";
+  if (recs.some(_histResumable)) {
+    _histActBtn(acts, _label("Continue All", "全部继续"), () => resumeBatch(recs), "primary");
+  }
   _histActBtn(acts, _label("Delete Record", "删除"), () => deleteBatch(recs), "danger");
   box.appendChild(acts);
   return box;
@@ -2406,6 +2409,28 @@ async function resumeHistory(id) {
     });
     // Jump back to the translate panel's dashboard (Qt parity: continuing a
     // stopped run returns to the same progress view).
+    const tab = document.querySelector('.tab[data-tab="translate"]');
+    if (tab) tab.click();
+    if (typeof showTranslateSub === "function") showTranslateSub("doc");
+    currentTask = task_id; setRunState("running");
+    if ($("result")) $("result").hidden = true;
+    setStatus(_label("Resuming Translation", "正在继续翻译") + "…");
+    listenProgress(task_id);
+  } catch (e) { toast(e.message || "Error", "error"); }
+}
+
+async function resumeBatch(recs) {
+  // Continue EVERY unfinished file in this batch as ONE task (server loops them
+  // sequentially). Per-file "继续翻译" only resumes that single file; this picks
+  // up all the failed/stopped/interrupted ones at once.
+  const ids = recs.filter(_histResumable).map((r) => r.id);
+  if (!ids.length) return;
+  try {
+    const lang = localStorage.getItem("lh-lang") || "zh";
+    const { task_id } = await api("/api/history/resume-batch", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids, ui_lang: lang }),
+    });
     const tab = document.querySelector('.tab[data-tab="translate"]');
     if (tab) tab.click();
     if (typeof showTranslateSub === "function") showTranslateSub("doc");

@@ -464,9 +464,14 @@ class HistoryPage(QWidget):
                 cb.clicked.connect(lambda _=False, rr=r: self._continue_record(rr))
                 h.addWidget(cb)
             self.detail_files.addWidget(row)
-        self.detail_hint.setText("")
-        # Batch actions: open the run folder + delete the whole batch.
+        self.detail_hint.setText(
+            tr("Resume Hint", L) if any(_is_resumable(r) for r in recs) else "")
+        # Batch actions: continue all unfinished + open the run folder + delete.
         self.detail_acts.addStretch(1)
+        if any(_is_resumable(r) for r in recs):
+            cont_all = PrimaryPushButton(FluentIcon.PLAY, tr("Continue All", L))
+            cont_all.clicked.connect(lambda: self._continue_batch(recs))
+            self.detail_acts.addWidget(cont_all)
         open_btn = PushButton(FluentIcon.FOLDER, tr("Open Folder", L))
         open_btn.clicked.connect(lambda: self._open_batch_folder(recs))
         self.detail_acts.addWidget(open_btn)
@@ -549,29 +554,23 @@ class HistoryPage(QWidget):
         self.reload()
 
     # --- continue (resume) ------------------------------------------------ #
-    def _continue_record(self, rec):
-        L = self._lang
-        if self._resume_worker is not None:
-            return  # one resume at a time
+    def _build_resume_worker(self, rec):
+        """Build a TranslationWorker from a history record, or None if it can't
+        be resumed (no resume info / source file gone). A 'queued' row that never
+        started has no dirs -> run fresh (continue_mode off) reusing its id."""
         info = _resume_info(rec)
         if not info:
-            self._toast(tr("No Resume Info", L), error=True)
-            return
+            return None
         src = info.get("input_file_path") or rec.get("input_file")
         if not src or not os.path.exists(src):
-            self._toast(tr("Source File Missing", L), error=True)
-            return
+            return None
         model = info.get("model") or rec.get("model")
         use_online = info.get("use_online", rec.get("use_online", True))
         api_key = load_api_key_for_model(model) if use_online else ""
         config = backend.read_config()
         resume_dirs = (info.get("temp_dir"), info.get("result_dir"), info.get("log_dir"))
-        # A "queued" row that never started has no dirs/partial data -> run it
-        # fresh (continue_mode off, new dirs) but reuse the same history id so it
-        # updates in place. A stopped/failed row with dirs resumes its partial work.
         fresh = not all(resume_dirs)
-
-        worker = TranslationWorker(
+        return TranslationWorker(
             file_path=src, model=model, use_online=use_online, api_key=api_key,
             src_lang=info.get("src_lang", rec.get("src_lang_display", "")),
             dst_lang=info.get("dst_lang", rec.get("dst_lang_display", "")),
@@ -587,6 +586,33 @@ class HistoryPage(QWidget):
             batch_id=rec.get("batch_id") or None,
             batch_size=rec.get("batch_size") or 1,
         )
+
+    def _continue_batch(self, recs):
+        """Resume ALL resumable files of a batch at once, on the Translate
+        dashboard (one run, normal concurrency)."""
+        L = self._lang
+        workers = [w for w in (self._build_resume_worker(r)
+                               for r in recs if _is_resumable(r)) if w is not None]
+        if not workers:
+            self._toast(tr("Source File Missing", L), error=True)
+            return
+        host = getattr(self, "on_continue_resume_batch", None)
+        if callable(host) and host(workers):
+            return
+        # Fallback: no dashboard host — resume them one at a time in place.
+        for w in workers:
+            w.finished.connect(lambda *_: self._on_resume_done(True, ""))
+            w.failed.connect(lambda msg: self._on_resume_done(False, msg))
+            w.start()
+
+    def _continue_record(self, rec):
+        L = self._lang
+        if self._resume_worker is not None:
+            return  # one resume at a time
+        worker = self._build_resume_worker(rec)
+        if worker is None:
+            self._toast(tr("Source File Missing", L), error=True)
+            return
         # Prefer running on the Translate page's dashboard (web parity: continuing
         # a stopped run jumps back to the progress view). Falls back to the
         # in-place toast if no host is wired.
