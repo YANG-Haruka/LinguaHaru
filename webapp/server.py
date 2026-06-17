@@ -17,6 +17,7 @@ import uuid
 import asyncio
 import time
 import contextvars
+from datetime import datetime
 
 from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
@@ -556,7 +557,8 @@ async def save_glossary(payload: dict):
 # --------------------------------------------------------------------------- #
 def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                    dst_lang, glossary_name, bilingual_flags, on_progress,
-                   continue_mode=False, resume_dirs=None, resume_record_id=None):
+                   continue_mode=False, resume_dirs=None, resume_record_id=None,
+                   run_subdir=None):
     """Translate a single file; returns its output path. Raises on failure.
 
     Paths are scoped to ``session_id`` so concurrent users never collide, and a
@@ -581,11 +583,13 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     else:
         temp_dir, result_dir, log_dir = sessions.session_paths(session_id)
         # Per-task subdir so two same-named files in ONE session don't collide
-        # (DocumentTranslator.file_dir is derived from basename). Cross-session was
-        # already isolated; this closes the same-session same-name case.
-        temp_dir = os.path.join(temp_dir, task_id)
-        result_dir = os.path.join(result_dir, task_id)
-        log_dir = os.path.join(log_dir, task_id)
+        # (DocumentTranslator.file_dir is derived from basename). Named by the run
+        # start datetime (+ a short id for uniqueness) so each task gets its own
+        # readable folder, matching the Qt desktop layout; falls back to task_id.
+        sub = run_subdir or task_id
+        temp_dir = os.path.join(temp_dir, sub)
+        result_dir = os.path.join(result_dir, sub)
+        log_dir = os.path.join(log_dir, sub)
     for _d in (temp_dir, result_dir, log_dir):
         os.makedirs(_d, exist_ok=True)
     config = backend.read_config()
@@ -689,6 +693,10 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
         return out
 
     total = len(file_paths)
+    # One readable, unique folder per run (start datetime + short id), so each
+    # task's outputs land in their own dir instead of all piling into the session
+    # result folder — matches the Qt desktop layout.
+    run_folder = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{task_id[:6]}"
     outputs, file_results = [], []
     try:
         for idx, fp in enumerate(file_paths):
@@ -702,7 +710,8 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
             try:
                 outputs.append(_translate_one(
                     task_id, session_id, fp, model, use_online, src_lang,
-                    dst_lang, glossary_name, bilingual_flags, on_progress))
+                    dst_lang, glossary_name, bilingual_flags, on_progress,
+                    run_subdir=run_folder))
                 file_results.append((name, "success", ""))
             except HardApiError as e:
                 # Account-level fault (insufficient balance / invalid key): every
