@@ -36,6 +36,16 @@ _FILE_FMT = logging.Formatter(fmt='%(asctime)s - [%(levelname)s] - %(message)s',
                               datefmt='%Y-%m-%d %H:%M:%S')
 
 
+class _SystemFilter(logging.Filter):
+    """system.log keeps only PROBLEMS (warnings/errors) + explicit lifecycle
+    events (records flagged sysevent=True). Routine INFO chatter — progress,
+    per-segment stages — stays out, so the system log is a clean, monitorable
+    record of 'what happened / what went wrong'."""
+
+    def filter(self, record):
+        return record.levelno >= logging.WARNING or getattr(record, "sysevent", False)
+
+
 class _TaskRoutingHandler(logging.Handler):
     """Routes each log record to the file handler of the task bound to the
     current context (``_log_task``). A record with no bound task is ignored here
@@ -113,7 +123,9 @@ class FileLogger:
             console_handler.setFormatter(SimpleColoredFormatter(fmt='%(message)s'))
             self.logger.addHandler(console_handler)
             self._setup_system_log()
-            self._routing = _TaskRoutingHandler(level=file_level)
+            # Per-project log at INFO: translation stages / retries / stats —
+            # NOT full prompt/response (those are gated separately by config).
+            self._routing = _TaskRoutingHandler(level=logging.INFO)
             self.logger.addHandler(self._routing)
 
         # Quiet noisy third-party loggers (some get pulled to DEBUG by the
@@ -135,6 +147,7 @@ class FileLogger:
                 maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8")
             h.setLevel(logging.INFO)
             h.setFormatter(_FILE_FMT)
+            h.addFilter(_SystemFilter())   # problems + lifecycle only
             self.logger.addHandler(h)
         except Exception:  # noqa: BLE001 — never let logging setup break startup
             pass
@@ -204,3 +217,11 @@ class FileLogger:
 # Create file logger instance
 file_logger = FileLogger(console_level=logging.INFO, file_level=logging.DEBUG)
 app_logger = file_logger.get_logger()
+
+
+def system_event(msg, level=logging.INFO):
+    """Log a LIFECYCLE event that belongs in the system log even at INFO level
+    (startup, config migration, plugin install/uninstall, task start/finish).
+    Flagged so it passes the system-log filter; also appears in the console and
+    (if a task is bound) the project log."""
+    app_logger.log(level, msg, extra={"sysevent": True})

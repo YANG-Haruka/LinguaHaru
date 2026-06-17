@@ -2567,11 +2567,11 @@ def _apply_excel_drawing_translations_to_file(file_path: str, drawing_items: Lis
                                     if paragraphs:
                                         paragraph = paragraphs[0]
                                         _distribute_drawing_text_to_runs(paragraph, translated_text, item, namespaces)
-                                        app_logger.info(f"Updated Excel drawing text for drawing {drawing_index}, count_src {count}")
+                                        app_logger.debug(f"Updated Excel drawing text for drawing {drawing_index}, count_src {count}")
                                     else:
                                         success = _fallback_drawing_text_update(drawing_tree, item, translated_text, namespaces)
                                         if success:
-                                            app_logger.info(f"Updated Excel drawing text (fallback) for drawing {drawing_index}, count_src {count}")
+                                            app_logger.debug(f"Updated Excel drawing text (fallback) for drawing {drawing_index}, count_src {count}")
                                         else:
                                             app_logger.warning(f"Could not find element to update for drawing {drawing_index}, count_src {count}")
 
@@ -2806,7 +2806,7 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                                         if item['paragraph_index'] < len(paragraphs):
                                             paragraph = paragraphs[item['paragraph_index']]
                                             _distribute_excel_smartart_text_to_runs(paragraph, translated_text, item, namespaces)
-                                            app_logger.info(f"Updated Excel SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}, count_src {count}")
+                                            app_logger.debug(f"Updated Excel SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}, count_src {count}")
 
                             modified_drawing_xml = etree.tostring(drawing_tree, xml_declaration=True,
                                                                  encoding="UTF-8", standalone="yes")
@@ -2845,7 +2845,7 @@ def _apply_excel_smartart_translations_to_file(file_path: str, smartart_items: L
                                             point_run_info = _process_excel_smartart_text_runs(point_text_runs, namespaces)
                                             if point_run_info['merged_text'].strip() == original_text.strip():
                                                 _distribute_excel_smartart_text_to_runs(point_paragraph, translated_text, item, namespaces)
-                                                app_logger.info(f"Updated Excel SmartArt data text for diagram {diagram_index}, count_src {count}: '{original_text}' -> '{translated_text[:50]}...'")
+                                                app_logger.debug(f"Updated Excel SmartArt data text for diagram {diagram_index}, count_src {count}: '{original_text}' -> '{translated_text[:50]}...'")
                                                 break
 
                             modified_data_xml = etree.tostring(data_tree, xml_declaration=True,
@@ -3045,11 +3045,11 @@ def _apply_excel_drawing_bilingual_translations_to_file(file_path: str, drawing_
                                     if paragraphs:
                                         paragraph = paragraphs[0]
                                         _simple_drawing_text_distribution(paragraph.xpath('.//a:r', namespaces=namespaces), bilingual_text, namespaces)
-                                        app_logger.info(f"Updated bilingual Excel drawing text for drawing {drawing_index}, count_src {count}")
+                                        app_logger.debug(f"Updated bilingual Excel drawing text for drawing {drawing_index}, count_src {count}")
                                     else:
                                         success = _fallback_drawing_text_update(drawing_tree, item, bilingual_text, namespaces)
                                         if success:
-                                            app_logger.info(f"Updated bilingual Excel drawing text (fallback) for drawing {drawing_index}, count_src {count}")
+                                            app_logger.debug(f"Updated bilingual Excel drawing text (fallback) for drawing {drawing_index}, count_src {count}")
                                         else:
                                             app_logger.warning(f"Could not find element to update for bilingual drawing {drawing_index}, count_src {count}")
 
@@ -3162,7 +3162,7 @@ def _apply_excel_smartart_bilingual_translations_to_file(file_path: str, smartar
                                         if item['paragraph_index'] < len(paragraphs):
                                             paragraph = paragraphs[item['paragraph_index']]
                                             _simple_excel_smartart_text_distribution(paragraph.xpath('.//a:r', namespaces=namespaces), bilingual_text, namespaces)
-                                            app_logger.info(f"Updated bilingual Excel SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}, count_src {count}")
+                                            app_logger.debug(f"Updated bilingual Excel SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}, count_src {count}")
 
                             modified_drawing_xml = etree.tostring(drawing_tree, xml_declaration=True,
                                                                  encoding="UTF-8", standalone="yes")
@@ -3204,7 +3204,7 @@ def _apply_excel_smartart_bilingual_translations_to_file(file_path: str, smartar
                                             point_run_info = _process_excel_smartart_text_runs(point_text_runs, namespaces)
                                             if point_run_info['merged_text'].strip() == original_text.strip():
                                                 _simple_excel_smartart_text_distribution(point_text_runs, bilingual_text, namespaces)
-                                                app_logger.info(f"Updated bilingual Excel SmartArt data text for diagram {diagram_index}, count_src {count}: '{original_text}' -> bilingual format")
+                                                app_logger.debug(f"Updated bilingual Excel SmartArt data text for diagram {diagram_index}, count_src {count}: '{original_text}' -> bilingual format")
                                                 break
 
                             modified_data_xml = etree.tostring(data_tree, xml_declaration=True,

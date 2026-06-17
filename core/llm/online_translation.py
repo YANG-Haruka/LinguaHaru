@@ -464,6 +464,17 @@ def _disable_thinking_default():
         return True
 
 
+def debug_llm_io():
+    """Whether to log FULL prompt + response to the project log. OFF by default
+    so users' source/translated text and prompts are never written. Turn on with
+    system_config "debug_llm_io": true only when deep-debugging the LLM I/O."""
+    try:
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("debug_llm_io", False))
+    except Exception:
+        return False
+
+
 def _looks_like_param_error(err):
     msg = str(err).lower()
     return any(m in msg for m in (
@@ -579,8 +590,10 @@ def translate_online(api_key, messages, model, mode_params=None):
             params["extra_body"] = extra_body
 
         # Log the messages being sent to the API
-        app_logger.debug(f"Sending messages to API: {json.dumps(messages, ensure_ascii=False, indent=2)}")
-        app_logger.debug(f"API parameters: {json.dumps(params, ensure_ascii=False, indent=2)}")
+        # Full prompt is logged ONLY when explicitly debugging LLM I/O (it
+        # contains the user's source text). Off by default for privacy.
+        if debug_llm_io():
+            app_logger.info(f"LLM request: {json.dumps(messages, ensure_ascii=False)}")
 
         # Send request (with thinking-disable fallback)
         response = _create_completion(client, params)
@@ -651,11 +664,16 @@ def translate_online(api_key, messages, model, mode_params=None):
                 'completion_tokens': getattr(response.usage, 'completion_tokens', 0) or 0,
                 'total_tokens': getattr(response.usage, 'total_tokens', 0) or 0
             }
-            app_logger.debug(f"Token usage: {token_usage}")
-
         if response and response.choices:
-            app_logger.debug(f"API Response: {response}")
             translated_text = response.choices[0].message.content
+            # Full response only when debugging LLM I/O (contains translated
+            # text); otherwise a concise summary: model + tokens + length.
+            if debug_llm_io():
+                app_logger.info(f"LLM response: {translated_text}")
+            elif token_usage:
+                app_logger.info(
+                    f"LLM ok: {api_model} · {token_usage['total_tokens']} tok · "
+                    f"{len(translated_text or '')} chars")
 
             if not translated_text:
                 app_logger.warning("Empty content in API response")

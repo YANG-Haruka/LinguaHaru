@@ -1011,7 +1011,7 @@ def _apply_smartart_translations(pptx, smartart_items: List[Dict], translations:
                             if item['paragraph_index'] < len(paragraphs):
                                 paragraph = paragraphs[item['paragraph_index']]
                                 _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
-                                app_logger.info(f"Updated drawing text for diagram {diagram_index}, shape {item['shape_index']}")
+                                app_logger.debug(f"Updated drawing text for diagram {diagram_index}, shape {item['shape_index']}")
                 
                 # Save modified drawing
                 modified_drawing_path = os.path.join(temp_folder, drawing_path)
@@ -1056,7 +1056,7 @@ def _apply_smartart_translations(pptx, smartart_items: List[Dict], translations:
                                 # If the original text matches, update this paragraph
                                 if point_run_info['merged_text'].strip() == original_text.strip():
                                     _distribute_text_to_runs(point_paragraph, translated_text, item, namespaces)
-                                    app_logger.info(f"Updated data text for diagram {diagram_index}: '{original_text}' -> '{translated_text[:50]}...'")
+                                    app_logger.debug(f"Updated data text for diagram {diagram_index}: '{original_text}' -> '{translated_text[:50]}...'")
                                     break
                 
                 # Save modified data

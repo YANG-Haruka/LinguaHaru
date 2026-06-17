@@ -138,6 +138,18 @@ class DocumentTranslator:
         # If not found, return the code itself
         return lang_code
 
+    def _log_progress(self, fraction):
+        """Throttled progress for the project log: at most every 5% or 30s (plus
+        100%). The UI already shows live progress; this keeps the log readable."""
+        import time
+        now = time.time()
+        if (fraction - getattr(self, "_last_log_frac", -1.0) >= 0.05
+                or now - getattr(self, "_last_log_time", 0.0) >= 30
+                or fraction >= 1.0):
+            app_logger.info(f"Progress: {fraction:.0%}")
+            self._last_log_frac = fraction
+            self._last_log_time = now
+
     def _get_current_log_file_path(self):
         """This run's per-project log file (in the result folder), set by
         process() when it opened the task log."""
@@ -521,7 +533,7 @@ class DocumentTranslator:
 
                 # Cumulative progress: completed segments / total (never resets)
                 overall_progress = min(self._completed_segments / max(self._total_segments, 1), 1.0)
-                app_logger.info(f"Progress: {overall_progress:.2%}")
+                self._log_progress(overall_progress)
                 self.update_ui_safely(progress_callback, overall_progress, stats_desc)
 
     def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
@@ -776,7 +788,7 @@ class DocumentTranslator:
                 # Cumulative progress: keep counting up from where we were, so a
                 # retry pass continues (e.g. 90% -> 100%) instead of restarting.
                 overall = min(self._completed_segments / max(self._total_segments, 1), 1.0)
-                app_logger.info(f"Progress: {overall:.2%}")
+                self._log_progress(overall)
                 # Show the live per-pass count too (done/total of THIS retry
                 # pass), so the line visibly ticks even though the global bar is
                 # already near 100% during the failed-segment cleanup.

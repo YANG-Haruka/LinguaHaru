@@ -206,8 +206,11 @@ def translate_offline(messages, model):
             app_logger.error(f"Unknown service: {service}")
             return f"Unknown service: {service}", False, None
             
-        app_logger.debug(f"Sending request to {url} with payload: {payload}")
-        
+        from core.llm.online_translation import debug_llm_io
+        # Full payload only when debugging LLM I/O (contains source text).
+        if debug_llm_io():
+            app_logger.info(f"Offline LLM request to {url}: {payload}")
+
         # Make the request
         response = requests.post(url, json=payload, timeout=600)
         response.raise_for_status()  # Raise exception for HTTP errors
@@ -219,7 +222,8 @@ def translate_offline(messages, model):
             return f"Empty response from {service}", True, None
 
         try:
-            app_logger.debug(f"API Response: {response_text}")
+            if debug_llm_io():
+                app_logger.info(f"Offline LLM response: {response_text}")
             response_json = json.loads(response_text)
 
             # Extract token usage based on service

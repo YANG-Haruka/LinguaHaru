@@ -124,10 +124,15 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             if current_attempt == 1:
                 glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
                 glossary_text = glossary_prompt_str + "\n".join(glossary_lines) + "\n\n"
-                
-                glossary_info = "Glossary used:\n"
-                glossary_info += " || ".join([f"{src} ==> {dst}" for src, dst in glossary_terms])
-                app_logger.info(glossary_info)
+
+                # Count only by default (the terms themselves are user content);
+                # full list only when debugging LLM I/O.
+                from core.llm.online_translation import debug_llm_io
+                if debug_llm_io():
+                    app_logger.info("Glossary used: " +
+                                    " || ".join(f"{src} ==> {dst}" for src, dst in glossary_terms))
+                else:
+                    app_logger.info(f"Glossary: {len(glossary_terms)} term(s) applied")
             else:
                 glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
                 glossary_text = glossary_prompt_str + "\n".join(glossary_lines) + "\n\n"

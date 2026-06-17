@@ -3197,7 +3197,7 @@ def update_footnotes_with_translations(footnotes_tree, original_data, translatio
                 target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
-        app_logger.info(f"Updated footnote {footnote_id}.{paragraph_index}: '{translated_text[:50]}...'")
+        app_logger.debug(f"Updated footnote {footnote_id}.{paragraph_index}: '{translated_text[:50]}...'")
 
 def update_smartart_with_translations(temp_dir, original_data, translations, namespaces):
     """Update SmartArt diagrams with translated content"""
@@ -3255,7 +3255,7 @@ def update_smartart_with_translations(temp_dir, original_data, translations, nam
                             if item['paragraph_index'] < len(paragraphs):
                                 paragraph = paragraphs[item['paragraph_index']]
                                 distribute_smartart_text_to_runs(paragraph, translated_text, item, namespaces)
-                                app_logger.info(f"Updated SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}")
+                                app_logger.debug(f"Updated SmartArt drawing text for diagram {diagram_index}, shape {item['shape_index']}")
                 
                 # Save modified drawing
                 with open(drawing_file_path, "wb") as f:
@@ -3298,7 +3298,7 @@ def update_smartart_with_translations(temp_dir, original_data, translations, nam
                                 # If the original text matches, update this paragraph
                                 if point_run_info['merged_text'].strip() == original_text.strip():
                                     distribute_smartart_text_to_runs(point_paragraph, translated_text, item, namespaces)
-                                    app_logger.info(f"Updated SmartArt data text for diagram {diagram_index}: '{original_text}' -> '{translated_text[:50]}...'")
+                                    app_logger.debug(f"Updated SmartArt data text for diagram {diagram_index}: '{original_text}' -> '{translated_text[:50]}...'")
                                     break
                 
                 # Save modified data
@@ -3460,7 +3460,7 @@ def update_sdt_paragraph_with_enhanced_preservation(item, translated_text, all_s
                 paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
-        app_logger.info(f"Updated SDT paragraph {sdt_index}.{paragraph_index}")
+        app_logger.debug(f"Updated SDT paragraph {sdt_index}.{paragraph_index}")
         
     except (IndexError, TypeError) as e:
         app_logger.error(f"Error updating SDT paragraph: {e}")
@@ -3538,7 +3538,7 @@ def update_sdt_table_cell_with_enhanced_preservation(item, translated_text, all_
                 target_paragraph, translated_text, namespaces, None, field_info, math_info, original_structure
             )
         
-        app_logger.info(f"Updated SDT table cell {sdt_index}.{table_index}.{row_idx}.{col_idx}.{paragraph_index}")
+        app_logger.debug(f"Updated SDT table cell {sdt_index}.{table_index}.{row_idx}.{col_idx}.{paragraph_index}")
         
     except (IndexError, TypeError) as e:
         app_logger.error(f"Error updating SDT table cell: {e}")
@@ -3942,7 +3942,7 @@ def update_textbox_with_enhanced_preservation(item, translated_text, all_wps_tex
         field_info = item.get("field_info")
         math_info = item.get("math_info")
         update_textbox_content_with_enhanced_preservation(textbox, translated_text, namespaces, field_info, math_info)
-        app_logger.info(f"Updated textbox {textbox_index} with translated text: '{translated_text[:50]}...'")
+        app_logger.debug(f"Updated textbox {textbox_index} with translated text: '{translated_text[:50]}...'")
         
     except (IndexError, TypeError) as e:
         app_logger.error(f"Error updating textbox: {e}")
@@ -4011,7 +4011,7 @@ def update_header_footer_textbox_with_enhanced_preservation(item, translated_tex
         field_info = item.get("field_info")
         math_info = item.get("math_info")
         update_textbox_content_with_enhanced_preservation(textbox, translated_text, namespaces, field_info, math_info)
-        app_logger.info(f"Updated header/footer textbox {textbox_index} with translated text: '{translated_text[:50]}...'")
+        app_logger.debug(f"Updated header/footer textbox {textbox_index} with translated text: '{translated_text[:50]}...'")
         
     except (IndexError, TypeError) as e:
         app_logger.error(f"Error updating header/footer textbox: {e}")
@@ -5043,7 +5043,7 @@ def update_toc_paragraph_fallback(paragraph, translated_text, namespaces):
                 new_text_node = etree.SubElement(new_run, f"{{{namespaces['w']}}}t")
                 new_text_node.text = translated_text
         
-        app_logger.info(f"Updated TOC paragraph (fallback method) with: '{translated_text}'")
+        app_logger.debug(f"Updated TOC paragraph (fallback method) with: '{translated_text}'")
     
     except Exception as e:
         app_logger.error(f"Error in TOC fallback update: {e}")
@@ -5076,7 +5076,7 @@ def update_numbering_xml_with_translations(numbering_tree, original_data, transl
                                 
                                 # Update the lvlText value
                                 lvl_text_node.set(f'{{{namespaces["w"]}}}val', final_translated_text)
-                                app_logger.info(f"Updated numbering level text: '{original_val}' -> '{final_translated_text}'")
+                                app_logger.debug(f"Updated numbering level text: '{original_val}' -> '{final_translated_text}'")
                                 break
                     except Exception as e:
                         app_logger.error(f"Error updating numbering level text: {e}")
@@ -5095,7 +5095,7 @@ def update_numbering_xml_with_translations(numbering_tree, original_data, transl
                 for text_node in text_nodes:
                     if text_node.text and text_node.text.strip() == original_text:
                         text_node.text = translated_text
-                        app_logger.info(f"Updated numbering text node: '{original_text}' -> '{translated_text}'")
+                        app_logger.debug(f"Updated numbering text node: '{original_text}' -> '{translated_text}'")
                         break
 
 def extract_and_preserve_variables(translated_text, original_text):
@@ -5176,7 +5176,7 @@ def update_json_structure_after_translation(original_json_path, translated_json_
     with open(translated_json_path, "w", encoding="utf-8") as outfile:
         json.dump(restructured_data, outfile, ensure_ascii=False, indent=4)
     
-    app_logger.info(f"Updated translation JSON structure: {translated_json_path}")
+    app_logger.debug(f"Updated translation JSON structure: {translated_json_path}")
     return translated_json_path
 
 
@@ -5249,7 +5249,7 @@ def update_footnotes_with_bilingual_format(footnotes_tree, original_data, transl
             )
 
         updated_count += 1
-        app_logger.info(f"Updated footnote {footnote_id}.{paragraph_index} with bilingual format")
+        app_logger.debug(f"Updated footnote {footnote_id}.{paragraph_index} with bilingual format")
 
     app_logger.info(f"Successfully updated {updated_count} footnotes with bilingual format")
 
@@ -5306,7 +5306,7 @@ def apply_smartart_translations_bilingual(temp_dir, original_data, translations,
                             if item['paragraph_index'] < len(paragraphs):
                                 paragraph = paragraphs[item['paragraph_index']]
                                 distribute_smartart_text_to_runs(paragraph, bilingual_text, item, namespaces)
-                                app_logger.info(f"Updated SmartArt drawing with bilingual format for diagram {diagram_index}")
+                                app_logger.debug(f"Updated SmartArt drawing with bilingual format for diagram {diagram_index}")
 
                 with open(drawing_file_path, "wb") as f:
                     f.write(etree.tostring(drawing_tree, xml_declaration=True, encoding="UTF-8", standalone="yes"))
