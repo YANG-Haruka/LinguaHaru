@@ -429,6 +429,13 @@ class PdfTranslator(DocumentTranslator):
             f"(workers={self.num_threads}): {self.input_file_path}"
         )
 
+        # Capture BabelDOC's own logs into THIS project's log: route its logger
+        # into our per-task + system logs, and set a fallback task so its internal
+        # worker threads (which don't carry our contextvar) land in this file too.
+        from core import log_config
+        log_config.file_logger.attach_to_logger("babeldoc")
+        log_config.file_logger.set_fallback_task(self.translation_id)
+
         try:
             stages = get_translation_stage(config)
             with ProgressMonitor(
@@ -454,6 +461,7 @@ class PdfTranslator(DocumentTranslator):
             app_logger.error(f"PDF translation failed: {e}")
             raise
         finally:
+            log_config.file_logger.clear_fallback_task()
             self.cleanup()
 
         if progress_callback:

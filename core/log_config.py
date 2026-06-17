@@ -46,7 +46,14 @@ class _TaskRoutingHandler(logging.Handler):
         super().__init__(level)
         self._handlers = {}              # task_id -> FileHandler
         self._lock = threading.Lock()
+        # Fallback task for records from threads that never got the contextvar
+        # (e.g. BabelDOC's internal worker threads during PDF translation).
+        self._fallback = None
         self.setFormatter(_FILE_FMT)
+
+    def set_fallback(self, task_id):
+        with self._lock:
+            self._fallback = task_id
 
     def open_task(self, task_id, path):
         fh = logging.FileHandler(path, mode='a', encoding='utf-8')
@@ -78,10 +85,8 @@ class _TaskRoutingHandler(logging.Handler):
 
     def emit(self, record):
         tid = _log_task.get()
-        if tid is None:
-            return
         with self._lock:
-            fh = self._handlers.get(tid)
+            fh = self._handlers.get(tid if tid is not None else self._fallback)
         if fh is not None:
             fh.emit(record)             # FileHandler has its own lock
 
@@ -169,6 +174,28 @@ class FileLogger:
         """ThreadPoolExecutor initializer: bind each worker thread to the task so
         segment-translation logs route to the task's file too."""
         _log_task.set(task_id)
+
+    def attach_to_logger(self, logger_name, level=logging.INFO):
+        """Route a third-party logger (and its children) into the per-task +
+        system logs too — e.g. BabelDOC, whose own worker threads don't get our
+        contextvar. Idempotent. Keeps propagation so the console is unaffected."""
+        lg = logging.getLogger(logger_name)
+        lg.setLevel(level)
+        if self._routing is not None and self._routing not in lg.handlers:
+            lg.addHandler(self._routing)
+        for h in self.logger.handlers:          # the rotating system handler
+            if isinstance(h, RotatingFileHandler) and h not in lg.handlers:
+                lg.addHandler(h)
+
+    def set_fallback_task(self, task_id):
+        """Route records from contextvar-less threads (BabelDOC) to this task.
+        Set just before such work, cleared right after."""
+        if self._routing is not None:
+            self._routing.set_fallback(task_id)
+
+    def clear_fallback_task(self):
+        if self._routing is not None:
+            self._routing.set_fallback(None)
 
     def get_logger(self):
         return self.logger
