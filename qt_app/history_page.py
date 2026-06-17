@@ -127,7 +127,11 @@ class HistoryPage(QWidget):
         self.table.setSelectionMode(TableWidget.SingleSelection)
         self.table.setEditTriggers(TableWidget.NoEditTriggers)
         # Click a row -> show its detail panel (with inline action buttons).
+        # itemClicked fires even when the row is ALREADY selected (e.g. the last
+        # remaining row after a delete) — itemSelectionChanged alone would not, so
+        # that row became un-clickable. Keep both: clicks + keyboard navigation.
         self.table.itemSelectionChanged.connect(self._on_row_selected)
+        self.table.itemClicked.connect(lambda *_: self._on_row_selected())
         layout.addWidget(self.table, 1)
 
         # Detail panel: full info for the selected row (hidden until a selection),
@@ -198,6 +202,9 @@ class HistoryPage(QWidget):
         sort_by, descending = _SORT_OPTIONS[max(0, self.sort_combo.currentIndex())]
         self._records = manager.get_all_records(
             limit=200, file_type=ftype, sort_by=sort_by, descending=descending)
+        # Repopulate without the row changes firing _on_row_selected mid-rebuild
+        # (which made the panel "auto-jump" to another row after a delete).
+        self.table.blockSignals(True)
         self.table.setRowCount(len(self._records))
         for r, rec in enumerate(self._records):
             status = rec.get("status", "")
@@ -216,6 +223,11 @@ class HistoryPage(QWidget):
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.Stretch)
         header.setSectionResizeMode(1, QHeaderView.Stretch)
+        # Clear any leftover selection so the next click is always a fresh one
+        # (so even the last remaining row reliably opens its detail).
+        self.table.clearSelection()
+        self.table.setCurrentCell(-1, -1)
+        self.table.blockSignals(False)
         self.detail_card.hide()
 
     @staticmethod
