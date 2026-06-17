@@ -459,21 +459,26 @@ def _load_wav_16k_mono(path):
     return a, sr
 
 
-def diarize_triples(wav_path, triples):
+def diarize_triples(wav_path, triples, progress_callback=None, ui_lang="en"):
     """Assign a speaker number (1..N) to each (start, end, text) triple by
     clustering cam++ embeddings. Returns a list of ints (all 1 on any failure,
-    so labeling degrades gracefully to single-speaker)."""
+    so labeling degrades gracefully to single-speaker). Reports per-segment
+    embedding progress (the slow part) so a long file doesn't look frozen."""
     try:
         import numpy as np
         from sklearn.cluster import AgglomerativeClustering
         audio, sr = _load_wav_16k_mono(wav_path)
         embs, idx = [], []
+        total = len(triples) or 1
         for i, (s, e, _t) in enumerate(triples):
             seg = audio[int(s * sr):int(e * sr)]
             v = embed_speaker(seg, sr)
             if v is not None:
                 embs.append(v)
                 idx.append(i)
+            if progress_callback and (i % 5 == 0 or i + 1 == total):
+                progress_callback((i + 1) / total,
+                                  desc=f"{_tr('Identifying speakers', ui_lang)} {i + 1}/{total}")
         labels_out = [1] * len(triples)
         if len(embs) <= 1:
             return labels_out
@@ -819,15 +824,22 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
                 progress_callback(0.02, desc=f"{_tr('Waiting for compute', session_lang)}...")
             GPU_LOCK.acquire()
         try:
+            labels_on = _speaker_labels_enabled()
+            # When also diarizing, give transcription 0-90% of the phase and
+            # diarization 90-100%, so BOTH show smooth progress (not a stall at
+            # ~99% while N segments are embedded). Otherwise transcription owns 0-100%.
+            if progress_callback and labels_on:
+                trans_cb = lambda v, desc=None: progress_callback(v * 0.9, desc=desc)
+                dia_cb = lambda v, desc=None: progress_callback(0.9 + v * 0.1, desc=desc)
+            else:
+                trans_cb, dia_cb = progress_callback, None
             if progress_callback:
                 progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
             triples = _run_transcription(engine, size, wav_path, src_lang,
-                                         progress_callback, session_lang, model_id)
+                                         trans_cb, session_lang, model_id)
             # Optional speaker labels (also GPU) while we still hold the lock + wav.
-            if triples and _speaker_labels_enabled():
-                if progress_callback:
-                    progress_callback(0.99, desc=f"{_tr('Identifying speakers', session_lang)}...")
-                spk = diarize_triples(wav_path, triples)
+            if triples and labels_on:
+                spk = diarize_triples(wav_path, triples, dia_cb, session_lang)
                 triples = [(s, e, f"S{spk[i]}: {t}") for i, (s, e, t) in enumerate(triples)]
         finally:
             GPU_LOCK.release()
