@@ -14,15 +14,14 @@ import subprocess
 import platform
 from datetime import datetime
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QAction
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView,
 )
 
 from qfluentwidgets import (
-    TableWidget, PushButton, StrongBodyLabel, ComboBox, BodyLabel, FluentIcon,
-    RoundMenu, StateToolTip, MessageBox, SimpleCardWidget, CaptionLabel,
+    TableWidget, PushButton, PrimaryPushButton, StrongBodyLabel, ComboBox,
+    BodyLabel, FluentIcon, StateToolTip, MessageBox, SimpleCardWidget, CaptionLabel,
 )
 
 from core import backend
@@ -127,13 +126,13 @@ class HistoryPage(QWidget):
         self.table.setSelectionBehavior(TableWidget.SelectRows)
         self.table.setSelectionMode(TableWidget.SingleSelection)
         self.table.setEditTriggers(TableWidget.NoEditTriggers)
-        # Single click -> show detail; right click -> action menu.
+        # Click a row -> show its detail panel (with inline action buttons).
         self.table.itemSelectionChanged.connect(self._on_row_selected)
-        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self.table, 1)
 
-        # Detail panel: full info for the selected row (hidden until a selection).
+        # Detail panel: full info for the selected row (hidden until a selection),
+        # with inline action buttons (Open Folder / Continue / Delete) — same as
+        # the web frontend, no right-click needed.
         self.detail_card = SimpleCardWidget()
         dlay = QVBoxLayout(self.detail_card)
         dlay.setContentsMargins(16, 12, 16, 12)
@@ -145,6 +144,10 @@ class HistoryPage(QWidget):
         dlay.addWidget(self.detail_title)
         dlay.addWidget(self.detail_body)
         dlay.addWidget(self.detail_hint)
+        self.detail_acts = QHBoxLayout()
+        self.detail_acts.setSpacing(8)
+        self.detail_acts.setContentsMargins(0, 8, 0, 0)
+        dlay.addLayout(self.detail_acts)
         self.detail_card.hide()
         layout.addWidget(self.detail_card)
 
@@ -252,32 +255,31 @@ class HistoryPage(QWidget):
         self.detail_body.setText(
             "\n".join(f"<b>{k}:</b> {v}" for k, v in rows).replace("\n", "<br>"))
         self.detail_hint.setText(tr("Resume Hint", L) if _is_resumable(rec) else "")
+        self._build_detail_actions(rec)
         self.detail_card.show()
 
-    # --- context menu ----------------------------------------------------- #
-    def _on_context_menu(self, pos):
-        row = self.table.rowAt(pos.y())
-        if row < 0 or row >= len(self._records):
-            return
-        self.table.selectRow(row)
-        rec = self._records[row]
+    def _build_detail_actions(self, rec):
+        """(Re)build the inline action buttons for the selected record: Open
+        Folder (always), Continue (interrupted only), Delete — same as web, no
+        right-click needed."""
+        # Clear any buttons from the previous selection.
+        while self.detail_acts.count():
+            item = self.detail_acts.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
         L = self._lang
-        menu = RoundMenu(parent=self.table)
-
-        open_act = QAction(tr("Open Folder", L), self)
-        open_act.triggered.connect(lambda: self._open_record_folder(rec))
-        menu.addAction(open_act)
-
+        open_btn = PushButton(FluentIcon.FOLDER, tr("Open Folder", L))
+        open_btn.clicked.connect(lambda: self._open_record_folder(rec))
+        self.detail_acts.addWidget(open_btn)
         if _is_resumable(rec):
-            cont_act = QAction(tr("Continue Translation", L), self)
-            cont_act.triggered.connect(lambda: self._continue_record(rec))
-            menu.addAction(cont_act)
-
-        del_act = QAction(tr("Delete Record", L), self)
-        del_act.triggered.connect(lambda: self._delete_record(rec))
-        menu.addAction(del_act)
-
-        menu.exec(self.table.viewport().mapToGlobal(pos))
+            cont_btn = PrimaryPushButton(FluentIcon.PLAY, tr("Continue Translation", L))
+            cont_btn.clicked.connect(lambda: self._continue_record(rec))
+            self.detail_acts.addWidget(cont_btn)
+        del_btn = PushButton(FluentIcon.DELETE, tr("Delete Record", L))
+        del_btn.clicked.connect(lambda: self._delete_record(rec))
+        self.detail_acts.addWidget(del_btn)
+        self.detail_acts.addStretch(1)
 
     def _open_record_folder(self, rec):
         # Prefer the output folder; fall back to the result dir from resume_info.

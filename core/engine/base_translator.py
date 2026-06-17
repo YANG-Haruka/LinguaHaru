@@ -770,10 +770,13 @@ class DocumentTranslator:
                 # retry pass continues (e.g. 90% -> 100%) instead of restarting.
                 overall = min(self._completed_segments / max(self._total_segments, 1), 1.0)
                 app_logger.info(f"Progress: {overall:.2%}")
+                # Show the live per-pass count too (done/total of THIS retry
+                # pass), so the line visibly ticks even though the global bar is
+                # already near 100% during the failed-segment cleanup.
                 self.update_ui_safely(
                     progress_callback,
                     overall,
-                    f"{retry_desc}...{retry_count+1}/{max_retries}"
+                    f"{retry_desc} {retry_count+1}/{max_retries} · {completed}/{total}"
                 )
 
         self.update_ui_safely(progress_callback, 1.0, f"{retry_desc} completed")

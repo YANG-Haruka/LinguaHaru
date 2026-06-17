@@ -322,6 +322,27 @@ class SettingsPage(ScrollArea):
         self.hist_age_edit.editingFinished.connect(self._save_hist_age)
         self.hist_age_label = BodyLabel(tr("Auto-delete by age", lang))
         hist_form.addRow(self.hist_age_label, self.hist_age_edit)
+        # Log + result retention (count / age / size). 0 = unlimited.
+        self.log_max_edit = LineEdit()
+        self.log_max_edit.setText(str(config.get("log_max_files", 500)))
+        self.log_max_edit.editingFinished.connect(self._save_log_max)
+        self.log_max_label = BodyLabel(tr("Log Max Files", lang))
+        hist_form.addRow(self.log_max_label, self.log_max_edit)
+        self.log_age_edit = LineEdit()
+        self.log_age_edit.setText(str(config.get("log_max_age_days", 30)))
+        self.log_age_edit.editingFinished.connect(self._save_log_age)
+        self.log_age_label = BodyLabel(tr("Log Max Days", lang))
+        hist_form.addRow(self.log_age_label, self.log_age_edit)
+        self.log_size_edit = LineEdit()
+        self.log_size_edit.setText(str(config.get("log_max_size_mb", 500)))
+        self.log_size_edit.editingFinished.connect(self._save_log_size)
+        self.log_size_label = BodyLabel(tr("Log Max Size", lang))
+        hist_form.addRow(self.log_size_label, self.log_size_edit)
+        self.result_size_edit = LineEdit()
+        self.result_size_edit.setText(str(config.get("result_max_size_mb", 5000)))
+        self.result_size_edit.editingFinished.connect(self._save_result_size)
+        self.result_size_label = BodyLabel(tr("Result Max Size", lang))
+        hist_form.addRow(self.result_size_label, self.result_size_edit)
         self.card_data.body.addLayout(hist_form)
         # Two danger actions, side by side: "clear records" is the lighter one
         # (neutral outline), "clear records + files" is the irreversible one
@@ -472,6 +493,26 @@ class SettingsPage(ScrollArea):
             v = 0
             self.hist_age_edit.setText("0")
         backend.set_config("history_max_age_days", v)
+
+    def _save_int_config(self, edit, key, default):
+        try:
+            v = max(0, int(edit.text().strip() or "0"))
+        except ValueError:
+            v = default
+            edit.setText(str(default))
+        backend.set_config(key, v)
+
+    def _save_log_max(self):
+        self._save_int_config(self.log_max_edit, "log_max_files", 500)
+
+    def _save_log_age(self):
+        self._save_int_config(self.log_age_edit, "log_max_age_days", 30)
+
+    def _save_log_size(self):
+        self._save_int_config(self.log_size_edit, "log_max_size_mb", 500)
+
+    def _save_result_size(self):
+        self._save_int_config(self.result_size_edit, "result_max_size_mb", 5000)
 
     def _clear_history(self):
         box = MessageBox(tr("Clear History", self._lang),
@@ -731,6 +772,10 @@ class SettingsPage(ScrollArea):
         self.output_browse.setText(tr("Browse", lang))
         self.hist_max_label.setText(tr("Auto-delete by count", lang))
         self.hist_age_label.setText(tr("Auto-delete by age", lang))
+        self.log_max_label.setText(tr("Log Max Files", lang))
+        self.log_age_label.setText(tr("Log Max Days", lang))
+        self.log_size_label.setText(tr("Log Max Size", lang))
+        self.result_size_label.setText(tr("Result Max Size", lang))
         self.hist_clear_btn.setText(tr("Clear History", lang))
         self.hist_clear_files_btn.setText(tr("Clear History And Files", lang))
         self.card_models.set_title(tr("Model Management", lang))

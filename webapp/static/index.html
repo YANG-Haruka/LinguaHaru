@@ -623,12 +623,20 @@
             <div class="dir-row"><input type="text" id="set-result-dir" placeholder="data/result" /><button id="set-result-browse" type="button" data-i18n="Browse">浏览</button></div>
           </div>
           <div class="row-2" style="margin-top:10px">
-            <div class="field"><label data-i18n="Auto Delete Count">超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
-            <div class="field"><label data-i18n="Auto Delete Days">超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
+            <div class="field"><label data-i18n="Auto Delete Count">历史超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
+            <div class="field"><label data-i18n="Auto Delete Days">历史超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
           </div>
-          <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
-            <button id="set-hist-clear" class="danger" data-i18n="Clear History">清空历史记录</button>
-            <button id="set-hist-clear-files" class="danger" data-i18n="Clear History And Files">清空历史及相关文件</button>
+          <div class="row-2" style="margin-top:10px">
+            <div class="field"><label data-i18n="Log Max Files">日志超过多少条自动删除（0 = 不限）</label><input type="number" id="set-log-max" min="0" placeholder="500" /></div>
+            <div class="field"><label data-i18n="Log Max Days">日志超过多少天自动删除（0 = 不限）</label><input type="number" id="set-log-age" min="0" placeholder="30" /></div>
+          </div>
+          <div class="row-2" style="margin-top:10px">
+            <div class="field"><label data-i18n="Log Max Size">日志超过多少 MB 自动删除（0 = 不限）</label><input type="number" id="set-log-size" min="0" placeholder="500" /></div>
+            <div class="field"><label data-i18n="Result Max Size">结果超过多少 MB 自动删除（0 = 不限）</label><input type="number" id="set-result-size" min="0" placeholder="5000" /></div>
+          </div>
+          <div class="set-actions">
+            <button id="set-hist-clear" data-i18n="Clear History">清空历史记录</button>
+            <button id="set-hist-clear-files" data-i18n="Clear History And Files">清空历史及相关文件</button>
           </div>
           <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Clear History Note">「清空历史记录」仅删除列表；「清空历史及相关文件」会同时删除这些记录生成的译文/日志文件（不会删除你的原始文件）。</div>
         </div>

@@ -315,6 +315,16 @@ details.set-card > summary:hover { background: var(--surface-2); }
 }
 .dir-row button:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
 
+/* Settings action buttons (e.g. clear-history): same look as the 浏览 button,
+   right-aligned. */
+.set-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 14px; }
+.set-actions button {
+  height: 42px; padding: 0 16px; border-radius: var(--r); cursor: pointer;
+  border: 1px solid var(--border-2); background: var(--surface-2); color: var(--text-2);
+  font-size: 0.9rem; transition: background .2s, color .2s, border-color .2s;
+}
+.set-actions button:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
+
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: end; }
 .lang-card { display: grid; grid-template-columns: 1fr auto 1fr; gap: 18px; align-items: end; }
 

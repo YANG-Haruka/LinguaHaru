@@ -484,6 +484,10 @@ async function boot() {
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
+  if ($("set-log-max")) $("set-log-max").value = (c.log_max_files ?? 500);
+  if ($("set-log-age")) $("set-log-age").value = (c.log_max_age_days ?? 30);
+  if ($("set-log-size")) $("set-log-size").value = (c.log_max_size_mb ?? 500);
+  if ($("set-result-size")) $("set-result-size").value = (c.result_max_size_mb ?? 5000);
   // PDF options (Translate page; shown only when a PDF is selected)
   if ($("pdf-translate-table")) $("pdf-translate-table").checked = !!c.pdf_translate_table;
   if ($("pdf-ocr-scanned")) $("pdf-ocr-scanned").checked = !!c.pdf_ocr_scanned;
@@ -813,6 +817,10 @@ if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
 };
 if ($("set-hist-max")) $("set-hist-max").onchange = () => saveConfig({ history_max_records: Math.max(0, parseInt($("set-hist-max").value || "0", 10) || 0) });
 if ($("set-hist-age")) $("set-hist-age").onchange = () => saveConfig({ history_max_age_days: Math.max(0, parseInt($("set-hist-age").value || "0", 10) || 0) });
+if ($("set-log-max")) $("set-log-max").onchange = () => saveConfig({ log_max_files: Math.max(0, parseInt($("set-log-max").value || "0", 10) || 0) });
+if ($("set-log-age")) $("set-log-age").onchange = () => saveConfig({ log_max_age_days: Math.max(0, parseInt($("set-log-age").value || "0", 10) || 0) });
+if ($("set-log-size")) $("set-log-size").onchange = () => saveConfig({ log_max_size_mb: Math.max(0, parseInt($("set-log-size").value || "0", 10) || 0) });
+if ($("set-result-size")) $("set-result-size").onchange = () => saveConfig({ result_max_size_mb: Math.max(0, parseInt($("set-result-size").value || "0", 10) || 0) });
 if ($("set-hist-clear")) $("set-hist-clear").onclick = async () => {
   if (!confirm("确定清空全部历史记录？此操作不可撤销。")) return;
   try {
@@ -2110,7 +2118,14 @@ async function loadHistory() {
     const dtd = document.createElement("td"); dtd.colSpan = 4;
     dtd.appendChild(buildHistoryDetail(r));
     det.appendChild(dtd);
-    tr.onclick = () => { det.hidden = !det.hidden; tr.classList.toggle("expanded", !det.hidden); };
+    tr.onclick = () => {
+      const opening = det.hidden;
+      // Accordion: collapse any other open detail so only one shows at a time.
+      t.querySelectorAll("tr.hist-detail").forEach((d) => { if (d !== det) d.hidden = true; });
+      t.querySelectorAll("tr.hist-row.expanded").forEach((r) => { if (r !== tr) r.classList.remove("expanded"); });
+      det.hidden = !opening;
+      tr.classList.toggle("expanded", opening);
+    };
     t.appendChild(tr); t.appendChild(det);
   }
 }

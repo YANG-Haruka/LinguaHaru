@@ -86,6 +86,13 @@ def main():
     except Exception:  # noqa: BLE001 — never block startup on history recovery
         pass
 
+    # Apply log + result disk retention (count / age / size limits).
+    try:
+        from core.retention import run_retention
+        run_retention()
+    except Exception:  # noqa: BLE001
+        pass
+
     app = QApplication(sys.argv)
     window = MainWindow()
     window.show()

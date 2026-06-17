@@ -70,6 +70,11 @@ def _recover_interrupted_history():
             app_logger.info(f"Recovered {n} interrupted translation(s) from a previous run")
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from core.retention import run_retention
+        run_retention()   # apply log + result disk retention
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def server_mode_on():
@@ -280,6 +285,10 @@ def bootstrap():
             "result_dir": config.get("result_dir", "data/result"),
             "history_max_records": config.get("history_max_records", 1000),
             "history_max_age_days": config.get("history_max_age_days", 0),
+            "log_max_files": config.get("log_max_files", 500),
+            "log_max_age_days": config.get("log_max_age_days", 30),
+            "log_max_size_mb": config.get("log_max_size_mb", 500),
+            "result_max_size_mb": config.get("result_max_size_mb", 5000),
             "default_thread_count_online": config.get("default_thread_count_online", 8),
             "default_thread_count_offline": config.get("default_thread_count_offline", 4),
             "thread_count": backend.thread_count_for_mode(
@@ -353,6 +362,8 @@ async def update_config(payload: dict):
                "web_vad", "live_vad_hang_ms", "live_vad_sensitivity",
                "live_vad_max_seg_ms", "lan_mode",
                "result_dir", "history_max_records", "history_max_age_days",
+               "log_max_files", "log_max_age_days", "log_max_size_mb",
+               "result_max_size_mb",
                "default_thread_count_online", "default_thread_count_offline",
                "max_api_concurrency",
                "pdf_translate_table", "pdf_ocr_scanned", "pdf_dual_alternating",

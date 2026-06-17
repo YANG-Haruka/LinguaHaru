@@ -570,7 +570,9 @@ class TranslatePage(QStackedWidget):
             src_lang=self.src_combo.currentText(),
             dst_lang=self.dst_combo.currentText(),
             max_token=config.get("max_token", 768),
-            max_retries=config.get("max_retries", 4),
+            # Honor the per-model "max_retries" set in Interface Management (the
+            # global default is only a fallback) — matches the web frontend.
+            max_retries=backend.max_retries_for_model(model if use_online else None),
             thread_count=backend.thread_count_for_mode(use_online, model),
             glossary_name=self.glossary_combo.currentText(),
             bilingual_flags=flags,

@@ -194,6 +194,13 @@ _DEFAULT_CONFIG = {
     # (0 = unlimited / no age limit).
     "history_max_records": 1000,
     "history_max_age_days": 0,
+    # Log + result retention (applied at startup; 0 = unlimited). Logs are pure
+    # diagnostics so they're cleaned fairly aggressively; results are the user's
+    # outputs so the size cap is generous and only trims the oldest.
+    "log_max_files": 500,
+    "log_max_age_days": 30,
+    "log_max_size_mb": 500,
+    "result_max_size_mb": 5000,
     # Bilingual (双语对照): style the TRANSLATED text so it stands out from the
     # original. color is a hex without '#' ("" = no color). Subtitles (srt/vtt).
     "bilingual_bold": True,
