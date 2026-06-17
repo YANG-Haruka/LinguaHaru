@@ -338,6 +338,9 @@ details.set-card > summary:hover { background: var(--surface-2); }
   font-size: 0.9rem; transition: background .2s, color .2s, border-color .2s;
 }
 .set-actions button:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
+/* The irreversible action (clear history + files) stands out red. */
+.set-actions button.danger { border-color: #ef4444; color: #ef4444; }
+.set-actions button.danger:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
 
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: end; }
 .lang-card { display: grid; grid-template-columns: 1fr auto 1fr; gap: 18px; align-items: end; }

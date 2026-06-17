@@ -310,39 +310,45 @@ class SettingsPage(ScrollArea):
         out_row.addWidget(self.output_edit, 1)
         out_row.addWidget(self.output_browse)
         self.card_data.body.addLayout(out_row)
+        # Retention, grouped: RESULTS first (count / MB / days), then LOGS
+        # (count / MB / days). 0 = unlimited. "Result count/days" reuse the
+        # history-record limits (one record per result); "Result MB" caps the
+        # output files on disk.
         hist_form = QFormLayout()
         hist_form.setSpacing(12)
         self.hist_max_edit = LineEdit()
         self.hist_max_edit.setText(str(config.get("history_max_records", 1000)))
         self.hist_max_edit.editingFinished.connect(self._save_hist_max)
-        self.hist_max_label = BodyLabel(tr("Auto-delete by count", lang))
-        hist_form.addRow(self.hist_max_label, self.hist_max_edit)
-        self.hist_age_edit = LineEdit()
-        self.hist_age_edit.setText(str(config.get("history_max_age_days", 0)))
-        self.hist_age_edit.editingFinished.connect(self._save_hist_age)
-        self.hist_age_label = BodyLabel(tr("Auto-delete by age", lang))
-        hist_form.addRow(self.hist_age_label, self.hist_age_edit)
-        # Log + result retention (count / age / size). 0 = unlimited.
-        self.log_max_edit = LineEdit()
-        self.log_max_edit.setText(str(config.get("log_max_files", 500)))
-        self.log_max_edit.editingFinished.connect(self._save_log_max)
-        self.log_max_label = BodyLabel(tr("Log Max Files", lang))
-        hist_form.addRow(self.log_max_label, self.log_max_edit)
-        self.log_age_edit = LineEdit()
-        self.log_age_edit.setText(str(config.get("log_max_age_days", 30)))
-        self.log_age_edit.editingFinished.connect(self._save_log_age)
-        self.log_age_label = BodyLabel(tr("Log Max Days", lang))
-        hist_form.addRow(self.log_age_label, self.log_age_edit)
-        self.log_size_edit = LineEdit()
-        self.log_size_edit.setText(str(config.get("log_max_size_mb", 500)))
-        self.log_size_edit.editingFinished.connect(self._save_log_size)
-        self.log_size_label = BodyLabel(tr("Log Max Size", lang))
-        hist_form.addRow(self.log_size_label, self.log_size_edit)
+        self.hist_max_label = BodyLabel(tr("Result Max Count", lang))
         self.result_size_edit = LineEdit()
         self.result_size_edit.setText(str(config.get("result_max_size_mb", 5000)))
         self.result_size_edit.editingFinished.connect(self._save_result_size)
         self.result_size_label = BodyLabel(tr("Result Max Size", lang))
-        hist_form.addRow(self.result_size_label, self.result_size_edit)
+        self.hist_age_edit = LineEdit()
+        self.hist_age_edit.setText(str(config.get("history_max_age_days", 0)))
+        self.hist_age_edit.editingFinished.connect(self._save_hist_age)
+        self.hist_age_label = BodyLabel(tr("Result Max Days", lang))
+        self.log_max_edit = LineEdit()
+        self.log_max_edit.setText(str(config.get("log_max_files", 500)))
+        self.log_max_edit.editingFinished.connect(self._save_log_max)
+        self.log_max_label = BodyLabel(tr("Log Max Files", lang))
+        self.log_size_edit = LineEdit()
+        self.log_size_edit.setText(str(config.get("log_max_size_mb", 500)))
+        self.log_size_edit.editingFinished.connect(self._save_log_size)
+        self.log_size_label = BodyLabel(tr("Log Max Size", lang))
+        self.log_age_edit = LineEdit()
+        self.log_age_edit.setText(str(config.get("log_max_age_days", 30)))
+        self.log_age_edit.editingFinished.connect(self._save_log_age)
+        self.log_age_label = BodyLabel(tr("Log Max Days", lang))
+        for lbl, edit in (
+            (self.hist_max_label, self.hist_max_edit),
+            (self.result_size_label, self.result_size_edit),
+            (self.hist_age_label, self.hist_age_edit),
+            (self.log_max_label, self.log_max_edit),
+            (self.log_size_label, self.log_size_edit),
+            (self.log_age_label, self.log_age_edit),
+        ):
+            hist_form.addRow(lbl, edit)
         self.card_data.body.addLayout(hist_form)
         # Two danger actions, side by side: "clear records" is the lighter one
         # (neutral outline), "clear records + files" is the irreversible one
@@ -770,12 +776,12 @@ class SettingsPage(ScrollArea):
         self.card_data.set_title(tr("Data & Storage", lang))
         self.output_label.setText(tr("Output Folder", lang))
         self.output_browse.setText(tr("Browse", lang))
-        self.hist_max_label.setText(tr("Auto-delete by count", lang))
-        self.hist_age_label.setText(tr("Auto-delete by age", lang))
-        self.log_max_label.setText(tr("Log Max Files", lang))
-        self.log_age_label.setText(tr("Log Max Days", lang))
-        self.log_size_label.setText(tr("Log Max Size", lang))
+        self.hist_max_label.setText(tr("Result Max Count", lang))
         self.result_size_label.setText(tr("Result Max Size", lang))
+        self.hist_age_label.setText(tr("Result Max Days", lang))
+        self.log_max_label.setText(tr("Log Max Files", lang))
+        self.log_size_label.setText(tr("Log Max Size", lang))
+        self.log_age_label.setText(tr("Log Max Days", lang))
         self.hist_clear_btn.setText(tr("Clear History", lang))
         self.hist_clear_files_btn.setText(tr("Clear History And Files", lang))
         self.card_models.set_title(tr("Model Management", lang))
