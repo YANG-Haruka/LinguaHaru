@@ -89,7 +89,9 @@ class ProgressDashboard(QWidget):
         self.ring_card = RingMetricCard(tr("Task Progress", lang))
         grid.addWidget(self.ring_card, 0, 0, 2, 1)
 
-        self.lines_card = MetricCard(tr("Line Stats", lang), "0", "",
+        # Common 8 metric cards (identical set on Web): Files, Elapsed, Speed,
+        # Tokens, Remaining, Threads, Failed, Stability (+ the ring).
+        self.lines_card = MetricCard(tr("Files", lang), "0", "",
                                      FluentIcon.ALIGNMENT, "#0d83d6")
         self.elapsed_card = MetricCard(tr("Elapsed Time", lang), "00:00", "",
                                        FluentIcon.HISTORY, "#7a5af5")
@@ -97,8 +99,8 @@ class ProgressDashboard(QWidget):
                                    FluentIcon.STOP_WATCH, "#f59e0b")
         self.tokens_card = MetricCard(tr("Token Usage", lang), "0", "",
                                       FluentIcon.MARKET, "#16a34a")
-        self.live_card = MetricCard(tr("Live Tasks", lang), "0", "",
-                                    FluentIcon.SPEED_HIGH, "#0ea5e9")
+        self.threads_card = MetricCard(tr("Thread Count", lang), "0", "",
+                                       FluentIcon.SPEED_HIGH, "#0ea5e9")
         self.speed_card = MetricCard(tr("Average Speed", lang), "0",
                                      tr("lines/min", lang), FluentIcon.SPEED_MEDIUM, "#ec4899")
         self.failed_card = MetricCard(tr("Failed Requests", lang), "0", "",
@@ -110,7 +112,7 @@ class ProgressDashboard(QWidget):
         grid.addWidget(self.elapsed_card, 0, 2)
         grid.addWidget(self.eta_card, 0, 3)
         grid.addWidget(self.tokens_card, 1, 1)
-        grid.addWidget(self.live_card, 1, 2)
+        grid.addWidget(self.threads_card, 1, 2)
         grid.addWidget(self.speed_card, 1, 3)
         grid.addWidget(self.failed_card, 2, 1)
         grid.addWidget(self.stability_card, 2, 2)
@@ -130,11 +132,11 @@ class ProgressDashboard(QWidget):
         layout.addStretch(1)
 
         self._cards = {
-            "lines": (self.lines_card, "Line Stats"),
+            "lines": (self.lines_card, "Files"),
             "elapsed": (self.elapsed_card, "Elapsed Time"),
             "eta": (self.eta_card, "Remaining Time"),
             "tokens": (self.tokens_card, "Token Usage"),
-            "live": (self.live_card, "Live Tasks"),
+            "threads": (self.threads_card, "Thread Count"),
             "speed": (self.speed_card, "Average Speed"),
             "failed": (self.failed_card, "Failed Requests"),
             "stability": (self.stability_card, "Task Stability"),
@@ -227,7 +229,7 @@ class ProgressDashboard(QWidget):
         if frac > 0.01:
             self.eta_card.set_value(_fmt_dur(elapsed * (1 - frac) / frac))
 
-    def update_metrics(self, percent, total_files, done_files, live_tasks,
+    def update_metrics(self, percent, total_files, done_files, thread_count,
                        failed, total_tokens):
         """Refresh all cards. Speed/ETA/elapsed are derived from the start time
         and the fraction complete (files act as the 'line' unit at this layer)."""
@@ -252,7 +254,7 @@ class ProgressDashboard(QWidget):
             self.eta_card.set_value("--:--")
 
         self.tokens_card.set_value(_fmt_tokens(total_tokens))
-        self.live_card.set_value(live_tasks)
+        self.threads_card.set_value(thread_count)
         self.failed_card.set_value(failed)
         attempted = done_files + failed
         stability = 100 if attempted == 0 else int(100 * done_files / attempted)

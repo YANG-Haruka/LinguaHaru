@@ -93,7 +93,7 @@ def test_new_pages_standalone():
     dash = ProgressDashboard(lang="zh")
     dash.start()
     dash.update_metrics(percent=50, total_files=4, done_files=2,
-                        live_tasks=1, failed=0, total_tokens=12345)
+                        thread_count=4, failed=0, total_tokens=12345)
 
     # Real-time voice page + its pure-Python PCM converters.
     from qt_app.live_page import (

@@ -719,6 +719,8 @@ let _progressES = null;
 function listenProgress(taskId) {
   // Reset the dashboard so a previous run's numbers don't linger on screen.
   ["m-files", "m-speed", "m-tokens", "m-eta", "m-threads"].forEach((id) => { $(id).textContent = "—"; });
+  if ($("m-failed")) $("m-failed").textContent = "0";
+  if ($("m-stability")) $("m-stability").textContent = "100%";
   $("progress-bar").style.width = "0%";
   $("prog-ring").style.setProperty("--p", "0deg");
   $("prog-pct").textContent = "0%";
@@ -745,6 +747,16 @@ function listenProgress(taskId) {
     $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
     $("m-eta").textContent = m(/ETA\s+([\d:]+)/i);
     $("m-threads").textContent = m(/(\d+)\s*threads/i);
+    // Failed count ("| failed N") + stability% = done/(done+failed) of the
+    // SEGMENT count ("Translating... 16/50"), mirroring Qt's success-rate card.
+    if ($("m-failed")) {
+      const failed = parseInt((desc.match(/failed\s+(\d+)/i) || [, "0"])[1], 10) || 0;
+      $("m-failed").textContent = failed;
+      const segM = desc.replace(/^\[\d+\/\d+\]/, "").match(/(\d+)\/(\d+)/);
+      const segDone = segM ? (parseInt(segM[1], 10) || 0) : 0;
+      const attempted = segDone + failed;
+      $("m-stability").textContent = (attempted === 0 ? 100 : Math.round(100 * segDone / attempted)) + "%";
+    }
     // Sync the pause UI to the server's authoritative state.
     if (d.status === "running") {
       if (d.paused && _runState !== "paused") { setRunState("paused"); setStatus(_label("Paused", "已暂停")); pauseElapsed(); }
@@ -2275,7 +2287,7 @@ async function loadHistory() {
     if (color) st.style.color = color;
     const f = document.createElement("td"); f.textContent = r.input_file || "";
     const ty = document.createElement("td"); ty.textContent = (r.file_type || "").toUpperCase();
-    const tm = document.createElement("td"); tm.textContent = (r.start_time || "").replace("T", " ").slice(0, 19);
+    const tm = document.createElement("td"); tm.textContent = (r.start_time || "").replace("T", " ").slice(0, 16);  // YYYY-MM-DD HH:MM (matches Qt)
     tr.append(st, f, ty, tm);
 
     const det = document.createElement("tr"); det.className = "hist-detail"; det.hidden = true;

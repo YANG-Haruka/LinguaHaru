@@ -181,7 +181,7 @@ html[data-theme="light"] .footer {
 .nav { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; flex: 1; padding-top: 12px; margin: 0 -4px; }
 .nav::-webkit-scrollbar { width: 0; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; padding: 0 4px; }
-.nav-group + .nav-group { margin-top: 14px; }
+.nav-group + .nav-group { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
 .nav-label {
   display: flex; align-items: baseline; gap: 7px;
   padding: 6px 12px 7px; margin-bottom: 2px;

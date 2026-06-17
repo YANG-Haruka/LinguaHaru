@@ -52,7 +52,6 @@ class TranslatePage(QStackedWidget):
         self._workers = []          # active TranslationWorker list
         self._progress = {}         # worker -> last fraction (for aggregation)
         self._last_output_dir = None
-        self._bilingual_switches = {}  # config-key -> SwitchButton
         # multi-file run state
         self._queue = []
         self._results = []          # successful output paths
@@ -147,10 +146,19 @@ class TranslatePage(QStackedWidget):
 
         layout.addWidget(model_card)
 
-        # --- Contextual bilingual switches ---
+        # --- Bilingual toggle: ONE switch that applies to every format (matches
+        #     the web frontend). Shown only when the selected files support it. ---
         self.bilingual_card = CardWidget()
-        self.bilingual_layout = QVBoxLayout(self.bilingual_card)
-        self.bilingual_layout.setContentsMargins(20, 10, 20, 10)
+        bi_row = QHBoxLayout(self.bilingual_card)
+        bi_row.setContentsMargins(20, 10, 20, 10)
+        self.bilingual_label = BodyLabel(tr("Bilingual Comparison", lang))
+        self.bilingual_switch = SwitchButton()
+        self.bilingual_switch.setChecked(config.get("bilingual_mode", False))
+        self.bilingual_switch.checkedChanged.connect(
+            lambda v: backend.set_config("bilingual_mode", v))
+        bi_row.addWidget(self.bilingual_label)
+        bi_row.addStretch(1)
+        bi_row.addWidget(self.bilingual_switch)
         self.bilingual_card.setVisible(False)
         layout.addWidget(self.bilingual_card)
 
@@ -242,6 +250,7 @@ class TranslatePage(QStackedWidget):
         self.iface_btn.setText(tr("Interface Management", lang))
         self.refresh_active_interface()
         self.glossary_label.setText(tr("Glossary", lang))
+        self.bilingual_label.setText(tr("Bilingual Comparison", lang))
         self.stt_label.setText(tr("Speech-to-Text Model", lang))
         self.translate_subs_label.setText(tr("Translate Subtitles", lang))
         self.speaker_labels_label.setText(tr("Speaker Labels", lang))
@@ -392,7 +401,7 @@ class TranslatePage(QStackedWidget):
     def _set_files(self, paths):
         self._files = paths
         self.dropzone.set_prompt(self._file_summary(paths))
-        self._rebuild_bilingual_switches()
+        self._update_bilingual_visibility()
         # Show STT options only for media files; apply SenseVoice lang limits.
         has_media = any(os.path.splitext(p)[1].lower() in MEDIA_EXTENSIONS for p in paths)
         if has_media:
@@ -419,32 +428,10 @@ class TranslatePage(QStackedWidget):
             self._info(tr("Translate", self._lang),
                        tr("Please select file(s) to translate.", self._lang), error=True)
 
-    def _rebuild_bilingual_switches(self):
-        # clear existing
-        while self.bilingual_layout.count():
-            item = self.bilingual_layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-        self._bilingual_switches.clear()
-
-        keys = backend.bilingual_keys_for_files(self._files)
-        config = backend.read_config()
-        for key in keys:
-            row = QHBoxLayout()
-            sw = SwitchButton()
-            sw.setChecked(config.get(key, False))
-            label_key = key
-            sw.checkedChanged.connect(
-                lambda v, k=label_key: backend.set_config(k, v))
-            row.addWidget(BodyLabel(tr(backend.BILINGUAL_LABEL.get(key, key), self._lang)))
-            row.addStretch(1)
-            row.addWidget(sw)
-            container = QWidget()
-            container.setLayout(row)
-            self.bilingual_layout.addWidget(container)
-            self._bilingual_switches[key] = sw
-        self.bilingual_card.setVisible(bool(keys))
+    def _update_bilingual_visibility(self):
+        """Show the single bilingual switch only when the selected files support
+        bilingual output (the switch then applies to all of them)."""
+        self.bilingual_card.setVisible(bool(backend.bilingual_keys_for_files(self._files)))
 
     def _refresh_stt_models(self):
         """Offer only DOWNLOADED STT models — selection happens here at translate
@@ -541,6 +528,9 @@ class TranslatePage(QStackedWidget):
         self._completion_tokens = 0
         self._run_model = ""
         self._run_online = False
+        # LLM concurrency for this run (same for all files: same model) — shown
+        # on the dashboard's Thread Count card.
+        self._thread_count = backend.thread_count_for_mode(use_online, model)
         self._running = True
         self.translate_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
@@ -560,7 +550,10 @@ class TranslatePage(QStackedWidget):
         file_path = self._queue.pop(0)
         config = backend.read_config()
         use_online, model, api_key = self._active()
-        flags = {k: sw.isChecked() for k, sw in self._bilingual_switches.items()}
+        # One switch -> apply to every format key (the translator picks the one
+        # matching this file's extension), mirroring the web frontend.
+        _bi = self.bilingual_switch.isChecked()
+        flags = {k: _bi for k in backend.BILINGUAL_LABEL}
         # Within the run folder, isolate same-named files by a per-file hex subdir.
         isolation = uuid.uuid4().hex[:6] if self._needs_isolation else None
         worker = TranslationWorker(
@@ -610,7 +603,7 @@ class TranslatePage(QStackedWidget):
             percent=self._aggregate_progress(),
             total_files=self._total,
             done_files=self._done_count(),
-            live_tasks=len(self._workers),
+            thread_count=getattr(self, "_thread_count", 0),
             failed=self._failed_count(),
             total_tokens=self._tokens,
         )
@@ -705,6 +698,7 @@ class TranslatePage(QStackedWidget):
         self._completion_tokens = 0
         self._run_model = getattr(worker, "model", "")
         self._run_online = getattr(worker, "use_online", False)
+        self._thread_count = getattr(worker, "thread_count", 0)
         self._running = True
         self.translate_btn.setEnabled(False)
         self.stop_btn.setEnabled(True)
