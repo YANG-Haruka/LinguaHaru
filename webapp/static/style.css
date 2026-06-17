@@ -339,7 +339,9 @@ details.set-card > summary:hover { background: var(--surface-2); }
 }
 .set-actions button:hover { background: var(--hover); color: var(--text); border-color: var(--border-strong); }
 /* The irreversible action (clear history + files) stands out red. */
-.set-actions button.danger { border-color: #ef4444; color: #ef4444; }
+/* Red OUTLINE (not a solid fill) — must set background+border explicitly to beat
+   the global `button.danger` solid-red rule, else it's red text on red = invisible. */
+.set-actions button.danger { background: transparent; border: 1px solid #ef4444; color: #ef4444; }
 .set-actions button.danger:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
 
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: end; }
@@ -354,6 +356,16 @@ details.set-card > summary:hover { background: var(--surface-2); }
 
 select, input[type="text"], input[type="password"], input[type="number"], input:not([type]) {
   width: 100%; height: 42px; padding: 0 13px;
+  border: 1px solid var(--border-2); border-radius: var(--r);
+  background: var(--surface-2); color: var(--text);
+  font-family: var(--font-sans); font-size: 0.92rem;
+  transition: border-color .2s, box-shadow .2s, background .2s;
+}
+/* Plain textarea (e.g. the style guide): same theme-aware surface as inputs but
+   auto height. Without this it fell back to the browser's white default — a
+   glaring white box in dark mode. (.quick-area overrides this, stays transparent.) */
+textarea {
+  width: 100%; padding: 9px 13px;
   border: 1px solid var(--border-2); border-radius: var(--r);
   background: var(--surface-2); color: var(--text);
   font-family: var(--font-sans); font-size: 0.92rem;
@@ -375,8 +387,8 @@ option, optgroup {
    on the dark surface. */
 ::placeholder { color: var(--muted); opacity: 1; }
 :-ms-input-placeholder { color: var(--muted); }
-select:hover, input:hover { border-color: var(--border-strong); }
-select:focus, input:focus {
+select:hover, input:hover, textarea:hover { border-color: var(--border-strong); }
+select:focus, input:focus, textarea:focus {
   outline: none; border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-ring); background: var(--surface);
 }
