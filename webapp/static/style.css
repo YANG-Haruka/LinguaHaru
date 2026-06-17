@@ -96,6 +96,20 @@ body {
   -webkit-font-smoothing: antialiased;
   letter-spacing: 0.1px;
   transition: background .3s, color .3s;
+  /* App chrome is not text-selectable: clicking a row / card / nav item must
+     never leave a blinking text caret or stray selection (it looked like an
+     edit field). Inputs and anything tagged .selectable stay selectable below
+     so users can still type and copy. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+/* Re-enable selection where the user genuinely types or copies text:
+   form fields, translation output, the live transcript, history detail values,
+   and anything explicitly tagged .selectable. */
+input, textarea, [contenteditable="true"], .selectable, .selectable *,
+.quick-output, .live-text, .hist-detail-info {
+  -webkit-user-select: text;
+  user-select: text;
 }
 html[data-theme="dark"] body {
   color: var(--text);
