@@ -79,6 +79,44 @@ class _CollapsibleCard(CardWidget):
         self._title.setText(title)
 
 
+class _SubSection(QWidget):
+    """A lightweight nested collapsible (no card chrome) for grouping sub-options
+    INSIDE a _CollapsibleCard — mirrors the web's nested <details>. Add content
+    via .body (a QVBoxLayout)."""
+
+    def __init__(self, title, parent=None):
+        super().__init__(parent)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 4, 0, 0)
+        root.setSpacing(0)
+        self._header = QWidget()
+        self._header.setCursor(Qt.PointingHandCursor)
+        hl = QHBoxLayout(self._header)
+        hl.setContentsMargins(0, 6, 0, 6)
+        hl.setSpacing(8)
+        self._arrow = BodyLabel("▸")
+        self._title = StrongBodyLabel(title)
+        hl.addWidget(self._arrow)
+        hl.addWidget(self._title)
+        hl.addStretch(1)
+        self._header.mousePressEvent = self._toggle
+        root.addWidget(self._header)
+        self._bodyw = QWidget()
+        self.body = QVBoxLayout(self._bodyw)
+        self.body.setContentsMargins(16, 0, 0, 8)   # indent so nesting reads visually
+        self.body.setSpacing(10)
+        self._bodyw.setVisible(False)
+        root.addWidget(self._bodyw)
+
+    def _toggle(self, _event=None):
+        vis = not self._bodyw.isVisible()
+        self._bodyw.setVisible(vis)
+        self._arrow.setText("▾" if vis else "▸")
+
+    def set_title(self, title):
+        self._title.setText(title)
+
+
 class SettingsPage(ScrollArea):
     """Run Mode (LAN), Translation Options, Data & Storage, Model Management —
     same set/order as the Web settings."""
@@ -300,16 +338,14 @@ class SettingsPage(ScrollArea):
         self.maxseg_label = BodyLabel(tr("Force Cut", lang))
         live_form.addRow(self.maxseg_label, self.maxseg_combo)
         self.card_options.body.addLayout(gl_form)
-
-        # --- Card 2b: Advanced translation options (folded) ---
-        self.card_advanced = _CollapsibleCard(tr("Advanced Options", lang))
-        layout.addWidget(self.card_advanced)
+        # Advanced + Real-Time Voice are NESTED sub-sections inside this card
+        # (fold open the card, then each sub-section) — mirrors the web layout.
+        self.card_advanced = _SubSection(tr("Advanced Options", lang))
         self.card_advanced.body.addLayout(adv_form)
-
-        # --- Card 2c: Real-Time Voice settings (folded) ---
-        self.card_live = _CollapsibleCard(tr("Real-Time Voice", lang))
-        layout.addWidget(self.card_live)
+        self.card_options.body.addWidget(self.card_advanced)
+        self.card_live = _SubSection(tr("Real-Time Voice", lang))
         self.card_live.body.addLayout(live_form)
+        self.card_options.body.addWidget(self.card_live)
 
         # --- Card 3: Data & Storage (output folder + history retention/clear) ---
         self.card_data = _CollapsibleCard(tr("Data & Storage", lang))
