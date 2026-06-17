@@ -131,10 +131,12 @@ _rpm_limiter = _RpmLimiter()
 
 def reset_rpm_limit_cache():
     """Drop the cached global RPM so the next request re-reads system_config —
-    lets a Settings change to rpm_limit take effect without a process restart."""
+    lets a Settings change to rpm_limit take effect without a process restart.
+    Also drops the adaptive concurrency limiter so a new max_api_concurrency
+    ceiling is picked up."""
     _rpm_limiter.limit = _RpmLimiter._UNSET
-    global _api_sem, _api_sem_n
-    _api_sem = None  # also re-read the concurrency cap
+    global _api_limiter
+    _api_limiter = None  # re-read the concurrency ceiling on next request
 
 
 # --- global API concurrency cap -------------------------------------------- #
@@ -144,23 +146,68 @@ def reset_rpm_limit_cache():
 # per-minute RPM window. 16 is a safer default — 32 caused timeout storms when
 # several videos translated at once. Raise via config "max_api_concurrency".
 _DEFAULT_API_CONCURRENCY = 16
-_api_sem = None
-_api_sem_n = 0
+
+
+class _AdaptiveLimiter:
+    """AIMD concurrency limiter for LLM calls. Drop in N files (10 or 1000) and
+    it self-tunes: on a timeout / 429 it HALVES the allowed in-flight requests
+    (multiplicative decrease), and after a streak of successes it grows back by 1
+    (additive increase) up to the configured ceiling. So the provider is never
+    flooded into a timeout storm regardless of how many tasks are queued."""
+
+    def __init__(self, start, lo, hi):
+        self._cv = threading.Condition()
+        self._limit = max(lo, min(start, hi))
+        self._lo, self._hi = lo, hi
+        self._active = 0
+        self._ok = 0
+
+    def acquire(self):
+        with self._cv:
+            while self._active >= self._limit:
+                self._cv.wait()
+            self._active += 1
+
+    def release(self):
+        with self._cv:
+            self._active = max(0, self._active - 1)
+            self._cv.notify()
+
+    def record_ok(self):
+        with self._cv:
+            self._ok += 1
+            if self._ok >= 12 and self._limit < self._hi:
+                self._limit += 1
+                self._ok = 0
+                self._cv.notify()
+
+    def record_overload(self):
+        with self._cv:
+            self._ok = 0
+            self._limit = max(self._lo, self._limit // 2)
+
+    @property
+    def limit(self):
+        return self._limit
+
+
+_api_limiter = None
 _api_sem_lock = threading.Lock()
 
 
-def _get_api_semaphore():
-    global _api_sem, _api_sem_n
+def _get_api_limiter():
+    global _api_limiter
     with _api_sem_lock:
-        if _api_sem is None:
+        if _api_limiter is None:
             try:
                 with open(SYSTEM_CONFIG, encoding="utf-8") as f:
-                    n = int(json.load(f).get("max_api_concurrency", _DEFAULT_API_CONCURRENCY))
+                    hi = int(json.load(f).get("max_api_concurrency", _DEFAULT_API_CONCURRENCY))
             except Exception:
-                n = _DEFAULT_API_CONCURRENCY
-            _api_sem_n = max(1, n)
-            _api_sem = threading.BoundedSemaphore(_api_sem_n)
-        return _api_sem
+                hi = _DEFAULT_API_CONCURRENCY
+            hi = max(1, hi)
+            # Start gently (≤8) and ramp up only if the provider keeps up.
+            _api_limiter = _AdaptiveLimiter(start=min(8, hi), lo=2, hi=hi)
+        return _api_limiter
 
 
 # --- adaptive backoff on HTTP 429 (per model) ------------------------------ #
@@ -456,8 +503,8 @@ def translate_online(api_key, messages, model, mode_params=None):
         _rpm_limiter.wait(key=model, limit_override=int(model_rpm))
     else:
         _rpm_limiter.wait()
-    _sem = _get_api_semaphore()
-    _sem.acquire()
+    _limiter = _get_api_limiter()
+    _limiter.acquire()
 
     try:
         # Initialize API client. An explicit timeout means a stalled request
@@ -504,11 +551,23 @@ def translate_online(api_key, messages, model, mode_params=None):
 
         # Send request (with thinking-disable fallback)
         response = _create_completion(client, params)
+        _limiter.record_ok()   # the call returned -> the provider is keeping up
 
     except HardApiError:
         raise
     except Exception as e:
         error_msg = str(e).lower()
+
+        # Timeout: the provider is overloaded (often a flood of queued files).
+        # Shrink concurrency (AIMD), brief cooldown, and retry — instead of
+        # spamming errors. This is why dropping 100 files no longer storms.
+        if "timed out" in error_msg or "timeout" in error_msg:
+            _limiter.record_overload()
+            _set_cooldown(model, 5)
+            app_logger.warning(
+                f"API timeout; reduced concurrency to {_limiter.limit}, will retry")
+            return f"API timeout, retrying: {str(e)}", False, None
+
         app_logger.error(f"API call failed: {e}")
 
         # Rate limit FIRST — a 429 body often contains "exceeded" (e.g. "rate
@@ -516,6 +575,7 @@ def translate_online(api_key, messages, model, mode_params=None):
         # error and abort the whole run. 429 is retryable: park the model.
         if "rate limit" in error_msg or "429" in error_msg or "too many requests" in error_msg:
             cooldown = _parse_retry_after(e)
+            _limiter.record_overload()   # also back off concurrency, not just RPM
             _set_cooldown(model, cooldown)
             return f"Rate limit exceeded; backing off {cooldown}s", False, None
 
@@ -532,7 +592,7 @@ def translate_online(api_key, messages, model, mode_params=None):
             return f"Network error: {str(e)}", False, None
         return f"API request failed: {str(e)}", False, None
     finally:
-        _sem.release()
+        _limiter.release()
 
     try:
         # Extract token usage from response
