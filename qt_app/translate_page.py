@@ -616,6 +616,7 @@ class TranslatePage(QStackedWidget):
         worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
         worker.finished.connect(lambda p, m, w=worker: self.on_file_finished(w, p, m))
         worker.failed.connect(lambda msg, w=worker: self.on_file_failed(w, msg))
+        worker.stopped.connect(lambda msg, w=worker: self.on_file_stopped(w, msg))
         self._workers.append(worker)
         self._progress[worker] = 0.0
         worker.start()
@@ -695,6 +696,14 @@ class TranslatePage(QStackedWidget):
         name = os.path.basename(getattr(worker, "_lh_file", "?"))
         self._file_results.append((name, "failed", message))
         self.dashboard.set_status(f"{name}: {message}")
+        self._retire(worker)
+
+    def on_file_stopped(self, worker, message):
+        # A user Stop is NOT a failure: record it as "stopped" so the summary
+        # reads "已停止 N" instead of "失败 N" (the worker already wrote its own
+        # stopped history row).
+        name = os.path.basename(getattr(worker, "_lh_file", "?"))
+        self._file_results.append((name, "stopped", message))
         self._retire(worker)
 
     def on_stop(self):
@@ -802,6 +811,7 @@ class TranslatePage(QStackedWidget):
         worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
         worker.finished.connect(lambda p, m, w=worker: self.on_file_finished(w, p, m))
         worker.failed.connect(lambda msg, w=worker: self.on_file_failed(w, msg))
+        worker.stopped.connect(lambda msg, w=worker: self.on_file_stopped(w, msg))
         self._workers.append(worker)
         self._progress[worker] = 0.0
         worker.start()
@@ -852,6 +862,7 @@ class TranslatePage(QStackedWidget):
         worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
         worker.finished.connect(lambda p, m, w=worker: self.on_file_finished(w, p, m))
         worker.failed.connect(lambda msg, w=worker: self.on_file_failed(w, msg))
+        worker.stopped.connect(lambda msg, w=worker: self.on_file_stopped(w, msg))
         self._workers.append(worker)
         self._progress[worker] = 0.0
         worker.start()
@@ -890,6 +901,7 @@ class TranslatePage(QStackedWidget):
         self.stop_btn.setEnabled(False)
         ok = [r for r in self._file_results if r[1] == "ok"]
         failed = [r for r in self._file_results if r[1] == "failed"]
+        stopped = [r for r in self._file_results if r[1] == "stopped"]
         # For multi-file runs, package a zip with a per-file results.txt.
         if len(self._file_results) > 1 and self._results:
             try:
@@ -902,11 +914,14 @@ class TranslatePage(QStackedWidget):
             if "{done}" in done_tmpl else f"{done_tmpl}: {len(ok)}"
         if failed:
             summary += f" | {tr('Failed', self._lang)}: {len(failed)}"
+        if stopped:
+            summary += f" | {tr('Status Stopped', self._lang)}: {len(stopped)}"
         self._refresh_dashboard()
         # Stay on the dashboard so the metrics (speed/tokens/time) remain visible;
         # just show a "done" banner + Open-folder / New-translation buttons.
         self.dashboard.show_done(summary, can_open=bool(self._results),
                                  coverage=self._aggregate_coverage())
+        # A user-initiated stop is not an error; only real failures flag the popup.
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
         # Thank-you + token/cost summary for the finished (long) translation run.
         if ok:

@@ -248,6 +248,7 @@ class TranslationWorker(QThread):
     progress = Signal(float, str)
     finished = Signal(str, list)
     failed = Signal(str)
+    stopped = Signal(str)   # user hit Stop — distinct from a real failure
 
     def __init__(self, file_path, model, use_online, api_key, src_lang, dst_lang,
                  max_token, max_retries, thread_count, glossary_name,
@@ -328,7 +329,7 @@ class TranslationWorker(QThread):
         try:
             self._translate()
         except _StopRequested:
-            self.failed.emit("Translation stopped by user.")
+            self.stopped.emit("Translation stopped by user.")
         except HardApiError as e:
             self.failed.emit(self._friendly_api_error(e))
         except Exception as e:  # noqa: BLE001 - surface any backend failure
