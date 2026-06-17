@@ -1,4 +1,7 @@
 {
+  "Pause": "Pause",
+  "Resume": "Fortsetzen",
+  "Paused": "Pausiert",
   "AI Glossary Extraction": "KI-Glossarextraktion",
   "AI Glossary Extraction Info": "Begriffe vor der Übersetzung mit dem LLM extrahieren",
   "API Auth Error": "Der API-Schlüssel ist ungültig oder abgelaufen. Bitte überprüfen Sie den API-Schlüssel oben im Tab „Übersetzen“.",

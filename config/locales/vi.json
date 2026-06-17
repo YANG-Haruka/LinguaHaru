@@ -1,4 +1,7 @@
 {
+  "Pause": "Tạm dừng",
+  "Resume": "Tiếp tục",
+  "Paused": "Đã tạm dừng",
   "AI Glossary Extraction": "Trích xuất thuật ngữ bằng AI",
   "AI Glossary Extraction Info": "Trích xuất thuật ngữ bằng LLM trước khi dịch",
   "API Auth Error": "Khóa API không hợp lệ hoặc đã hết hạn. Vui lòng kiểm tra Khóa API ở đầu tab Dịch.",

@@ -638,10 +638,20 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     }
 
     def check_stop():
-        # Task-scoped only: stopping one task never aborts this session's others.
-        with _TASKS_LOCK:
-            if TASKS.get(task_id, {}).get("stop"):
-                raise RuntimeError("__stopped__")
+        # Task-scoped control checkpoint (called all over the backend loops):
+        #   * Stop  -> raise, abort this task (others in the session keep running).
+        #   * Pause -> block IN PLACE until resumed or stopped. The thread/process/
+        #     models stay alive, so resume continues from this exact point (true
+        #     pause, not a restart). Never hold _TASKS_LOCK while sleeping — a held
+        #     lock here could deadlock BabelDOC's internal worker threads.
+        while True:
+            with _TASKS_LOCK:
+                t = TASKS.get(task_id, {})
+                if t.get("stop"):
+                    raise RuntimeError("__stopped__")
+                if not t.get("paused"):
+                    return
+            time.sleep(0.15)
     translator.check_stop_requested = check_stop
     output_path, _missing = translator.process(
         stem, ext, progress_callback=lambda v, desc=None: (check_stop(), on_progress(v, desc)))
@@ -821,7 +831,7 @@ async def translate(
     with _TASKS_LOCK:
         TASKS[task_id] = {"progress": 0.0, "desc": "Queued...",
                           "status": "running", "output": None, "error": None,
-                          "stop": False, "session_id": session_id}
+                          "stop": False, "paused": False, "session_id": session_id}
     flags = {k: bilingual for k in (
         "excel_bilingual_mode", "word_bilingual_mode", "pdf_bilingual_mode",
         "subtitle_bilingual_mode", "txt_bilingual_mode", "md_bilingual_mode",
@@ -855,10 +865,11 @@ def progress(task_id: str, request: Request):
             if not state or time.time() > deadline:
                 break   # task pruned/gone, or safety deadline hit
             snapshot = (round(state.get("progress", 0), 4), state.get("desc"),
-                        state.get("status"))
+                        state.get("status"), state.get("paused"))
             if snapshot != last:
                 last = snapshot
                 payload = {k: state.get(k) for k in ('progress', 'desc', 'status', 'error')}
+                payload["paused"] = bool(state.get("paused"))
                 if state.get("coverage") is not None:
                     payload["coverage"] = state.get("coverage")
                 if state.get("status") == "done":
@@ -878,6 +889,31 @@ def stop(task_id: str, request: Request):
         task = TASKS.get(task_id)
         if task is not None and task.get("session_id") == sid:
             task["stop"] = True   # task-scoped; other tasks in this session keep running
+            task["paused"] = False   # wake a paused task so its blocked threads see the stop
+    return {"ok": True}
+
+
+@app.post("/api/pause/{task_id}")
+def pause(task_id: str, request: Request):
+    """Freeze a running task in place (true pause — nothing is torn down, so a
+    later resume continues from the exact point). Task-scoped."""
+    sid = request.state.session_id
+    with _TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if task is not None and task.get("session_id") == sid and task.get("status") == "running":
+            task["paused"] = True
+    return {"ok": True}
+
+
+@app.post("/api/resume/{task_id}")
+def resume(task_id: str, request: Request):
+    """Resume a paused task; its blocked worker threads continue from where they
+    stopped checking."""
+    sid = request.state.session_id
+    with _TASKS_LOCK:
+        task = TASKS.get(task_id)
+        if task is not None and task.get("session_id") == sid:
+            task["paused"] = False
     return {"ok": True}
 
 
@@ -1013,7 +1049,8 @@ def history_resume(payload: dict, request: Request):
     task_id = uuid.uuid4().hex[:12]
     with _TASKS_LOCK:
         TASKS[task_id] = {"progress": 0.0, "desc": "Queued...", "status": "running",
-                          "output": None, "error": None, "stop": False, "session_id": sid}
+                          "output": None, "error": None, "stop": False,
+                          "paused": False, "session_id": sid}
     threading.Thread(target=_run_resume, args=(task_id, sid, rec, ui_lang),
                      daemon=True).start()
     return {"task_id": task_id}

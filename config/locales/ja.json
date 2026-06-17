@@ -1,4 +1,7 @@
 {
+  "Pause": "一時停止",
+  "Resume": "再開",
+  "Paused": "一時停止中",
   "AI Glossary Extraction": "AI用語抽出",
   "AI Glossary Extraction Info": "翻訳前にLLMで用語を抽出します",
   "API Auth Error": "APIキーが無効または期限切れです。翻訳タブ上部のAPIキーを確認してください。",

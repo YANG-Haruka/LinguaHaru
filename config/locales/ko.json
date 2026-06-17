@@ -1,4 +1,7 @@
 {
+  "Pause": "일시정지",
+  "Resume": "계속",
+  "Paused": "일시정지됨",
   "AI Glossary Extraction": "AI 용어 추출",
   "AI Glossary Extraction Info": "번역 전에 LLM으로 용어를 추출합니다",
   "API Auth Error": "API 키가 유효하지 않거나 만료되었습니다. 번역 탭 상단의 API 키를 확인하세요.",

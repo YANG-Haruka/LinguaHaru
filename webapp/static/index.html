@@ -206,6 +206,9 @@
 
       <!-- Sub-pane: document -->
       <div class="subpane active" data-sub="doc">
+        <!-- The whole input form. Hidden during a run so the dashboard takes
+             over the panel (mirrors the Qt desktop's form->dashboard switch). -->
+        <div id="translate-form">
         <div class="card lang-card">
           <div class="field">
             <label data-i18n="Source Language">源语言</label>
@@ -290,13 +293,12 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
             开始翻译
           </button>
-          <button id="stop-btn" disabled>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
-            停止
-          </button>
         </div>
+        </div><!-- /translate-form -->
 
-        <div class="progress-wrap" id="progress-wrap" hidden>
+        <!-- Run view: replaces the form during/after a translation. -->
+        <div id="translate-run" hidden>
+        <div class="progress-wrap" id="progress-wrap">
           <div class="dash">
             <div class="dash-ring">
               <div class="ring" id="prog-ring" style="--p:0deg"><span id="prog-pct">0%</span></div>
@@ -314,6 +316,26 @@
           <div class="muted" id="progress-desc" style="margin-top:8px"></div>
         </div>
 
+        <!-- Run controls: button set changes with state (running / paused / done). -->
+        <div class="actions run-actions">
+          <button id="run-pause">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/></svg>
+            <span data-i18n="Pause">暂停</span>
+          </button>
+          <button id="run-resume" class="primary" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
+            <span data-i18n="Resume">继续</span>
+          </button>
+          <button id="run-stop" class="danger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+            <span data-i18n="Stop">停止</span>
+          </button>
+          <button id="run-back" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H6"/><path d="M11 6l-6 6 6 6"/></svg>
+            <span data-i18n="New Translation">返回</span>
+          </button>
+        </div>
+
         <div id="result" class="result" hidden>
           <a id="download-link" class="primary" download>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
@@ -324,6 +346,7 @@
             <span id="coverage-body" class="cov-body"></span>
           </div>
         </div>
+        </div><!-- /translate-run -->
         <div id="status" class="muted"></div>
       </div>
 
@@ -679,7 +702,7 @@
      <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
    </div>
  </div>
-  <script src="/static/background.js?v=20260617D"></script>
-  <script src="/static/app.js?v=20260617D"></script>
+  <script src="/static/background.js?v=20260617E"></script>
+  <script src="/static/app.js?v=20260617E"></script>
 </body>
 </html>

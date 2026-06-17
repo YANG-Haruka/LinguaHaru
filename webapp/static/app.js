@@ -656,7 +656,7 @@ $("translate-btn").onclick = async () => {
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));
     if (!st.has_key) { setStatus("尚未设置 API 密钥，请在设置中填写。"); return; }
   }
-  setBusy(true);
+  setRunState("running");   // hide the form, show the dashboard (Qt-style takeover)
   $("result").hidden = true; setStatus("");
 
   // For each video, extract the audio track in-browser to avoid uploading the
@@ -684,27 +684,45 @@ $("translate-btn").onclick = async () => {
     const { task_id } = await api("/api/translate", { method: "POST", body: fd });
     currentTask = task_id;
     listenProgress(task_id);
-  } catch (e) { setStatus("错误: " + e.message); setBusy(false); }
+  } catch (e) { setRunState("idle"); setStatus("错误: " + e.message); }
 };
 
-$("stop-btn").onclick = async () => {
-  if (currentTask) await api("/api/stop/" + currentTask, { method: "POST" });
+// ----- run controls (pause / resume / stop / back) -----
+$("run-pause").onclick = async () => {
+  if (!currentTask) return;
+  setRunState("paused"); setStatus(_label("Paused", "已暂停"));   // optimistic; SSE confirms
+  try { await api("/api/pause/" + currentTask, { method: "POST" }); } catch (e) {}
+};
+$("run-resume").onclick = async () => {
+  if (!currentTask) return;
+  setRunState("running"); setStatus("");
+  try { await api("/api/resume/" + currentTask, { method: "POST" }); } catch (e) {}
+};
+$("run-stop").onclick = async () => {
+  if (!currentTask) return;
+  setStatus(_label("Stopping", "正在停止") + "…");
+  try { await api("/api/stop/" + currentTask, { method: "POST" }); } catch (e) {}
+};
+$("run-back").onclick = async () => {
+  // From a PAUSED run, "返回" also stops the task (it's saved to history and can
+  // be continued later); from a finished run it's just "new translation".
+  if (_runState === "paused" && currentTask) {
+    try { await api("/api/stop/" + currentTask, { method: "POST" }); } catch (e) {}
+  }
+  if (_progressES) { try { _progressES.close(); } catch (e) {} }
+  currentTask = null;
+  setRunState("idle");
 };
 
 let _progressES = null;
 function listenProgress(taskId) {
-  const wrap = $("progress-wrap");
-  wrap.hidden = false;
   // Reset the dashboard so a previous run's numbers don't linger on screen.
   ["m-files", "m-speed", "m-tokens", "m-eta", "m-threads"].forEach((id) => { $(id).textContent = "—"; });
   $("progress-bar").style.width = "0%";
   $("prog-ring").style.setProperty("--p", "0deg");
   $("prog-pct").textContent = "0%";
   $("progress-desc").textContent = "";
-  // Bring the dashboard into view — it sits below the upload form, so without
-  // this the user clicks 翻译 and sees nothing move (the Qt app switches to a
-  // full-screen progress view instead, which is why it felt like Web had none).
-  wrap.scrollIntoView({ behavior: "smooth", block: "center" });
+  $("translate-run").scrollIntoView({ behavior: "smooth", block: "start" });
   if (_progressES) { try { _progressES.close(); } catch (e) {} }   // don't leak a prior stream
   const es = new EventSource("/api/progress/" + taskId);
   _progressES = es;
@@ -725,19 +743,24 @@ function listenProgress(taskId) {
     $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
     $("m-eta").textContent = m(/ETA\s+([\d:]+)/i);
     $("m-threads").textContent = m(/(\d+)\s*threads/i);
+    // Sync the pause UI to the server's authoritative state.
+    if (d.status === "running") {
+      if (d.paused && _runState !== "paused") { setRunState("paused"); setStatus(_label("Paused", "已暂停")); }
+      else if (!d.paused && _runState === "paused") { setRunState("running"); setStatus(""); }
+    }
     if (d.status === "done") {
-      es.close(); setBusy(false);
+      es.close(); setRunState("done");
       $("download-link").href = "/api/download/" + taskId;
       $("result").hidden = false; setStatus("翻译完成");
       renderCoverage(d.coverage);
       showThanks(d.tokens, d.cost);
     } else if (d.status === "error") {
-      es.close(); setBusy(false); setStatus("错误: " + (d.error || "未知错误"));
+      es.close(); setRunState("error"); setStatus("错误: " + (d.error || "未知错误"));
     } else if (d.status === "stopped") {
-      es.close(); setBusy(false); setStatus("已停止");
+      es.close(); setRunState("stopped"); setStatus(_label("Stopped", "已停止"));
     }
   };
-  es.onerror = () => { es.close(); setBusy(false); };
+  es.onerror = () => { es.close(); };
 }
 
 function _label(key, fallback) {
@@ -761,9 +784,27 @@ function renderCoverage(cov) {
   box.hidden = false;
 }
 
-function setBusy(b) {
-  $("translate-btn").disabled = b;
-  $("stop-btn").disabled = !b;
+// Run state machine driving the form<->dashboard takeover and the run buttons.
+//   idle     -> form shown
+//   running  -> dashboard; [暂停][停止]
+//   paused   -> dashboard; [继续][返回]
+//   done/stopped/error -> dashboard + result; [返回/新翻译]
+let _runState = "idle";
+function setRunState(state) {
+  _runState = state;
+  const idle = state === "idle";
+  const tf = $("translate-form"), trun = $("translate-run");
+  if (tf) tf.hidden = !idle;
+  if (trun) trun.hidden = idle;
+  const show = (id, on) => { const el = $(id); if (el) el.hidden = !on; };
+  show("run-pause", state === "running");
+  show("run-stop", state === "running");
+  show("run-resume", state === "paused");
+  show("run-back", state === "paused" || state === "done" || state === "stopped" || state === "error");
+  const backSpan = $("run-back") && $("run-back").querySelector("span");
+  if (backSpan) backSpan.textContent = (state === "paused")
+    ? _label("Back", "返回") : _label("New Translation", "新翻译");
+  if (idle) { if ($("result")) $("result").hidden = true; setStatus(""); }
 }
 function setStatus(t) { $("status").textContent = t; }
 
@@ -2237,10 +2278,12 @@ async function resumeHistory(id) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, ui_lang: lang }),
     });
-    // Show progress on the translate panel (reuses its dashboard + download).
+    // Jump back to the translate panel's dashboard (Qt parity: continuing a
+    // stopped run returns to the same progress view).
     const tab = document.querySelector('.tab[data-tab="translate"]');
     if (tab) tab.click();
-    currentTask = task_id; setBusy(true);
+    if (typeof showTranslateSub === "function") showTranslateSub("doc");
+    currentTask = task_id; setRunState("running");
     if ($("result")) $("result").hidden = true;
     setStatus(_label("Resuming Translation", "正在继续翻译") + "…");
     listenProgress(task_id);

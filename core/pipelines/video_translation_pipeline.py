@@ -285,7 +285,7 @@ def _get_whisper_model(size):
     return _whisper_models[size]
 
 
-def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en"):
+def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en", check_stop=None):
     """Yield (start, end, text) tuples for each spoken segment."""
     model = _get_whisper_model(size)
     language = src_lang.split("-")[0] if src_lang else None  # zh, en, ja, ...
@@ -293,6 +293,11 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
     duration = getattr(info, "duration", None) or 0
     out = []
     for seg in segments:
+        # Pause/stop checkpoint between segments: pause blocks here in place
+        # (the whisper iterator + this process stay alive, so resume continues
+        # from this exact segment); stop raises out of the loop.
+        if check_stop:
+            check_stop()
         text = _clean_asr_text(seg.text)
         if text:
             out.append((seg.start, seg.end, text))
@@ -486,7 +491,7 @@ def _load_wav_16k_mono(path):
     return a, sr
 
 
-def diarize_triples(wav_path, triples, progress_callback=None, ui_lang="en"):
+def diarize_triples(wav_path, triples, progress_callback=None, ui_lang="en", check_stop=None):
     """Assign a speaker number (1..N) to each (start, end, text) triple by
     clustering cam++ embeddings. Returns a list of ints (all 1 on any failure,
     so labeling degrades gracefully to single-speaker). Reports per-segment
@@ -498,6 +503,8 @@ def diarize_triples(wav_path, triples, progress_callback=None, ui_lang="en"):
         embs, idx = [], []
         total = len(triples) or 1
         for i, (s, e, _t) in enumerate(triples):
+            if check_stop:   # pause/stop between per-segment embeddings
+                check_stop()
             seg = audio[int(s * sr):int(e * sr)]
             v = embed_speaker(seg, sr)
             if v is not None:
@@ -574,7 +581,7 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
     return _clean_asr_text(_qwen_text(r)), detected
 
 
-def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en"):
+def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en", check_stop=None):
     """VAD-segment the audio (for SRT timing) then batch-recognize the segments
     with Qwen3-ASR. Falls back to a single whole-file pass if VAD is unavailable."""
     import wave
@@ -606,6 +613,8 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     BATCH = 16
     total = len(chunks) or 1
     for i in range(0, len(chunks), BATCH):
+        if check_stop:   # pause/stop between batches (see _transcribe_whisper)
+            check_stop()
         results = model.transcribe(chunks[i:i + BATCH])
         for (start, end), r in zip(spans[i:i + BATCH], results):
             txt = _clean_asr_text(_qwen_text(r))
@@ -618,7 +627,7 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     return out
 
 
-def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en"):
+def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en", check_stop=None):
     """VAD-segment the audio, recognize each segment with SenseVoice, and return
     (start, end, text) tuples. Timing comes from the VAD so the SRT is aligned."""
     import wave
@@ -640,6 +649,8 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
     total = len(segments) or 1
     out = []
     for i, seg in enumerate(segments):
+        if check_stop:   # pause/stop between segments (see _transcribe_whisper)
+            check_stop()
         s_ms, e_ms = seg[0], seg[1]
         chunk = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
         if chunk.size == 0:
@@ -805,15 +816,15 @@ def _recognize_whisper(audio, src_lang, size="small"):
 
 # --- public entry point -----------------------------------------------------
 def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
-                       session_lang, model_id):
+                       session_lang, model_id, check_stop=None):
     """Dispatch to the selected STT engine; log WHY on failure (download/load
     error) to the per-file log instead of failing silently, then re-raise."""
     try:
         if engine == "sensevoice":
-            return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang)
+            return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
         if engine == "qwen3asr":
-            return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang)
-        return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang)
+            return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
+        return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang, check_stop)
     except Exception as e:  # noqa: BLE001
         app_logger.error(
             f"STT transcription failed (engine={engine}, model={model_id}): "
@@ -832,7 +843,8 @@ def _speaker_labels_enabled():
 
 
 def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callback=None,
-                            transcript_copy_dir=None, stt_model=None, session_lang="en"):
+                            transcript_copy_dir=None, stt_model=None, session_lang="en",
+                            check_stop=None):
     """Transcribe a video/audio file and write an SRT next to the temp data.
 
     stt_model: an id from STT_MODELS; defaults to the UI-selected one.
@@ -870,10 +882,10 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
             if progress_callback:
                 progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
             triples = _run_transcription(engine, size, wav_path, src_lang,
-                                         trans_cb, session_lang, model_id)
+                                         trans_cb, session_lang, model_id, check_stop)
             # Optional speaker labels (also GPU) while we still hold the lock + wav.
             if triples and labels_on:
-                spk = diarize_triples(wav_path, triples, dia_cb, session_lang)
+                spk = diarize_triples(wav_path, triples, dia_cb, session_lang, check_stop)
                 triples = [(s, e, f"S{spk[i]}: {t}") for i, (s, e, t) in enumerate(triples)]
         finally:
             GPU_LOCK.release()

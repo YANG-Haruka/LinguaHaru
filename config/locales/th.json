@@ -1,4 +1,7 @@
 {
+  "Pause": "หยุดชั่วคราว",
+  "Resume": "ดำเนินต่อ",
+  "Paused": "หยุดชั่วคราวแล้ว",
   "AI Glossary Extraction": "การดึงอภิธานศัพท์ด้วย AI",
   "AI Glossary Extraction Info": "ดึงคำศัพท์ด้วย LLM ก่อนการแปล",
   "API Auth Error": "คีย์ API ไม่ถูกต้องหรือหมดอายุ กรุณาตรวจสอบคีย์ API ที่ด้านบนของแท็บแปล",

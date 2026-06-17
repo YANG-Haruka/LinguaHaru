@@ -1,4 +1,7 @@
 {
+  "Pause": "Pausar",
+  "Resume": "Retomar",
+  "Paused": "Em pausa",
   "AI Glossary Extraction": "Extração de glossário por IA",
   "AI Glossary Extraction Info": "Extrair termos com o LLM antes de traduzir",
   "API Auth Error": "A chave de API é inválida ou expirou. Verifique a chave de API no topo da aba Traduzir.",
