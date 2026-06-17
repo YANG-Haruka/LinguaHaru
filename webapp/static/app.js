@@ -690,12 +690,12 @@ $("translate-btn").onclick = async () => {
 // ----- run controls (pause / resume / stop / back) -----
 $("run-pause").onclick = async () => {
   if (!currentTask) return;
-  setRunState("paused"); setStatus(_label("Paused", "已暂停"));   // optimistic; SSE confirms
+  setRunState("paused"); setStatus(_label("Paused", "已暂停")); pauseElapsed();   // optimistic; SSE confirms
   try { await api("/api/pause/" + currentTask, { method: "POST" }); } catch (e) {}
 };
 $("run-resume").onclick = async () => {
   if (!currentTask) return;
-  setRunState("running"); setStatus("");
+  setRunState("running"); setStatus(""); resumeElapsed();
   try { await api("/api/resume/" + currentTask, { method: "POST" }); } catch (e) {}
 };
 $("run-stop").onclick = async () => {
@@ -710,6 +710,7 @@ $("run-back").onclick = async () => {
     try { await api("/api/stop/" + currentTask, { method: "POST" }); } catch (e) {}
   }
   if (_progressES) { try { _progressES.close(); } catch (e) {} }
+  stopElapsed();
   currentTask = null;
   setRunState("idle");
 };
@@ -722,6 +723,7 @@ function listenProgress(taskId) {
   $("prog-ring").style.setProperty("--p", "0deg");
   $("prog-pct").textContent = "0%";
   $("progress-desc").textContent = "";
+  startElapsed();
   $("translate-run").scrollIntoView({ behavior: "smooth", block: "start" });
   if (_progressES) { try { _progressES.close(); } catch (e) {} }   // don't leak a prior stream
   const es = new EventSource("/api/progress/" + taskId);
@@ -745,19 +747,19 @@ function listenProgress(taskId) {
     $("m-threads").textContent = m(/(\d+)\s*threads/i);
     // Sync the pause UI to the server's authoritative state.
     if (d.status === "running") {
-      if (d.paused && _runState !== "paused") { setRunState("paused"); setStatus(_label("Paused", "已暂停")); }
-      else if (!d.paused && _runState === "paused") { setRunState("running"); setStatus(""); }
+      if (d.paused && _runState !== "paused") { setRunState("paused"); setStatus(_label("Paused", "已暂停")); pauseElapsed(); }
+      else if (!d.paused && _runState === "paused") { setRunState("running"); setStatus(""); resumeElapsed(); }
     }
     if (d.status === "done") {
-      es.close(); setRunState("done");
+      es.close(); stopElapsed(); setRunState("done");
       $("download-link").href = "/api/download/" + taskId;
       $("result").hidden = false; setStatus("翻译完成");
       renderCoverage(d.coverage);
       showThanks(d.tokens, d.cost);
     } else if (d.status === "error") {
-      es.close(); setRunState("error"); setStatus("错误: " + (d.error || "未知错误"));
+      es.close(); stopElapsed(); setRunState("error"); setStatus("错误: " + (d.error || "未知错误"));
     } else if (d.status === "stopped") {
-      es.close(); setRunState("stopped"); setStatus(_label("Stopped", "已停止"));
+      es.close(); stopElapsed(); setRunState("stopped"); setStatus(_label("Stopped", "已停止"));
     }
   };
   es.onerror = () => { es.close(); };
@@ -807,6 +809,27 @@ function setRunState(state) {
   if (idle) { if ($("result")) $("result").hidden = true; setStatus(""); }
 }
 function setStatus(t) { $("status").textContent = t; }
+
+// Elapsed-time clock: ticks every second so the dashboard shows progress even
+// during opaque phases (audio extraction / STT) that emit no progress events —
+// matches the Qt "Elapsed Time" card. Excludes paused time.
+let _elapTimer = null, _elapBase = 0, _elapSegStart = 0, _elapPaused = false;
+function _fmtDur(s) {
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${p(m)}:${p(x)}` : `${p(m)}:${p(x)}`;
+}
+function _elapNow() { return _elapBase + (_elapPaused ? 0 : (Date.now() - _elapSegStart) / 1000); }
+function startElapsed() {
+  _elapBase = 0; _elapSegStart = Date.now(); _elapPaused = false;
+  if ($("m-elapsed")) $("m-elapsed").textContent = "00:00";
+  if (_elapTimer) clearInterval(_elapTimer);
+  _elapTimer = setInterval(() => { if ($("m-elapsed")) $("m-elapsed").textContent = _fmtDur(_elapNow()); }, 1000);
+}
+function pauseElapsed() { if (_elapPaused) return; _elapBase += (Date.now() - _elapSegStart) / 1000; _elapPaused = true; }
+function resumeElapsed() { if (!_elapPaused) return; _elapSegStart = Date.now(); _elapPaused = false; }
+function stopElapsed() { if (_elapTimer) { clearInterval(_elapTimer); _elapTimer = null; } _elapPaused = false; }
 
 // ----- settings -----
 // (Online/offline is driven by the active interface, not a checkbox.)
