@@ -348,7 +348,9 @@ class TranslationWorker(QThread):
                     os.makedirs(d, exist_ok=True)
 
         from core.log_config import file_logger
-        file_logger.create_file_log(os.path.basename(self.file_path), log_dir=log_dir)
+        # The per-project log lives WITH the project's output files (result dir),
+        # not in a separate log folder, so reviewing a run's files includes its log.
+        file_logger.create_file_log(os.path.basename(self.file_path), log_dir=result_dir)
 
         translator = translator_class(
             self.file_path, self.model, self.use_online, self.api_key,

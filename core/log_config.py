@@ -41,15 +41,17 @@ class FileLogger:
         # would otherwise re-print every app_logger line (incl. DEBUG API
         # request/response dumps) in the ugly default format + duplicate INFO.
         self.logger.propagate = False
-        self.file_handler = None
+        self.file_handler = None          # per-project log (swapped per run)
+        self.current_log_file = None      # path of the active per-project log
 
-        # Set up console handler (only once)
+        # Set up console handler + the always-on SYSTEM log (only once)
         if not self.logger.hasHandlers():
             console_handler = logging.StreamHandler(sys.stdout)
             console_handler.setLevel(console_level)
             console_formatter = SimpleColoredFormatter(fmt='%(message)s')
             console_handler.setFormatter(console_formatter)
             self.logger.addHandler(console_handler)
+            self._setup_system_log()
 
         # Quiet noisy third-party loggers (some get pulled to DEBUG by the
         # speech stack's root basicConfig) so the console stays readable.
@@ -57,6 +59,26 @@ class FileLogger:
                        "modelscope", "funasr", "matplotlib", "numba"):
             logging.getLogger(_noisy).setLevel(logging.WARNING)
     
+    def _setup_system_log(self):
+        """One always-on, size-bounded system log so a system-level error is
+        always captured even when no translation is running. Kept simple: a
+        single rotating file under data/log."""
+        try:
+            from logging.handlers import RotatingFileHandler
+            from core.paths import DATA_DIR
+            log_dir = os.path.join(DATA_DIR, "log")
+            os.makedirs(log_dir, exist_ok=True)
+            h = RotatingFileHandler(
+                os.path.join(log_dir, "system.log"),
+                maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8")
+            h.setLevel(logging.INFO)
+            h.setFormatter(logging.Formatter(
+                fmt='%(asctime)s - [%(levelname)s] - %(message)s',
+                datefmt='%Y-%m-%d %H:%M:%S'))
+            self.logger.addHandler(h)
+        except Exception:  # noqa: BLE001 — never let logging setup break startup
+            pass
+
     def create_file_log(self, filename, log_dir):
         """
         Create a new log file for the specified filename.
@@ -93,7 +115,8 @@ class FileLogger:
                                            datefmt='%Y-%m-%d %H:%M:%S')
         self.file_handler.setFormatter(file_formatter)
         self.logger.addHandler(self.file_handler)
-        
+        self.current_log_file = log_file
+
         self.logger.info(f"Started processing file: {safe_filename}")
         return log_file
     

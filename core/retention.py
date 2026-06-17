@@ -43,7 +43,11 @@ def prune_logs(log_dir, max_files=0, max_age_days=0, max_size_mb=0):
     touches .db / .json (history) files. Returns the number deleted."""
     if not os.path.isdir(log_dir):
         return 0
-    logs = sorted(_iter_files(log_dir, ".log"), key=lambda t: t[2])  # oldest first
+    # Never prune the always-on system log (system.log + rotation backups) — it's
+    # self-bounded by RotatingFileHandler.
+    logs = sorted((t for t in _iter_files(log_dir, ".log")
+                   if not os.path.basename(t[0]).startswith("system.log")),
+                  key=lambda t: t[2])  # oldest first
     deleted = 0
 
     # 1) Age: drop anything older than the cutoff.

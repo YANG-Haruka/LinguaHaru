@@ -604,7 +604,9 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     config = backend.read_config()
 
     from core.log_config import file_logger
-    file_logger.create_file_log(os.path.basename(file_path), log_dir=log_dir)
+    # Per-project log lives WITH the output files (result dir), not a separate
+    # log folder, so a project's folder contains its full translation log.
+    file_logger.create_file_log(os.path.basename(file_path), log_dir=result_dir)
 
     translator = translator_class(
         file_path, model, use_online, api_key, src_code, dst_code, continue_mode,
