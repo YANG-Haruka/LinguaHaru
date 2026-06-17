@@ -34,13 +34,16 @@ def _fmt_tokens(n):
 
 
 class ProgressDashboard(QWidget):
-    def __init__(self, parent=None, lang="en", on_stop=None, on_open=None, on_back=None):
+    def __init__(self, parent=None, lang="en", on_stop=None, on_open=None, on_back=None,
+                 on_pause=None, on_resume=None):
         super().__init__(parent)
         self.setObjectName("ProgressDashboard")
         self._lang = lang
         self._on_stop = on_stop
         self._on_open = on_open
         self._on_back = on_back
+        self._on_pause = on_pause
+        self._on_resume = on_resume
         self._start_time = None
         self._last_percent = 0.0
         # Tick the clock every second so Elapsed/ETA keep moving even during the
@@ -57,6 +60,14 @@ class ProgressDashboard(QWidget):
         self.title = TitleLabel(tr("Task Progress", lang))
         head.addWidget(self.title)
         head.addStretch(1)
+        # Running: [暂停][停止].  Paused: [继续][返回].  Done: [打开][新翻译].
+        self.pause_btn = PushButton(FluentIcon.PAUSE, tr("Pause", lang))
+        self.pause_btn.clicked.connect(lambda: self._on_pause and self._on_pause())
+        head.addWidget(self.pause_btn)
+        self.resume_btn = PushButton(FluentIcon.PLAY, tr("Resume", lang))
+        self.resume_btn.clicked.connect(lambda: self._on_resume and self._on_resume())
+        self.resume_btn.hide()
+        head.addWidget(self.resume_btn)
         self.stop_btn = PushButton(FluentIcon.CANCEL, tr("Stop Translation", lang))
         self.stop_btn.clicked.connect(lambda: self._on_stop and self._on_stop())
         head.addWidget(self.stop_btn)
@@ -132,6 +143,8 @@ class ProgressDashboard(QWidget):
     def retranslate(self, lang):
         self._lang = lang
         self.title.setText(tr("Task Progress", lang))
+        self.pause_btn.setText(tr("Pause", lang))
+        self.resume_btn.setText(tr("Resume", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.open_btn.setText(tr("Open Output Folder", lang))
         self.back_btn.setText(tr("New Translation", lang))
@@ -148,17 +161,42 @@ class ProgressDashboard(QWidget):
         self._last_percent = 0.0
         self.ring_card.set_value(0)
         self.status.setText("")
-        # Running state: stop visible, open/back hidden.
+        # Running state: [暂停][停止] visible, resume/open/back hidden.
+        self.pause_btn.show()
+        self.resume_btn.hide()
         self.stop_btn.show()
         self.open_btn.hide()
         self.back_btn.hide()
         self._clock.start()
 
+    def set_paused(self, paused):
+        """Toggle the dashboard between running ([暂停][停止]) and paused
+        ([继续][返回]). Paused freezes the clock display; the backend is blocked
+        in place, so resume continues from the exact point."""
+        if paused:
+            self.pause_btn.hide()
+            self.stop_btn.hide()
+            self.resume_btn.show()
+            self.back_btn.setText(tr("Back", self._lang))
+            self.back_btn.show()
+            self.status.setText(tr("Paused", self._lang))
+            self._clock.stop()
+        else:
+            self.resume_btn.hide()
+            self.back_btn.hide()
+            self.pause_btn.show()
+            self.stop_btn.show()
+            if self._start_time:
+                self._clock.start()
+
     def show_done(self, summary, can_open, coverage=None):
         """Finished: keep all metrics on screen, swap Stop for Open/New."""
         self._clock.stop()
+        self.pause_btn.hide()
+        self.resume_btn.hide()
         self.stop_btn.hide()
         self.open_btn.setVisible(bool(can_open))
+        self.back_btn.setText(tr("New Translation", self._lang))
         self.back_btn.show()
         if summary:
             self.status.setText("✓ " + summary)

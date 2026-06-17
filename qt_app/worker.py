@@ -283,13 +283,32 @@ class TranslationWorker(QThread):
         # row (interrupted -> success) instead of adding a duplicate.
         self.resume_record_id = resume_record_id
         self._stop = False
+        self._paused = False
         # Coverage report for this file (filled after process(); read by the page)
         self.coverage = None
 
     def request_stop(self):
         self._stop = True
+        self._paused = False   # wake a paused run so its blocked threads see the stop
+
+    def request_pause(self):
+        self._paused = True
+
+    def request_resume(self):
+        self._paused = False
+
+    def is_paused(self):
+        return self._paused
 
     def _check_stop(self):
+        # Universal control checkpoint (wired into every backend loop via
+        # translator.check_stop_requested). Stop -> raise; Pause -> block in
+        # place until resumed/stopped so the thread/process/models stay alive and
+        # resume continues from the exact point (true pause, not a restart).
+        if self._stop:
+            raise _StopRequested()
+        while self._paused and not self._stop:
+            self.msleep(120)
         if self._stop:
             raise _StopRequested()
         return False

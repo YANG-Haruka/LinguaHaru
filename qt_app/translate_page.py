@@ -219,7 +219,8 @@ class TranslatePage(QStackedWidget):
         self.dashboard = ProgressDashboard(
             lang=lang, on_stop=self.on_stop,
             on_open=lambda: open_folder(self._last_output_dir),
-            on_back=self._back_to_controls)
+            on_back=self._back_to_controls,
+            on_pause=self.on_pause, on_resume=self.on_resume)
 
         self.addWidget(self._controls)
         self.addWidget(self.dashboard)
@@ -669,6 +670,57 @@ class TranslatePage(QStackedWidget):
         # Drop anything not yet started so the pool drains.
         self._queue = []
 
+    def on_pause(self):
+        """Freeze the run in place. Threads/process/models stay alive, so resume
+        continues from the exact point (even mid-STT)."""
+        for worker in list(self._workers):
+            if worker.isRunning():
+                worker.request_pause()
+        self.dashboard.set_paused(True)
+
+    def on_resume(self):
+        for worker in list(self._workers):
+            if worker.isRunning():
+                worker.request_resume()
+        self.dashboard.set_paused(False)
+
+    def adopt_resume_worker(self, worker, file_path):
+        """Run a resume worker (built by the History page) on THIS page's
+        dashboard, so continuing a stopped translation jumps back to the progress
+        view (web parity). Same single-file run-state setup as on_translate."""
+        if self._running:
+            return False   # a run is already in progress here
+        self._run_stamp = None
+        self._needs_isolation = False
+        self._queue = []
+        self._total = 1
+        self._results = []
+        self._file_results = []
+        self._coverage = []
+        self._workers = []
+        self._progress = {}
+        self._tokens = 0
+        self._exact_tokens = 0
+        self._prompt_tokens = 0
+        self._completion_tokens = 0
+        self._run_model = getattr(worker, "model", "")
+        self._run_online = getattr(worker, "use_online", False)
+        self._running = True
+        self.translate_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.dashboard.start()
+        self.setCurrentWidget(self.dashboard)
+        worker._lh_file = file_path
+        worker.progress.connect(lambda v, d, w=worker: self.on_progress(w, v, d))
+        worker.finished.connect(lambda p, m, w=worker: self.on_file_finished(w, p, m))
+        worker.failed.connect(lambda msg, w=worker: self.on_file_failed(w, msg))
+        self._workers.append(worker)
+        self._progress[worker] = 0.0
+        worker.start()
+        self.dashboard.set_status(tr("Resuming Translation", self._lang) + "...")
+        self._refresh_dashboard()
+        return True
+
     def shutdown(self):
         """Stop in-flight translations and wait briefly, so document-translation
         worker threads aren't destroyed mid-run when the app closes."""
@@ -683,7 +735,15 @@ class TranslatePage(QStackedWidget):
                 pass
 
     def _back_to_controls(self):
-        """Return from the (post-run) dashboard to the controls to start anew."""
+        """Return to the controls. Doubles as "返回" while paused: any live
+        (paused) workers are stopped first — the run is saved to history and can
+        be continued later."""
+        live = [w for w in self._workers if w.isRunning()]
+        if live:
+            self.dashboard.set_status(tr("Stopping", self._lang) + "...")
+            for w in live:
+                w.request_stop()
+            self._queue = []
         self.setCurrentWidget(self._controls)
 
     def _finish_all(self):

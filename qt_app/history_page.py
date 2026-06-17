@@ -366,6 +366,12 @@ class HistoryPage(QWidget):
             continue_mode=True, resume_dirs=resume_dirs,
             resume_record_id=rec.get("id"),
         )
+        # Prefer running on the Translate page's dashboard (web parity: continuing
+        # a stopped run jumps back to the progress view). Falls back to the
+        # in-place toast if no host is wired.
+        host = getattr(self, "on_continue_resume", None)
+        if callable(host) and host(worker, rec.get("input_file", "")):
+            return
         worker.finished.connect(lambda *_: self._on_resume_done(True, ""))
         worker.failed.connect(lambda msg: self._on_resume_done(False, msg))
         self._resume_worker = worker

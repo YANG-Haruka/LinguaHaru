@@ -169,6 +169,14 @@ class MainWindow(FluentWindow):
         self.translate_page.on_open_interface = lambda: self.switchTo(self.interface_page)
         self.quick_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
         self.live_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
+        # Continuing a stopped run from History runs on the Translate dashboard
+        # and jumps the nav there (web parity).
+        def _continue_on_dashboard(worker, name):
+            if self.translate_page.adopt_resume_worker(worker, name):
+                self.switchTo(self.translate_page)
+                return True
+            return False
+        self.history_page.on_continue_resume = _continue_on_dashboard
 
         # Interface-language picker + theme toggle pinned at the bottom of the
         # navigation rail (language above theme).
