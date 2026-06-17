@@ -73,11 +73,32 @@ def install_module(name):
     return _run_pip(["install", "-r", spec[0]])
 
 
+def packages_to_uninstall(name):
+    """Packages safe to remove when uninstalling ``name``: this plugin's packages
+    MINUS any package still listed by ANOTHER plugin (so a shared dependency — the
+    STT stack used by Video/Audio + Real-Time Voice + 翻译语音输入 — is kept while
+    any sibling still needs it). Empty list = everything is shared, remove nothing."""
+    spec = MODULE_SPECS.get(name)
+    if not spec:
+        return []
+    mine = set(spec[1])
+    others = set()
+    for other, (_req, pkgs) in MODULE_SPECS.items():
+        if other != name:
+            others |= set(pkgs)
+    return sorted(mine - others)
+
+
 def uninstall_module(name):
     spec = MODULE_SPECS.get(name)
     if not spec:
         return False, f"Unknown module: {name}"
-    return _run_pip(["uninstall", "-y", *spec[1]])
+    pkgs = packages_to_uninstall(name)
+    if not pkgs:
+        # All of this plugin's packages are shared with another plugin -> removing
+        # them would break the sibling. Nothing to uninstall at the pip level.
+        return True, "All dependencies are shared with another plugin; kept."
+    return _run_pip(["uninstall", "-y", *pkgs])
 
 
 def upgrade_module(name):

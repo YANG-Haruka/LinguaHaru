@@ -45,13 +45,38 @@ class InstallWorker(QThread):
         if not spec:
             self.finished_ok.emit(False, f"Unknown module: {self.module_name}")
             return
-        reqfile, packages = spec
+        reqfile, _packages = spec
         if self.action == "uninstall":
-            cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *packages]
+            # Only remove deps NOT shared with another plugin (keep the shared STT
+            # stack while a sibling still needs it).
+            from core.module_manager import packages_to_uninstall
+            packages = packages_to_uninstall(self.module_name)
+            if not packages:
+                self.line.emit("All dependencies are shared with another plugin; kept.")
+            else:
+                cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *packages]
+                if not self._stream(cmd):
+                    return
+            # Delete this plugin's NON-shared models (OCR/PDF); shared STT kept.
+            try:
+                from core.optional_modules import cleanup_plugin_models
+                removed = cleanup_plugin_models(self.module_name)
+                if removed:
+                    self.line.emit("Removed models: " + ", ".join(removed))
+            except Exception as e:  # noqa: BLE001
+                self.line.emit(f"Model cleanup skipped: {e}")
+            self.finished_ok.emit(True, "Uninstall finished")
+            return
         elif self.action == "upgrade":
             cmd = [sys.executable, "-m", "pip", "install", "-U", "-r", reqfile]
         else:
             cmd = [sys.executable, "-m", "pip", "install", "-r", reqfile]
+        if self._stream(cmd):
+            self.finished_ok.emit(True, "Installation finished")
+
+    def _stream(self, cmd):
+        """Run a pip command, streaming output lines. Returns True on success;
+        emits finished_ok(False, ...) and returns False on failure."""
         self.line.emit("$ " + " ".join(cmd))
         try:
             proc = subprocess.Popen(
@@ -64,11 +89,11 @@ class InstallWorker(QThread):
             proc.wait()
         except Exception as e:  # noqa: BLE001 - surface any launch failure
             self.finished_ok.emit(False, f"Error: {e}")
-            return
-        if proc.returncode == 0:
-            self.finished_ok.emit(True, "Installation finished")
-        else:
+            return False
+        if proc.returncode != 0:
             self.finished_ok.emit(False, f"pip exited with code {proc.returncode}")
+            return False
+        return True
 
 
 class ModelDownloadWorker(QThread):

@@ -890,6 +890,9 @@ function renderModules() {
       chip.append(txt, aff);
       chip.onclick = () => openPluginModelModal(m, chip, txt);
       modelTd.appendChild(chip);
+    } else if (m.fixed_model) {
+      // Fixed (non-selectable) model, e.g. PDF's DocLayout — shown read-only.
+      modelTd.className = "plugin-sub"; modelTd.textContent = m.fixed_model;
     } else {
       modelTd.className = "plugin-sub"; modelTd.textContent = "—";
     }

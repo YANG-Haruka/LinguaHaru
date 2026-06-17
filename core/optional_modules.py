@@ -287,6 +287,61 @@ def delete_plugin_model(name, model_id):
     return removed
 
 
+# Plugins whose model files are SHARED (the STT stack: SenseVoice/Whisper/Qwen
+# used by Video/Audio + Real-Time Voice + 翻译语音输入). Uninstalling one of these
+# must NOT delete the shared models while a sibling still uses them.
+_SHARED_MODEL_PLUGINS = {"Video/Audio", "Real-Time Voice", "翻译语音输入"}
+
+
+def _delete_pdf_model():
+    """Delete BabelDOC's cached DocLayout model + assets (data/models/babeldoc)."""
+    import shutil
+    from core import model_store
+    bd = os.path.join(model_store.current_dir(), "babeldoc")
+    if os.path.isdir(bd):
+        shutil.rmtree(bd, ignore_errors=True)
+        return True
+    return False
+
+
+def cleanup_plugin_models(name):
+    """Delete a plugin's model files on uninstall, but ONLY when they aren't
+    shared: OCR/PDF models are removed; the STT models are kept (Video/Audio +
+    Real-Time Voice + 翻译语音输入 share them). Returns the list of removed model
+    ids/labels. Never raises."""
+    removed = []
+    try:
+        if name == "Image OCR":
+            for st in plugin_model_states(name):
+                if st.get("downloaded") and delete_plugin_model(name, st["id"]):
+                    removed.append(st["id"])
+        elif name == "PDF":
+            if _delete_pdf_model():
+                removed.append("DocLayout")
+        # STT plugins (_SHARED_MODEL_PLUGINS): models shared -> kept on purpose.
+    except Exception as e:  # noqa: BLE001 — model cleanup must not fail the uninstall
+        from core.log_config import app_logger
+        app_logger.warning(f"cleanup_plugin_models({name}) failed: {e}")
+    return removed
+
+
+def uninstall_plugin(name):
+    """Uninstall a plugin the way the user expects:
+    - remove its pip deps that are NOT shared with any other plugin (a shared
+      dependency, e.g. the STT stack, is kept while a sibling still needs it);
+    - delete its model files ONLY when the model isn't shared (OCR/PDF models are
+      removed; the STT models stay because Video/Audio + Real-Time Voice +
+      翻译语音输入 share them — they can be deleted in Model Management once no
+      voice plugin needs them).
+    Returns (ok, message)."""
+    from core import module_manager
+    ok, out = module_manager.uninstall_module(name)   # shared-aware pip removal
+    removed_models = cleanup_plugin_models(name)
+    if removed_models:
+        out = f"{out} | removed models: {', '.join(removed_models)}"
+    return ok, out
+
+
 def module_status():
     """Status of each optional plugin for the UI. Every plugin is uniform:
     install/uninstall + (where applicable) a model selector + current model."""
@@ -295,18 +350,21 @@ def module_status():
                   else "PP-OCRv5 (RapidOCR)")
     specs = _plugin_model_specs()
 
-    def _entry(name, key, available, detail, requirements):
+    def _entry(name, key, available, detail, requirements, fixed_model=None):
         spec = specs.get(name)
         return {
             "name": name, "key": key, "available": available, "detail": detail,
             "install": f"pip install -r {requirements}",
             "models": spec["models"] if spec else None,
             "current_model": plugin_current_model(name) if spec else None,
+            # For plugins with a FIXED (non-selectable) model — shown read-only so
+            # every plugin displays the model it uses.
+            "fixed_model": fixed_model,
         }
 
     return [
         _entry("PDF", "pdf", pdf_translation_available(),
-               "BabelDOC", "requirements/pdf.txt"),
+               "BabelDOC", "requirements/pdf.txt", fixed_model="DocLayout (BabelDOC)"),
         _entry("Image OCR", "ocr", image_translation_available(),
                ocr_engine, "requirements/ocr.txt"),
         _entry("Video/Audio", "video", video_translation_available(),

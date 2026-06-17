@@ -1138,8 +1138,11 @@ MODULE_JOBS = {}  # name -> {"status": running|done|error, "output": str}
 
 
 def _run_module_job(name, action):
-    from core.module_manager import install_module, uninstall_module, upgrade_module
-    fn = {"install": install_module, "uninstall": uninstall_module,
+    from core.module_manager import install_module, upgrade_module
+    # Uninstall goes through optional_modules.uninstall_plugin so it removes only
+    # NON-shared deps and deletes non-shared models (shared STT stack is kept).
+    from core.optional_modules import uninstall_plugin
+    fn = {"install": install_module, "uninstall": uninstall_plugin,
           "upgrade": upgrade_module}[action]
     ok, out = fn(name)
     # On a successful install, best-effort warm the plugin's DEFAULT model so the

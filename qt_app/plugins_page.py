@@ -172,6 +172,12 @@ class OptionalPluginCard(CardWidget):
             self.status_caption = CaptionLabel("", self)
             self.status_caption.setTextColor("#808080", "#a0a0a0")
             layout.addWidget(self.status_caption)
+        elif self._mod.get("fixed_model"):
+            # Fixed (non-selectable) model, e.g. PDF's DocLayout — read-only line
+            # so every plugin shows the model it uses.
+            fixed = CaptionLabel(f"{tr('Model', lang)}: {self._mod['fixed_model']}", self)
+            fixed.setTextColor("#808080", "#a0a0a0")
+            layout.addWidget(fixed, 0, Qt.AlignLeft)
 
         btn_row = QHBoxLayout()
         btn_row.addStretch(1)
