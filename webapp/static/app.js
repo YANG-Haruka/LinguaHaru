@@ -2003,10 +2003,75 @@ if ($("iface-google-key")) $("iface-google-key").onchange = async () => {
 };
 
 // ----- history -----
+// Compact rows (status / file / type / time); clicking a row expands a detail
+// panel with the full record + actions: Download (output), Continue (interrupted
+// runs only), Delete (record + all data). Interrupted runs (failed/stopped) are
+// shown and resumable via continue_mode — the web equivalent of the Qt page.
 let historyTypesFilled = false;
+const HSTATUS = {
+  success: ["Status Success", "#2e7d32"],
+  failed: ["Status Failed", "#c62828"],
+  stopped: ["Status Stopped", "#ef6c00"],
+};
+
+function _fmtDuration(sec) {
+  sec = parseInt(sec || 0, 10) || 0;
+  if (sec < 60) return sec + "s";
+  const m = Math.floor(sec / 60), s = sec % 60;
+  if (m < 60) return s ? `${m}m ${s}s` : `${m}m`;
+  const h = Math.floor(m / 60), mm = m % 60;
+  return `${h}h${mm ? " " + mm + "m" : ""}`;
+}
+
+function _histResumable(r) {
+  if (!(r.status === "failed" || r.status === "stopped")) return false;
+  try { return !!JSON.parse(r.resume_info || "{}").input_file_path; }
+  catch (e) { return false; }
+}
+
+function buildHistoryDetail(r) {
+  const box = document.createElement("div"); box.className = "hist-detail-box";
+  const cost = (r.cost_amount != null && r.cost_currency) ? `${r.cost_amount} ${r.cost_currency}` : "-";
+  const rows = [
+    [_label("Source Language", "语言"), `${r.src_lang_display || r.src_lang || ""} → ${r.dst_lang_display || r.dst_lang || ""}`],
+    [_label("Model", "模型"), `${r.model || ""} (${r.use_online ? "Online" : "Offline"})`],
+    [_label("Tokens", "Tokens"), r.total_tokens != null ? String(r.total_tokens) : "-"],
+    [_label("Estimated cost", "费用"), cost],
+    [_label("Duration", "用时"), _fmtDuration(r.duration_seconds)],
+  ];
+  if (r.error_reason) rows.push([_label("Error Reason", "原因"), r.error_reason]);
+  const info = document.createElement("div"); info.className = "hist-detail-info";
+  for (const [k, v] of rows) {
+    const line = document.createElement("div");
+    const b = document.createElement("b"); b.textContent = k + ": ";
+    line.appendChild(b); line.appendChild(document.createTextNode(v));
+    info.appendChild(line);
+  }
+  box.appendChild(info);
+
+  const acts = document.createElement("div"); acts.className = "hist-detail-acts";
+  const mkBtn = (text, fn, cls) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "hist-act" + (cls ? " " + cls : "");
+    b.textContent = text;
+    b.onclick = (e) => { e.stopPropagation(); fn(); };
+    acts.appendChild(b);
+  };
+  if (r.output_file_path) {
+    mkBtn(_label("Download", "下载"),
+      () => window.open("/api/history/download?id=" + encodeURIComponent(r.id), "_blank"));
+  }
+  if (_histResumable(r)) {
+    mkBtn(_label("Continue Translation", "继续翻译"), () => resumeHistory(r.id), "primary");
+  }
+  mkBtn(_label("Delete Record", "删除"), () => deleteHistory(r.id), "danger");
+  box.appendChild(acts);
+  return box;
+}
+
 async function loadHistory() {
   const t = $("history-table");
-  tableSkeleton(t, 7);
+  tableSkeleton(t, 4);
   const ftype = $("history-type").value;
   const [sortBy, descFlag] = ($("history-sort").value || "start_time|1").split("|");
   let data;
@@ -2026,18 +2091,54 @@ async function loadHistory() {
       emptyState(EICON.inbox, "还没有翻译记录", "完成一次翻译后，项目会按文件类型与时间显示在这里。") + "</td></tr>";
     return;
   }
-  t.innerHTML = "<tr><th>文件</th><th>类型</th><th>语言</th><th>模型</th><th>状态</th><th>Tokens</th><th>费用</th><th>时间</th></tr>";
+  t.innerHTML = `<tr><th>${_label("Status", "状态")}</th><th>${_label("Upload File", "文件")}</th><th>${_label("File Type", "类型")}</th><th>${_label("Time", "时间")}</th></tr>`;
   for (const r of data.records) {
     const tr = document.createElement("tr");
-    const cost = (r.cost_amount != null && r.cost_currency) ? `${r.cost_amount} ${r.cost_currency}` : "";
-    const cells = [
-      r.input_file || "", (r.file_type || "").toUpperCase(),
-      `${r.src_lang_display || r.src_lang || ""}→${r.dst_lang_display || r.dst_lang || ""}`,
-      r.model || "", r.status || "", r.total_tokens != null ? String(r.total_tokens) : "",
-      cost, (r.start_time || "").replace("T", " ").slice(0, 19)];
-    for (const c of cells) { const td = document.createElement("td"); td.textContent = c; tr.appendChild(td); }
-    t.appendChild(tr);
+    tr.className = "hist-row";
+    const [key, color] = HSTATUS[r.status] || [null, null];
+    const st = document.createElement("td");
+    st.textContent = key ? _label(key, r.status) : (r.status || "");
+    if (color) st.style.color = color;
+    const f = document.createElement("td"); f.textContent = r.input_file || "";
+    const ty = document.createElement("td"); ty.textContent = (r.file_type || "").toUpperCase();
+    const tm = document.createElement("td"); tm.textContent = (r.start_time || "").replace("T", " ").slice(0, 19);
+    tr.append(st, f, ty, tm);
+
+    const det = document.createElement("tr"); det.className = "hist-detail"; det.hidden = true;
+    const dtd = document.createElement("td"); dtd.colSpan = 4;
+    dtd.appendChild(buildHistoryDetail(r));
+    det.appendChild(dtd);
+    tr.onclick = () => { det.hidden = !det.hidden; tr.classList.toggle("expanded", !det.hidden); };
+    t.appendChild(tr); t.appendChild(det);
   }
+}
+
+async function resumeHistory(id) {
+  try {
+    const lang = localStorage.getItem("lh-lang") || "zh";
+    const { task_id } = await api("/api/history/resume", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ui_lang: lang }),
+    });
+    // Show progress on the translate panel (reuses its dashboard + download).
+    const tab = document.querySelector('.tab[data-tab="translate"]');
+    if (tab) tab.click();
+    currentTask = task_id; setBusy(true);
+    if ($("result")) $("result").hidden = true;
+    setStatus(_label("Resuming Translation", "正在继续翻译") + "…");
+    listenProgress(task_id);
+  } catch (e) { toast(e.message || "Error", "error"); }
+}
+
+async function deleteHistory(id) {
+  if (!confirm(_label("Delete Record Confirm", "删除该记录及其全部数据？"))) return;
+  try {
+    await api("/api/history/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    });
+    loadHistory();
+  } catch (e) { toast(e.message || "Error", "error"); }
 }
 $("history-refresh").onclick = loadHistory;
 $("history-type").onchange = loadHistory;

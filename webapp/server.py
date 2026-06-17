@@ -529,12 +529,14 @@ async def save_glossary(payload: dict):
 # Translation
 # --------------------------------------------------------------------------- #
 def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
-                   dst_lang, glossary_name, bilingual_flags, on_progress):
+                   dst_lang, glossary_name, bilingual_flags, on_progress,
+                   continue_mode=False, resume_dirs=None):
     """Translate a single file; returns its output path. Raises on failure.
 
     Paths are scoped to ``session_id`` so concurrent users never collide, and a
     stop is honored either per-task (this run) or per-session (the caller hit
-    Stop / disconnected)."""
+    Stop / disconnected). When ``resume_dirs`` is given (a Continue from History)
+    the run reuses that interrupted task's exact dirs in continue_mode."""
     ext = os.path.splitext(file_path)[1]
     stem = os.path.splitext(file_path)[0]
     translator_class = backend.get_translator_class(ext, **bilingual_flags)
@@ -548,13 +550,16 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     src_code = backend.language_code(src_lang)
     dst_code = backend.language_code(dst_lang)
     gpath = backend.glossary_path(glossary_name) if glossary_name else None
-    temp_dir, result_dir, log_dir = sessions.session_paths(session_id)
-    # Per-task subdir so two same-named files in ONE session don't collide
-    # (DocumentTranslator.file_dir is derived from basename). Cross-session was
-    # already isolated; this closes the same-session same-name case.
-    temp_dir = os.path.join(temp_dir, task_id)
-    result_dir = os.path.join(result_dir, task_id)
-    log_dir = os.path.join(log_dir, task_id)
+    if resume_dirs:
+        temp_dir, result_dir, log_dir = resume_dirs
+    else:
+        temp_dir, result_dir, log_dir = sessions.session_paths(session_id)
+        # Per-task subdir so two same-named files in ONE session don't collide
+        # (DocumentTranslator.file_dir is derived from basename). Cross-session was
+        # already isolated; this closes the same-session same-name case.
+        temp_dir = os.path.join(temp_dir, task_id)
+        result_dir = os.path.join(result_dir, task_id)
+        log_dir = os.path.join(log_dir, task_id)
     for _d in (temp_dir, result_dir, log_dir):
         os.makedirs(_d, exist_ok=True)
     config = backend.read_config()
@@ -563,7 +568,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     file_logger.create_file_log(os.path.basename(file_path), log_dir=log_dir)
 
     translator = translator_class(
-        file_path, model, use_online, api_key, src_code, dst_code, False,
+        file_path, model, use_online, api_key, src_code, dst_code, continue_mode,
         max_token=config.get("max_token", 768),
         max_retries=backend.max_retries_for_model(model if use_online else None),
         thread_count=backend.thread_count_for_mode(use_online, model),
@@ -571,6 +576,15 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
         session_lang="en", log_dir=log_dir,
         history_dir=history_log_dir(session_id),
     )
+    # Captured into the history record if this run fails/stops, so a later
+    # Continue can reconstruct THIS run (langs/model/glossary/bilingual + dirs).
+    translator.resume_info = {
+        "src_lang": src_lang, "dst_lang": dst_lang,
+        "model": model, "use_online": use_online,
+        "glossary_name": glossary_name, "bilingual_flags": bilingual_flags,
+        "input_file_path": file_path,
+        "temp_dir": temp_dir, "result_dir": result_dir, "log_dir": log_dir,
+    }
 
     def check_stop():
         # Task-scoped only: stopping one task never aborts this session's others.
@@ -843,6 +857,148 @@ def history_clear(request: Request, payload: dict = None):
         info = h.clear_all_records_and_files()
         return {"ok": True, "files_deleted": info.get("files_deleted", 0)}
     return {"ok": bool(h.clear_all_records())}
+
+
+def _run_resume(task_id, session_id, rec, ui_lang="en"):
+    """Background worker: continue an interrupted translation from its record."""
+    def set_state(**kw):
+        with _TASKS_LOCK:
+            if task_id in TASKS:
+                TASKS[task_id].update(kw)
+                if kw.get("status") in ("done", "error", "stopped"):
+                    TASKS[task_id]["ended_at"] = time.time()
+
+    try:
+        info = json.loads(rec.get("resume_info") or "{}")
+    except (ValueError, TypeError):
+        info = {}
+    src = info.get("input_file_path")
+    name = os.path.basename(src or rec.get("input_file") or "file")
+    model = info.get("model") or rec.get("model")
+    use_online = info.get("use_online", rec.get("use_online", True))
+
+    def on_progress(v, desc=None):
+        set_state(progress=float(v), desc=(f"{name}: " + (desc or "")))
+
+    try:
+        out = _translate_one(
+            task_id, session_id, src, model, use_online,
+            info.get("src_lang"), info.get("dst_lang"),
+            info.get("glossary_name", ""), info.get("bilingual_flags", {}),
+            on_progress, continue_mode=True,
+            resume_dirs=(info["temp_dir"], info["result_dir"], info["log_dir"]))
+        with _TASKS_LOCK:
+            t = TASKS.get(task_id, {})
+            tp, tc, tt = t.get("tok_prompt", 0), t.get("tok_completion", 0), t.get("tokens", 0)
+        cost = None
+        if use_online and tt > 0:
+            try:
+                from core.pricing import estimate_cost
+                amt, sym, ccy = estimate_cost(model, tp, tc, ui_lang)
+                cost = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
+            except Exception:  # noqa: BLE001
+                pass
+        set_state(status="done", progress=1.0, desc="Translation completed",
+                  output=out, tokens=tt, cost=cost)
+    except HardApiError as e:
+        app_logger.error(f"Web resume aborted [{getattr(e,'category','api_error')}]: {e}")
+        set_state(status="error", error=_friendly_api_error(e, ui_lang))
+    except RuntimeError as e:
+        if "__stopped__" in str(e):
+            set_state(status="stopped", desc="Stopped")
+        else:
+            app_logger.exception("Web resume error")
+            set_state(status="error", error=str(e))
+    except Exception as e:  # noqa: BLE001
+        app_logger.exception("Web resume error")
+        set_state(status="error", error=str(e))
+
+
+@app.post("/api/history/resume")
+def history_resume(payload: dict, request: Request):
+    """Continue an interrupted (failed/stopped) translation. Returns a task_id
+    the client polls via /api/progress, exactly like a normal translation."""
+    sid = request.state.session_id
+    rid = (payload or {}).get("id")
+    ui_lang = (payload or {}).get("ui_lang", "en")
+    from core.translation_history import TranslationHistoryManager
+    h = TranslationHistoryManager(log_dir=history_log_dir(sid))
+    rec = h.get_record_by_id(rid) if rid else None
+    if not rec:
+        raise HTTPException(404, "Record not found")
+    if rec.get("status") not in ("failed", "stopped"):
+        raise HTTPException(400, "Only interrupted translations can be continued")
+    try:
+        info = json.loads(rec.get("resume_info") or "{}")
+    except (ValueError, TypeError):
+        info = {}
+    src = info.get("input_file_path")
+    if not info or not src or not os.path.exists(src):
+        # The uploaded source was cleaned up; the user must re-upload to redo it.
+        labels = LABEL_TRANSLATIONS.get(ui_lang) or LABEL_TRANSLATIONS.get("en", {})
+        raise HTTPException(409, labels.get("Source File Missing",
+                                            "The source file no longer exists."))
+
+    _prune_tasks()
+    with _TASKS_LOCK:
+        running = [t for t in TASKS.values() if t.get("status") == "running"]
+        if len(running) >= MAX_ACTIVE_TASKS:
+            raise HTTPException(429, "Server is busy. Please retry shortly.")
+        if sum(1 for t in running if t.get("session_id") == sid) >= MAX_ACTIVE_TASKS_PER_SESSION:
+            raise HTTPException(429, "You already have the maximum number of translations running.")
+
+    task_id = uuid.uuid4().hex[:12]
+    with _TASKS_LOCK:
+        TASKS[task_id] = {"progress": 0.0, "desc": "Queued...", "status": "running",
+                          "output": None, "error": None, "stop": False, "session_id": sid}
+    threading.Thread(target=_run_resume, args=(task_id, sid, rec, ui_lang),
+                     daemon=True).start()
+    return {"task_id": task_id}
+
+
+@app.post("/api/history/delete")
+def history_delete(payload: dict, request: Request):
+    """Delete one record AND all of its data: the output + log files we
+    generated and the per-file temp working dir (never the user's original)."""
+    sid = request.state.session_id
+    rid = (payload or {}).get("id")
+    from core.translation_history import TranslationHistoryManager
+    h = TranslationHistoryManager(log_dir=history_log_dir(sid))
+    rec = h.get_record_by_id(rid) if rid else None
+    if not rec:
+        raise HTTPException(404, "Record not found")
+    for key in ("output_file_path", "log_file_path"):
+        p = rec.get(key)
+        if p and os.path.isfile(p):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+    try:
+        info = json.loads(rec.get("resume_info") or "{}")
+    except (ValueError, TypeError):
+        info = {}
+    temp_dir = info.get("temp_dir")
+    src = info.get("input_file_path") or rec.get("input_file")
+    if temp_dir and src:
+        file_dir = os.path.join(temp_dir, os.path.splitext(os.path.basename(src))[0])
+        if os.path.isdir(file_dir):
+            shutil.rmtree(file_dir, ignore_errors=True)
+    return {"ok": bool(h.delete_record(rid))}
+
+
+@app.get("/api/history/download")
+def history_download(id: str, request: Request):
+    """Download the output file a history record produced (the web equivalent of
+    'open folder')."""
+    sid = request.state.session_id
+    from core.translation_history import TranslationHistoryManager
+    h = TranslationHistoryManager(log_dir=history_log_dir(sid))
+    rec = h.get_record_by_id(id) if id else None
+    out = rec.get("output_file_path") if rec else None
+    if not out or not os.path.exists(out):
+        raise HTTPException(404, "Output not available")
+    return FileResponse(out, filename=os.path.basename(out))
 
 
 @app.post("/api/pick-folder")
