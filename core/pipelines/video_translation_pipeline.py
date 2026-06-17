@@ -865,11 +865,20 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
 
         # Serialize the GPU/CPU-heavy transcription across concurrent tasks so
         # they don't thrash one device; show a "waiting" hint if another is busy.
-        if not GPU_LOCK.acquire(blocking=False):
+        # Poll the lock (instead of a plain blocking acquire) so a Stop/Pause
+        # while QUEUED is honored within ~0.3s — otherwise a waiting file can't
+        # see the stop flag until it finally gets the GPU.
+        got_lock = GPU_LOCK.acquire(blocking=False)
+        if not got_lock:
             if progress_callback:
                 progress_callback(0.02, desc=f"{_tr('Waiting for compute', session_lang)}...")
-            GPU_LOCK.acquire()
+            while not got_lock:
+                if check_stop:
+                    check_stop()   # raises on stop / blocks while paused (still queued)
+                got_lock = GPU_LOCK.acquire(timeout=0.3)
         try:
+            if check_stop:
+                check_stop()   # bail right after acquiring, before the heavy model load
             labels_on = _speaker_labels_enabled()
             # When also diarizing, split the phase 50/50 (transcription 0-50%,
             # speaker ID 50-100%) — diarization embeds every segment and is itself
