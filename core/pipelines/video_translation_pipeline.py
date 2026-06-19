@@ -314,6 +314,14 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
         except Exception:  # noqa: BLE001 — corrupt checkpoint -> start over
             done, offset = [], 0.0
 
+    # Anti-hallucination on noisy / non-speech-heavy audio (the moaning/breathy
+    # case): condition_on_previous_text=False is the single biggest fix for
+    # runaway repetition/context drift; the thresholds drop degenerate/no-speech
+    # segments; no_repeat_ngram_size breaks token loops. (whisper-large-v3 is
+    # known to loop ~4x more than v2 here, so these matter.)
+    _wkw = dict(language=language, vad_filter=True,
+                condition_on_previous_text=False, no_repeat_ngram_size=4,
+                no_speech_threshold=0.6, compression_ratio_threshold=2.4)
     if offset > 0:
         import wave
         import numpy as np
@@ -324,10 +332,10 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
         clipped = audio[int(offset * sr):]   # wav is 16k mono; whisper assumes 16k
         app_logger.info(f"faster-whisper resume: {len(done)} segments done, "
                         f"continuing from {offset:.0f}s")
-        segments, info = model.transcribe(clipped, language=language, vad_filter=True)
+        segments, info = model.transcribe(clipped, **_wkw)
         duration = offset + (getattr(info, "duration", None) or 0)
     else:
-        segments, info = model.transcribe(wav_path, language=language, vad_filter=True)
+        segments, info = model.transcribe(wav_path, **_wkw)
         duration = getattr(info, "duration", None) or 0
 
     out = [(s, e, t) for s, e, t in done if t]
@@ -536,6 +544,19 @@ def _segment_speech(wav_path, audio_i16, sr, check_stop=None):
 # --- Qwen3-ASR engine (qwen-asr) -------------------------------------------
 _QWEN_LANG_CODE = {"Chinese": "zh", "English": "en", "Japanese": "ja",
                    "Korean": "ko", "Cantonese": "zh"}
+# UI language code -> the language NAME qwen-asr expects. Passing this STOPS
+# Qwen3-ASR's auto-detect from mis-identifying expressive/noisy speech (it would
+# read Japanese moaning as English and then loop/hallucinate). Unknown/auto ->
+# None (let it auto-detect, the old behavior).
+_QWEN_LANG_NAME = {"zh": "Chinese", "zh-Hant": "Chinese", "en": "English",
+                   "ja": "Japanese", "ko": "Korean", "yue": "Cantonese"}
+
+
+def _qwen_language(src_lang):
+    """Map a UI src_lang code to qwen-asr's language name, or None for auto."""
+    if not src_lang or src_lang == "auto":
+        return None
+    return _QWEN_LANG_NAME.get(src_lang) or _QWEN_LANG_NAME.get(src_lang.split("-")[0])
 
 
 def _qwen_accel_kwargs():
@@ -622,7 +643,9 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
     """Recognize one utterance (16 kHz float32) with Qwen3-ASR (no temp file —
     qwen-asr accepts a (ndarray, sr) tuple)."""
     model = _get_qwen(model_name)
-    results = model.transcribe((audio, sample_rate))
+    _lang = _qwen_language(src_lang)
+    results = model.transcribe((audio, sample_rate), language=_lang) if _lang \
+        else model.transcribe((audio, sample_rate))
     if not results:
         return "", (src_lang or "auto")
     r = results[0]
@@ -643,6 +666,9 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     import numpy as np
 
     model = _get_qwen(model_name)
+    _qlang = _qwen_language(src_lang)   # force the language so auto-detect can't
+    if _qlang:                          # mis-read expressive speech and loop
+        app_logger.info(f"Qwen3-ASR transcribing as {_qlang}")
     with wave.open(wav_path, "rb") as wf:
         sr = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
@@ -709,7 +735,9 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
                 acc += d
                 p += 1
             _bt = time.time()
-            results = model.transcribe([chunks[k] for k in grp])
+            _batch = [chunks[k] for k in grp]
+            results = model.transcribe(_batch, language=_qlang) if _qlang \
+                else model.transcribe(_batch)
             if first:   # log throughput so an early Stop still shows the speed
                 first = False
                 app_logger.info(f"Qwen3-ASR first batch: {len(grp)} chunks "
@@ -949,13 +977,17 @@ def _collapse_repeats(text, max_run=3):
     …", "Hey, hey, hey, hey!"). Compares case-insensitively, ignoring trailing
     punctuation, so 'Angkor,' == 'Angkor'.
 
-    Deliberately token-based, not char-based: it never touches space-less CJK
-    (so legit Japanese isn't mangled) nor legit short repeats (<= max_run, e.g.
-    'very very good'); a char-level rule was tried and rejected for changing 56
-    Japanese cues vs the 3 real garbage ones."""
+    Two layers: (1) a generic unit-repetition regex that also catches space-less
+    CJK loops ("アンコール、アンコール、…") — a 1-12 char unit repeated 5+ times in a
+    row collapses to 2; the high count (5+) keeps legit short repeats like
+    'ねえねえ' / 'very very good' safe. (2) the original token-run collapse for
+    space-separated words repeated more than max_run. A single-CHAR rule was tried
+    and rejected (changed 56 Japanese cues vs the real garbage) — the unit rule is
+    much more specific."""
     if not text:
         return text
     import re
+    text = re.sub(r"(.{1,12}?)\1{4,}", lambda m: m.group(1) * 2, text)
     toks = text.split()
     if len(toks) <= max_run:
         return text
