@@ -614,132 +614,6 @@ def _tune_qwen_generation(qmodel):
         app_logger.debug(f"Qwen3-ASR generation tuning skipped: {e}")
 
 
-# --- Speaker diarization (who spoke) — cam++ voiceprint embeddings ----------
-# VAD says WHEN someone speaks; this says WHO. Shared primitive used two ways:
-#   - subtitles: embed every transcribed segment, cluster offline -> labels
-#   - real-time: assign each utterance online to the nearest known speaker
-_speaker_embedder = None
-_DIA_THRESHOLD = 0.55   # cosine distance; below this two clips are the same speaker
-
-
-def _get_speaker_embedder():
-    global _speaker_embedder
-    if _speaker_embedder is not None:
-        return _speaker_embedder
-    with _LOAD_LOCK:
-        if _speaker_embedder is None:   # double-check inside the lock
-            from funasr import AutoModel
-            app_logger.info(f"Loading speaker model (cam++) on {_stt_device()}...")
-            _speaker_embedder = AutoModel(model="cam++", disable_update=True,
-                                          device=_stt_device())
-    return _speaker_embedder
-
-
-def embed_speaker(audio_f32, sample_rate=16000):
-    """L2-normalized 192-d cam++ voiceprint for a mono 16k float32 clip
-    (None if too short or on error)."""
-    import numpy as np
-    if audio_f32 is None or len(audio_f32) < int(0.25 * sample_rate):
-        return None
-    try:
-        res = _get_speaker_embedder().generate(input=audio_f32, fs=sample_rate)
-        emb = res[0]["spk_embedding"]
-        v = emb.detach().cpu().numpy().reshape(-1) if hasattr(emb, "detach") \
-            else np.asarray(emb).reshape(-1)
-        v = v.astype("float32")
-        n = float(np.linalg.norm(v)) or 1.0
-        return v / n
-    except Exception as e:  # noqa: BLE001
-        app_logger.warning(f"Speaker embedding failed: {e}")
-        return None
-
-
-def _load_wav_16k_mono(path):
-    """Read a 16k mono 16-bit PCM wav (what extract_audio_to_wav writes) into a
-    float32 array in [-1, 1]."""
-    import wave
-    import numpy as np
-    with wave.open(path, "rb") as w:
-        sr = w.getframerate()
-        raw = w.readframes(w.getnframes())
-    a = np.frombuffer(raw, dtype=np.int16).astype("float32") / 32768.0
-    return a, sr
-
-
-def diarize_triples(wav_path, triples, progress_callback=None, ui_lang="en", check_stop=None):
-    """Assign a speaker number (1..N) to each (start, end, text) triple by
-    clustering cam++ embeddings. Returns a list of ints (all 1 on any failure,
-    so labeling degrades gracefully to single-speaker). Reports per-segment
-    embedding progress (the slow part) so a long file doesn't look frozen."""
-    try:
-        import numpy as np
-        from sklearn.cluster import AgglomerativeClustering
-        audio, sr = _load_wav_16k_mono(wav_path)
-        embs, idx = [], []
-        total = len(triples) or 1
-        for i, (s, e, _t) in enumerate(triples):
-            if check_stop:   # pause/stop between per-segment embeddings
-                check_stop()
-            seg = audio[int(s * sr):int(e * sr)]
-            v = embed_speaker(seg, sr)
-            if v is not None:
-                embs.append(v)
-                idx.append(i)
-            if progress_callback and (i % 5 == 0 or i + 1 == total):
-                progress_callback((i + 1) / total,
-                                  desc=f"{_tr('Identifying speakers', ui_lang)} {i + 1}/{total}")
-        labels_out = [1] * len(triples)
-        if len(embs) <= 1:
-            return labels_out
-        X = np.vstack(embs)
-        cl = AgglomerativeClustering(
-            n_clusters=None, distance_threshold=_DIA_THRESHOLD,
-            metric="cosine", linkage="average")
-        raw_labels = cl.fit_predict(X)
-        # Renumber clusters by first appearance -> stable 1..N.
-        mapping, nxt = {}, 1
-        for j, lab in zip(idx, raw_labels):
-            if lab not in mapping:
-                mapping[lab] = nxt
-                nxt += 1
-            labels_out[j] = mapping[lab]
-        app_logger.info(f"Diarization: {nxt - 1} speaker(s) across {len(triples)} segments")
-        return labels_out
-    except Exception as e:  # noqa: BLE001
-        app_logger.warning(f"Diarization failed, single speaker: {e}")
-        return [1] * len(triples)
-
-
-class OnlineSpeakerAssigner:
-    """Streaming speaker labeling for real-time captions: keep a running centroid
-    per speaker and assign each new utterance to the nearest one (or a new
-    speaker if none is close enough). No global clustering — low latency."""
-
-    def __init__(self, threshold=_DIA_THRESHOLD):
-        self.threshold = threshold
-        self._centroids = []   # list of (np.array, count)
-
-    def assign(self, audio_f32, sample_rate=16000):
-        """Return a 1-based speaker id for this utterance, or 0 if the embedding
-        failed (too short / noise) — callers leave the utterance unassigned and
-        retry on the next, fuller chunk instead of locking it to speaker 1."""
-        import numpy as np
-        v = embed_speaker(audio_f32, sample_rate)
-        if v is None:
-            return 0
-        best, best_d = -1, 1e9
-        for i, (c, _n) in enumerate(self._centroids):
-            d = float(1.0 - np.dot(v, c) / ((np.linalg.norm(c)) or 1.0))
-            if d < best_d:
-                best, best_d = i, d
-        if best >= 0 and best_d <= self.threshold:
-            c, n = self._centroids[best]
-            self._centroids[best] = ((c * n + v) / (n + 1), n + 1)  # update centroid
-            return best + 1
-        self._centroids.append((v, 1))
-        return len(self._centroids)
-
-
 def _qwen_text(result):
     return (result.text if hasattr(result, "text") else str(result)).strip()
 
@@ -1136,16 +1010,6 @@ def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
         raise
 
 
-def _speaker_labels_enabled():
-    """Config toggle: prefix subtitle cues with a speaker label (S1/S2/...)."""
-    try:
-        from core.paths import SYSTEM_CONFIG
-        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
-            return bool(json.load(f).get("subtitle_speaker_labels", False))
-    except Exception:  # noqa: BLE001
-        return False
-
-
 def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callback=None,
                             transcript_copy_dir=None, stt_model=None, session_lang="en",
                             check_stop=None):
@@ -1183,15 +1047,6 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
         try:
             if check_stop:
                 check_stop()   # bail right after acquiring, before the heavy model load
-            labels_on = _speaker_labels_enabled()
-            # When also diarizing, split the phase 50/50 (transcription 0-50%,
-            # speaker ID 50-100%) — diarization embeds every segment and is itself
-            # slow, so it gets equal weight. Otherwise transcription owns 0-100%.
-            if progress_callback and labels_on:
-                trans_cb = lambda v, desc=None: progress_callback(v * 0.5, desc=desc)
-                dia_cb = lambda v, desc=None: progress_callback(0.5 + v * 0.5, desc=desc)
-            else:
-                trans_cb, dia_cb = progress_callback, None
             if progress_callback:
                 progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
             # Checkpoint survives a Stop (it lives in temp_dir, not the audio temp
@@ -1200,12 +1055,8 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
             # a mismatched format.
             ckpt_path = os.path.join(temp_dir, f"{filename}.{engine}.asr_ckpt.jsonl")
             triples = _run_transcription(engine, size, wav_path, src_lang,
-                                         trans_cb, session_lang, model_id, check_stop,
+                                         progress_callback, session_lang, model_id, check_stop,
                                          checkpoint_path=ckpt_path)
-            # Optional speaker labels (also GPU) while we still hold the lock + wav.
-            if triples and labels_on:
-                spk = diarize_triples(wav_path, triples, dia_cb, session_lang, check_stop)
-                triples = [(s, e, f"S{spk[i]}: {t}") for i, (s, e, t) in enumerate(triples)]
         finally:
             GPU_LOCK.release()
 

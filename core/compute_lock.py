@@ -2,7 +2,7 @@
 tasks don't thrash a single GPU (or a weak CPU).
 
 Only BATCH local model inference is gated — file transcription (video/audio
-subtitles), image OCR, and speaker diarization. Deliberately NOT gated:
+subtitles) and image OCR. Deliberately NOT gated:
   - LLM translation: network-bound (online API / a separate ollama-lm-studio
     process), so it should run in parallel across files.
   - Real-time + quick-translate voice STT: interactive and latency-sensitive;

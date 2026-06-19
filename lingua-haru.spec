@@ -91,18 +91,16 @@ funasr_collect = _safe_collect("funasr")
 torch_collect = _safe_collect("torch")
 torchaudio_collect = _safe_collect("torchaudio")
 modelscope_collect = _safe_collect("modelscope")
-# Qwen3-ASR (transformers backend) + speaker diarization (cam++ embeddings via
-# funasr, clustering via scikit-learn) + neural VAD / system-audio capture.
+# Qwen3-ASR (transformers backend) + neural VAD / system-audio capture.
 # _safe_collect returns empty if a package is absent/hostile, so the build never
 # breaks; the features fall back gracefully at runtime when not bundled.
 qwen_asr_collect = _safe_collect("qwen_asr")
 transformers_collect = _safe_collect("transformers")
-sklearn_collect = _safe_collect("sklearn")
 ten_vad_collect = _safe_collect("ten_vad")
 soundcard_collect = _safe_collect("soundcard")
 _ENGINE_COLLECTS = [rapidocr_collect, faster_whisper_collect, ctranslate2_collect,
                     funasr_collect, torch_collect, torchaudio_collect, modelscope_collect,
-                    qwen_asr_collect, transformers_collect, sklearn_collect,
+                    qwen_asr_collect, transformers_collect,
                     ten_vad_collect, soundcard_collect]
 
 translator_modules = [
@@ -155,7 +153,6 @@ all_hiddenimports = filter_strings(
         'PIL', 'cv2',
         'scipy', 'scipy.ndimage', 'scipy.signal', 'scipy.special',
         'skimage', 'skimage.metrics',
-        'sklearn', 'sklearn.cluster', 'sklearn.metrics',
     ]
 )
 

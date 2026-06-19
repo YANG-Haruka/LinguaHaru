@@ -31,10 +31,10 @@ MODULE_SPECS = {
     # user may have installed as a specific CUDA build).
     "Video/Audio": ("requirements/video.txt",
                     ["faster-whisper", "funasr", "qwen-asr", "imageio-ffmpeg",
-                     "soundcard", "ten-vad", "scikit-learn"]),
+                     "soundcard", "ten-vad"]),
     "Real-Time Voice": ("requirements/video.txt",
                         ["faster-whisper", "funasr", "qwen-asr",
-                         "soundcard", "ten-vad", "scikit-learn"]),
+                         "soundcard", "ten-vad"]),
     # Quick-Translate audio = read-aloud (edge-tts) + voice input (shared STT).
     # Uninstall removes only edge-tts (keep the shared STT used by other plugins).
     "翻译语音输入": ("requirements/speechio.txt", ["edge-tts"]),

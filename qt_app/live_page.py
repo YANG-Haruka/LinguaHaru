@@ -566,14 +566,6 @@ class LivePage(ScrollArea):
         self.caption_btn.toggled.connect(self._on_caption_toggled)
         cap_row.addWidget(self.caption_btn)
         cap_row.addStretch(1)
-        # Speaker labels: tag each utterance S1/S2… when several people talk.
-        self.spk_label = BodyLabel(tr("Speaker Labels", lang))
-        cap_row.addWidget(self.spk_label)
-        self.spk_switch = SwitchButton()
-        self.spk_switch.setChecked(config.get("live_speaker_labels", False))
-        self.spk_switch.checkedChanged.connect(
-            lambda v: backend.set_config("live_speaker_labels", v))
-        cap_row.addWidget(self.spk_switch)
         ctrl.addLayout(cap_row)
         layout.addWidget(ctrl_card)
 
@@ -641,7 +633,6 @@ class LivePage(ScrollArea):
         self.target_label.setText(tr("Target Language", lang))
         self.mic_label.setText(tr("Input", lang))
         self.caption_btn.setText(tr("Floating Captions", lang))
-        self.spk_label.setText(tr("Speaker Labels", lang))
         self._populate_mics()
         self.input_header.setText(tr("Recognized Speech", lang))
         self.input_sub.setText(tr("Auto Detect", lang))
@@ -1082,15 +1073,6 @@ class LivePage(ScrollArea):
             self._ten_vad_threshold = ten_th
             if hasattr(self, "_ten_vad"):
                 del self._ten_vad
-        # Real-time speaker labels: a fresh online assigner per session (speakers
-        # are re-numbered each time you start listening). _utt_speaker is the
-        # current utterance's speaker (0 = not assigned yet).
-        self._utt_speaker = 0
-        if backend.get_config("live_speaker_labels", False):
-            from core.pipelines.video_translation_pipeline import OnlineSpeakerAssigner
-            self._spk_assigner = OnlineSpeakerAssigner()
-        else:
-            self._spk_assigner = None
         self._vad_on = False
         self._vad_buf = bytearray()
         self._vad_preroll = bytearray()
@@ -1160,7 +1142,6 @@ class LivePage(ScrollArea):
                     self._stream_committed = ""     # new utterance
                     self._stream_last = ""
                     self._stream_detected = "auto"
-                    self._utt_speaker = 0            # re-assign speaker for this utterance
                     self._vad_buf = bytearray(self._vad_preroll)
             else:
                 self._vad_voice_ms = 0.0
@@ -1204,11 +1185,7 @@ class LivePage(ScrollArea):
                 self._recog_pending = (pcm, is_final)
             return
         self._recog_busy = True
-        # Speaker labels: assign once per utterance (when we don't have one yet).
-        want_spk = bool(getattr(self, "_spk_assigner", None)) and self._utt_speaker == 0
-        w = LiveRecognizeWorker(pcm, _IN_RATE, is_final,
-                                assigner=getattr(self, "_spk_assigner", None),
-                                want_speaker=want_spk)
+        w = LiveRecognizeWorker(pcm, _IN_RATE, is_final)
         w.done.connect(self._on_recognized_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
@@ -1320,14 +1297,12 @@ class LivePage(ScrollArea):
             i += 1
         return a[:i]
 
-    def _on_recognized_stream(self, text, detected, is_final, speaker=0):
+    def _on_recognized_stream(self, text, detected, is_final):
         """LocalAgreement-2 prefix commit: only text two consecutive partials
         agree on is committed (& translated), broken at the most natural point.
         Robust to STT revising/re-segmenting its tail, so sentences aren't
         duplicated or dropped while you keep speaking."""
         self._recog_busy = False
-        if speaker > 0:
-            self._utt_speaker = speaker   # this utterance's speaker (labels on)
         if not self._is_listening():
             return   # a late STT result after stop — ignore (don't re-dispatch/write)
         if detected:
@@ -1367,8 +1342,6 @@ class LivePage(ScrollArea):
         source = (source or "").strip()
         if not source:
             return
-        if getattr(self, "_spk_assigner", None) and self._utt_speaker > 0:
-            source = f"S{self._utt_speaker}: {source}"   # speaker label (kept thru translate)
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")
         self.input_text.insertPlainText(f"[{ts}] {source}\n")
