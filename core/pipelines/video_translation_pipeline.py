@@ -588,7 +588,26 @@ def _get_qwen(model_name):
                 app_logger.warning(f"Qwen3-ASR accel load failed ({e}); loading without it")
                 _qwen_models[model_name] = _load({})
             app_logger.info(f"{model_name} loaded in {time.time() - _t0:.1f}s")
+            _tune_qwen_generation(_qwen_models[model_name])
     return _qwen_models[model_name]
+
+
+def _tune_qwen_generation(qmodel):
+    """Stop runaway repetition on noisy / non-speech audio. The qwen-asr library
+    calls generate() with NO repetition control and max_new_tokens=512, so on
+    ambiguous audio the model loops ("Angkor Angkor Angkor…") and generates the
+    full 512 tokens per chunk — making a noise-heavy file several times slower (a
+    2.5h clip took ~58min vs ~10min for similar-length clean ones) and producing
+    junk subtitles. Cap the generation length and penalize repeats."""
+    try:
+        qmodel.max_new_tokens = 256   # plenty for a <=30s VAD segment; was 512
+        gc = getattr(getattr(qmodel, "model", None), "generation_config", None)
+        if gc is not None:
+            gc.repetition_penalty = 1.3
+            gc.no_repeat_ngram_size = 3   # blocks exact 3-gram loops outright
+            app_logger.info("Qwen3-ASR: anti-repetition generation config applied")
+    except Exception as e:  # noqa: BLE001 — never block loading on this
+        app_logger.debug(f"Qwen3-ASR generation tuning skipped: {e}")
 
 
 # --- Speaker diarization (who spoke) — cam++ voiceprint embeddings ----------
