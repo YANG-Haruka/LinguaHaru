@@ -123,6 +123,8 @@ _STT_TAGS = {
     "whisper-base":           [],
     "whisper-small":          ["Tag Balanced"],
     "whisper-large-v3-turbo": ["Tag HighAccuracy"],
+    "whisper-large-v2":       ["Tag HighAccuracy"],
+    "anime-whisper":          ["Tag CJKStrong"],
     "qwen3-asr-0.6b":         ["Tag Experimental"],
     "qwen3-asr-1.7b":         ["Tag Experimental"],
 }
@@ -139,6 +141,8 @@ _MODEL_PROBES = {
     "whisper-base":           ["faster-whisper-base"],
     "whisper-small":          ["faster-whisper-small"],
     "whisper-large-v3-turbo": ["faster-whisper-large-v3-turbo"],
+    "whisper-large-v2":       ["faster-whisper-large-v2"],
+    "anime-whisper":          ["anime-whisper"],
     "qwen3-asr-0.6b":         ["Qwen3-ASR-0.6B"],
     "qwen3-asr-1.7b":         ["Qwen3-ASR-1.7B"],
 }

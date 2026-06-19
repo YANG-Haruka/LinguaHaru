@@ -51,8 +51,8 @@ STT_MODELS = [
      "label": "Whisper Large-v2 — best for EXPRESSIVE ENGLISH (low hallucination)",
      "disk": "~3GB", "vram": "~5GB"},
     {"id": "anime-whisper",          "engine": "animewhisper", "size": "litagin/anime-whisper",
-     "label": "Anime-Whisper — best for JAPANESE (expressive / NSFW); JA only",
-     "disk": "~1.6GB", "vram": "~2GB"},
+     "label": "Anime-Whisper — tuned for Japanese expressive / NSFW audio (JA only)",
+     "disk": "~3GB", "vram": "~2GB"},
     {"id": "qwen3-asr-0.6b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-0.6B",
      "label": "Qwen3-ASR 0.6B — multilingual (30+ langs), accurate", "disk": "~2GB", "vram": "~3GB"},
     {"id": "qwen3-asr-1.7b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-1.7B",
@@ -154,10 +154,12 @@ def _resolve_stt_engine(model_def):
     has_transformers = importlib.util.find_spec("transformers") is not None
     engine, size = model_def["engine"], model_def["size"]
     if engine == "animewhisper" and not has_transformers:
-        # transformers missing -> degrade to faster-whisper, else SenseVoice.
+        # transformers missing -> degrade to a MULTILINGUAL whisper (anime-whisper
+        # is Japanese; large-v2 is tuned for English here, so prefer large-v3-turbo),
+        # else SenseVoice.
         if has_whisper:
-            app_logger.warning("transformers not installed; anime-whisper -> faster-whisper 'large-v2'.")
-            return "whisper", "large-v2"
+            app_logger.warning("transformers not installed; anime-whisper -> faster-whisper 'large-v3-turbo'.")
+            return "whisper", "large-v3-turbo"
         if has_funasr:
             return "sensevoice", "iic/SenseVoiceSmall"
     if engine == "qwen3asr" and not has_qwen:
@@ -255,9 +257,13 @@ def release_unused_stt_models():
 def _format_srt_time(seconds):
     if seconds is None or seconds < 0:
         seconds = 0.0
-    ms = int(round((seconds - int(seconds)) * 1000))
-    s = int(seconds)
-    return f"{s // 3600:02d}:{s % 3600 // 60:02d}:{s % 60:02d},{ms:03d}"
+    # Round to integer milliseconds FIRST, then decompose — otherwise a value
+    # like 1.9996s gives ms=round(999.6)=1000 -> illegal "00:00:01,1000".
+    total_ms = int(round(seconds * 1000))
+    h, rem = divmod(total_ms, 3_600_000)
+    m, rem = divmod(rem, 60_000)
+    s, ms = divmod(rem, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
 def extract_audio_to_wav(media_path, output_dir):
@@ -572,8 +578,15 @@ _QWEN_LANG_CODE = {"Chinese": "zh", "English": "en", "Japanese": "ja",
 # Qwen3-ASR's auto-detect from mis-identifying expressive/noisy speech (it would
 # read Japanese moaning as English and then loop/hallucinate). Unknown/auto ->
 # None (let it auto-detect, the old behavior).
+# UI code -> Qwen3-ASR language NAME. Qwen3-ASR supports 50+ languages; map the UI
+# languages to their standard English names. A name Qwen rejects falls back to
+# auto-detect at call time (see _transcribe_qwen), so an over-broad map is safe.
 _QWEN_LANG_NAME = {"zh": "Chinese", "zh-Hant": "Chinese", "en": "English",
-                   "ja": "Japanese", "ko": "Korean", "yue": "Cantonese"}
+                   "ja": "Japanese", "ko": "Korean", "yue": "Cantonese",
+                   "de": "German", "es": "Spanish", "fr": "French", "it": "Italian",
+                   "pt": "Portuguese", "ru": "Russian", "th": "Thai", "vi": "Vietnamese",
+                   "ar": "Arabic", "hi": "Hindi", "id": "Indonesian", "tr": "Turkish",
+                   "nl": "Dutch", "pl": "Polish"}
 
 
 def _qwen_language(src_lang):
@@ -668,8 +681,14 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
     qwen-asr accepts a (ndarray, sr) tuple)."""
     model = _get_qwen(model_name)
     _lang = _qwen_language(src_lang)
-    results = model.transcribe((audio, sample_rate), language=_lang) if _lang \
-        else model.transcribe((audio, sample_rate))
+    try:
+        results = model.transcribe((audio, sample_rate), language=_lang) if _lang \
+            else model.transcribe((audio, sample_rate))
+    except ValueError as e:
+        if _lang and "language" in str(e).lower():
+            results = model.transcribe((audio, sample_rate))   # auto-detect fallback
+        else:
+            raise
     if not results:
         return "", (src_lang or "auto")
     r = results[0]
@@ -760,8 +779,18 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
                 p += 1
             _bt = time.time()
             _batch = [chunks[k] for k in grp]
-            results = model.transcribe(_batch, language=_qlang) if _qlang \
-                else model.transcribe(_batch)
+            if _qlang:
+                try:
+                    results = model.transcribe(_batch, language=_qlang)
+                except ValueError as e:   # Qwen rejects an unsupported language name
+                    if "language" in str(e).lower():
+                        app_logger.warning(f"Qwen3-ASR rejected language {_qlang!r}; auto-detecting")
+                        _qlang = None
+                        results = model.transcribe(_batch)
+                    else:
+                        raise
+            else:
+                results = model.transcribe(_batch)
             if first:   # log throughput so an early Stop still shows the speed
                 first = False
                 app_logger.info(f"Qwen3-ASR first batch: {len(grp)} chunks "
@@ -807,9 +836,12 @@ def _get_animewhisper(model_name):
     return _animewhisper_models[model_name]
 
 
-# Per the model card: NO initial prompt (causes hallucination); use
-# no_repeat_ngram_size to bound repetition; cap output for safety.
-_ANIME_GEN_KW = {"language": "Japanese", "no_repeat_ngram_size": 6, "max_new_tokens": 256}
+# Per the model card: NO initial prompt (causes hallucination); the card's
+# DEFAULT is no_repeat_ngram_size=0 / repetition_penalty=1.0 (only raise to 5-10
+# if a clip shows runaway repetition). Forcing no_repeat globally distorts the
+# genuinely-repeated speech this model is meant to capture (moaning/aizuchi), so
+# we leave it off; max_new_tokens bounds runaway and the post cleaner trims it.
+_ANIME_GEN_KW = {"language": "Japanese", "max_new_tokens": 256}
 
 
 def _animewhisper_text(result):
