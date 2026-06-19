@@ -46,6 +46,12 @@ STT_MODELS = [
      "label": "Whisper Small (balanced)", "disk": "~490MB", "vram": "~2GB"},
     {"id": "whisper-large-v3-turbo", "engine": "whisper",    "size": "large-v3-turbo",
      "label": "Whisper Large-v3 Turbo (accurate)", "disk": "~1.6GB", "vram": "~6GB"},
+    {"id": "whisper-large-v2",       "engine": "whisper",    "size": "large-v2",
+     "label": "Whisper Large-v2 (best for expressive English · low hallucination)",
+     "disk": "~3GB", "vram": "~5GB"},
+    {"id": "anime-whisper",          "engine": "animewhisper", "size": "litagin/anime-whisper",
+     "label": "Anime-Whisper (Japanese expressive/NSFW · best for JA)",
+     "disk": "~1.6GB", "vram": "~2GB"},
     {"id": "qwen3-asr-0.6b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-0.6B",
      "label": "Qwen3-ASR 0.6B (accurate · 30 langs)", "disk": "~2GB", "vram": "~3GB"},
     {"id": "qwen3-asr-1.7b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-1.7B",
@@ -143,7 +149,15 @@ def _resolve_stt_engine(model_def):
     has_funasr = importlib.util.find_spec("funasr") is not None
     has_whisper = importlib.util.find_spec("faster_whisper") is not None
     has_qwen = importlib.util.find_spec("qwen_asr") is not None
+    has_transformers = importlib.util.find_spec("transformers") is not None
     engine, size = model_def["engine"], model_def["size"]
+    if engine == "animewhisper" and not has_transformers:
+        # transformers missing -> degrade to faster-whisper, else SenseVoice.
+        if has_whisper:
+            app_logger.warning("transformers not installed; anime-whisper -> faster-whisper 'large-v2'.")
+            return "whisper", "large-v2"
+        if has_funasr:
+            return "sensevoice", "iic/SenseVoiceSmall"
     if engine == "qwen3asr" and not has_qwen:
         # Qwen3-ASR package not installed -> degrade to the best available engine.
         if has_funasr:
@@ -189,6 +203,8 @@ def release_stt_model(model_id):
             _whisper_models.pop(size, None)
         elif engine == "qwen3asr":
             _qwen_models.pop(size, None)
+        elif engine == "animewhisper":
+            _animewhisper_models.pop(size, None)
         elif engine == "sensevoice":
             _sensevoice = None
         import gc
@@ -213,6 +229,10 @@ def release_unused_stt_models():
         if ("qwen3asr", repo) not in inuse:
             del _qwen_models[repo]
             freed.append(f"qwen:{repo}")
+    for repo in list(_animewhisper_models):
+        if ("animewhisper", repo) not in inuse:
+            del _animewhisper_models[repo]
+            freed.append(f"anime-whisper:{repo}")
     if _sensevoice is not None and not any(e == "sensevoice" for e, _s in inuse):
         _sensevoice = None
         freed.append("sensevoice")
@@ -760,6 +780,113 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     return [(spans[k][0], spans[k][1], texts[k]) for k in range(len(chunks)) if texts[k]]
 
 
+# --- Anime-Whisper engine (litagin/anime-whisper, transformers) -------------
+# A kotoba-whisper-v2 fine-tune on ~5300h of expressive Japanese (galgame/anime,
+# incl. NSFW moaning/breathing/non-verbal). Japanese-only; far better + faster
+# than Qwen3 on this content (Qwen3 auto-mis-reads it as English and loops).
+_animewhisper_models = {}   # repo id -> transformers ASR pipeline
+
+
+def _get_animewhisper(model_name):
+    if model_name in _animewhisper_models:
+        return _animewhisper_models[model_name]
+    with _LOAD_LOCK:
+        if model_name not in _animewhisper_models:   # double-check inside the lock
+            import torch
+            from transformers import pipeline
+            dev = "cuda" if _stt_device() == "cuda" else "cpu"
+            dtype = torch.float16 if dev == "cuda" else torch.float32
+            app_logger.info(f"Loading anime-whisper ({model_name}) on {dev}...")
+            _animewhisper_models[model_name] = pipeline(
+                "automatic-speech-recognition", model=model_name,
+                device=dev, torch_dtype=dtype, chunk_length_s=30, batch_size=1)
+    return _animewhisper_models[model_name]
+
+
+# Per the model card: NO initial prompt (causes hallucination); use
+# no_repeat_ngram_size to bound repetition; cap output for safety.
+_ANIME_GEN_KW = {"language": "Japanese", "no_repeat_ngram_size": 6, "max_new_tokens": 256}
+
+
+def _animewhisper_text(result):
+    return ((result or {}).get("text") or "").strip()
+
+
+def _recognize_animewhisper(audio, src_lang, model_name, sample_rate=16000):
+    """Recognize one utterance (16k float32) with anime-whisper (Japanese)."""
+    pipe = _get_animewhisper(model_name)
+    res = pipe(audio, generate_kwargs=_ANIME_GEN_KW)
+    return _clean_asr_text(_animewhisper_text(res)), "ja"
+
+
+def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
+                             check_stop=None, checkpoint_path=None):
+    """VAD-segment then recognize each segment with anime-whisper. Japanese-only
+    (src_lang ignored — the model is fixed-Japanese). Resumable like the others."""
+    import wave
+    import numpy as np
+
+    pipe = _get_animewhisper(model_name)
+    with wave.open(wav_path, "rb") as wf:
+        sr = wf.getframerate()
+        raw = wf.readframes(wf.getnframes())
+    audio_i16 = np.frombuffer(raw, dtype=np.int16)
+    audio = audio_i16.astype(np.float32) / 32768.0
+    if progress_callback:
+        progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop)
+    if not segments:
+        segments = [[0, len(audio) / sr * 1000.0]]
+    keys = [(int(round(s)), int(round(e))) for s, e in segments]
+
+    done = {}
+    if checkpoint_path and os.path.exists(checkpoint_path):
+        try:
+            with open(checkpoint_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    s_ms, e_ms, t = json.loads(line)
+                    done[(int(round(s_ms)), int(round(e_ms)))] = t
+        except Exception:  # noqa: BLE001
+            done = {}
+    texts = [done.get(k) for k in keys]
+    total = len(segments) or 1
+
+    ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
+    try:
+        first = True
+        for i, (s_ms, e_ms) in enumerate(segments):
+            if texts[i] is None:
+                if check_stop:
+                    check_stop()
+                clip = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
+                if clip.size == 0:
+                    texts[i] = ""
+                else:
+                    _bt = time.time()
+                    res = pipe(clip, generate_kwargs=_ANIME_GEN_KW)
+                    texts[i] = _clean_asr_text(_animewhisper_text(res))
+                    if first:
+                        first = False
+                        app_logger.info(f"anime-whisper first segment: "
+                                        f"{(e_ms - s_ms) / 1000:.0f}s audio in {time.time() - _bt:.1f}s")
+                if ckpt_f:
+                    ckpt_f.write(json.dumps([keys[i][0], keys[i][1], texts[i]]) + "\n")
+                    ckpt_f.flush()
+            if progress_callback:
+                got = sum(1 for t in texts if t is not None)
+                progress_callback(min(1.0, got / total),
+                                  desc=f"{_tr('Transcribing', ui_lang)} {got}/{total}")
+    finally:
+        if ckpt_f:
+            ckpt_f.close()
+
+    return [(segments[i][0] / 1000.0, segments[i][1] / 1000.0, texts[i])
+            for i in range(len(segments)) if texts[i]]
+
+
 def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
                            check_stop=None, checkpoint_path=None):
     """VAD-segment the audio, recognize each segment with SenseVoice, and return
@@ -848,6 +975,8 @@ def recognizer_ready(getter=None):
         engine, size = _resolve_stt_engine(get_stt_model(getter()))
         if engine == "qwen3asr":
             return size in _qwen_models
+        if engine == "animewhisper":
+            return size in _animewhisper_models
         if engine == "sensevoice":
             return _sensevoice is not None
         return size in _whisper_models
@@ -882,6 +1011,11 @@ def preload_recognizer(model_id=None):
             t0 = time.time()
             _get_qwen(size)
             app_logger.info(f"Qwen3-ASR ({size}) loaded in {time.time() - t0:.1f}s")
+            return True
+        if engine == "animewhisper":
+            t0 = time.time()
+            _get_animewhisper(size)
+            app_logger.info(f"anime-whisper loaded in {time.time() - t0:.1f}s")
             return True
         _get_whisper_model(size)
         return True
@@ -931,6 +1065,9 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=
     elif engine == "qwen3asr":
         text, detected = _recognize_qwen(audio, src_lang, size, sample_rate)
         app_logger.info(f"STT(Qwen3-ASR:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+    elif engine == "animewhisper":
+        text, detected = _recognize_animewhisper(audio, src_lang, size, sample_rate)
+        app_logger.info(f"STT(anime-whisper) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
     else:
         text, detected = _recognize_whisper(audio, src_lang, size)
         app_logger.info(f"STT(whisper:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
@@ -1033,6 +1170,9 @@ def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
         if engine == "qwen3asr":
             return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang,
                                     check_stop, checkpoint_path)
+        if engine == "animewhisper":
+            return _transcribe_animewhisper(wav_path, size, src_lang, progress_callback, session_lang,
+                                            check_stop, checkpoint_path)
         return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang,
                                    check_stop, checkpoint_path)
     except Exception as e:  # noqa: BLE001
