@@ -22,12 +22,14 @@ _PATH = os.path.join(CONFIG_DIR, "translation_modes.json")
 
 # Built-in fallback if the config file is missing/invalid.
 _BUILTIN = {
+    # "standard" = DeepSeek's official translation temperature (1.3); the default.
+    "standard": {"label": "标准", "temperature": 1.3, "top_p": 0.95},
     "precise":  {"label": "精准", "temperature": 0.1, "top_p": 0.9},
     "natural":  {"label": "自然", "temperature": 0.4, "top_p": 0.95},
     "polish":   {"label": "润色", "temperature": 0.6, "top_p": 0.95},
     "subtitle": {"label": "字幕精简", "temperature": 0.25, "top_p": 0.9},
 }
-DEFAULT_MODE = "precise"
+DEFAULT_MODE = "standard"
 
 
 def load_modes():

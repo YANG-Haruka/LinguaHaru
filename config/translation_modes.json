@@ -1,12 +1,38 @@
 {
+    "standard": {
+        "label": "标准",
+        "label_en": "Standard",
+        "temperature": 1.3,
+        "top_p": 0.95,
+        "prompt_hint": "Translation mode: STANDARD. Translate faithfully and fluently into the target language, preserving meaning, structure, glossary terms, and all non-text tokens.",
+        "rules": [
+            "preserve_structure",
+            "preserve_meaning",
+            "strict_glossary"
+        ],
+        "qa": [
+            "json_keys",
+            "placeholders",
+            "glossary_terms"
+        ]
+    },
     "precise": {
         "label": "精准",
         "label_en": "Precise",
         "temperature": 0.1,
         "top_p": 0.9,
         "prompt_hint": "Translation mode: PRECISE. Translate accurately and faithfully, preserve the structure and tone of the source, apply glossary terms strictly, and do not paraphrase or embellish.",
-        "rules": ["preserve_structure", "strict_glossary", "no_paraphrase"],
-        "qa": ["json_keys", "placeholders", "glossary_terms", "length_ratio"]
+        "rules": [
+            "preserve_structure",
+            "strict_glossary",
+            "no_paraphrase"
+        ],
+        "qa": [
+            "json_keys",
+            "placeholders",
+            "glossary_terms",
+            "length_ratio"
+        ]
     },
     "natural": {
         "label": "自然",
@@ -14,8 +40,14 @@
         "temperature": 0.4,
         "top_p": 0.95,
         "prompt_hint": "Translation mode: NATURAL. Translate so it reads naturally and fluently in the target language while fully preserving the original meaning.",
-        "rules": ["natural_target_language", "preserve_meaning"],
-        "qa": ["json_keys", "placeholders"]
+        "rules": [
+            "natural_target_language",
+            "preserve_meaning"
+        ],
+        "qa": [
+            "json_keys",
+            "placeholders"
+        ]
     },
     "polish": {
         "label": "润色",
@@ -23,8 +55,14 @@
         "temperature": 0.6,
         "top_p": 0.95,
         "prompt_hint": "Translation mode: POLISH. Produce polished, idiomatic, well-written target-language prose while preserving the original meaning; improve flow and word choice.",
-        "rules": ["natural_target_language", "preserve_meaning"],
-        "qa": ["json_keys", "placeholders"],
+        "rules": [
+            "natural_target_language",
+            "preserve_meaning"
+        ],
+        "qa": [
+            "json_keys",
+            "placeholders"
+        ],
         "second_pass": "polish_target"
     },
     "subtitle": {
@@ -33,7 +71,13 @@
         "temperature": 0.25,
         "top_p": 0.9,
         "prompt_hint": "Translation mode: SUBTITLE. Translate concisely in a natural spoken style; keep each value short and easy to read at a glance, as a subtitle line, without dropping meaning.",
-        "rules": ["concise", "spoken_style"],
-        "qa": ["subtitle_length", "placeholders"]
+        "rules": [
+            "concise",
+            "spoken_style"
+        ],
+        "qa": [
+            "subtitle_length",
+            "placeholders"
+        ]
     }
 }

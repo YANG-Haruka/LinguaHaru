@@ -227,12 +227,20 @@ _cooldowns = {}          # model -> epoch until which to back off
 _cooldown_lock = threading.Lock()
 
 
-def _cooldown_wait(model):
-    with _cooldown_lock:
-        until = _cooldowns.get(model, 0)
-    remaining = until - time.time()
-    if remaining > 0:
-        time.sleep(min(remaining, 30))
+def _cooldown_wait(model, max_wait=120):
+    """Block until this model's cooldown (set from Retry-After / 429 / 5xx) truly
+    expires — in small chunks (so a re-extended cooldown is honored), capped at
+    max_wait so a pathological cooldown can't hang a worker forever."""
+    waited = 0.0
+    while waited < max_wait:
+        with _cooldown_lock:
+            until = _cooldowns.get(model, 0)
+        remaining = until - time.time()
+        if remaining <= 0:
+            return
+        chunk = min(remaining, 2.0)
+        time.sleep(chunk)
+        waited += chunk
 
 
 def _set_cooldown(model, seconds):
@@ -464,6 +472,19 @@ def _disable_thinking_default():
         return True
 
 
+def _json_object_mode_default():
+    """Whether to request DeepSeek/OpenAI JSON mode (response_format json_object)
+    for batch document/subtitle translation. Reduces format errors / truncation.
+    Safe because every translate prompt mentions "JSON" (DeepSeek's requirement);
+    _create_completion drops it if a provider rejects it. Opt out with
+    system_config "json_object_mode": false."""
+    try:
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("json_object_mode", True))
+    except Exception:
+        return True
+
+
 def debug_llm_io():
     """Whether to log FULL prompt + response to the project log. OFF by default
     so users' source/translated text and prompts are never written. Turn on with
@@ -483,27 +504,40 @@ def _looks_like_param_error(err):
 
 
 def _create_completion(client, params):
-    """Call the chat API. If a speculative 'thinking'-disable param is rejected
-    by this provider, retry once without it so translation still works."""
+    """Call the chat API. If a speculative param a provider doesn't support is
+    rejected (thinking-disable in extra_body, or response_format JSON mode), drop
+    it and retry once so translation still works on every backend."""
     try:
         return client.chat.completions.create(**params)
     except Exception as e:
+        if not _looks_like_param_error(e):
+            raise
+        retry = dict(params)
+        changed = False
         eb = params.get("extra_body") or {}
-        if "thinking" in eb and _looks_like_param_error(e):
+        if "thinking" in eb:
             eb2 = {k: v for k, v in eb.items() if k != "thinking"}
-            retry = dict(params)
             if eb2:
                 retry["extra_body"] = eb2
             else:
                 retry.pop("extra_body", None)
-            app_logger.warning("Provider rejected thinking-disable param; retrying without it")
+            changed = True
+        if "response_format" in retry:
+            retry.pop("response_format", None)
+            changed = True
+        if changed:
+            app_logger.warning("Provider rejected an optional param; retrying without it")
             return client.chat.completions.create(**retry)
         raise
 
 
-def translate_online(api_key, messages, model, mode_params=None):
+def translate_online(api_key, messages, model, mode_params=None, json_mode=False):
     """
     Perform translation using an online API with config from a JSON file.
+
+    json_mode: when True AND enabled in config, request response_format
+    json_object (batch document/subtitle path only — the prompt mentions "JSON").
+    The plain-text real-time / quick-translate path must leave this False.
 
     Returns:
         tuple: (translation_result, success_status, token_usage)
@@ -529,8 +563,6 @@ def translate_online(api_key, messages, model, mode_params=None):
         temperature, top_p = resolve_sampling(model_config, temperature, top_p, params=mode_params)
     except Exception:  # noqa: BLE001
         pass
-    presence_penalty = model_config.get("presence_penalty")
-    frequency_penalty = model_config.get("frequency_penalty")
     thinking_type = model_config.get("thinking_type")
     # Output cap. With larger input batches the reply (a translation ~ as long as
     # the source) can exceed a provider's small default (DeepSeek defaults to 4K),
@@ -581,11 +613,15 @@ def translate_online(api_key, messages, model, mode_params=None):
             params["top_p"] = top_p
         if temperature is not None:
             params["temperature"] = temperature
-        if presence_penalty is not None:
-            params["presence_penalty"] = presence_penalty
-        if frequency_penalty is not None:
-            params["frequency_penalty"] = frequency_penalty
-            
+        # presence/frequency penalty intentionally NOT sent: DeepSeek ignores them
+        # in thinking mode (the default) and doesn't document them otherwise; 0.0
+        # is a no-op anyway. (See translation-engine-redesign.md §1.)
+
+        # DeepSeek/OpenAI JSON mode for the batch path (prompt mentions "JSON").
+        # _create_completion drops it if the provider rejects it.
+        if json_mode and _json_object_mode_default():
+            params["response_format"] = {"type": "json_object"}
+
         # Thinking/reasoning control. A per-model "thinking_type" is passed
         # through verbatim; otherwise translation disables thinking by default
         # (faster + cheaper; the answer is unaffected). _create_completion falls
@@ -666,16 +702,34 @@ def translate_online(api_key, messages, model, mode_params=None):
         _limiter.release()
 
     try:
-        # Extract token usage from response
+        # Extract token usage from response (incl. DeepSeek KV-cache telemetry:
+        # cache-hit input tokens are ~50x cheaper, so surface hit/miss for cost).
         token_usage = None
         if response and hasattr(response, 'usage') and response.usage:
+            u = response.usage
             token_usage = {
-                'prompt_tokens': getattr(response.usage, 'prompt_tokens', 0) or 0,
-                'completion_tokens': getattr(response.usage, 'completion_tokens', 0) or 0,
-                'total_tokens': getattr(response.usage, 'total_tokens', 0) or 0
+                'prompt_tokens': getattr(u, 'prompt_tokens', 0) or 0,
+                'completion_tokens': getattr(u, 'completion_tokens', 0) or 0,
+                'total_tokens': getattr(u, 'total_tokens', 0) or 0,
+                'cache_hit_tokens': getattr(u, 'prompt_cache_hit_tokens', 0) or 0,
+                'cache_miss_tokens': getattr(u, 'prompt_cache_miss_tokens', 0) or 0,
             }
         if response and response.choices:
-            translated_text = response.choices[0].message.content
+            choice0 = response.choices[0]
+            finish_reason = getattr(choice0, "finish_reason", None)
+            # insufficient_system_resource = transient server interruption (per
+            # DeepSeek docs) -> retryable like a 503: back off and re-queue.
+            if finish_reason == "insufficient_system_resource":
+                _limiter.record_overload()
+                _set_cooldown(model, 10)
+                app_logger.warning("finish_reason=insufficient_system_resource; retrying")
+                return "Insufficient system resource, retrying", False, token_usage
+            if finish_reason == "length":
+                app_logger.warning("finish_reason=length: output truncated "
+                                   "(valid items still partial-accepted; rest retried)")
+            elif finish_reason == "content_filter":
+                app_logger.warning("finish_reason=content_filter: some content filtered")
+            translated_text = choice0.message.content
             # Full response only when debugging LLM I/O (contains translated
             # text); otherwise a concise summary: model + tokens + length.
             if debug_llm_io():

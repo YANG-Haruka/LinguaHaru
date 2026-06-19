@@ -178,8 +178,9 @@ _DEFAULT_CONFIG = {
     "default_dst_lang": "English",
     "auto_extract_glossary": False,
     # Translation mode profile (sampling params + later prompt rules / QA).
-    # See config/translation_modes.json. Default "precise" pins temperature low.
-    "translation_mode": "precise",
+    # See config/translation_modes.json. Default "standard" = DeepSeek's official
+    # translation temperature (1.3); "precise" (0.1) is the low-temp alternative.
+    "translation_mode": "standard",
     # Advanced translation modifiers (appended to the prompt; all optional).
     "translation_tone": "",     # "" | "formal" | "casual"
     "translation_length": "",   # "" | "keep" | "expand" | "short"

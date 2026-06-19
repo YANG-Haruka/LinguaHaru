@@ -163,7 +163,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             else:
                 translation_result, api_success, token_usage = translate_online(
                     api_key, messages, model,
-                    mode_params=(options.get("params") if options else None))
+                    mode_params=(options.get("params") if options else None),
+                    json_mode=True)   # batch path outputs a JSON object
 
             if api_success:
                 if attempt > 1:
