@@ -593,19 +593,23 @@ def _get_qwen(model_name):
 
 
 def _tune_qwen_generation(qmodel):
-    """Stop runaway repetition on noisy / non-speech audio. The qwen-asr library
-    calls generate() with NO repetition control and max_new_tokens=512, so on
-    ambiguous audio the model loops ("Angkor Angkor Angkor…") and generates the
-    full 512 tokens per chunk — making a noise-heavy file several times slower (a
-    2.5h clip took ~58min vs ~10min for similar-length clean ones) and producing
-    junk subtitles. Cap the generation length and penalize repeats."""
+    """Cap runaway generation on noisy / non-speech audio. qwen-asr calls
+    generate() with max_new_tokens=512, so on ambiguous audio the model fails to
+    emit EOS and generates the full 512 tokens per chunk (~15s for one 20s
+    segment), making a noise-heavy file several times slower. A <=30s speech
+    segment never needs more than ~200 tokens, so 256 halves those runaways with
+    a safe margin.
+
+    Empirically benchmarked on the problem clips: 256 gives ~2x on runaway
+    segments and never truncates real speech or slows well-behaved ones. A
+    repetition_penalty / no_repeat_ngram_size was tried and REJECTED — it forces
+    the model off genuinely-repeated speech ("I'm getting dizzy. I'm getting
+    dizzy…") into a hallucination spiral (0.8s/75 chars -> 15s/3438 chars). Audio
+    pre-processing (Demucs vocal isolation, spectral denoise) was also rejected:
+    it erased real speech to empty output on these clips."""
     try:
-        qmodel.max_new_tokens = 256   # plenty for a <=30s VAD segment; was 512
-        gc = getattr(getattr(qmodel, "model", None), "generation_config", None)
-        if gc is not None:
-            gc.repetition_penalty = 1.3
-            gc.no_repeat_ngram_size = 3   # blocks exact 3-gram loops outright
-            app_logger.info("Qwen3-ASR: anti-repetition generation config applied")
+        qmodel.max_new_tokens = 256   # was 512
+        app_logger.info("Qwen3-ASR: max_new_tokens capped at 256")
     except Exception as e:  # noqa: BLE001 — never block loading on this
         app_logger.debug(f"Qwen3-ASR generation tuning skipped: {e}")
 
