@@ -480,9 +480,12 @@ class DocumentTranslator:
                 self._log_progress(overall_progress)
                 self.update_ui_safely(progress_callback, overall_progress, stats_desc)
 
-    def retranslate_failed_content(self, retry_count, max_retries, progress_callback, last_try=False):
+    def retranslate_failed_content(self, retry_count, max_retries, progress_callback,
+                                   last_try=False, max_token=None):
         self.check_for_stop()
-        app_logger.info(f"Retrying failed translations...{retry_count}/{max_retries}")
+        batch_token = max_token or self.max_token   # geometric-shrink budget per round
+        app_logger.info(f"Retrying failed translations...{retry_count}/{max_retries} "
+                        f"(batch≈{batch_token} tok)")
         
         if not os.path.exists(self.failed_json_path):
             app_logger.info("No failed segments to retranslate")
@@ -499,10 +502,10 @@ class DocumentTranslator:
                 app_logger.error("Failed to decode JSON")
                 return False
 
-        # Get failed segments
+        # Get failed segments (re-chunked at this round's shrunk batch budget)
         all_failed_segments = stream_segment_json(
             self.failed_json_path,
-            self.max_token,
+            batch_token,
             self.system_prompt,
             self.user_prompt,
             self.previous_prompt,
@@ -1133,15 +1136,22 @@ class DocumentTranslator:
         self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Translating content')}...")
         self.translate_content(progress_callback)
 
-        # Retry failed translations
+        # Retry failed translations. Each round shrinks the batch GEOMETRICALLY
+        # (halve toward a single-segment floor): a smaller batch is more likely to
+        # pass and re-bills less. Only still-failed items are re-collected, so
+        # passing items committed in earlier rounds are never resent.
+        _MIN_BATCH_TOKEN = 256
         retry_count = 0
         while retry_count < self.max_retries and self.translated_failed:
             is_last_try = (retry_count == self.max_retries - 1)
+            shrink_token = max(_MIN_BATCH_TOKEN,
+                               int(self.max_token * (0.5 ** (retry_count + 1))))
             self.translated_failed = self.retranslate_failed_content(
-                retry_count, 
-                self.max_retries, 
-                progress_callback, 
-                last_try=is_last_try
+                retry_count,
+                self.max_retries,
+                progress_callback,
+                last_try=is_last_try,
+                max_token=shrink_token,
             )
             retry_count += 1
 
