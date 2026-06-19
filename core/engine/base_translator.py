@@ -11,7 +11,7 @@ from core.log_config import app_logger, file_logger
 from .calculation_tokens import num_tokens_from_string
 from core.translation_history import TranslationHistoryManager, create_translation_record
 
-from core.llm.llm_wrapper import translate_text, interruptible_sleep
+from core.llm.llm_wrapper import translate_text
 from core.llm.online_translation import HardApiError
 from core.engine.text_separator import (
     stream_segment_json, split_text_by_token_limit,
@@ -363,132 +363,70 @@ class DocumentTranslator:
             total_segments = total_current_batch
         
         def process_segment(segment_data):
-            """Process a single segment with retry logic"""
+            """Translate one batch ONCE (translate_text already does bounded
+            transport retries). On any failure the batch's items are marked failed
+            and picked up by the outer retry rounds (retranslate_failed_content) —
+            no in-place 1-hour loop. HardApiError (bad key/quota) aborts the task."""
             segment, segment_progress, current_glossary_terms = segment_data[:3]
             context_map = segment_data[3] if len(segment_data) > 3 else None
+            self.check_for_stop()
 
-            # Retry limits
-            max_retry_time = 3600  # 1 hour
-            max_empty_retries = 1  # 1 retry for empty results
-            start_time = time.time()
-            retry_count = 0
-            empty_result_count = 0
-            
-            while True:
-                self.check_for_stop()
-                retry_count += 1
-                
+            # Running "previous content" is only safe single-threaded (ordered);
+            # under concurrency completion order is nondeterministic, so disable it.
+            if self.num_threads > 1:
+                current_previous = ""
+            else:
+                with self.lock:
+                    current_previous = self.previous_content
+
+            try:
+                translated_text, success, token_usage = translate_text(
+                    segment, current_previous, self.model, self.use_online, self.api_key,
+                    self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
+                    current_glossary_terms, check_stop_callback=self.check_for_stop,
+                    context_map=context_map, options=self.topts
+                )
+                self._add_token_usage(token_usage)
+
+                if not success or not translated_text:
+                    self._mark_segment_as_failed(segment)
+                    return None
+
+                # Optional second pass ("polish" mode): safe — keeps the first pass
+                # if the polish output isn't valid same-key JSON.
                 try:
-                    # The running "previous content" gives the LLM prior context
-                    # for consistency, but that only holds when segments are
-                    # translated IN DOCUMENT ORDER. Under concurrency
-                    # (num_threads > 1) completion order is nondeterministic, so
-                    # this value is a last-writer-wins race that would inject
-                    # arbitrary out-of-order context. Disable it then so output is
-                    # reproducible; keep it for single-threaded (ordered) runs.
-                    if self.num_threads > 1:
-                        current_previous = ""
-                    else:
-                        with self.lock:
-                            current_previous = self.previous_content
+                    if self.topts.get("params", {}).get("second_pass"):
+                        from core.llm.llm_wrapper import polish_translation
+                        translated_text, _polish_usage = polish_translation(
+                            translated_text, self.dst_lang, self.model,
+                            self.use_online, self.api_key,
+                            check_stop=self.check_for_stop, options=self.topts)
+                        self._add_token_usage(_polish_usage)
+                except Exception as e:  # noqa: BLE001 — never break on polish
+                    app_logger.warning(f"Second pass skipped: {e}")
 
-                    # Translate with stop callback
-                    translated_text, success, token_usage = translate_text(
-                        segment, current_previous, self.model, self.use_online, self.api_key,
-                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
-                        current_glossary_terms, check_stop_callback=self.check_for_stop,
-                        context_map=context_map, options=self.topts
+                # Validate + commit. process_translation_results does PARTIAL
+                # acceptance: valid items are written, the rest go to failed.json.
+                with self.lock:
+                    translation_results = process_translation_results(
+                        segment, translated_text,
+                        self.src_split_json_path, self.result_split_json_path, self.failed_json_path,
+                        self.src_lang, self.dst_lang
                     )
-
-                    # Track token usage
-                    self._add_token_usage(token_usage)
-
-                    # Handle failure
-                    if not success:
-                        elapsed_time = time.time() - start_time
-                        remaining_time = max_retry_time - elapsed_time
-                        
-                        if remaining_time <= 0:
-                            app_logger.error(f"Segment translation failed after 1 hour ({retry_count} attempts)")
-                            self._mark_segment_as_failed(segment)
-                            return None
-                        
-                        backoff = min(2 ** min(retry_count - 1, 6), 60)  # 1,2,4,…,60s
-                        app_logger.warning(f"Segment translation failed (attempt {retry_count}), backing off {backoff}s")
-                        interruptible_sleep(min(backoff, remaining_time), self.check_for_stop)
-                        continue
-                    
-                    # Handle empty result
-                    if not translated_text:
-                        empty_result_count += 1
-                        if empty_result_count > max_empty_retries:
-                            app_logger.error(f"Segment returned empty result {max_empty_retries} times")
-                            self._mark_segment_as_failed(segment)
-                            return None
-                        
-                        app_logger.warning(f"Segment returned empty result (attempt {empty_result_count}/{max_empty_retries})")
-                        interruptible_sleep(1, self.check_for_stop)
-                        continue
-
-                    # Optional second pass (e.g. "polish" mode): refine the
-                    # already-translated JSON in the target language. Safe — keeps
-                    # the first-pass result if the polish output isn't valid
-                    # same-key JSON.
-                    try:
-                        if self.topts.get("params", {}).get("second_pass"):
-                            from core.llm.llm_wrapper import polish_translation
-                            translated_text, _polish_usage = polish_translation(
-                                translated_text, self.dst_lang, self.model,
-                                self.use_online, self.api_key,
-                                check_stop=self.check_for_stop, options=self.topts)
-                            self._add_token_usage(_polish_usage)
-                    except Exception as e:  # noqa: BLE001 — never break on polish
-                        app_logger.warning(f"Second pass skipped: {e}")
-
-                    # Process successful translation
-                    with self.lock:
-                        translation_results = process_translation_results(
-                            segment, translated_text,
-                            self.src_split_json_path, self.result_split_json_path, self.failed_json_path,
-                            self.src_lang, self.dst_lang
-                        )
-                        
-                        if translation_results:
-                            # Only accumulate running context when sequential (see
-                            # the ordering note above); under concurrency it would
-                            # be nondeterministic, so we leave it untouched.
-                            if self.num_threads == 1:
-                                self.previous_content = self._update_previous_content(
-                                    translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
-                                )
-                            return translation_results
-                        else:
-                            empty_result_count += 1
-                            if empty_result_count > max_empty_retries:
-                                app_logger.warning(f"Failed to process results {max_empty_retries} times")
-                                self._mark_segment_as_failed(segment)
-                                return None
-                            # Per-attempt retry (usually succeeds next try): debug, not warning.
-                            app_logger.debug("Empty result, retrying segment")
-                            interruptible_sleep(1, self.check_for_stop)
-                            continue
-                
-                except HardApiError:
-                    # Unrecoverable (bad key/quota): abort the whole task
-                    raise
-                except Exception as e:
-                    elapsed_time = time.time() - start_time
-                    remaining_time = max_retry_time - elapsed_time
-
-                    if remaining_time <= 0:
-                        app_logger.error(f"Error processing segment after 1 hour: {e}")
-                        self._mark_segment_as_failed(segment)
-                        return None
-
-                    backoff = min(2 ** min(retry_count - 1, 6), 60)  # 1,2,4,…,60s
-                    app_logger.warning(f"Error processing segment: {e} (backing off {backoff}s)")
-                    interruptible_sleep(min(backoff, remaining_time), self.check_for_stop)
-                    continue
+                    if translation_results:
+                        if self.num_threads == 1:
+                            self.previous_content = self._update_previous_content(
+                                translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
+                            )
+                        return translation_results
+                    self._mark_segment_as_failed(segment)
+                    return None
+            except HardApiError:
+                raise   # bad key/quota -> abort the whole task
+            except Exception as e:  # noqa: BLE001
+                app_logger.warning(f"Error processing segment (deferring to retry rounds): {e}")
+                self._mark_segment_as_failed(segment)
+                return None
 
         # Translate segments in parallel
         with ThreadPoolExecutor(
@@ -638,123 +576,64 @@ class DocumentTranslator:
         app_logger.info(f"Retrying {total} segments using {self.num_threads} threads...")
 
         def process_failed_segment(segment_data, last_try=False):
-            """Process failed segment with retry logic"""
+            """Re-translate one failed batch ONCE (translate_text does bounded
+            transport retries). Still-failing items stay failed for the next
+            round; no in-place 1-hour loop. HardApiError aborts the task."""
             segment, segment_progress, current_glossary_terms = segment_data[:3]
             context_map = segment_data[3] if len(segment_data) > 3 else None
-            
-            # Retry limits
-            max_retry_time = 3600  # 1 hour
-            max_empty_retries = 1  # 1 retry
-            start_time = time.time()
-            retry_count = 0
-            empty_result_count = 0
-            
-            while True:
-                self.check_for_stop()
-                retry_count += 1
-                
+            self.check_for_stop()
+
+            if self.num_threads > 1:
+                current_previous = ""
+            else:
+                with self.lock:
+                    current_previous = self.previous_content
+
+            try:
+                translated_text, success, token_usage = translate_text(
+                    segment, current_previous, self.model, self.use_online, self.api_key,
+                    self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
+                    current_glossary_terms, check_stop_callback=self.check_for_stop,
+                    context_map=context_map, options=self.topts
+                )
+                self._add_token_usage(token_usage)
+
+                if not success or not translated_text:
+                    self._mark_segment_as_failed(segment)
+                    return None
+
                 try:
-                    # See the ordering note in the main loop: running context is
-                    # only coherent in single-threaded (document-order) runs.
-                    if self.num_threads > 1:
-                        current_previous = ""
-                    else:
-                        with self.lock:
-                            current_previous = self.previous_content
+                    if self.topts.get("params", {}).get("second_pass"):
+                        from core.llm.llm_wrapper import polish_translation
+                        translated_text, _polish_usage = polish_translation(
+                            translated_text, self.dst_lang, self.model,
+                            self.use_online, self.api_key,
+                            check_stop=self.check_for_stop, options=self.topts)
+                        self._add_token_usage(_polish_usage)
+                except Exception as e:  # noqa: BLE001 — never break on polish
+                    app_logger.warning(f"Second pass skipped: {e}")
 
-                    # Translate
-                    translated_text, success, token_usage = translate_text(
-                        segment, current_previous, self.model, self.use_online, self.api_key,
-                        self.system_prompt, self.user_prompt, self.previous_prompt, self.glossary_prompt,
-                        current_glossary_terms, check_stop_callback=self.check_for_stop,
-                        context_map=context_map, options=self.topts
+                with self.lock:
+                    translation_results = process_translation_results(
+                        segment, translated_text,
+                        self.src_split_json_path, self.result_split_json_path,
+                        self.failed_json_path, self.src_lang, self.dst_lang,
+                        last_try=last_try
                     )
-
-                    # Track token usage
-                    self._add_token_usage(token_usage)
-
-                    # Handle failure
-                    if not success:
-                        elapsed_time = time.time() - start_time
-                        remaining_time = max_retry_time - elapsed_time
-
-                        if remaining_time <= 0:
-                            app_logger.error("Failed segment translation failed after 1 hour")
-                            self._mark_segment_as_failed(segment)
-                            return None
-
-                        app_logger.warning(f"Failed segment translation failed (attempt {retry_count})")
-                        interruptible_sleep(min(1, remaining_time), self.check_for_stop)
-                        continue
-
-                    # Handle empty result
-                    if not translated_text:
-                        empty_result_count += 1
-                        if empty_result_count > max_empty_retries:
-                            app_logger.error("Failed segment returned empty result")
-                            self._mark_segment_as_failed(segment)
-                            return None
-                        
-                        app_logger.warning("Failed segment returned empty result")
-                        interruptible_sleep(1, self.check_for_stop)
-                        continue
-
-                    # Optional second pass (e.g. "polish" mode): refine the
-                    # already-translated JSON in the target language. Safe — keeps
-                    # the first-pass result if the polish output isn't valid
-                    # same-key JSON.
-                    try:
-                        if self.topts.get("params", {}).get("second_pass"):
-                            from core.llm.llm_wrapper import polish_translation
-                            translated_text, _polish_usage = polish_translation(
-                                translated_text, self.dst_lang, self.model,
-                                self.use_online, self.api_key,
-                                check_stop=self.check_for_stop, options=self.topts)
-                            self._add_token_usage(_polish_usage)
-                    except Exception as e:  # noqa: BLE001 — never break on polish
-                        app_logger.warning(f"Second pass skipped: {e}")
-
-                    # Process successful translation
-                    with self.lock:
-                        translation_results = process_translation_results(
-                            segment, translated_text,
-                            self.src_split_json_path, self.result_split_json_path,
-                            self.failed_json_path, self.src_lang, self.dst_lang,
-                            last_try=last_try
-                        )
-                        
-                        if translation_results:
-                            if self.num_threads == 1:
-                                self.previous_content = self._update_previous_content(
-                                    translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
-                                )
-                            app_logger.debug("Successfully processed segment")
-                            return translation_results
-                        else:
-                            empty_result_count += 1
-                            if empty_result_count > max_empty_retries:
-                                app_logger.warning("Failed to process results")
-                                self._mark_segment_as_failed(segment)
-                                return None
-                            # Per-attempt retry (usually succeeds next try): debug, not warning.
-                            app_logger.debug("Empty result, retrying segment")
-                            interruptible_sleep(1, self.check_for_stop)
-                            continue
-                
-                except HardApiError:
-                    raise
-                except Exception as e:
-                    elapsed_time = time.time() - start_time
-                    remaining_time = max_retry_time - elapsed_time
-
-                    if remaining_time <= 0:
-                        app_logger.error(f"Error processing failed segment: {e}")
-                        self._mark_segment_as_failed(segment)
-                        return None
-
-                    app_logger.warning(f"Error processing failed segment: {e}")
-                    interruptible_sleep(min(1, remaining_time), self.check_for_stop)
-                    continue
+                    if translation_results:
+                        if self.num_threads == 1:
+                            self.previous_content = self._update_previous_content(
+                                translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
+                            )
+                        return translation_results
+                    self._mark_segment_as_failed(segment)
+                    return None
+            except HardApiError:
+                raise
+            except Exception as e:  # noqa: BLE001
+                app_logger.warning(f"Error processing failed segment (deferring): {e}")
+                self._mark_segment_as_failed(segment)
+                return None
 
         # Process failed segments in parallel
         with ThreadPoolExecutor(

@@ -6,6 +6,10 @@ import json
 import re
 import time
 
+# Transport-layer retry budget per LLM call (transient network / 5xx / 429).
+# Semantic failures are NOT retried here — the caller re-queues failed items.
+_TRANSPORT_MAX_ATTEMPTS = 3
+
 
 def _strip_json_fence(s):
     """Return the JSON body of a ```json ...``` block (or the string itself)."""
@@ -83,112 +87,77 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
         tuple: (translation_result, success_status, token_usage)
             - token_usage: dict with 'prompt_tokens', 'completion_tokens', 'total_tokens' or None
     """
-    # Set 1-hour time limit (3600 seconds)
-    max_retry_time = 3600
-    start_time = time.time()
-
-    # Track attempts for logging
-    current_attempt = 0
-    wait_time = 1
+    # TRANSPORT-LAYER retry only: a few bounded attempts for transient network /
+    # 5xx / 429 failures (translate_online already does AIMD + cooldown per call).
+    # Semantic failures (bad JSON / missing lines / failed checks) are NOT retried
+    # here — the caller validates the result and re-queues failed items (so we
+    # never re-bill a whole batch for one bad line). HardApiError (401/402/422)
+    # aborts immediately. The old 1-hour in-call loop is gone.
+    import random
+    max_attempts = _TRANSPORT_MAX_ATTEMPTS
 
     # PRE-LLM placeholder masking: protect machine tokens (printf specifiers,
     # ${vars}, single-brace ICU placeholders) from being translated/altered.
-    # Mapping survives this whole call; replies are unmasked before returning.
-    # No-op fast path when no value contains a detectable token.
     segments, _ph_mapping = _mask_segment(segments)
 
-    while (time.time() - start_time) < max_retry_time:
-        # Check for stop request at the beginning of each iteration
+    # Build the prompt ONCE (identical across transport retries -> also helps the
+    # provider's prefix cache hit).
+    if isinstance(segments, dict):
+        try:
+            text_to_translate = json.dumps(segments, ensure_ascii=False)
+        except Exception as e:  # noqa: BLE001
+            app_logger.error(f"Error converting dict to string: {e}")
+            text_to_translate = str(segments)
+    elif isinstance(segments, list):
+        text_to_translate = "\n".join(segments)
+    else:
+        text_to_translate = segments
+
+    glossary_text = ""
+    glossary_prompt_str = str(glossary_prompt) if glossary_prompt else ""
+    if glossary_terms:
+        glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
+        glossary_text = glossary_prompt_str + "\n".join(glossary_lines) + "\n\n"
+        from core.llm.online_translation import debug_llm_io
+        if debug_llm_io():
+            app_logger.info("Glossary used: " +
+                            " || ".join(f"{src} ==> {dst}" for src, dst in glossary_terms))
+        else:
+            app_logger.info(f"Glossary: {len(glossary_terms)} term(s) applied")
+
+    previous_prompt_str = str(previous_prompt) if previous_prompt else ""
+    previous_text_str = str(previous_text) if previous_text else ""
+    user_prompt_str = str(user_prompt) if user_prompt else ""
+    text_to_translate_str = str(text_to_translate) if text_to_translate else ""
+
+    # Optional per-id type context (advisory only; opt-in).
+    context_block = ""
+    if context_map:
+        try:
+            if options is not None:
+                with_ctx = bool(options.get("with_context"))
+            else:
+                from core import backend
+                with_ctx = bool(backend.get_config("translate_with_context", False))
+            if with_ctx:
+                context_block = ("The following maps each id to its content type, "
+                                 "for disambiguation only — do NOT translate it or "
+                                 "include it in the output:\n"
+                                 + json.dumps(context_map, ensure_ascii=False) + "\n")
+        except Exception:  # noqa: BLE001
+            context_block = ""
+
+    full_user_prompt = f"{context_block}{previous_prompt_str}\n###{previous_text_str}###\n{user_prompt_str}###\n{text_to_translate_str}###\n{glossary_text}"
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": full_user_prompt},
+    ]
+
+    last_result = None
+    for attempt in range(1, max_attempts + 1):
         if check_stop_callback:
             check_stop_callback()
-            
-        current_attempt += 1
-        
-        # Handle dictionary segments
-        if isinstance(segments, dict):
-            try:
-                text_to_translate = json.dumps(segments, ensure_ascii=False)
-            except Exception as e:
-                app_logger.error(f"Error converting dict to string: {e}")
-                text_to_translate = str(segments)
-        elif isinstance(segments, list):
-            text_to_translate = "\n".join(segments)
-        else:
-            text_to_translate = segments
-        
-        # Prepare glossary
-        glossary_text = ""
-        glossary_prompt_str = str(glossary_prompt) if glossary_prompt else ""
-        if glossary_terms and len(glossary_terms) > 0:
-            # Only log glossary info on first attempt
-            if current_attempt == 1:
-                glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
-                glossary_text = glossary_prompt_str + "\n".join(glossary_lines) + "\n\n"
-
-                # Count only by default (the terms themselves are user content);
-                # full list only when debugging LLM I/O.
-                from core.llm.online_translation import debug_llm_io
-                if debug_llm_io():
-                    app_logger.info("Glossary used: " +
-                                    " || ".join(f"{src} ==> {dst}" for src, dst in glossary_terms))
-                else:
-                    app_logger.info(f"Glossary: {len(glossary_terms)} term(s) applied")
-            else:
-                glossary_lines = [f"{src} -> {dst}" for src, dst in glossary_terms]
-                glossary_text = glossary_prompt_str + "\n".join(glossary_lines) + "\n\n"
-        
-        # Prepare components
-        previous_prompt_str = str(previous_prompt) if previous_prompt else ""
-        previous_text_str = str(previous_text) if previous_text else ""
-        user_prompt_str = str(user_prompt) if user_prompt else ""
-        text_to_translate_str = str(text_to_translate) if text_to_translate else ""
-        
-        # Optional per-id type context (opt-in via config; advisory only — output
-        # shape is unchanged). Helps disambiguate the same text in different roles
-        # (e.g. a button label vs a heading).
-        context_block = ""
-        if context_map:
-            try:
-                if options is not None:
-                    with_ctx = bool(options.get("with_context"))
-                else:
-                    from core import backend
-                    with_ctx = bool(backend.get_config("translate_with_context", False))
-                if with_ctx:
-                    context_block = ("The following maps each id to its content type, "
-                                     "for disambiguation only — do NOT translate it or "
-                                     "include it in the output:\n"
-                                     + json.dumps(context_map, ensure_ascii=False) + "\n")
-            except Exception:  # noqa: BLE001
-                context_block = ""
-
-        # Calculate time status
-        elapsed_time = time.time() - start_time
-        remaining_time = max_retry_time - elapsed_time
-
-        # Construct full prompt
         try:
-            full_user_prompt = f"{context_block}{previous_prompt_str}\n###{previous_text_str}###\n{user_prompt_str}###\n{text_to_translate_str}###\n{glossary_text}"
-        except Exception as e:
-            app_logger.error(f"Error constructing prompt (attempt {current_attempt}): {e}")
-            
-            # Check remaining time
-            if remaining_time <= 0:
-                app_logger.error("Failed to construct prompt after 1 hour of retries.")
-                return None, False, None
-
-            app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
-            # Interruptible sleep
-            interruptible_sleep(wait_time, check_stop_callback)
-            continue
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": full_user_prompt},
-        ]
-        
-        try:
-            # Perform translation - now returns (result, status, token_usage)
             if not use_online:
                 translation_result, api_success, token_usage = translate_offline(messages, model)
             else:
@@ -196,56 +165,27 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
                     api_key, messages, model,
                     mode_params=(options.get("params") if options else None))
 
-            # If API call was successful, return the result
             if api_success:
-                if current_attempt > 1:
-                    app_logger.info(f"Translation succeeded on attempt {current_attempt} after {int(elapsed_time)}s")
+                if attempt > 1:
+                    app_logger.info(f"Translation succeeded on transport attempt {attempt}")
                 if _ph_mapping:
                     translation_result = _unmask_reply(translation_result, _ph_mapping)
                 return translation_result, True, token_usage
 
-            # API call failed (network error, service down, etc.)
-            app_logger.warning(f"API call failed (attempt {current_attempt}): {translation_result}")
-
-            # Update time remaining
-            elapsed_time = time.time() - start_time
-            remaining_time = max_retry_time - elapsed_time
-
-            # Check if we've run out of time
-            if remaining_time <= 0:
-                app_logger.error(f"Failed to translate after 1 hour ({current_attempt} attempts).")
-                return translation_result, False, None
-
-            # Wait before retry with exponential backoff
-            wait_time = min(wait_time * 2, 10, remaining_time)
-            app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
-            # Interruptible sleep
-            interruptible_sleep(wait_time, check_stop_callback)
-
+            last_result = translation_result
+            app_logger.warning(f"API call failed (attempt {attempt}/{max_attempts}): {translation_result}")
         except HardApiError:
-            # Bad key/config/quota - retrying cannot help, abort the task
-            raise
-        except Exception as e:
-            # Update time remaining
-            elapsed_time = time.time() - start_time
-            remaining_time = max_retry_time - elapsed_time
+            raise   # 401/402/422 — retrying can't help, abort the task
+        except Exception as e:  # noqa: BLE001
+            last_result = f"Error: {e}"
+            app_logger.error(f"Translation exception (attempt {attempt}/{max_attempts}): {e}")
 
-            # Check if we've run out of time
-            if remaining_time <= 0:
-                app_logger.error(f"Translation failed after 1 hour ({current_attempt} attempts): {e}")
-                return f"Translation failed after 1 hour: {str(e)}", False, None
-
-            app_logger.error(f"Translation exception (attempt {current_attempt}): {e}")
-
-            # Wait before retry (don't wait longer than remaining time)
-            wait_time = min(wait_time * 2, 10, remaining_time)
-            app_logger.info(f"Waiting {wait_time}s before retry... ({int(elapsed_time)}s elapsed, {int(remaining_time)}s remaining)")
-            # Interruptible sleep
+        if attempt < max_attempts:   # bounded backoff + jitter, then give up to the caller
+            wait_time = min(2 ** (attempt - 1), 10) + random.uniform(0, 0.5)
             interruptible_sleep(wait_time, check_stop_callback)
 
-    # If we reach here, time limit exceeded
-    app_logger.error(f"Failed to translate after 1 hour ({current_attempt} attempts).")
-    return None, False, None
+    app_logger.warning(f"Transport retries exhausted ({max_attempts}); deferring to caller's retry queue.")
+    return last_result, False, None
 
 def interruptible_sleep(duration, check_stop_callback=None):
     """Sleep that can be interrupted by checking stop callback"""
