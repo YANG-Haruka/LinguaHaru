@@ -37,25 +37,27 @@ def _tr(key, lang):
 # Real-time voice favors the smaller/faster ones (lower latency).
 STT_MODELS = [
     {"id": "sensevoice-small",       "engine": "sensevoice", "size": "iic/SenseVoiceSmall",
-     "label": "SenseVoice Small (zh/en/ja/ko/yue · fast)", "disk": "~900MB", "vram": "~1–2GB"},
+     "label": "SenseVoice Small — general zh/en/ja/ko, fast & light",
+     "disk": "~900MB", "vram": "~1–2GB"},
     {"id": "whisper-tiny",           "engine": "whisper",    "size": "tiny",
-     "label": "Whisper Tiny (fastest)", "disk": "~75MB", "vram": "~1GB"},
+     "label": "Whisper Tiny — multilingual, fastest (low accuracy)", "disk": "~75MB", "vram": "~1GB"},
     {"id": "whisper-base",           "engine": "whisper",    "size": "base",
-     "label": "Whisper Base", "disk": "~145MB", "vram": "~1GB"},
+     "label": "Whisper Base — multilingual, fast", "disk": "~145MB", "vram": "~1GB"},
     {"id": "whisper-small",          "engine": "whisper",    "size": "small",
-     "label": "Whisper Small (balanced)", "disk": "~490MB", "vram": "~2GB"},
+     "label": "Whisper Small — multilingual, balanced", "disk": "~490MB", "vram": "~2GB"},
     {"id": "whisper-large-v3-turbo", "engine": "whisper",    "size": "large-v3-turbo",
-     "label": "Whisper Large-v3 Turbo (accurate)", "disk": "~1.6GB", "vram": "~6GB"},
+     "label": "Whisper Large-v3 Turbo — multilingual, accurate & fast", "disk": "~1.6GB", "vram": "~6GB"},
     {"id": "whisper-large-v2",       "engine": "whisper",    "size": "large-v2",
-     "label": "Whisper Large-v2 (best for expressive English · low hallucination)",
+     "label": "Whisper Large-v2 — best for EXPRESSIVE ENGLISH (low hallucination)",
      "disk": "~3GB", "vram": "~5GB"},
     {"id": "anime-whisper",          "engine": "animewhisper", "size": "litagin/anime-whisper",
-     "label": "Anime-Whisper (Japanese expressive/NSFW · best for JA)",
+     "label": "Anime-Whisper — best for JAPANESE (expressive / NSFW); JA only",
      "disk": "~1.6GB", "vram": "~2GB"},
     {"id": "qwen3-asr-0.6b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-0.6B",
-     "label": "Qwen3-ASR 0.6B (accurate · 30 langs)", "disk": "~2GB", "vram": "~3GB"},
+     "label": "Qwen3-ASR 0.6B — multilingual (30+ langs), accurate", "disk": "~2GB", "vram": "~3GB"},
     {"id": "qwen3-asr-1.7b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-1.7B",
-     "label": "Qwen3-ASR 1.7B (most accurate)", "disk": "~4GB", "vram": "~6GB"},
+     "label": "Qwen3-ASR 1.7B — multilingual, most accurate (best general pick)",
+     "disk": "~4GB", "vram": "~6GB"},
 ]
 
 # Default for video subtitles AND real-time voice: SenseVoice is small + fast.
@@ -316,7 +318,9 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
     decodes from t=0 otherwise). Clipping at a segment boundary is a natural pause,
     so no speech is cut; timestamps are shifted back by the clip offset."""
     model = _get_whisper_model(size)
-    language = src_lang.split("-")[0] if src_lang else None  # zh, en, ja, ...
+    # User's source language forces Whisper's decode language (zh/en/ja/…); "auto"
+    # or empty -> None so Whisper auto-detects (passing the literal "auto" errors).
+    language = src_lang.split("-")[0] if (src_lang and src_lang != "auto") else None
 
     # Resume: load already-decoded segments; restart decoding past the last one.
     done, offset = [], 0.0
@@ -1150,7 +1154,7 @@ def _recognize_whisper(audio, src_lang, size="small"):
     The client already segmented speech, so vad_filter is off (it can drop short
     clips); beam_size=1 keeps it responsive for real time."""
     model = _get_whisper_model(size)
-    language = (src_lang or "").split("-")[0] or None
+    language = src_lang.split("-")[0] if (src_lang and src_lang != "auto") else None
     segments, info = model.transcribe(
         audio, language=language, vad_filter=False, beam_size=1)
     text = _clean_asr_text(" ".join(s.text.strip() for s in segments))
