@@ -1064,7 +1064,38 @@ def _clean_asr_text(text):
     import re
     text = re.sub(r"<\|[^|]*\|>", "", text or "")
     text = "".join(ch for ch in text if ch not in _SENSEVOICE_EMOJIS)
-    return re.sub(r"\s{2,}", " ", text).strip()
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    return _collapse_repeats(text)
+
+
+def _collapse_repeats(text, max_run=3):
+    """Collapse a space-separated token repeated more than max_run times in a row
+    down to max_run — cleans the residual ASR hallucination loops that the
+    max_new_tokens cap shortens but doesn't remove ("Oh, Angkor, Angkor, Angkor,
+    …", "Hey, hey, hey, hey!"). Compares case-insensitively, ignoring trailing
+    punctuation, so 'Angkor,' == 'Angkor'.
+
+    Deliberately token-based, not char-based: it never touches space-less CJK
+    (so legit Japanese isn't mangled) nor legit short repeats (<= max_run, e.g.
+    'very very good'); a char-level rule was tried and rejected for changing 56
+    Japanese cues vs the 3 real garbage ones."""
+    if not text:
+        return text
+    import re
+    toks = text.split()
+    if len(toks) <= max_run:
+        return text
+    out, run, prev = [], 0, None
+    for t in toks:
+        key = re.sub(r"[,，、.。!！?？…\-]+$", "", t).lower()
+        if key and key == prev:
+            run += 1
+            if run > max_run:
+                continue   # drop the excess repeats
+        else:
+            run, prev = 1, key
+        out.append(t)
+    return " ".join(out)
 
 
 # Back-compat alias (older call sites).
