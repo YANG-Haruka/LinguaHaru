@@ -133,28 +133,35 @@ PLACEHOLDER_PATTERN = re.compile(r'\{\{[^}]+\}\}|\[formula_\d+\]|[␊␍]')
 
 
 def _placeholders_preserved(original, translated):
-    """Every structural placeholder in the source must appear in the translation."""
-    needed = PLACEHOLDER_PATTERN.findall(original)
-    if not needed:
-        return True
+    """The structural-placeholder multiset must be IDENTICAL (not just
+    non-reduced): a dropped placeholder corrupts the document, and an EXTRA one
+    the model invented is just as wrong on write-back."""
     from collections import Counter
+    need = Counter(PLACEHOLDER_PATTERN.findall(original))
+    if not need:
+        return True
     have = Counter(PLACEHOLDER_PATTERN.findall(translated))
-    need = Counter(needed)
-    return all(have[token] >= count for token, count in need.items())
+    return have == need
 
 
 def _machine_tokens_preserved(original, translated):
-    """Round-trip check for masked machine tokens (%s, ${var}, {count}, …): the
-    translation must carry back the same multiset. Catches an LLM that dropped a
-    sentinel (placeholder_mask.unmask silently can't restore a dropped one, so
-    without this the loss is invisible until the rendered string is broken)."""
+    """The masked machine-token (%s, ${var}, {count}, …) multiset must be
+    IDENTICAL — a dropped sentinel can't be restored, and an invented one renders
+    a bogus placeholder. (placeholder_mask.unmask silently can't restore a dropped
+    sentinel, so without this the loss is invisible until the string is broken.)"""
     from collections import Counter
     from core.engine.placeholder_mask import extract_tokens
     need = Counter(extract_tokens(original))
-    if not need:
-        return True
     have = Counter(extract_tokens(translated))
-    return all(have[tok] >= n for tok, n in need.items())
+    return have == need
+
+
+def _structural_intact(original, translated):
+    """Hard structural integrity: placeholders + formula/field/line markers +
+    machine tokens all match exactly. A failure here must NEVER be shipped (even
+    as best-effort) — the document would be corrupted; fall back to source."""
+    return _placeholders_preserved(original, translated) and \
+        _machine_tokens_preserved(original, translated)
 
 
 def _is_repetition_degenerate(original, translated):
@@ -333,28 +340,34 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         else:
             translated_value = ""
         
-        # Last try mode - keep any non-empty output, but flag invalid ones for
-        # review instead of silently passing them off as a clean translation.
+        # Last try mode: keep a non-empty output as best-effort ONLY if its
+        # structure (placeholders / formula / field / line markers / machine
+        # tokens) is intact — a structural break corrupts the document, so it must
+        # fall back to source (FAILED), never be written even as needs_review.
+        # Soft issues (language / length / repetition) are accepted as needs_review.
         if last_try:
             if translated_value and translated_value.strip() != "":
-                successful_translations.append({
-                    "count_split": int(key),
-                    "original": value,
-                    "translated": translated_value
-                })
-                result_dict[key] = translated_value
-
-                try:
-                    successful_count_splits.append(int(key))
-                except (ValueError, TypeError):
-                    successful_count_splits.append(key)
-
-                if not is_translation_valid(value, translated_value, src_lang, dst_lang):
-                    needs_review.append({
+                if not _structural_intact(value, translated_value):
+                    app_logger.warning(
+                        f"Last-try output broke structure (id {key}); failing -> source")
+                    failed_translations.append({"count_split": int(key), "value": value})
+                else:
+                    successful_translations.append({
                         "count_split": int(key),
                         "original": value,
                         "translated": translated_value
                     })
+                    result_dict[key] = translated_value
+                    try:
+                        successful_count_splits.append(int(key))
+                    except (ValueError, TypeError):
+                        successful_count_splits.append(key)
+                    if not is_translation_valid(value, translated_value, src_lang, dst_lang):
+                        needs_review.append({
+                            "count_split": int(key),
+                            "original": value,
+                            "translated": translated_value
+                        })
             else:
                 failed_translations.append({
                     "count_split": int(key),

@@ -289,6 +289,10 @@ def _classify_api_exception(exc):
     status = _http_status(exc)
     if status == 429:
         return "rate_limit"
+    if status == 413:
+        return "too_large"
+    if status in (400, 404, 422):
+        return "invalid_request"
     if status in (401, 402, 403):
         return "hard"
     if status in (500, 502, 503, 504):
@@ -298,11 +302,16 @@ def _classify_api_exception(exc):
         return "timeout"
     if "rate limit" in msg or "429" in msg or "too many requests" in msg:
         return "rate_limit"
+    if "413" in msg or "request entity too large" in msg or "payload too large" in msg:
+        return "too_large"
     if ("500" in msg or "502" in msg or "503" in msg or "internal server error" in msg
             or "service unavailable" in msg or "overloaded" in msg or "bad gateway" in msg):
         return "server"
     if any(marker in msg for marker in _HARD_ERROR_MARKERS):
         return "hard"
+    if ("400" in msg or "422" in msg or "invalid_request" in msg
+            or "unprocessable" in msg or "bad request" in msg):
+        return "invalid_request"
     if "connection" in msg or "network" in msg:
         return "connection"
     return "unknown"
@@ -740,6 +749,14 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
             app_logger.error(
                 f"FATAL API error [{category}] — aborting translation: {str(e)[:200]}")
             raise HardApiError(f"Unrecoverable API error: {str(e)}", category=category)
+
+        # Invalid request (400/404/422) or payload too large (413): retrying the
+        # SAME request can't succeed — _create_completion already retried with the
+        # optional params dropped. Signal the caller NOT to transport-retry; a 413
+        # is handled by the outer loop shrinking the batch.
+        if kind in ("invalid_request", "too_large"):
+            app_logger.warning(f"Non-retryable request error ({kind}): {str(e)[:160]}")
+            return f"Request error ({kind}): {str(e)}", False, {"noretry": True}
 
         # Connection / unknown: worth a retry.
         if kind == "connection":

@@ -40,14 +40,20 @@ def _seg_items(segment):
     return {k: v for k, v in data.items() if isinstance(v, str)} if isinstance(data, dict) else None
 
 
-def _cache_sig(model, system_prompt, user_prompt, previous_prompt, glossary_terms, options):
-    """params_sig over everything that determines this segment's output: the model,
-    the (language/style-encoding) prompts, the matched glossary, the sampling mode,
-    and the masking flag. A change in any -> a different signature -> no stale reuse."""
+def _cache_sig(model, system_prompt, user_prompt, previous_prompt, glossary_terms,
+               options, previous_text="", context_map=None):
+    """params_sig over EVERYTHING that determines this segment's output: model,
+    the (language/style-encoding) prompts, matched glossary, sampling mode/temp,
+    masking flag, AND the actual context fed into the prompt — the preceding-text
+    context and the per-id type map. Without the context, the same source seen in
+    two different contexts would wrongly share one cached translation."""
     from core.engine import translation_cache as tc
     import hashlib
+    ctx = (str(previous_text or "")
+           + "\x00" + (json.dumps(context_map, sort_keys=True, ensure_ascii=False)
+                       if context_map else ""))
     prompt_h = hashlib.sha1(
-        ("".join(str(p) for p in (system_prompt, user_prompt, previous_prompt)))
+        ("".join(str(p) for p in (system_prompt, user_prompt, previous_prompt)) + "\x00" + ctx)
         .encode("utf-8")).hexdigest()[:12]
     mode = ""
     temp = None
@@ -63,6 +69,29 @@ def _cache_sig(model, system_prompt, user_prompt, previous_prompt, glossary_term
     return tc.params_sig(model, "", "", mode=mode, temperature=temp,
                          glossary_hash=tc.glossary_hash(glossary_terms),
                          mask=mask, prompt_version=prompt_h)
+
+
+def cache_store_validated(segment, translated_results, model, system_prompt,
+                          user_prompt, previous_prompt, glossary_terms, options,
+                          previous_text="", context_map=None):
+    """Write VALIDATED (source -> translation) pairs to the TM. Called by the
+    translator only after process_translation_results has accepted the items, so
+    only clean translations enter the cache. ``translated_results`` is the
+    {count: translated} validated dict; sources come from ``segment``. No-op when
+    the cache is disabled. Never raises."""
+    if not _cache_enabled() or not translated_results:
+        return
+    try:
+        items = _seg_items(segment) or {}
+        pairs = [(items[k], translated_results[k]) for k in translated_results if k in items]
+        if not pairs:
+            return
+        from core.engine import translation_cache as tc
+        sig = _cache_sig(model, system_prompt, user_prompt, previous_prompt,
+                         glossary_terms, options, previous_text, context_map)
+        tc.put_many(pairs, sig)
+    except Exception as e:  # noqa: BLE001 — cache must never break a translation
+        app_logger.warning(f"TM store skipped: {e}")
 
 
 def _mask_segment(segment):
@@ -156,7 +185,8 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
             try:
                 from core.engine import translation_cache as tc
                 _cache_sig_val = _cache_sig(model, system_prompt, user_prompt,
-                                            previous_prompt, glossary_terms, options)
+                                            previous_prompt, glossary_terms, options,
+                                            previous_text, context_map)
                 hits = tc.get_many(_cache_items.values(), _cache_sig_val)
                 if hits and all(v in hits for v in _cache_items.values()):
                     merged = {k: hits[v] for k, v in _cache_items.items()}
@@ -241,20 +271,18 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
                     app_logger.info(f"Translation succeeded on transport attempt {attempt}")
                 if _ph_mapping:
                     translation_result = _unmask_reply(translation_result, _ph_mapping)
-                # Store fresh translations in the TM (best-effort) so a re-run /
-                # repeat reuses them. Keyed by the verbatim source per item.
-                if _cache_items and _cache_sig_val:
-                    try:
-                        from core.engine import translation_cache as tc
-                        out = _seg_items(translation_result) or {}
-                        pairs = [(_cache_items[k], out[k]) for k in _cache_items if k in out]
-                        if pairs:
-                            tc.put_many(pairs, _cache_sig_val)
-                    except Exception as e:  # noqa: BLE001
-                        app_logger.warning(f"TM store skipped: {e}")
+                # NOTE: the TM is written by the CALLER *after* validation
+                # (cache_store_validated), never here — an unvalidated reply (wrong
+                # language / repetition / dropped placeholder) must not pollute it.
                 return translation_result, True, token_usage
 
             last_result = translation_result
+            # A non-retryable request error (400/404/422/413): retrying the same
+            # input can't help — stop transport retries and defer to the caller
+            # (which shrinks the batch / falls back).
+            if token_usage and token_usage.get("noretry"):
+                app_logger.warning("Non-retryable request error; not retrying transport.")
+                return last_result, False, None
             app_logger.warning(f"API call failed (attempt {attempt}/{max_attempts}): {translation_result}")
         except HardApiError:
             raise   # 401/402/422 — retrying can't help, abort the task

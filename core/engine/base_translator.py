@@ -11,7 +11,7 @@ from core.log_config import app_logger, file_logger
 from .calculation_tokens import num_tokens_from_string
 from core.translation_history import TranslationHistoryManager, create_translation_record
 
-from core.llm.llm_wrapper import translate_text
+from core.llm.llm_wrapper import translate_text, cache_store_validated
 from core.llm.online_translation import HardApiError
 from core.engine.text_separator import (
     stream_segment_json, split_text_by_token_limit,
@@ -424,6 +424,12 @@ class DocumentTranslator:
                             self.previous_content = self._update_previous_content(
                                 translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
                             )
+                        # Persist only VALIDATED translations to the TM (first pass
+                        # is always full validation, never best-effort).
+                        cache_store_validated(
+                            segment, translation_results, self.model, self.system_prompt,
+                            self.user_prompt, self.previous_prompt, current_glossary_terms,
+                            self.topts, current_previous, context_map)
                         return translation_results
                     self._mark_segment_as_failed(segment)
                     return None
@@ -637,6 +643,14 @@ class DocumentTranslator:
                             self.previous_content = self._update_previous_content(
                                 translation_results, self.previous_content, MAX_PREVIOUS_TOKENS
                             )
+                        # Cache only fully-validated retries; the last_try pass
+                        # accepts best-effort (needs_review) output, which must NOT
+                        # enter the TM.
+                        if not last_try:
+                            cache_store_validated(
+                                segment, translation_results, self.model, self.system_prompt,
+                                self.user_prompt, self.previous_prompt, current_glossary_terms,
+                                self.topts, current_previous, context_map)
                         return translation_results
                     self._mark_segment_as_failed(segment)
                     return None
