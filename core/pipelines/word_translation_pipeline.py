@@ -3354,7 +3354,10 @@ def intelligent_smartart_text_distribution(text_runs, translated_text, original_
     if total_meaningful_length == 0:
         simple_smartart_text_distribution(text_runs, translated_text, namespaces)
         return
-    
+    # Remaining text goes to the last MEANINGFUL run (a trailing empty run would
+    # otherwise take the ''-branch and drop the end of the translation).
+    last_meaningful_idx = meaningful_runs[-1][0]
+
     # Handle special cases for spacing
     translated_chars = list(translated_text)
     char_index = 0
@@ -3383,10 +3386,11 @@ def intelligent_smartart_text_distribution(text_runs, translated_text, original_
             continue
         
         # Calculate how much text this run should get
-        if run_index == len(text_runs) - 1:
-            # Last meaningful run gets all remaining text
+        if run_index >= last_meaningful_idx:
+            # Last meaningful run gets all remaining text (later runs are empty)
             remaining_text = ''.join(translated_chars[char_index:])
             text_node[0].text = remaining_text
+            char_index = len(translated_chars)
         else:
             # Calculate proportional distribution
             proportion = original_length / total_meaningful_length

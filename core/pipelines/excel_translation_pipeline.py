@@ -2688,6 +2688,8 @@ def _intelligent_drawing_text_distribution(text_runs, translated_text: str, orig
     if total_meaningful_length == 0:
         _simple_drawing_text_distribution(text_runs, translated_text, namespaces)
         return
+    # Remaining text -> last MEANINGFUL run (trailing empty run else drops the end).
+    last_meaningful_idx = meaningful_runs[-1][0]
 
     translated_chars = list(translated_text)
     char_index = 0
@@ -2711,9 +2713,10 @@ def _intelligent_drawing_text_distribution(text_runs, translated_text: str, orig
                 text_node[0].text = ""
             continue
 
-        if run_index == len(text_runs) - 1:
+        if run_index >= last_meaningful_idx:
             remaining_text = ''.join(translated_chars[char_index:])
             text_node[0].text = remaining_text
+            char_index = len(translated_chars)
         else:
             proportion = original_length / total_meaningful_length
             target_length = max(1, int(len(translated_text) * proportion))
@@ -2927,6 +2930,8 @@ def _intelligent_excel_smartart_text_distribution(text_runs, translated_text: st
     if total_meaningful_length == 0:
         _simple_excel_smartart_text_distribution(text_runs, translated_text, namespaces)
         return
+    # Remaining text -> last MEANINGFUL run (trailing empty run else drops the end).
+    last_meaningful_idx = meaningful_runs[-1][0]
 
     translated_chars = list(translated_text)
     char_index = 0
@@ -2950,9 +2955,10 @@ def _intelligent_excel_smartart_text_distribution(text_runs, translated_text: st
                 text_node[0].text = ""
             continue
 
-        if run_index == len(text_runs) - 1:
+        if run_index >= last_meaningful_idx:
             remaining_text = ''.join(translated_chars[char_index:])
             text_node[0].text = remaining_text
+            char_index = len(translated_chars)
         else:
             proportion = original_length / total_meaningful_length
             target_length = max(1, int(len(translated_text) * proportion))
