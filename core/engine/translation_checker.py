@@ -108,6 +108,25 @@ def clean_json(text):
     text = re.sub(r',\s*\]', ']', text)
     return text
 
+def _loads_lenient(text):
+    """Best-effort JSON parse for LLM output that wrapped the object in prose or
+    a code fence: slice from the first '{' to the last '}', strip trailing commas,
+    and retry. Returns the dict, or None if still unparseable. (BallonsTranslator-
+    style shape recovery — avoids failing a whole batch over a stray sentence.)"""
+    if not isinstance(text, str):
+        return None
+    s = clean_json(text)
+    i, j = s.find("{"), s.rfind("}")
+    if i == -1 or j == -1 or j <= i:
+        return None
+    body = re.sub(r",\s*}", "}", re.sub(r",\s*\]", "]", s[i:j + 1]))
+    try:
+        obj = json.loads(body)
+        return obj if isinstance(obj, dict) else None
+    except (json.JSONDecodeError, ValueError):
+        return None
+
+
 # Structural placeholders that must survive translation untouched:
 # {{FIELD...}} / {{FOOTNOTE_REF_n}} etc., [formula_n], and line markers
 PLACEHOLDER_PATTERN = re.compile(r'\{\{[^}]+\}\}|\[formula_\d+\]|[␊␍]')
@@ -234,11 +253,13 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
         return {}
 
-    # Parse translated
+    # Parse translated (LLM output -> lenient: tolerate prose around the JSON)
     try:
         translated_json = json.loads(clean_json(translated_text))
-    except json.JSONDecodeError as e:
-        app_logger.warning(f"Failed to parse translated: {e}")
+    except json.JSONDecodeError:
+        translated_json = _loads_lenient(translated_text)
+    if translated_json is None:
+        app_logger.warning("Failed to parse translated (even leniently)")
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
         return {}
 
