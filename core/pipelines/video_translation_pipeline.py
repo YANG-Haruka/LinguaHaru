@@ -750,11 +750,13 @@ def _ten_vad_segments(audio_i16, sr=16000, check_stop=None,
     return segs
 
 
-def _window_segments(total_ms, win_ms=25000.0, overlap_ms=1000.0):
-    """Overlapping fixed windows over the whole file, used ONLY when both VADs find
-    no speech. A single whole-file segment would blow past the model's chunk limit
-    and trigger repetition loops; ~25s windows with ~1s overlap keep each pass sane
-    while the overlap stops a word being cut across the boundary."""
+def _window_segments(total_ms, win_ms=25000.0, overlap_ms=0.0):
+    """Fixed windows over the whole file, used ONLY when both VADs find no speech.
+    A single whole-file segment would blow past the model's chunk limit and trigger
+    repetition loops; ~25s windows keep each pass sane. NON-overlapping by default:
+    the per-segment engines (Qwen/SenseVoice/anime) have no cross-window dedup, so
+    an overlap would transcribe the boundary twice and produce duplicate, time-
+    overlapping cues — a clean cut (rare boundary-word clip) is the lesser evil."""
     if total_ms <= win_ms:
         return [[0.0, total_ms]]
     step = win_ms - overlap_ms
@@ -1078,6 +1080,32 @@ _ANIME_GEN_KW = {"language": "Japanese", "max_new_tokens": 256}
 _ANIME_BATCH = 8   # VAD segments per pipeline batch (GPU throughput vs resume granularity)
 
 
+def _anime_infer_oom_safe(pipe, clips):
+    """Run the anime-whisper pipeline over `clips`, halving the batch size on a
+    CUDA out-of-memory error (8→4→2→1) instead of crashing. Returns a list of
+    results aligned to `clips`."""
+    bs = len(clips)
+    while True:
+        try:
+            out = []
+            for i in range(0, len(clips), bs):
+                chunk = clips[i:i + bs]
+                r = pipe(chunk, generate_kwargs=_ANIME_GEN_KW, batch_size=len(chunk))
+                out.extend(r if isinstance(r, list) else [r])
+            return out
+        except (RuntimeError, MemoryError) as e:  # noqa: BLE001
+            if bs > 1 and "out of memory" in str(e).lower():
+                bs = max(1, bs // 2)
+                app_logger.warning(f"anime-whisper CUDA OOM; retrying at batch_size={bs}")
+                try:
+                    import torch
+                    torch.cuda.empty_cache()
+                except Exception:  # noqa: BLE001
+                    pass
+                continue
+            raise
+
+
 def _animewhisper_text(result):
     return ((result or {}).get("text") or "").strip()
 
@@ -1147,9 +1175,7 @@ def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, 
                     idx_with_audio.append(i)
             if clips:
                 _bt = time.time()
-                res = pipe(clips, generate_kwargs=_ANIME_GEN_KW, batch_size=len(clips))
-                # A list input yields a list of results, in order.
-                res = res if isinstance(res, list) else [res]
+                res = _anime_infer_oom_safe(pipe, clips)
                 for i, r in zip(idx_with_audio, res):
                     texts[i] = _clean_asr_text(_animewhisper_text(r))
                 if first:
@@ -1571,7 +1597,10 @@ def _merge_short_cues(cues, max_cells):
             if (short and (s - pe) < _CUE_MERGE_GAP
                     and (e - ps) <= _CUE_MAX_DUR
                     and _cue_cells(pt + t) <= 2 * max_cells):
-                joiner = "" if (pt and pt[-1] in _CUE_SENT_END + _CUE_CLAUSE) else " "
+                # CJK runs together (no inter-word spaces); everything else needs a
+                # space so a merge doesn't produce "Hello.World".
+                last = pt[-1] if pt else ""
+                joiner = "" if ("　" <= last <= "鿿" or "＀" <= last <= "￯") else " "
                 merged_w = ((pw or []) + (w or [])) or None
                 out[-1] = (ps, e, (pt + joiner + t).strip(), merged_w)
                 continue

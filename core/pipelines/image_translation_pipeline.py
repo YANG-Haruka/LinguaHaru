@@ -237,10 +237,16 @@ def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
     if len(scores) < len(texts):
         scores = list(scores) + [1.0] * (len(texts) - len(scores))
 
-    # Reorder into reading order (RTL for Japanese — manga reads right-to-left)
-    # so count_src follows the narrative and the LLM gets coherent context.
+    # Reorder into reading order so count_src follows the narrative (coherent LLM
+    # context). RTL: Arabic/Hebrew always; Japanese ONLY when the layout is
+    # actually vertical columns (most boxes tall-and-narrow = manga/縦書き) — a
+    # normal HORIZONTAL Japanese screenshot must read left-to-right.
     _base = (src_lang or "").split("-")[0].lower()
-    _rtl = _base in ("ja", "ar", "he")
+    _rtl = _base in ("ar", "he")
+    if _base == "ja":
+        _vert = sum(1 for b in boxes
+                    if (lambda x0, y0, x1, y1: (y1 - y0) > 1.5 * max(x1 - x0, 1))(*_box_bounds(b)))
+        _rtl = _vert >= max(1, len(boxes) // 2)   # majority vertical -> RTL columns
     items = _reading_order(list(zip(texts, boxes, scores)), _rtl)
     if items:
         texts, boxes, scores = (list(t) for t in zip(*items))

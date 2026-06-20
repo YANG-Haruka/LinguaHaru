@@ -68,9 +68,13 @@ def _get_session():
     with _LOCK:
         if _session is not None or _session_tried:
             return _session
-        _session_tried = True
+        # Model not downloaded YET -> return None WITHOUT latching _session_tried,
+        # so a later call (after the user finishes the download) still loads it.
+        # _session_tried is only set once we actually attempt to load a present
+        # model (so a genuine load failure isn't retried every frame).
         if not lama_available():
             return None
+        _session_tried = True
         try:
             import onnxruntime as ort
             _session = ort.InferenceSession(
