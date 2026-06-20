@@ -24,7 +24,8 @@ def install_fake_llm():
 
     def fake_translate_text(segments, previous_text, model, use_online, api_key,
                             system_prompt, user_prompt, previous_prompt,
-                            glossary_prompt, glossary_terms=None, check_stop_callback=None):
+                            glossary_prompt, glossary_terms=None, check_stop_callback=None,
+                            **kwargs):
         data = json.loads(clean_json(segments if isinstance(segments, str)
                                      else json.dumps(segments, ensure_ascii=False)))
         reply = {k: T + v for k, v in data.items()}
