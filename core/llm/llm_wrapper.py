@@ -18,6 +18,53 @@ def _strip_json_fence(s):
     return s
 
 
+def _cache_enabled():
+    try:
+        from core import backend
+        return bool(backend.get_config("translation_cache", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _seg_items(segment):
+    """Parse a ```json {count: text}``` segment string (or dict) into a dict, or
+    None if it isn't that shape."""
+    if isinstance(segment, dict):
+        return {k: v for k, v in segment.items() if isinstance(v, str)}
+    if not isinstance(segment, str):
+        return None
+    try:
+        data = json.loads(_strip_json_fence(segment))
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return None
+    return {k: v for k, v in data.items() if isinstance(v, str)} if isinstance(data, dict) else None
+
+
+def _cache_sig(model, system_prompt, user_prompt, previous_prompt, glossary_terms, options):
+    """params_sig over everything that determines this segment's output: the model,
+    the (language/style-encoding) prompts, the matched glossary, the sampling mode,
+    and the masking flag. A change in any -> a different signature -> no stale reuse."""
+    from core.engine import translation_cache as tc
+    import hashlib
+    prompt_h = hashlib.sha1(
+        ("".join(str(p) for p in (system_prompt, user_prompt, previous_prompt)))
+        .encode("utf-8")).hexdigest()[:12]
+    mode = ""
+    temp = None
+    if options:
+        params = options.get("params") or {}
+        mode = options.get("mode", "") or ""
+        temp = params.get("temperature")
+    try:
+        from core.engine.placeholder_mask import _mask_enabled
+        mask = _mask_enabled()
+    except Exception:  # noqa: BLE001
+        mask = True
+    return tc.params_sig(model, "", "", mode=mode, temperature=temp,
+                         glossary_hash=tc.glossary_hash(glossary_terms),
+                         mask=mask, prompt_version=prompt_h)
+
+
 def _mask_segment(segment):
     """Mask machine tokens in each value of a {count: text} segment.
 
@@ -96,6 +143,29 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
     import random
     max_attempts = _TRANSPORT_MAX_ATTEMPTS
 
+    # Persistent TM/cache (opt-in): if EVERY item in this segment is already
+    # cached for the same params signature, return the assembled translation
+    # without an LLM call (zero tokens). Mixed segments fall through and are
+    # cached after a successful translation (whole-item reuse; v1 is all-or-none
+    # per segment to stay correct without partial-merge fragility).
+    _cache_items = None
+    _cache_sig_val = None
+    if _cache_enabled():
+        _cache_items = _seg_items(segments)
+        if _cache_items:
+            try:
+                from core.engine import translation_cache as tc
+                _cache_sig_val = _cache_sig(model, system_prompt, user_prompt,
+                                            previous_prompt, glossary_terms, options)
+                hits = tc.get_many(_cache_items.values(), _cache_sig_val)
+                if hits and all(v in hits for v in _cache_items.values()):
+                    merged = {k: hits[v] for k, v in _cache_items.items()}
+                    app_logger.info(f"TM: whole-segment cache hit ({len(merged)} items)")
+                    return (f"```json\n{json.dumps(merged, ensure_ascii=False, indent=4)}\n```",
+                            True, None)
+            except Exception as e:  # noqa: BLE001 — cache must never break a translation
+                app_logger.warning(f"TM lookup skipped: {e}")
+
     # PRE-LLM placeholder masking: protect machine tokens (printf specifiers,
     # ${vars}, single-brace ICU placeholders) from being translated/altered.
     segments, _ph_mapping = _mask_segment(segments)
@@ -171,6 +241,17 @@ def translate_text(segments, previous_text, model, use_online, api_key, system_p
                     app_logger.info(f"Translation succeeded on transport attempt {attempt}")
                 if _ph_mapping:
                     translation_result = _unmask_reply(translation_result, _ph_mapping)
+                # Store fresh translations in the TM (best-effort) so a re-run /
+                # repeat reuses them. Keyed by the verbatim source per item.
+                if _cache_items and _cache_sig_val:
+                    try:
+                        from core.engine import translation_cache as tc
+                        out = _seg_items(translation_result) or {}
+                        pairs = [(_cache_items[k], out[k]) for k in _cache_items if k in out]
+                        if pairs:
+                            tc.put_many(pairs, _cache_sig_val)
+                    except Exception as e:  # noqa: BLE001
+                        app_logger.warning(f"TM store skipped: {e}")
                 return translation_result, True, token_usage
 
             last_result = translation_result
