@@ -259,6 +259,54 @@ def _parse_retry_after(exc, default=10):
         pass
     return default
 
+
+def _http_status(exc):
+    """HTTP status code from an OpenAI SDK / httpx exception, or None. Prefer the
+    structured attribute over scraping the message text."""
+    s = getattr(exc, "status_code", None)
+    if isinstance(s, int):
+        return s
+    s = getattr(getattr(exc, "response", None), "status_code", None)
+    return s if isinstance(s, int) else None
+
+
+def _classify_api_exception(exc):
+    """Classify an API exception by SDK type + HTTP status FIRST (robust), with
+    the message string only as a last-resort fallback. Returns one of:
+    'timeout' | 'rate_limit' | 'server' | 'hard' | 'connection' | 'unknown'."""
+    try:
+        import openai
+        if isinstance(exc, openai.APITimeoutError):
+            return "timeout"
+        if isinstance(exc, openai.APIConnectionError):
+            return "connection"
+        if isinstance(exc, openai.RateLimitError):
+            return "rate_limit"
+        if isinstance(exc, (openai.AuthenticationError, openai.PermissionDeniedError)):
+            return "hard"
+    except Exception:  # noqa: BLE001 — openai missing/old; fall through to status/text
+        pass
+    status = _http_status(exc)
+    if status == 429:
+        return "rate_limit"
+    if status in (401, 402, 403):
+        return "hard"
+    if status in (500, 502, 503, 504):
+        return "server"
+    msg = str(exc).lower()
+    if "timed out" in msg or "timeout" in msg:
+        return "timeout"
+    if "rate limit" in msg or "429" in msg or "too many requests" in msg:
+        return "rate_limit"
+    if ("500" in msg or "502" in msg or "503" in msg or "internal server error" in msg
+            or "service unavailable" in msg or "overloaded" in msg or "bad gateway" in msg):
+        return "server"
+    if any(marker in msg for marker in _HARD_ERROR_MARKERS):
+        return "hard"
+    if "connection" in msg or "network" in msg:
+        return "connection"
+    return "unknown"
+
 # Error substrings that mean "retrying with the same key cannot succeed"
 _HARD_ERROR_MARKERS = ("unauthorized", "401", "invalid api key", "invalid_api_key",
                        "incorrect api key", "authentication fails", "403", "forbidden",
@@ -648,12 +696,14 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
     except HardApiError:
         raise
     except Exception as e:
-        error_msg = str(e).lower()
+        # Classify by SDK exception type + HTTP status first (robust); the message
+        # string is only a last-resort fallback inside _classify_api_exception.
+        kind = _classify_api_exception(e)
 
         # Timeout: the provider is overloaded (often a flood of queued files).
         # Shrink concurrency (AIMD), brief cooldown, and retry — instead of
         # spamming errors. This is why dropping 100 files no longer storms.
-        if "timed out" in error_msg or "timeout" in error_msg:
+        if kind == "timeout":
             _limiter.record_overload()
             _set_cooldown(model, 5)
             app_logger.warning(
@@ -662,40 +712,37 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
 
         app_logger.error(f"API call failed: {e}")
 
-        # Rate limit FIRST — a 429 body often contains "exceeded" (e.g. "rate
-        # limit exceeded"), which would otherwise be misread as a fatal quota
-        # error and abort the whole run. 429 is retryable: park the model.
-        if "rate limit" in error_msg or "429" in error_msg or "too many requests" in error_msg:
+        # Rate limit (429): retryable — back off concurrency + RPM, park the model
+        # for Retry-After seconds. (Checked before 'hard' so a 429 body that
+        # contains "exceeded" isn't misread as a fatal quota error.)
+        if kind == "rate_limit":
             cooldown = _parse_retry_after(e)
-            _limiter.record_overload()   # also back off concurrency, not just RPM
+            _limiter.record_overload()
             _set_cooldown(model, cooldown)
             return f"Rate limit exceeded; backing off {cooldown}s", False, None
 
-        # Server errors (500 server fault / 503 overloaded): transient per
-        # DeepSeek/OpenAI docs — back off briefly and retry, don't abort.
-        if ("500" in error_msg or "502" in error_msg or "503" in error_msg
-                or "internal server error" in error_msg or "server error" in error_msg
-                or "service unavailable" in error_msg or "overloaded" in error_msg
-                or "bad gateway" in error_msg):
+        # Server errors (500/502/503/504): transient per DeepSeek/OpenAI docs —
+        # back off briefly and retry, don't abort.
+        if kind == "server":
             _limiter.record_overload()
             _set_cooldown(model, 10)
             app_logger.warning(f"API server error (retrying): {str(e)[:120]}")
             return f"Server error, retrying: {str(e)}", False, None
 
-        # Hard errors: retrying the same key is pointless. Quarantine the key;
-        # if other keys remain the caller retries (soft) with the next key,
-        # otherwise abort the whole translation immediately with a category the
-        # UI turns into a clear message (insufficient balance / invalid key).
-        if any(marker in error_msg for marker in _HARD_ERROR_MARKERS):
+        # Hard errors (401/402/403 / bad key / insufficient balance): retrying the
+        # same key is pointless. Quarantine the key; if other keys remain the
+        # caller retries (soft) with the next key, otherwise abort with a category
+        # the UI turns into a clear message.
+        if kind == "hard":
             if len(_split_keys(api_key)) > 1 and _quarantine_key(api_key, used_key, str(e)[:80]):
                 return f"API key quarantined, retrying with next key: {str(e)}", False, None
-            category = classify_fatal_error(error_msg)
+            category = classify_fatal_error(str(e).lower())
             app_logger.error(
                 f"FATAL API error [{category}] — aborting translation: {str(e)[:200]}")
             raise HardApiError(f"Unrecoverable API error: {str(e)}", category=category)
 
-        # Soft errors: network / server hiccups - worth retrying.
-        if "connection" in error_msg or "network" in error_msg:
+        # Connection / unknown: worth a retry.
+        if kind == "connection":
             return f"Network error: {str(e)}", False, None
         return f"API request failed: {str(e)}", False, None
     finally:
