@@ -8,6 +8,7 @@
 # Optional module - requires: faster-whisper and/or funasr (pip), plus ffmpeg.
 import os
 import json
+import hashlib
 import shutil
 import subprocess
 import tempfile
@@ -1234,6 +1235,22 @@ def _recognize_whisper(audio, src_lang, size="small"):
 
 
 # --- public entry point -----------------------------------------------------
+def _ckpt_path(temp_dir, filename, model_id, src_lang, wav_path):
+    """Checkpoint path fingerprinted by what actually determines the transcript:
+    the model, the forced language, the VAD profile, and the audio size. Resuming
+    after the user switches model/language (or re-encodes the audio) then starts a
+    FRESH checkpoint instead of cross-reading a mismatched one. Was keyed by engine
+    alone, so e.g. whisper-turbo -> whisper-tiny silently reused the old segments."""
+    thr, min_ms = _vad_params()
+    try:
+        sz = os.path.getsize(wav_path)
+    except OSError:
+        sz = 0
+    sig = f"{model_id}|{src_lang}|{thr}|{min_ms}|{sz}"
+    h = hashlib.sha1(sig.encode("utf-8")).hexdigest()[:10]
+    return os.path.join(temp_dir, f"{filename}.{h}.asr_ckpt.jsonl")
+
+
 def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
                        session_lang, model_id, check_stop=None, checkpoint_path=None):
     """Dispatch to the selected STT engine; log WHY on failure (download/load
@@ -1297,10 +1314,10 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
             if progress_callback:
                 progress_callback(0.03, desc=f"{_tr('Loading speech model', session_lang)}...")
             # Checkpoint survives a Stop (it lives in temp_dir, not the audio temp
-            # dir) so a Continue resumes transcription instead of redoing it. Keyed
-            # by engine so switching STT model between stop/resume can't cross-read
-            # a mismatched format.
-            ckpt_path = os.path.join(temp_dir, f"{filename}.{engine}.asr_ckpt.jsonl")
+            # dir) so a Continue resumes transcription instead of redoing it.
+            # Fingerprinted by model/language/VAD/audio so switching any of them
+            # starts fresh instead of cross-reading a mismatched transcript.
+            ckpt_path = _ckpt_path(temp_dir, filename, model_id, src_lang, wav_path)
             triples = _run_transcription(engine, size, wav_path, src_lang,
                                          progress_callback, session_lang, model_id, check_stop,
                                          checkpoint_path=ckpt_path)
@@ -1326,7 +1343,7 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
     # Transcription finished -> the checkpoint is spent; drop it so a fresh
     # re-translation of this file doesn't reuse a stale partial transcript.
     try:
-        os.remove(os.path.join(temp_dir, f"{filename}.{engine}.asr_ckpt.jsonl"))
+        os.remove(ckpt_path)
     except OSError:
         pass
 
