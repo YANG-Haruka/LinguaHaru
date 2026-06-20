@@ -232,9 +232,12 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
         cell_data = json.load(json_file)
 
     if not cell_data:
+        # Nothing translatable (empty file / numbers-only CSV / textless JSON):
+        # return ZERO segments instead of raising, so the translator still writes
+        # the output (a faithful copy of the source) rather than failing the task.
         if os.path.exists(working_copy_path):
             os.remove(working_copy_path)
-        raise ValueError("Empty data")
+        return []
 
     # Calculate max count_split for progress
     max_count_split = max((safe_convert_to_int(cell.get("count_split", cell.get("count", 0))) for cell in cell_data), default=0)

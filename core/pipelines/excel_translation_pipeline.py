@@ -147,8 +147,20 @@ def _extract_with_openpyxl(file_path, temp_dir):
     cell_data = []
     count = 0
 
-    # Add sheet names to the extraction process
-    for sheet_name in workbook.sheetnames:
+    # Sheet-name translation is OFF by default: openpyxl renaming a sheet does
+    # NOT update formulas / defined names / chart references that point at the old
+    # name, so it silently corrupts cross-sheet workbooks. Opt in via config
+    # excel_translate_sheet_names only if the workbook has no such references.
+    _translate_sheet_names = False
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as _f:
+            _translate_sheet_names = bool(json.load(_f).get("excel_translate_sheet_names", False))
+    except Exception:  # noqa: BLE001
+        pass
+
+    # Add sheet names to the extraction process (only when explicitly enabled)
+    for sheet_name in (workbook.sheetnames if _translate_sheet_names else []):
         # Add sheet name as a special entry if it should be translated
         if should_translate(sheet_name):
             count += 1

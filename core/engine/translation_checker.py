@@ -53,6 +53,11 @@ def flush_results(path=None):
                 _atomic_write_json(p, _result_cache[p])
                 _result_dirty[p] = False
                 _result_last[p] = time.time()
+            elif path and not os.path.exists(p):
+                # Nothing succeeded -> the file was never created. Materialize an
+                # empty result so check_and_sort/restore can fall every segment
+                # back to source instead of hitting FileNotFoundError.
+                _atomic_write_json(p, _result_cache.get(p, []))
 
 
 def invalidate_results(path):

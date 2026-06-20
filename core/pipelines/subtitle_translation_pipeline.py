@@ -18,8 +18,9 @@ def extract_srt_content_to_json(file_path, temp_dir):
     # renumber sequentially anyway.
     srt_pattern = re.compile(
         r"(?:\d+\s*\r?\n)?"
-        r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*"
-        r"(\d{1,2}:\d{2}:\d{2}[,.]\d{1,3})\s*\r?\n"
+        r"(\d{1,3}:\d{2}:\d{2}[,.]\d{1,3})\s*-->\s*"      # 1-3 digit hours
+        r"(\d{1,3}:\d{2}:\d{2}[,.]\d{1,3})"
+        r"([^\r\n]*)\r?\n"                                # trailing position coords (X1:.. Y2:..) preserved
         r"(.*?)(?=\r?\n\r?\n|\Z)",
         re.DOTALL
     )
@@ -29,13 +30,14 @@ def extract_srt_content_to_json(file_path, temp_dir):
     # Renumber sequentially: count_src is the translation lookup key, and
     # malformed files can repeat cue numbers, which would collapse entries
     for idx, match in enumerate(srt_pattern.finditer(srt_content), start=1):
-        start_time, end_time, value = match.groups()
+        start_time, end_time, extra, value = match.groups()
         value = value.replace("\n", "␊").replace("\r", "␍")
 
         content_data.append({
             "count_src": idx,
             "start_time": start_time.replace(".", ","),
             "end_time": end_time.replace(".", ","),
+            "extra_time": (extra or "").rstrip(),   # e.g. " X1:100 X2:200 Y1:50 Y2:80"
             "value": value
         })
 
@@ -81,6 +83,7 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
         count = item["count_src"]
         start_time = item["start_time"]
         end_time = item["end_time"]
+        extra = item.get("extra_time", "")   # preserved position coords, if any
         value = item["value"]
         translated_text = translations.get(str(count), value)
         translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
@@ -91,7 +94,8 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
                 from core.engine.bilingual_format import style_markup
                 translated_text = f"{style_markup(translated_text, 'srt')}\n{original_text}"
 
-        output_srt_lines.append(f"{count}\n{start_time} --> {end_time}\n{translated_text}\n\n")
+        ts_line = f"{start_time} --> {end_time}" + (f" {extra}" if extra else "")
+        output_srt_lines.append(f"{count}\n{ts_line}\n{translated_text}\n\n")
 
     result_folder = result_dir
     os.makedirs(result_folder, exist_ok=True)

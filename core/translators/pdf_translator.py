@@ -30,7 +30,7 @@ from core.llm.llm_wrapper import translate_text
 from core.engine.base_translator import DocumentTranslator
 from core.engine.text_separator import load_glossary, find_terms_with_hashtable
 from core.pipelines.skip_pipeline import should_translate
-from core.engine.translation_checker import clean_json
+from core.engine.translation_checker import clean_json, is_translation_valid
 from core.log_config import app_logger
 from core import model_store
 
@@ -137,14 +137,23 @@ class PdfTranslator(DocumentTranslator):
                     )
 
             # Sample the first pages for an extractable text layer. Scanned
-            # PDFs render as images and yield no text.
+            # PDFs render as images and yield no text — UNLESS OCR is enabled
+            # (pdf_ocr_scanned), in which case BabelDOC's OCR workaround handles
+            # the image-only pages, so we must NOT reject them here.
+            ocr_enabled = False
+            try:
+                from core.paths import SYSTEM_CONFIG
+                with open(SYSTEM_CONFIG, encoding="utf-8") as _f:
+                    ocr_enabled = bool(json.load(_f).get("pdf_ocr_scanned", False))
+            except Exception:  # noqa: BLE001
+                pass
             sample_pages = min(len(doc), 10)
             has_text = any(doc[i].get_text().strip() for i in range(sample_pages))
-            if not has_text:
+            if not has_text and not ocr_enabled:
                 raise RuntimeError(
                     "This PDF has no extractable text (it looks scanned or image-only). "
-                    "PDF translation needs a text layer; use the image translation feature "
-                    "for scanned documents."
+                    "Enable 'OCR scanned PDF' in PDF options, or use the image translation "
+                    "feature for scanned documents."
                 )
         finally:
             doc.close()
@@ -268,6 +277,13 @@ class PdfTranslator(DocumentTranslator):
                 break
 
             result = self._parse_single_translation(translated_text)
+            # Apply the SAME validation as the document path: drop placeholders/
+            # formula markers, copied source, or wrong-language output -> retry,
+            # then keep the source paragraph rather than shipping a broken one.
+            if result and not is_translation_valid(stripped, result, self.src_lang, self.dst_lang):
+                app_logger.warning(
+                    f"Paragraph {paragraph_index} failed validation (attempt {attempt + 1})")
+                result = None
             if result:
                 # Optional polish second pass (same gating as the document path).
                 if self.topts.get("params", {}).get("second_pass"):
@@ -305,14 +321,16 @@ class PdfTranslator(DocumentTranslator):
 
     @staticmethod
     def _parse_single_translation(raw_output):
-        """Extract the translated value from the model's {"1": "..."} reply."""
+        """Extract the translated value from the model's {"1": "..."} reply. Require
+        the exact key "1" (the segment key) — accepting any dict's first value let a
+        stray/renamed key through as if it were the translation."""
         cleaned = clean_json(raw_output)
         try:
             data = json.loads(cleaned)
         except (json.JSONDecodeError, TypeError):
             return None
-        if isinstance(data, dict) and data:
-            value = next(iter(data.values()))
+        if isinstance(data, dict):
+            value = data.get("1")
             if isinstance(value, str) and value.strip():
                 return value
         return None
