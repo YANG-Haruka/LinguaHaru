@@ -7,6 +7,7 @@
 #
 # Optional module - requires: faster-whisper and/or funasr (pip), plus ffmpeg.
 import os
+import re
 import json
 import hashlib
 import shutil
@@ -267,8 +268,81 @@ def _format_srt_time(seconds):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+_AUDIO_STREAM_RE = re.compile(r"Stream #0:(\d+)(?:\[[^\]]*\])?(?:\(([^)]*)\))?: Audio:")
+
+
+def _list_audio_tracks(exe, media_path):
+    """[{a_idx, stream, lang}] for each audio stream, in file order. a_idx is the
+    audio-relative index for ffmpeg's `-map 0:a:<a_idx>`. Empty if none/parse
+    fails. ffmpeg prints stream info to stderr (and exits non-zero with no
+    output file requested — that's expected)."""
+    proc = subprocess.run([exe, "-i", media_path], capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+    tracks, a_idx = [], 0
+    for m in _AUDIO_STREAM_RE.finditer(proc.stderr or ""):
+        lang = (m.group(2) or "").strip()
+        tracks.append({"a_idx": a_idx, "stream": int(m.group(1)),
+                       "lang": "" if lang in ("und", "") else lang})
+        a_idx += 1
+    return tracks
+
+
+def _track_mean_volume(exe, media_path, a_idx, sample_s=90):
+    """Mean volume (dB, higher=louder) of one audio track over a sample, via
+    ffmpeg volumedetect. None if it can't be measured."""
+    proc = subprocess.run(
+        [exe, "-t", str(sample_s), "-i", media_path, "-map", f"0:a:{a_idx}",
+         "-af", "volumedetect", "-f", "null", os.devnull],
+        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    m = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", proc.stderr or "")
+    return float(m.group(1)) if m else None
+
+
+def _select_audio_track(exe, media_path):
+    """Pick which audio track to transcribe. Config stt_audio_track:
+      "auto"  (default) -> loudest track (mean volume); ties/unmeasurable -> first
+      <int>             -> that audio-relative index
+      <lang>            -> first track whose language tag matches (e.g. "ja")
+    Returns the a_idx, or None to let ffmpeg use its default mapping."""
+    tracks = _list_audio_tracks(exe, media_path)
+    if len(tracks) <= 1:
+        return None   # single/no track -> default mapping, no extra ffmpeg pass
+
+    sel = "auto"
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            sel = json.load(f).get("stt_audio_track", "auto")
+    except Exception:  # noqa: BLE001
+        pass
+
+    if isinstance(sel, int) or (isinstance(sel, str) and sel.isdigit()):
+        idx = int(sel)
+        return idx if any(t["a_idx"] == idx for t in tracks) else 0
+    if isinstance(sel, str) and sel not in ("auto", ""):
+        for t in tracks:
+            if t["lang"] and t["lang"].lower().startswith(sel.lower()):
+                app_logger.info(f"Audio track: picked '{sel}' -> a:{t['a_idx']}")
+                return t["a_idx"]
+
+    # auto: loudest by mean volume (the spoken track usually beats a music/commentary track)
+    best, best_vol = 0, None
+    for t in tracks:
+        vol = _track_mean_volume(exe, media_path, t["a_idx"])
+        app_logger.info(f"Audio track a:{t['a_idx']} ({t['lang'] or 'und'}) "
+                        f"mean_volume={vol}")
+        if vol is not None and (best_vol is None or vol > best_vol):
+            best, best_vol = t["a_idx"], vol
+    app_logger.info(f"Audio track: auto-picked a:{best} ({len(tracks)} tracks)")
+    return best
+
+
 def extract_audio_to_wav(media_path, output_dir):
     """Extract/normalize the audio track to 16 kHz mono WAV via ffmpeg.
+
+    For multitrack files (e.g. an MKV with separate language/commentary tracks)
+    the track is chosen by _select_audio_track (loudest by default). Single-track
+    files use ffmpeg's default mapping (zero overhead).
 
     Uses the pip-bundled imageio-ffmpeg binary when present (no PATH install
     needed); falls back to a system ffmpeg on PATH."""
@@ -280,8 +354,14 @@ def extract_audio_to_wav(media_path, output_dir):
             "via imageio-ffmpeg), or install ffmpeg from https://ffmpeg.org/."
         )
     wav_path = os.path.join(output_dir, "audio_16k.wav")
-    cmd = [exe, "-y", "-i", media_path, "-vn",
-           "-ac", "1", "-ar", "16000", "-f", "wav", wav_path]
+    cmd = [exe, "-y", "-i", media_path, "-vn"]
+    try:
+        a_idx = _select_audio_track(exe, media_path)
+    except Exception:  # noqa: BLE001 — selection is best-effort; fall back to default
+        a_idx = None
+    if a_idx is not None:
+        cmd += ["-map", f"0:a:{a_idx}"]
+    cmd += ["-ac", "1", "-ar", "16000", "-f", "wav", wav_path]
     proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg audio extraction failed: {proc.stderr[-500:]}")
