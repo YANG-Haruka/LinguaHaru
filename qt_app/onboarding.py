@@ -192,7 +192,7 @@ class TourOverlay(QWidget):
         ev.accept()                     # swallow clicks on the dimmed page
 
     def eventFilter(self, obj, ev):
-        if obj is self._win and ev.type() in (QEvent.Resize, QEvent.Move):
+        if obj is self._win and ev.type() in (QEvent.Type.Resize, QEvent.Type.Move):
             self.setGeometry(self._win.rect())
             self._relocate()
         return False
