@@ -371,11 +371,15 @@ class DocumentTranslator:
             no in-place 1-hour loop. HardApiError (bad key/quota) aborts the task."""
             segment, segment_progress, current_glossary_terms = segment_data[:3]
             context_map = segment_data[3] if len(segment_data) > 3 else None
+            prev_ctx = segment_data[4] if len(segment_data) > 4 else ""
             self.check_for_stop()
 
-            # Running "previous content" is only safe single-threaded (ordered);
-            # under concurrency completion order is nondeterministic, so disable it.
-            if self.num_threads > 1:
+            # Prefer the PRECOMPUTED preceding-source context (deterministic, from
+            # source order) — it's order-independent so it works under the thread
+            # pool. Fall back to the running previous_content only single-threaded.
+            if prev_ctx:
+                current_previous = prev_ctx
+            elif self.num_threads > 1:
                 current_previous = ""
             else:
                 with self.lock:
@@ -586,9 +590,12 @@ class DocumentTranslator:
             round; no in-place 1-hour loop. HardApiError aborts the task."""
             segment, segment_progress, current_glossary_terms = segment_data[:3]
             context_map = segment_data[3] if len(segment_data) > 3 else None
+            prev_ctx = segment_data[4] if len(segment_data) > 4 else ""
             self.check_for_stop()
 
-            if self.num_threads > 1:
+            if prev_ctx:
+                current_previous = prev_ctx
+            elif self.num_threads > 1:
                 current_previous = ""
             else:
                 with self.lock:

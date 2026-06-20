@@ -337,8 +337,41 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
             os.remove(working_copy_path)
     except Exception as e:
         app_logger.warning(f"Warning: Could not remove working copy: {e}")
-    
-    return all_segments
+
+    # Precompute each segment's preceding SOURCE context (tail of the prior
+    # segment's text). Computed from source order -> deterministic and
+    # order-INDEPENDENT, so it works under the concurrent thread pool (unlike the
+    # running previous_content, which is only safe single-threaded). Helps
+    # pronoun / subject-ellipsis coherence (e.g. Japanese). Appended as a 5th
+    # tuple element; older unpackers (segment_data[:4]) ignore it.
+    return _attach_prev_context(all_segments)
+
+
+def _segment_source_text(segment_output):
+    """Join the source values inside a ```json {id: text}``` segment."""
+    try:
+        data = json.loads(clean_json_fence(segment_output))
+        return " ".join(str(v) for v in data.values())
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def clean_json_fence(s):
+    s = (s or "").strip()
+    if s.startswith("```"):
+        s = re.sub(r"^```json\s*\n?|\n?```$", "", s, flags=re.MULTILINE).strip()
+    return s
+
+
+def _attach_prev_context(all_segments, max_chars=200):
+    """Append the previous segment's source tail to each segment tuple (5th elem)."""
+    out = []
+    prev_tail = ""
+    for seg in all_segments:
+        out.append(tuple(seg) + (prev_tail,))
+        tail = _segment_source_text(seg[0])
+        prev_tail = tail[-max_chars:] if tail else prev_tail
+    return out
 
 def create_segment_output(segment_dict):
     """Create formatted JSON output"""
