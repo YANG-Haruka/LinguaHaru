@@ -1142,7 +1142,12 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
                     texts[i] = ""
                 else:
                     res = asr.generate(input=chunk, fs=sr, language=lang, use_itn=True)
-                    texts[i] = _clean_asr_text(rich_transcription_postprocess(res[0]["text"])) if res else ""
+                    if res:
+                        raw = res[0]["text"]
+                        sdh = _sensevoice_sdh_prefix(raw)
+                        texts[i] = sdh + _clean_asr_text(rich_transcription_postprocess(raw))
+                    else:
+                        texts[i] = ""
                 if ckpt_f:
                     ckpt_f.write(json.dumps([keys[i][0], keys[i][1], texts[i]]) + "\n")
                     ckpt_f.flush()
@@ -1331,6 +1336,32 @@ def _collapse_repeats(text, max_run=8):
             run, prev = 1, key
         out.append(t)
     return " ".join(out)
+
+
+# SenseVoice audio-event tags -> SDH annotations (subtitles for the deaf/HoH).
+# Read from the RAW SenseVoice output (<|Laughter|> etc.) — unambiguous, unlike
+# the lossy emoji conversion. Gated by config stt_sdh_events (default off).
+_SDH_EVENTS = {"Laughter": "[laughter]", "Cry": "[crying]", "Crying": "[crying]",
+               "Applause": "[applause]", "BGM": "[music]", "Sneeze": "[sneeze]",
+               "Cough": "[cough]", "Breath": "[breath]"}
+
+
+def _sensevoice_sdh_prefix(raw_text):
+    """'[laughter] ' style SDH prefix for the events present in SenseVoice's raw
+    <|EVENT|> tags, or '' when disabled / none found."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            if not json.load(f).get("stt_sdh_events", False):
+                return ""
+    except Exception:  # noqa: BLE001
+        return ""
+    seen = []
+    for tag in re.findall(r"<\|([^|]+)\|>", raw_text or ""):
+        ann = _SDH_EVENTS.get(tag)
+        if ann and ann not in seen:
+            seen.append(ann)
+    return (" ".join(seen) + " ") if seen else ""
 
 
 # Back-compat alias (older call sites).
