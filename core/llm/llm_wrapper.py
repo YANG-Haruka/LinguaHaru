@@ -57,18 +57,24 @@ def _cache_sig(model, system_prompt, user_prompt, previous_prompt, glossary_term
         .encode("utf-8")).hexdigest()[:12]
     mode = ""
     temp = None
+    top_p = None
     if options:
         params = options.get("params") or {}
         mode = options.get("mode", "") or ""
         temp = params.get("temperature")
+        top_p = params.get("top_p")
     try:
         from core.engine.placeholder_mask import _mask_enabled
         mask = _mask_enabled()
     except Exception:  # noqa: BLE001
         mask = True
+    # Fold top_p into the prompt_version hash too (params_sig has no top_p slot),
+    # so a sampling change can't reuse a stale translation. The model NAME keys the
+    # interface config (api model / thinking), assumed stable per name.
+    pv = f"{prompt_h}|tp={top_p}"
     return tc.params_sig(model, "", "", mode=mode, temperature=temp,
                          glossary_hash=tc.glossary_hash(glossary_terms),
-                         mask=mask, prompt_version=prompt_h)
+                         mask=mask, prompt_version=pv)
 
 
 def cache_store_validated(segment, translated_results, model, system_prompt,

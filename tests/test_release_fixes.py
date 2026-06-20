@@ -32,16 +32,21 @@ def test_last_try_structural_gating():
     d = tempfile.mkdtemp()
     src = os.path.join(d, "src.json"); res = os.path.join(d, "res.json")
     fail = os.path.join(d, "fail.json"); nr = os.path.join(d, "nr.json")
-    json.dump([{"count_split": 1, "value": "Hello %s"},
-               {"count_split": 2, "value": "World"}], open(src, "w"))
+    with open(src, "w", encoding="utf-8") as f:
+        json.dump([{"count_split": 1, "value": "Hello %s"},
+                   {"count_split": 2, "value": "World"}], f)
     orig = "```json\n" + json.dumps({"1": "Hello %s", "2": "World"}) + "\n```"
     # id1 drops %s (structural break -> FAIL); id2 fine
     trans = "```json\n" + json.dumps({"1": "你好", "2": "世界"}) + "\n```"
     tc.process_translation_results(orig, trans, src, res, fail, "en", "zh",
                                    last_try=True, needs_review_path=nr)
     tc.flush_results(res)
-    result = {r["count_split"]: r["translated"] for r in json.load(open(res))}
-    failed = {f["count_split"] for f in json.load(open(fail))} if os.path.exists(fail) else set()
+    with open(res, encoding="utf-8") as f:
+        result = {r["count_split"]: r["translated"] for r in json.load(f)}
+    failed = set()
+    if os.path.exists(fail):
+        with open(fail, encoding="utf-8") as f:
+            failed = {x["count_split"] for x in json.load(f)}
     assert 1 in failed and 1 not in result        # broken -> failed, NOT written
     assert result.get(2) == "世界"                 # clean -> written
 

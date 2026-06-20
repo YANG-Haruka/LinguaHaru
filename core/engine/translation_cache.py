@@ -38,6 +38,8 @@ _DB_PATH = None
 _conn = None
 _LOCK = threading.Lock()
 _MAX_ROWS = 200_000   # LRU cap; prune() trims to this
+_puts_since_prune = 0
+_PRUNE_EVERY = 2000   # amortize the COUNT/DELETE: prune once every N put_many calls
 
 
 def _db_path():
@@ -148,6 +150,13 @@ def put_many(pairs, sig):
             conn.commit()
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"TM put_many failed: {e}")
+        return
+    # Amortized LRU cap so the DB can't grow unbounded (prune was never called).
+    global _puts_since_prune
+    _puts_since_prune += 1
+    if _puts_since_prune >= _PRUNE_EVERY:
+        _puts_since_prune = 0
+        prune()
 
 
 def prune(max_rows=_MAX_ROWS):

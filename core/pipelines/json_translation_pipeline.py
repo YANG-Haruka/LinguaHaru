@@ -33,7 +33,9 @@ def _load_skip_config():
         with open(SYSTEM_CONFIG, encoding="utf-8") as f:
             cfg = json.load(f)
         if isinstance(cfg.get("json_skip_keys"), list):
-            skip_keys = {str(k).lower() for k in cfg["json_skip_keys"]}
+            # APPEND to the defaults (documented behavior) rather than replace —
+            # configuring extra skip keys shouldn't drop the built-in protections.
+            skip_keys = set(DEFAULT_SKIP_KEYS) | {str(k).lower() for k in cfg["json_skip_keys"]}
         if isinstance(cfg.get("json_skip_paths"), list):
             skip_paths = {str(p) for p in cfg["json_skip_paths"]}
     except Exception:
@@ -112,8 +114,11 @@ def write_translated_content_to_json(file_path, original_json_path, translated_j
         if not translated:
             continue
         translated = translated.replace("␊", "\n").replace("␍", "\r")
-        target = data
         path = item["path"]
+        if not path:                 # root-level scalar JSON, e.g. the file is just "hello"
+            data = translated
+            continue
+        target = data
         for step in path[:-1]:
             target = target[step]
         target[path[-1]] = translated
