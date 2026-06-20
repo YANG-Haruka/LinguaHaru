@@ -350,9 +350,13 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
     # runaway repetition/context drift; the thresholds drop degenerate/no-speech
     # segments; no_repeat_ngram_size breaks token loops. (whisper-large-v3 is
     # known to loop ~4x more than v2 here, so these matter.)
+    # word_timestamps enables hallucination_silence_threshold: faster-whisper then
+    # skips long silences where it would otherwise emit hallucinated text — exactly
+    # the gasps/pauses case. (The threshold is a no-op without word timestamps.)
     _wkw = dict(language=language, vad_filter=True,
                 condition_on_previous_text=False, no_repeat_ngram_size=4,
-                no_speech_threshold=0.6, compression_ratio_threshold=2.4)
+                no_speech_threshold=0.6, compression_ratio_threshold=2.4,
+                word_timestamps=True, hallucination_silence_threshold=2.0)
     if offset > 0:
         import wave
         import numpy as np
