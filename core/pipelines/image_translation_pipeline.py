@@ -188,6 +188,45 @@ def _find_font_path():
     return None
 
 
+def _box_bounds(box):
+    """(x_min, y_min, x_max, y_max) for a quad (Nx2) or flat [x1,y1,x2,y2] box."""
+    pts = np.asarray(box, dtype=float)
+    if pts.ndim == 1 and pts.size == 4:
+        return float(pts[0]), float(pts[1]), float(pts[2]), float(pts[3])
+    return (float(pts[:, 0].min()), float(pts[:, 1].min()),
+            float(pts[:, 0].max()), float(pts[:, 1].max()))
+
+
+def _reading_order(items, rtl):
+    """Sort OCR (text, box, score) items into reading order so the LLM sees them
+    in narrative sequence (improves cross-region coherence). Rows are banded by
+    vertical overlap (top->bottom); within a row left->right, or right->left for
+    RTL scripts (manga / vertical Japanese). Pure geometry, no model."""
+    rows = []   # each: {y0, y1, members:[(cx, item)]}
+    for it in items:
+        x0, y0, x1, y1 = _box_bounds(it[1])
+        cx = (x0 + x1) / 2.0
+        h = max(y1 - y0, 1.0)
+        placed = None
+        for r in rows:
+            # same row if vertical centers overlap within ~60% of the line height
+            if abs(((r["y0"] + r["y1"]) / 2) - ((y0 + y1) / 2)) < 0.6 * h:
+                placed = r
+                break
+        if placed is None:
+            rows.append({"y0": y0, "y1": y1, "members": [(cx, it)]})
+        else:
+            placed["members"].append((cx, it))
+            placed["y0"] = min(placed["y0"], y0)
+            placed["y1"] = max(placed["y1"], y1)
+    rows.sort(key=lambda r: r["y0"])
+    out = []
+    for r in rows:
+        r["members"].sort(key=lambda m: m[0], reverse=rtl)
+        out.extend(it for _cx, it in r["members"])
+    return out
+
+
 def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
     """Run OCR on the image and save recognized text regions to src.json.
 
@@ -197,6 +236,14 @@ def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
     # shortest list and silently drop ALL text. Pad with 1.0 (treated confident).
     if len(scores) < len(texts):
         scores = list(scores) + [1.0] * (len(texts) - len(scores))
+
+    # Reorder into reading order (RTL for Japanese — manga reads right-to-left)
+    # so count_src follows the narrative and the LLM gets coherent context.
+    _base = (src_lang or "").split("-")[0].lower()
+    _rtl = _base in ("ja", "ar", "he")
+    items = _reading_order(list(zip(texts, boxes, scores)), _rtl)
+    if items:
+        texts, boxes, scores = (list(t) for t in zip(*items))
 
     content_data = []
     regions = []
@@ -252,6 +299,48 @@ def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
     return json_path
 
 
+def _is_cjk_lang(lang):
+    return (lang or "").split("-")[0].lower() in ("zh", "ja", "ko")
+
+
+def _text_colors(rgb, rect):
+    """(fg, stroke) chosen from the patched background luminance so text stays
+    readable on any background: dark text + light halo on light bg, vice-versa."""
+    x1, y1, x2, y2 = rect
+    h, w = rgb.shape[:2]
+    crop = rgb[max(0, y1):min(h, y2), max(0, x1):min(w, x2)]
+    lum = float(crop.mean()) if crop.size else 255.0
+    if lum < 128:
+        return (235, 235, 235), (20, 20, 20)   # light text, dark halo
+    return (20, 20, 20), (245, 245, 245)        # dark text, light halo
+
+
+def _render_vertical(draw, text, rect, font_path, fg, stroke):
+    """Stack characters top->bottom in columns laid out right->left (CJK vertical
+    writing). Font size picked to fit the box height/width. PIL-only (no HarfBuzz
+    vertical glyph substitution, but acceptable for caption-style overlays)."""
+    x1, y1, x2, y2 = rect
+    box_w, box_h = max(x2 - x1, 8), max(y2 - y1, 8)
+    chars = [c for c in text if c.strip()]
+    if not chars:
+        return
+    for size in range(box_h, 7, -1):
+        font = (ImageFont.truetype(font_path, size) if font_path
+                else ImageFont.load_default())
+        per_col = max(1, box_h // max(size, 1))
+        ncols = (len(chars) + per_col - 1) // per_col
+        if ncols * size <= box_w or size == 8:
+            break
+    sw = max(1, size // 12)
+    col_w = size * 1.05
+    for idx, ch in enumerate(chars):
+        col = idx // per_col
+        row = idx % per_col
+        cx = x2 - (col + 1) * col_w          # right-to-left columns
+        cy = y1 + row * size * 1.05
+        draw.text((cx, cy), ch, font=font, fill=fg, stroke_width=sw, stroke_fill=stroke)
+
+
 def _fit_text(draw, text, rect, font_path):
     """Pick a font size and line wrapping so the text fits inside rect."""
     x1, y1, x2, y2 = rect
@@ -304,7 +393,9 @@ def write_translated_content_to_image(file_path, original_json_path, translated_
         except Exception as e:
             raise RuntimeError(f"Failed to read image: {file_path} ({e})")
 
-    # Erase translated regions via inpainting
+    # Erase translated regions via inpainting. Dilate the mask first so the
+    # stroke/anti-aliased edge of the original glyphs is also covered (otherwise
+    # a faint outline of the source text remains around the patch).
     mask = np.zeros(image.shape[:2], np.uint8)
     to_render = []
     for region in regions:
@@ -316,20 +407,33 @@ def write_translated_content_to_image(file_path, original_json_path, translated_
         to_render.append((region["rect"], translated))
 
     if to_render:
-        image = cv2.inpaint(image, mask, 7, cv2.INPAINT_TELEA)
+        k = max(3, int(round(0.005 * max(image.shape[:2]))))   # dilation ~ image scale
+        mask = cv2.dilate(mask, np.ones((k, k), np.uint8), iterations=1)
+        image = cv2.inpaint(image, mask, max(5, k), cv2.INPAINT_TELEA)
 
     # Render translations with PIL (proper CJK shaping)
-    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    pil_image = Image.fromarray(rgb)
     draw = ImageDraw.Draw(pil_image)
     font_path = _find_font_path()
     if font_path is None:
         app_logger.warning("No CJK-capable font found, falling back to PIL default font")
 
+    cjk_dst = _is_cjk_lang(dst_lang)
     for rect, text in to_render:
-        font, lines, line_h = _fit_text(draw, text, rect, font_path)
-        x1, y1, _, _ = rect
-        for i, line in enumerate(lines):
-            draw.text((x1, y1 + i * line_h), line, font=font, fill=(20, 20, 20))
+        x1, y1, x2, y2 = rect
+        w, h = x2 - x1, y2 - y1
+        # Vertical layout for CJK targets in a tall, narrow box (manga columns).
+        vertical = cjk_dst and h > 1.6 * w and h >= 40
+        fg, stroke = _text_colors(rgb, rect)
+        if vertical:
+            _render_vertical(draw, text, rect, font_path, fg, stroke)
+        else:
+            font, lines, line_h = _fit_text(draw, text, rect, font_path)
+            sw = max(1, font.size // 12) if hasattr(font, "size") else 1
+            for i, line in enumerate(lines):
+                draw.text((x1, y1 + i * line_h), line, font=font, fill=fg,
+                          stroke_width=sw, stroke_fill=stroke)
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
