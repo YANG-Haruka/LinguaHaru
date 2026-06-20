@@ -409,7 +409,16 @@ def write_translated_content_to_image(file_path, original_json_path, translated_
     if to_render:
         k = max(3, int(round(0.005 * max(image.shape[:2]))))   # dilation ~ image scale
         mask = cv2.dilate(mask, np.ones((k, k), np.uint8), iterations=1)
-        image = cv2.inpaint(image, mask, max(5, k), cv2.INPAINT_TELEA)
+        # Prefer LaMa (clean fill on complex backgrounds) when its model is
+        # installed; otherwise OpenCV Telea (always available).
+        lama_out = None
+        try:
+            from core.pipelines.lama_inpaint import inpaint as _lama_inpaint
+            lama_out = _lama_inpaint(image, mask)
+        except Exception:  # noqa: BLE001
+            lama_out = None
+        image = lama_out if lama_out is not None else cv2.inpaint(image, mask, max(5, k), cv2.INPAINT_TELEA)
+        app_logger.info(f"Inpaint: {'LaMa' if lama_out is not None else 'cv2 Telea'}")
 
     # Render translations with PIL (proper CJK shaping)
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
