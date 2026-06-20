@@ -1759,6 +1759,22 @@ async def live_translate_text(payload: dict):
     return {"translated": translated if ok else "", "tokens": tokens}
 
 
+@app.get("/api/cache/stats")
+def cache_stats():
+    """Translation-memory size (rows + bytes) for the Settings panel."""
+    from core.engine.translation_cache import stats
+    rows, size = stats()
+    return {"rows": rows, "bytes": size}
+
+
+@app.post("/api/cache/clear")
+def cache_clear():
+    """Wipe the translation memory (privacy / reset)."""
+    _block_in_server_mode()
+    from core.engine.translation_cache import clear
+    return {"ok": clear()}
+
+
 @app.post("/api/inpaint-download")
 async def inpaint_download():
     """Download the optional LaMa inpainting model (high-quality image text

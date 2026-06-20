@@ -305,6 +305,19 @@ class SettingsPage(ScrollArea):
         self.lama_sw.checkedChanged.connect(self._on_lama_toggled)
         self.lama_label = BodyLabel(tr("LaMa Inpaint", lang))
         adv_form.addRow(self.lama_label, self.lama_sw)
+        self.cache_sw = SwitchButton()
+        self.cache_sw.setChecked(config.get("translation_cache", False))
+        self.cache_sw.checkedChanged.connect(
+            lambda v: backend.set_config("translation_cache", v))
+        self.cache_label = BodyLabel(tr("Translation Cache", lang))
+        adv_form.addRow(self.cache_label, self.cache_sw)
+        cache_row = QHBoxLayout()
+        self.cache_stats = CaptionLabel(self._cache_stats_text())
+        self.cache_clear_btn = PushButton(tr("Clear Cache", lang))
+        self.cache_clear_btn.clicked.connect(self._on_clear_cache)
+        cache_row.addWidget(self.cache_stats, 1)
+        cache_row.addWidget(self.cache_clear_btn)
+        adv_form.addRow(BodyLabel(""), cache_row)
         # Advanced modifiers: tone / length / free-text style guide.
         self._tones = [("", tr("Default", lang)), ("formal", tr("Formal", lang)),
                        ("casual", tr("Casual", lang))]
@@ -779,6 +792,24 @@ class SettingsPage(ScrollArea):
         row.setStyleSheet(
             "#modelRow{border:1px solid rgba(128,128,128,0.28);border-radius:8px;}")
         return row
+
+    def _cache_stats_text(self):
+        try:
+            from core.engine.translation_cache import stats
+            rows, size = stats()
+            return f"{rows} {tr('entries', self._lang)} · {size / 1e6:.1f} MB"
+        except Exception:  # noqa: BLE001
+            return ""
+
+    def _on_clear_cache(self):
+        try:
+            from core.engine.translation_cache import clear
+            clear()
+        except Exception:  # noqa: BLE001
+            pass
+        if hasattr(self, "cache_stats"):
+            self.cache_stats.setText(self._cache_stats_text())
+        self._toast(tr("Model Management", self._lang), tr("Cache cleared", self._lang))
 
     def _on_lama_toggled(self, on):
         backend.set_config("image_inpaint_lama", on)

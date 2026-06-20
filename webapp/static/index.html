@@ -623,6 +623,8 @@
               <label class="check"><input type="checkbox" id="set-dedup-context" /> <span data-i18n="Context-aware Dedup" data-i18n-title="Context-aware Dedup Tip">上下文区分去重</span></label>
               <label class="check"><input type="checkbox" id="set-with-context" /> <span data-i18n="Type Context" data-i18n-title="Type Context Tip">附带类型上下文（实验）</span></label>
               <label class="check"><input type="checkbox" id="set-image-lama" /> <span data-i18n="LaMa Inpaint" data-i18n-title="LaMa Inpaint Tip">图片高质量抹字 (LaMa，需下载~208MB)</span></label>
+              <label class="check"><input type="checkbox" id="set-translation-cache" /> <span data-i18n="Translation Cache" data-i18n-title="Translation Cache Tip">翻译缓存/记忆（重复内容免重译）</span></label>
+              <div class="cache-row" style="display:flex;gap:10px;align-items:center;font-size:0.82rem"><span id="cache-stats" class="muted"></span> <button id="cache-clear" class="mini" type="button" data-i18n="Clear Cache">清空缓存</button></div>
             </div>
           </details>
 
@@ -719,6 +721,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260620F"></script>
+  <script src="/static/app.js?v=20260620G"></script>
 </body>
 </html>
