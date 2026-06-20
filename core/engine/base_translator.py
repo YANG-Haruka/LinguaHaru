@@ -552,25 +552,32 @@ class DocumentTranslator:
             app_logger.info(f"Total lines to process: {total_lines}")
             current_line = 0
             
-            # Split segments into individual lines
-            for segment, segment_progress, current_glossary_terms, *_ in all_failed_segments:
+            # Split segments into individual lines, CARRYING the segment's
+            # context (type map + precomputed preceding text) onto each line — the
+            # hardest sentences shouldn't be translated with the LEAST context.
+            for _seg_t in all_failed_segments:
+                segment, segment_progress, current_glossary_terms = _seg_t[:3]
+                seg_ctx_map = _seg_t[3] if len(_seg_t) > 3 else None
+                seg_prev = _seg_t[4] if len(_seg_t) > 4 else ""
                 try:
                     segment_content = clean_json(segment)
                     segment_json = json.loads(segment_content)
-                    
+
                     for key, value in segment_json.items():
                         single_line_json = {key: value}
                         single_line_segment = f"```json\n{json.dumps(single_line_json, ensure_ascii=False, indent=4)}\n```"
-                        
+
                         current_line += 1
                         line_progress = current_line / total_lines if total_lines > 0 else 0
-                        
+
                         # Filter glossary terms
                         line_glossary_terms = []
                         if current_glossary_terms:
                             line_glossary_terms = [term for term in current_glossary_terms if term[0] in value]
-                        
-                        processed_segments.append((single_line_segment, line_progress, line_glossary_terms))
+
+                        line_ctx = {key: seg_ctx_map.get(key)} if isinstance(seg_ctx_map, dict) and key in seg_ctx_map else None
+                        processed_segments.append(
+                            (single_line_segment, line_progress, line_glossary_terms, line_ctx, seg_prev))
                         
                 except (json.JSONDecodeError, ValueError) as e:
                     app_logger.warning(f"Error parsing segment: {e}")

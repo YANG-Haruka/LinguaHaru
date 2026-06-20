@@ -391,8 +391,13 @@ def calculate_progress(segment_dict, max_count_split):
     except (ValueError, TypeError):
         return 1.0
 
-def split_text_by_token_limit(file_path, max_tokens=256):
-    """Split text by token limit with sequential count_split"""
+def split_text_by_token_limit(file_path, max_tokens=1200):
+    """Split each item into <= max_tokens chunks (sequential count_split).
+
+    Only items LONGER than the limit are chopped; subtitles / UI strings / normal
+    paragraphs are well under it and pass through whole. 1200 (was 256) keeps long
+    prose paragraphs intact for coherence — they still fit comfortably inside the
+    ~4K translation batch, and the geometric-shrink retry handles any oversize."""
     with open(file_path, 'r', encoding='utf-8') as f:
         json_data = json.load(f)
     

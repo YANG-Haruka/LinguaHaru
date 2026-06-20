@@ -160,9 +160,9 @@ def _extract_with_openpyxl(file_path, temp_dir):
         pass
 
     # Add sheet names to the extraction process (only when explicitly enabled)
-    for sheet_name in (workbook.sheetnames if _translate_sheet_names else []):
-        # Add sheet name as a special entry if it should be translated
-        if should_translate(sheet_name):
+    for sheet_name in workbook.sheetnames:
+        # Add sheet name as a special entry only when enabled AND translatable.
+        if _translate_sheet_names and should_translate(sheet_name):
             count += 1
             sheet_info = {
                 "count_src": count,

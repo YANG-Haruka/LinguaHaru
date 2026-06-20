@@ -277,7 +277,10 @@ def test_xlsx_complex():
           s1["A5"].value == f"{T}Line one of note\nLine two of note", repr(s1["A5"].value))
     check("second sheet translated", s2["A1"].value == T + "Detailed measurement log",
           repr(s2["A1"].value))
-    check("sheet names translated", any(T in name or "-T-" in name for name in sheets), str(sheets))
+    # Sheet names are NOT translated by default (renaming would break formulas /
+    # defined names / chart refs); they must be preserved verbatim.
+    check("sheet names preserved (not translated)",
+          not any(T in name for name in sheets), str(sheets))
 
     # --- format ---
     check("number cell untouched", s1["B3"].value == 12345.67, repr(s1["B3"].value))

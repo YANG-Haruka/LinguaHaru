@@ -17,9 +17,14 @@ def extract_ppt_content_to_json(file_path, temp_dir):
     """
     try:
         with ZipFile(file_path, 'r') as pptx:
-            slides = [name for name in pptx.namelist() 
+            slides = [name for name in pptx.namelist()
                      if name.startswith('ppt/slides/slide') and name.endswith('.xml')]
-            slides.sort()  # Ensure proper ordering
+            # NUMERIC order: a plain sort gives slide1, slide10, slide2 — which
+            # scrambles the narrative order fed to the LLM as context.
+            def _slide_num(n):
+                m = re.search(r'slide(\d+)\.xml$', n)
+                return int(m.group(1)) if m else 0
+            slides.sort(key=_slide_num)
     except Exception as e:
         app_logger.error(f"Failed to read PPTX file: {e}")
         raise
