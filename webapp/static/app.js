@@ -580,51 +580,102 @@ async function boot() {
   maybeShowOnboarding();
 }
 
-// ----- first-run onboarding tutorial -----
-const _ONBOARD_STEPS = [
-  { icon: "✨", t: "Onboarding T1 Title", b: "Onboarding T1 Body" },
-  { icon: "🔑", t: "Onboarding T2 Title", b: "Onboarding T2 Body" },
-  { icon: "📄", t: "Onboarding T3 Title", b: "Onboarding T3 Body" },
-  { icon: "🎙️", t: "Onboarding T4 Title", b: "Onboarding T4 Body" },
-  { icon: "📚", t: "Onboarding T5 Title", b: "Onboarding T5 Body" },
+// ----- first-run onboarding: interactive spotlight tour -----
+// Each step navigates to a nav tab, spotlights the key control on that page,
+// rings the active nav tab, and floats a tooltip beside it.
+const _TOUR_STEPS = [
+  { tab: "interface", sel: "#add-interface",          t: "Onboarding T1 Title", b: "Onboarding T1 Body" },
+  { tab: "quick",     sel: "#quick-input",            t: "Onboarding T2 Title", b: "Onboarding T2 Body" },
+  { tab: "translate", sel: "#dropzone",               t: "Onboarding T3 Title", b: "Onboarding T3 Body" },
+  { tab: "live",      sel: "#live-go",                t: "Onboarding T4 Title", b: "Onboarding T4 Body" },
+  { tab: "glossary",  sel: "#glossary-edit-select",   t: "Onboarding T5 Title", b: "Onboarding T5 Body" },
+  { tab: "modules",   sel: "#modules-table",          t: "Onboarding T6 Title", b: "Onboarding T6 Body" },
+  { tab: "settings",  sel: "#set-translation-mode",   t: "Onboarding T7 Title", b: "Onboarding T7 Body" },
 ];
-let _onboardStep = 0;
+let _tourStep = 0;
 function _olbl(key) {
   const L = (BOOT.labels && BOOT.labels[_uiLang]) || {};
   const EN = (BOOT.labels && BOOT.labels.en) || {};
   return L[key] || EN[key] || key;
 }
-function _renderOnboard() {
-  const s = _ONBOARD_STEPS[_onboardStep];
-  $("onboard-icon").textContent = s.icon;
-  $("onboard-title").textContent = _olbl(s.t);
-  $("onboard-body").textContent = _olbl(s.b);
-  $("onboard-skip").textContent = _olbl("Onboarding Skip");
-  $("onboard-back").textContent = _olbl("Onboarding Back");
-  $("onboard-back").hidden = _onboardStep === 0;
-  const last = _onboardStep === _ONBOARD_STEPS.length - 1;
-  $("onboard-next").textContent = last ? _olbl("Onboarding Done") : _olbl("Onboarding Next");
-  const dots = _ONBOARD_STEPS.map((_, i) => `<span class="${i === _onboardStep ? "on" : ""}"></span>`).join("");
-  $("onboard-dots").innerHTML = dots;
+function _tourClearNavHi() {
+  document.querySelectorAll(".tab.tour-navhi").forEach((t) => t.classList.remove("tour-navhi"));
 }
-function _closeOnboard() {
-  $("onboard-modal").hidden = true;
+function _placeTour(rect) {
+  const hole = $("tour-hole"), pop = $("tour-pop");
+  const pad = 8;
+  const top = Math.max(0, rect.top - pad), left = Math.max(0, rect.left - pad);
+  const w = rect.width + pad * 2, h = rect.height + pad * 2;
+  hole.style.top = top + "px"; hole.style.left = left + "px";
+  hole.style.width = w + "px"; hole.style.height = h + "px";
+  // Place the popup where there's room: right of target, else left, else below, else above.
+  const pw = pop.offsetWidth || 330, ph = pop.offsetHeight || 160, gap = 16;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let px, py;
+  if (rect.right + gap + pw <= vw) px = rect.right + gap;
+  else if (rect.left - gap - pw >= 0) px = rect.left - gap - pw;
+  else px = Math.min(Math.max(8, rect.left), vw - pw - 8);
+  if (px === rect.right + gap || px === rect.left - gap - pw) {
+    py = Math.min(Math.max(8, rect.top), vh - ph - 8);     // beside: align to target top
+  } else if (rect.bottom + gap + ph <= vh) {
+    py = rect.bottom + gap;                                 // below
+  } else {
+    py = Math.max(8, rect.top - gap - ph);                 // above
+  }
+  pop.style.left = px + "px"; pop.style.top = py + "px";
+}
+function _renderTour() {
+  const s = _TOUR_STEPS[_tourStep];
+  // Navigate to the page (also sets the nav tab .active).
+  const tabBtn = document.querySelector(`.tab[data-tab="${s.tab}"]`);
+  if (tabBtn) tabBtn.click();
+  _tourClearNavHi();
+  if (tabBtn) tabBtn.classList.add("tour-navhi");
+  // Tooltip content.
+  $("tour-pop-title").textContent = _olbl(s.t);
+  $("tour-pop-body").textContent = _olbl(s.b);
+  $("tour-skip").textContent = _olbl("Onboarding Skip");
+  $("tour-back").textContent = _olbl("Onboarding Back");
+  $("tour-back").hidden = _tourStep === 0;
+  const last = _tourStep === _TOUR_STEPS.length - 1;
+  $("tour-next").textContent = last ? _olbl("Onboarding Done") : _olbl("Onboarding Next");
+  $("tour-dots").innerHTML = _TOUR_STEPS
+    .map((_, i) => `<span class="${i === _tourStep ? "on" : ""}"></span>`).join("");
+  // Let the panel render, then spotlight the target (fall back to the nav tab).
+  requestAnimationFrame(() => setTimeout(() => {
+    let el = document.querySelector(s.sel);
+    if (!el || el.offsetParent === null) el = tabBtn;     // hidden/missing -> ring the tab itself
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "auto" });
+    _placeTour(el.getBoundingClientRect());
+  }, 60));
+}
+function _closeTour() {
+  $("tour").hidden = true;
+  _tourClearNavHi();
+  window.removeEventListener("resize", _onTourResize);
   try { localStorage.setItem("lh-onboarded", "1"); } catch (e) {}
+}
+function _onTourResize() {
+  const s = _TOUR_STEPS[_tourStep];
+  let el = document.querySelector(s.sel) || document.querySelector(`.tab[data-tab="${s.tab}"]`);
+  if (el) _placeTour(el.getBoundingClientRect());
 }
 function maybeShowOnboarding() {
   if (BOOT.server_mode) return;                 // public deploy: anonymous users, no setup
   let seen = false;
   try { seen = localStorage.getItem("lh-onboarded") === "1"; } catch (e) {}
   if (seen) return;
-  _onboardStep = 0;
-  _renderOnboard();
-  $("onboard-modal").hidden = false;
+  _tourStep = 0;
+  $("tour").hidden = false;
+  window.addEventListener("resize", _onTourResize);
+  _renderTour();
 }
-if ($("onboard-skip")) $("onboard-skip").onclick = _closeOnboard;
-if ($("onboard-back")) $("onboard-back").onclick = () => { if (_onboardStep > 0) { _onboardStep--; _renderOnboard(); } };
-if ($("onboard-next")) $("onboard-next").onclick = () => {
-  if (_onboardStep < _ONBOARD_STEPS.length - 1) { _onboardStep++; _renderOnboard(); }
-  else _closeOnboard();
+if ($("tour-skip")) $("tour-skip").onclick = _closeTour;
+if ($("tour-back")) $("tour-back").onclick = () => { if (_tourStep > 0) { _tourStep--; _renderTour(); } };
+if ($("tour-next")) $("tour-next").onclick = () => {
+  if (_tourStep < _TOUR_STEPS.length - 1) { _tourStep++; _renderTour(); }
+  else _closeTour();
 };
 
 // ----- update banner -----

@@ -577,13 +577,36 @@ button.mini.danger:hover { background: #c0392b; border-color: #c0392b; color: #f
 .modal-actions button.danger { background: #ef4444; color: #fff; border-color: transparent; }
 .modal-actions button.danger:hover { background: #dc2626; color: #fff; }
 button.danger { color: #fff; background: #ef4444; border: none; }
-.onboard-card { width: min(440px, 92vw); text-align: center; }
-.onboard-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; }
-.onboard-card h3 { margin: 0 0 12px; }
-.onboard-body { margin: 0 0 18px; color: var(--text-soft); line-height: 1.6; min-height: 4.8em; text-align: left; }
-.onboard-dots { display: flex; gap: 7px; justify-content: center; margin-bottom: 4px; }
-.onboard-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); transition: all .2s; }
-.onboard-dots span.on { background: var(--accent); width: 18px; border-radius: 4px; }
+/* ----- first-run spotlight tour ----- */
+#tour-backdrop { position: fixed; inset: 0; z-index: 3000; cursor: default; }
+#tour-hole {
+  position: fixed; z-index: 3001; border-radius: 12px; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,.6), 0 0 0 2px var(--accent), 0 0 22px var(--accent-ring);
+  transition: top .28s ease, left .28s ease, width .28s ease, height .28s ease;
+}
+#tour-pop {
+  position: fixed; z-index: 3002; width: min(330px, 86vw);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 16px 18px; box-shadow: 0 20px 60px rgba(0,0,0,.4);
+  transition: top .28s ease, left .28s ease;
+}
+.tour-title { font-weight: 600; font-size: 15px; margin-bottom: 7px; }
+.tour-body { color: var(--text-soft); line-height: 1.55; font-size: 13.5px; margin-bottom: 14px; }
+.tour-foot { display: flex; align-items: center; gap: 8px; }
+.tour-dots { display: flex; gap: 5px; }
+.tour-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); transition: all .2s; }
+.tour-dots span.on { background: var(--accent); width: 15px; border-radius: 3px; }
+.tour-btn {
+  padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border);
+  background: transparent; color: var(--text-soft); cursor: pointer; font-size: 13px;
+}
+.tour-btn:hover { background: var(--hover); color: var(--text); }
+.tour-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.tour-btn.primary:hover { background: var(--accent-2); }
+.tab.tour-navhi {
+  position: relative; z-index: 3003;
+  box-shadow: 0 0 0 2px var(--accent), 0 0 18px var(--accent-ring); border-radius: 10px;
+}
 
 /* ----- interface language selector (sidebar bottom) ----- */
 .bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
