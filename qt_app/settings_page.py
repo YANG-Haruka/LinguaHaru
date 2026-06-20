@@ -300,6 +300,11 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("translate_with_context", v))
         self.with_ctx_label = BodyLabel(tr("Type Context", lang))
         adv_form.addRow(self.with_ctx_label, self.with_ctx)
+        self.lama_sw = SwitchButton()
+        self.lama_sw.setChecked(config.get("image_inpaint_lama", False))
+        self.lama_sw.checkedChanged.connect(self._on_lama_toggled)
+        self.lama_label = BodyLabel(tr("LaMa Inpaint", lang))
+        adv_form.addRow(self.lama_label, self.lama_sw)
         # Advanced modifiers: tone / length / free-text style guide.
         self._tones = [("", tr("Default", lang)), ("formal", tr("Formal", lang)),
                        ("casual", tr("Casual", lang))]
@@ -774,6 +779,36 @@ class SettingsPage(ScrollArea):
         row.setStyleSheet(
             "#modelRow{border:1px solid rgba(128,128,128,0.28);border-radius:8px;}")
         return row
+
+    def _on_lama_toggled(self, on):
+        backend.set_config("image_inpaint_lama", on)
+        if not on:
+            return
+        from core.pipelines.lama_inpaint import lama_available
+        if lama_available():
+            return
+        # Download the ~208MB model once, off the UI thread.
+        from PySide6.QtCore import QThread, Signal
+
+        class _DL(QThread):
+            done = Signal(bool, str)
+
+            def run(self):
+                try:
+                    from core.pipelines.lama_inpaint import download_lama
+                    download_lama()
+                    self.done.emit(True, "")
+                except Exception as e:  # noqa: BLE001
+                    self.done.emit(False, str(e)[:160])
+
+        self._toast(tr("Model Management", self._lang),
+                    tr("Downloading", self._lang) + " LaMa…")
+        w = _DL(self)
+        w.done.connect(lambda ok, msg: self._toast(
+            tr("Model Management", self._lang),
+            (tr("Model Installed", self._lang) + " LaMa") if ok else msg, error=not ok))
+        self._model_workers.append(w)
+        w.start()
 
     def _edit_model_params(self, model_id, label):
         from core.pipelines.video_translation_pipeline import (

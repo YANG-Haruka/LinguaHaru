@@ -1743,6 +1743,20 @@ async def live_translate_text(payload: dict):
     return {"translated": translated if ok else "", "tokens": tokens}
 
 
+@app.post("/api/inpaint-download")
+async def inpaint_download():
+    """Download the optional LaMa inpainting model (high-quality image text
+    erasure). Runs in a worker thread; returns when ready."""
+    _block_in_server_mode()
+    from core.pipelines.lama_inpaint import download_lama
+    loop = asyncio.get_event_loop()
+    try:
+        path = await loop.run_in_executor(None, download_lama)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"LaMa download failed: {e}")
+    return {"ok": True, "path": str(path)}
+
+
 @app.post("/api/ensure-web-vad")
 def ensure_web_vad():
     """Download the heavy Web neural-VAD assets (onnxruntime WASM + Silero ONNX)

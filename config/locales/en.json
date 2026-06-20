@@ -165,6 +165,8 @@
   "Model ID": "Model ID",
   "Model Location": "Model location",
   "Model Management": "Model Management",
+  "LaMa Inpaint": "HQ image text erase (LaMa)",
+  "LaMa Inpaint Tip": "Use the LaMa model to erase original text on images far more cleanly than the default (needs a ~208MB download on first enable).",
   "Parameters": "Parameters",
   "Parameters saved": "Parameters saved",
   "Reset to defaults": "Reset to defaults",

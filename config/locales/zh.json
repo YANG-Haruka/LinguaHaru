@@ -165,6 +165,8 @@
   "Model ID": "模型 ID",
   "Model Location": "模型位置",
   "Model Management": "模型管理",
+  "LaMa Inpaint": "图片高质量抹字 (LaMa)",
+  "LaMa Inpaint Tip": "用 LaMa 模型抹除图片原文，复杂背景比默认干净得多（首次启用需下载约 208MB）。",
   "Parameters": "参数",
   "Parameters saved": "参数已保存",
   "Reset to defaults": "恢复默认",

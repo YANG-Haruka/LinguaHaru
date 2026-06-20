@@ -542,6 +542,7 @@ async function boot() {
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
   if ($("set-with-context")) $("set-with-context").checked = !!c.translate_with_context;
+  if ($("set-image-lama")) $("set-image-lama").checked = !!c.image_inpaint_lama;
   if ($("set-bi-bold")) $("set-bi-bold").checked = c.bilingual_bold !== false;
   if ($("set-bi-color")) $("set-bi-color").value = c.bilingual_color || "";
   if ($("set-live-stream")) $("set-live-stream").checked = !!c.live_stream_translation;
@@ -930,6 +931,15 @@ if ($("set-style")) $("set-style").onchange = () => saveConfig({ translation_sty
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
 if ($("set-with-context")) $("set-with-context").onchange = () => saveConfig({ translate_with_context: $("set-with-context").checked });
+if ($("set-image-lama")) $("set-image-lama").onchange = async () => {
+  const on = $("set-image-lama").checked;
+  saveConfig({ image_inpaint_lama: on });
+  if (on) {   // enabling -> fetch the model once (background); toast progress
+    toast(_label("Downloading", "下载中…") + " LaMa…", "ok");
+    try { await api("/api/inpaint-download", { method: "POST" }); toast(_label("Model Installed", "模型已安装") + " LaMa", "ok"); }
+    catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+  }
+};
 if ($("set-bi-bold")) $("set-bi-bold").onchange = () => saveConfig({ bilingual_bold: $("set-bi-bold").checked });
 if ($("set-bi-color")) $("set-bi-color").onchange = () => saveConfig({ bilingual_color: $("set-bi-color").value });
 if ($("set-live-stream")) $("set-live-stream").onchange = () => {

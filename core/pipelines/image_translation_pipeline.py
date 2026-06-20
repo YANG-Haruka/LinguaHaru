@@ -299,6 +299,17 @@ def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
     return json_path
 
 
+def _lama_enabled():
+    """Config flag image_inpaint_lama (default off): use the optional LaMa model
+    for text erasure instead of cv2 Telea."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("image_inpaint_lama", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _is_cjk_lang(lang):
     return (lang or "").split("-")[0].lower() in ("zh", "ja", "ko")
 
@@ -409,14 +420,15 @@ def write_translated_content_to_image(file_path, original_json_path, translated_
     if to_render:
         k = max(3, int(round(0.005 * max(image.shape[:2]))))   # dilation ~ image scale
         mask = cv2.dilate(mask, np.ones((k, k), np.uint8), iterations=1)
-        # Prefer LaMa (clean fill on complex backgrounds) when its model is
-        # installed; otherwise OpenCV Telea (always available).
+        # Prefer LaMa (clean fill on complex backgrounds) when enabled + its model
+        # is installed; otherwise OpenCV Telea (always available).
         lama_out = None
-        try:
-            from core.pipelines.lama_inpaint import inpaint as _lama_inpaint
-            lama_out = _lama_inpaint(image, mask)
-        except Exception:  # noqa: BLE001
-            lama_out = None
+        if _lama_enabled():
+            try:
+                from core.pipelines.lama_inpaint import inpaint as _lama_inpaint
+                lama_out = _lama_inpaint(image, mask)
+            except Exception:  # noqa: BLE001
+                lama_out = None
         image = lama_out if lama_out is not None else cv2.inpaint(image, mask, max(5, k), cv2.INPAINT_TELEA)
         app_logger.info(f"Inpaint: {'LaMa' if lama_out is not None else 'cv2 Telea'}")
 
