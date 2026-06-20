@@ -1209,10 +1209,14 @@ def _intelligent_text_distribution(text_runs, translated_text: str, original_run
     # Calculate total length excluding empty runs
     meaningful_runs = [(i, length) for i, length in enumerate(original_run_lengths) if length > 0]
     total_meaningful_length = sum(length for _, length in meaningful_runs)
-    
+
     if total_meaningful_length == 0:
         _simple_text_distribution(text_runs, translated_text, namespaces)
         return
+    # The LAST run that holds all remaining text must be the last MEANINGFUL run,
+    # not literally text_runs[-1]: a trailing empty run would take the ""-branch
+    # and the leftover characters (the end of the translation) would be lost.
+    last_meaningful_idx = meaningful_runs[-1][0]
     
     # Handle special cases for spacing
     translated_chars = list(translated_text)
@@ -1242,10 +1246,11 @@ def _intelligent_text_distribution(text_runs, translated_text: str, original_run
             continue
         
         # Calculate how much text this run should get
-        if run_index == len(text_runs) - 1:
-            # Last meaningful run gets all remaining text
+        if run_index >= last_meaningful_idx:
+            # Last meaningful run gets all remaining text (any later runs are empty)
             remaining_text = ''.join(translated_chars[char_index:])
             text_node[0].text = remaining_text
+            char_index = len(translated_chars)
         else:
             # Calculate proportional distribution
             proportion = original_length / total_meaningful_length

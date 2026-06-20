@@ -68,9 +68,11 @@ def extract_vtt_content_to_json(file_path, temp_dir):
             return
         translatable = [i for i in cue_lines if should_translate(lines[i].strip())]
         # Voice spans (<v Name>) mark distinct speakers -> keep per line so two
-        # speakers are never merged. A single line is also kept as-is.
+        # speakers are never merged. A single line is also kept as-is. Also keep
+        # per-line when a NON-translatable line is sandwiched between translatable
+        # ones: grouping would drop the tail and reorder the kept lines.
         has_voice = any(lines[i].strip().startswith("<v") for i in cue_lines)
-        if has_voice or len(translatable) <= 1:
+        if has_voice or len(translatable) <= 1 or translatable != cue_lines:
             for i in translatable:
                 count += 1
                 content_data.append({"count_src": count, "type": "text", "value": lines[i]})
