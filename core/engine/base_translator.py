@@ -1267,7 +1267,7 @@ class DocumentTranslator:
             if self.glossary_path and os.path.exists(self.glossary_path):
                 from core.engine.text_separator import load_glossary
                 glossary = load_glossary(self.glossary_path, self.src_lang, self.dst_lang)
-            warns = translation_qa.run(qa_list, dst_items, glossary)
+            warns = translation_qa.run(qa_list, dst_items, glossary, self.dst_lang)
             if warns:
                 summary = ", ".join(f"{k}: {len(v)}" for k, v in warns.items())
                 app_logger.info(f"QA warnings ({summary})")
