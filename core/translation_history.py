@@ -81,9 +81,11 @@ class TranslationHistoryManager:
         # WAL -wal/-shm files lingering. This wrapper commits on success, rolls
         # back on error, and ALWAYS closes, so `with self._connect() as conn:`
         # call sites are unchanged.
-        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")        # safe concurrent reads
+        conn.execute("PRAGMA busy_timeout=30000")      # Qt + Web share one local DB
+        conn.execute("PRAGMA synchronous=NORMAL")
         try:
             yield conn
             conn.commit()
@@ -174,10 +176,15 @@ class TranslationHistoryManager:
             cutoff = (datetime.now() - timedelta(days=max_age_days)).isoformat()
             conn.execute("DELETE FROM records WHERE start_time < ?", (cutoff,))
         if max_records and max_records > 0:
-            conn.execute(
-                "DELETE FROM records WHERE id NOT IN "
-                "(SELECT id FROM records ORDER BY start_time DESC LIMIT ?)",
-                (max_records,))
+            # Only run the O(n)-sort DELETE when actually over the cap — doing it
+            # on every insert needlessly widens the write window (lock contention
+            # on the Qt+Web shared local DB).
+            n = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+            if n > max_records:
+                conn.execute(
+                    "DELETE FROM records WHERE id NOT IN "
+                    "(SELECT id FROM records ORDER BY start_time DESC LIMIT ?)",
+                    (max_records,))
 
     def prune_now(self) -> bool:
         """Apply retention immediately (e.g. after the user changes the limits)."""

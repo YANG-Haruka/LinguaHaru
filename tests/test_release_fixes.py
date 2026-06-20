@@ -105,6 +105,34 @@ def test_resegment_split_merge():
     assert len(v._resegment_cues([(0.0, 3.0, "A short fine line.", None)], "en")) == 1
 
 
+def test_md_sentinels_disjoint_and_validated():
+    import core.pipelines.md_translation_pipeline as m
+    import core.engine.placeholder_mask as pm
+    from core.engine.translation_checker import _structural_intact
+    assert m._MD_SENT_OPEN != pm._SENT_OPEN          # disjoint delimiters
+    orig = "See " + m._md_sentinel(0) + " now"
+    assert not _structural_intact(orig, "See now")    # dropped MD sentinel -> fail
+    assert _structural_intact(orig, "看 " + m._md_sentinel(0) + " 现在")
+
+
+def test_language_validation_keeps_machine_content():
+    from core.engine.translation_checker import is_translation_valid as v
+    assert v("https://example.com", "https://example.com", "en", "zh")   # URL kept
+    assert v("a@b.com", "a@b.com", "en", "zh")                            # email kept
+    assert v("100%", "100%", "en", "zh")                                  # no letters
+    assert not v("Hello world", "hello  world", "en", "fr")               # normalized echo
+    assert v("Hello", "你好", "en", "zh")                                  # real translation
+    assert v("x", None, "en", "zh") in (True, False)                      # None no crash
+
+
+def test_glossary_latin1_is_last():
+    import inspect
+    from core.engine import text_separator
+    src = inspect.getsource(text_separator.load_glossary)
+    enc_line = next(l for l in src.splitlines() if "encodings = [" in l)
+    assert enc_line.rstrip().endswith("'latin1']"), enc_line   # latin1 must be last
+
+
 def test_window_segments_no_overlap():
     import core.pipelines.video_translation_pipeline as v
     segs = v._window_segments(70000.0)

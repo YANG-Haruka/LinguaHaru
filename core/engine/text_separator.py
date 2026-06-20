@@ -90,7 +90,10 @@ def _lang_tokens(lang):
 
 def load_glossary(glossary_path, src_lang, dst_lang):
     """Load glossary from CSV file with multiple encodings"""
-    encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'latin1', 'shift-jis', 'cp949']
+    # latin1 LAST: it never raises UnicodeDecodeError, so it must be the final
+    # catch-all — otherwise a Shift-JIS / CP949 glossary with an ASCII header is
+    # wrongly decoded as latin1 and the term values become mojibake.
+    encodings = ['utf-8', 'utf-8-sig', 'gbk', 'gb2312', 'gb18030', 'big5', 'shift-jis', 'cp949', 'latin1']
     
     for encoding in encodings:
         try:

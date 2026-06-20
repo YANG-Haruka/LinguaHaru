@@ -950,33 +950,37 @@ class DocumentTranslator:
                 app_logger.error(f"Error creating failed segments file: {e}")
                 return
 
-        # Update file with locking
+        # Read-modify-write ATOMICALLY (temp + os.replace) — the old in-place
+        # seek/truncate/dump could leave the file truncated on a crash/disk-full,
+        # silently dropping failed segments so they're never retried or output.
         try:
-            with open(self.failed_json_path, "r+", encoding="utf-8") as f:
-                try:
+            try:
+                with open(self.failed_json_path, "r", encoding="utf-8") as f:
                     failed_segments = json.load(f)
-                except json.JSONDecodeError:
+                if not isinstance(failed_segments, list):
                     failed_segments = []
-                    app_logger.warning("Failed segments file was corrupted")
+            except (json.JSONDecodeError, OSError):
+                failed_segments = []
+                app_logger.warning("Failed segments file was corrupted/unreadable")
 
-                try:
-                    clean_segment = clean_json(segment)
-                    segment_dict = json.loads(clean_segment)
-                except json.JSONDecodeError as e:
-                    app_logger.error(f"Failed to decode JSON segment: {e}")
-                    return
-                    
-                for count_split, value in segment_dict.items():
-                    failed_segments.append({
-                        "count_split": int(count_split),
-                        "value": str(value).strip()    # value may be non-str on a malformed reply
-                    })
-                    
-                f.seek(0)
-                f.truncate()
+            try:
+                segment_dict = json.loads(clean_json(segment))
+            except json.JSONDecodeError as e:
+                app_logger.error(f"Failed to decode JSON segment: {e}")
+                return
+
+            for count_split, value in segment_dict.items():
+                failed_segments.append({
+                    "count_split": int(count_split),
+                    "value": str(value).strip()    # value may be non-str on a malformed reply
+                })
+
+            tmp = self.failed_json_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(failed_segments, f, ensure_ascii=False, indent=4)
-                app_logger.debug(f"Saved {len(segment_dict)} items to failed list")
-                
+            os.replace(tmp, self.failed_json_path)
+            app_logger.debug(f"Saved {len(segment_dict)} items to failed list")
+
         except Exception as e:
             app_logger.error(f"Error updating failed segments: {e}")
     

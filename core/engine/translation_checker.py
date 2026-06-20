@@ -49,15 +49,20 @@ def flush_results(path=None):
     with _result_lock:
         paths = [path] if path else list(_result_cache.keys())
         for p in paths:
-            if _result_dirty.get(p):
-                _atomic_write_json(p, _result_cache[p])
-                _result_dirty[p] = False
-                _result_last[p] = time.time()
-            elif path and not os.path.exists(p):
-                # Nothing succeeded -> the file was never created. Materialize an
-                # empty result so check_and_sort/restore can fall every segment
-                # back to source instead of hitting FileNotFoundError.
-                _atomic_write_json(p, _result_cache.get(p, []))
+            try:
+                if _result_dirty.get(p):
+                    _atomic_write_json(p, _result_cache[p])
+                    _result_dirty[p] = False
+                    _result_last[p] = time.time()
+                elif path and not os.path.exists(p):
+                    # Nothing succeeded -> the file was never created. Materialize an
+                    # empty result so check_and_sort/restore can fall every segment
+                    # back to source instead of hitting FileNotFoundError.
+                    _atomic_write_json(p, _result_cache.get(p, []))
+            except Exception as e:  # noqa: BLE001 — e.g. Windows os.replace lock
+                # Leave it dirty so the next flush retries; never let a transient
+                # write error mask the caller's stop/finish handling.
+                app_logger.warning(f"Result flush deferred (will retry): {e}")
 
 
 def invalidate_results(path):
@@ -206,6 +211,7 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
     # Basic checks
     if not translated or translated.strip() == "":
         return False
+    original = original or ""   # guard: a None source must not crash validation
 
     # A translation that drops fields/formulas/line markers corrupts the
     # document on write-back - send it to retry instead
@@ -227,22 +233,35 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
 
     # Language validation
     non_latin_langs = ["zh", "zh-Hant", "ja", "ko", "ru", "th"]
-       
-    # Check if identical
-    if translated.strip() == original.strip():
+
+    # P1-8: content that is correctly kept VERBATIM should not be echo-failed:
+    #  (a) a source with no translatable letters at all (numbers / symbols, "100%");
+    #  (b) a whole-string URL / email (has letters but is machine content).
+    # Brand/acronym ambiguity ("GPT-4") is intentionally NOT covered — it stays
+    # echo-failed -> needs_review (safe), since some targets do localize it.
+    _o = (original or "").strip()
+    if not re.search(r"[^\W\d_]", _o, re.UNICODE):
+        return True
+    if re.match(r"^(?:https?://|ftp://|mailto:|www\.)\S+$", _o, re.IGNORECASE) or \
+       re.match(r"^[^\s@]+@[^\s@]+\.[^\s@]+$", _o):
+        return True
+
+    # P1-7: echo detection, NORMALIZED (collapse internal whitespace + casefold)
+    # so trivial echoes (spacing/case) are caught for Latin targets too.
+    def _norm(s):
+        return re.sub(r"\s+", " ", (s or "").strip()).casefold()
+    if _norm(translated) == _norm(original):
+        if src_lang in non_latin_langs and detect_language_characters(translated, src_lang):
+            return False            # non-latin source echoed back untranslated
         if src_lang in non_latin_langs:
-            if detect_language_characters(translated, src_lang):
-                return False
-            else:
-                return True
-        else:
-            return False
-    
-    # Check target language
+            return True
+        return False                # latin source echoed back untranslated
+
+    # Check target language presence
     if dst_lang in non_latin_langs:
         if not detect_language_characters(translated, dst_lang):
             return False
-    
+
     return True
 
 def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, src_lang, dst_lang, last_try=False, needs_review_path=None):
@@ -575,9 +594,14 @@ def save_json(filepath, data):
 
         now = time.time()
         if now - _result_last.get(filepath, 0.0) >= _FLUSH_INTERVAL:
-            _atomic_write_json(filepath, _result_cache[filepath])
-            _result_dirty[filepath] = False
-            _result_last[filepath] = now
+            try:
+                _atomic_write_json(filepath, _result_cache[filepath])
+                _result_dirty[filepath] = False
+                _result_last[filepath] = now
+            except Exception as e:  # noqa: BLE001 — transient write lock (Windows)
+                # Stay dirty + retry on the next save/flush; do NOT let a flush
+                # error surface as a per-segment failure (would re-bill the batch).
+                app_logger.warning(f"Buffered result flush deferred: {e}")
 
 def save_failed_json_without_duplicates(filepath, data):
     """Save failed JSON without duplicates"""
@@ -713,7 +737,12 @@ def check_and_sort_translations(SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH):
         app_logger.info("No missing translations")
 
     # Sort by count_split
-    sorted_data = sorted(translated_data, key=lambda x: int(x.get("count_split", 0)))
+    def _ck(x):
+        try:
+            return int(x.get("count_split", 0))
+        except (TypeError, ValueError):
+            return 0   # a non-numeric count_split must not crash post-processing
+    sorted_data = sorted(translated_data, key=_ck)
 
     # This is the post-run rewrite of the result file; the in-memory buffer is
     # now stale, so drop it (nothing reads via the buffer after this point).

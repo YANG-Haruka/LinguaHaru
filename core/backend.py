@@ -741,9 +741,21 @@ def zip_results(output_paths, file_results, dest_dir=None):
     os.makedirs(dest_dir, exist_ok=True)
     zip_path = os.path.join(dest_dir, "translated_files.zip")
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        used_names = set()
         for p in output_paths:
             if p and os.path.exists(p):
-                zf.writestr(os.path.basename(p), open(p, "rb").read())
+                # Uniquify on basename collision so two results with the same name
+                # don't overwrite each other in the zip (the 2nd would be lost).
+                arc = os.path.basename(p)
+                if arc in used_names:
+                    stem, ext = os.path.splitext(arc)
+                    i = 2
+                    while f"{stem} ({i}){ext}" in used_names:
+                        i += 1
+                    arc = f"{stem} ({i}){ext}"
+                used_names.add(arc)
+                with open(p, "rb") as fh:   # close the handle (was leaked)
+                    zf.writestr(arc, fh.read())
         lines = []
         for name, status, detail in file_results:
             line = f"{name}: {status}"
