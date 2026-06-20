@@ -122,6 +122,39 @@ def _has_token(text):
     return ("%" in text) or ("$" in text) or ("{" in text)
 
 
+def _token_spans(text):
+    """Non-overlapping (start, end) spans of every machine token in ``text``
+    (printf / shell / single-brace ICU), left-to-right, longest-wins on overlap.
+    Shared by mask() and extract_tokens() so validation sees exactly what masking
+    protected."""
+    spans = []  # (start, end)
+    for rx in (_PRINTF_RE, _SHELL_BRACED_RE, _SHELL_BARE_RE):
+        for m in rx.finditer(text):
+            spans.append((m.start(), m.end()))
+    spans.extend(_find_single_brace_spans(text))
+    if not spans:
+        return []
+    # Sort and drop overlaps (earlier/longer wins). ${name} (braced) is added
+    # before $name (bare) and starts earlier, so it survives the overlap purge.
+    spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
+    chosen = []
+    last_end = -1
+    for start, end in spans:
+        if start >= last_end:
+            chosen.append((start, end))
+            last_end = end
+    return chosen
+
+
+def extract_tokens(text):
+    """The machine tokens (``%s``, ``${var}``, ``{count}`` …) in ``text`` as a
+    list of literal strings, for round-trip validation: a translation should
+    carry the same multiset back. Empty for non-str / no-token input."""
+    if not isinstance(text, str) or not _has_token(text):
+        return []
+    return [text[s:e] for s, e in _token_spans(text)]
+
+
 def mask(text):
     """Replace detected machine tokens with neutral sentinels.
 
@@ -135,27 +168,7 @@ def mask(text):
     if not _mask_enabled() or not _has_token(text):
         return text, {}
 
-    # Collect all match spans from every pattern, then apply non-overlapping
-    # left-to-right so a token is masked exactly once.
-    spans = []  # (start, end)
-    for rx in (_PRINTF_RE, _SHELL_BRACED_RE, _SHELL_BARE_RE):
-        for m in rx.finditer(text):
-            spans.append((m.start(), m.end()))
-    spans.extend(_find_single_brace_spans(text))
-
-    if not spans:
-        return text, {}
-
-    # Sort and drop overlaps (earlier/longer wins). ${name} (braced) is added
-    # before $name (bare) and starts earlier, so it survives the overlap purge.
-    spans.sort(key=lambda s: (s[0], -(s[1] - s[0])))
-    chosen = []
-    last_end = -1
-    for start, end in spans:
-        if start >= last_end:
-            chosen.append((start, end))
-            last_end = end
-
+    chosen = _token_spans(text)
     if not chosen:
         return text, {}
 

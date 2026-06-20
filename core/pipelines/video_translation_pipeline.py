@@ -1442,6 +1442,40 @@ def _sensevoice_sdh_prefix(raw_text, enabled=False):
     return (" ".join(seen) + " ") if seen else ""
 
 
+# Whole-segment ASR hallucinations: phrases Whisper/others emit on silence/music
+# (channel outros etc.). Matched as a WHOLE normalized segment only (never as a
+# substring) so a legit line that merely contains the words survives. Lang-keyed;
+# "*" applies to any language (music notes, generic).
+_HALLUCINATION_PHRASES = {
+    "ja": {"ご視聴ありがとうございました", "ご視聴ありがとうございます",
+           "最後までご視聴いただきありがとうございました", "チャンネル登録お願いします",
+           "チャンネル登録をお願いします", "次の動画でお会いしましょう"},
+    "en": {"thank you for watching", "thanks for watching", "thank you for watching!",
+           "please subscribe", "please subscribe to my channel", "subscribe to my channel",
+           "subtitles by the amara.org community", "thank you", "thank you.",
+           "thanks for watching!"},
+    "ko": {"시청해주셔서 감사합니다", "구독과 좋아요 부탁드립니다"},
+    "zh": {"感谢观看", "感谢收看", "请订阅", "谢谢观看"},
+    "*": {"♪", "♪♪", "♪♪♪", "[音楽]", "[music]", "(music)"},
+}
+
+
+def _norm_phrase(s):
+    return re.sub(r"\s+", " ", (s or "").strip().lower()).rstrip("。.!！?？ ")
+
+
+def _is_hallucination_phrase(text, src_lang):
+    """True if the WHOLE segment is a known ASR hallucination for this language."""
+    norm = _norm_phrase(text)
+    if not norm:
+        return False
+    base = (src_lang or "").split("-")[0]
+    phrases = set(_HALLUCINATION_PHRASES.get("*", ()))
+    phrases |= _HALLUCINATION_PHRASES.get(src_lang, set())
+    phrases |= _HALLUCINATION_PHRASES.get(base, set())
+    return any(norm == _norm_phrase(p) for p in phrases)
+
+
 # Back-compat alias (older call sites).
 _strip_sensevoice_marks = _clean_asr_text
 
@@ -1554,6 +1588,13 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
 
     if not triples:
         raise RuntimeError("Transcription produced no speech segments")
+
+    # Drop whole-segment ASR hallucinations (channel outros / music notes that
+    # Whisper emits on silence). Whole-segment match only, so legit lines survive.
+    before = len(triples)
+    triples = [(s, e, t) for (s, e, t) in triples if not _is_hallucination_phrase(t, src_lang)]
+    if len(triples) < before:
+        app_logger.info(f"Dropped {before - len(triples)} hallucinated segment(s)")
 
     srt_lines = []
     for i, (start, end, text) in enumerate(triples, start=1):

@@ -124,6 +124,33 @@ def _placeholders_preserved(original, translated):
     return all(have[token] >= count for token, count in need.items())
 
 
+def _machine_tokens_preserved(original, translated):
+    """Round-trip check for masked machine tokens (%s, ${var}, {count}, …): the
+    translation must carry back the same multiset. Catches an LLM that dropped a
+    sentinel (placeholder_mask.unmask silently can't restore a dropped one, so
+    without this the loss is invisible until the rendered string is broken)."""
+    from collections import Counter
+    from core.engine.placeholder_mask import extract_tokens
+    need = Counter(extract_tokens(original))
+    if not need:
+        return True
+    have = Counter(extract_tokens(translated))
+    return all(have[tok] >= n for tok, n in need.items())
+
+
+def _is_repetition_degenerate(original, translated):
+    """True if the translation looks like a runaway repetition loop: much longer
+    than the source AND highly compressible (low entropy = repeated content).
+    Conservative thresholds so legitimate CJK->Latin expansion isn't flagged."""
+    t = (translated or "").strip()
+    if len(t) < 40 or len(t) <= 2 * len(original or "") + 40:
+        return False
+    import zlib
+    raw = t.encode("utf-8")
+    ratio = len(raw) / max(len(zlib.compress(raw, 6)), 1)
+    return ratio > 4.0   # normal prose ~2-3; >4 means heavy repetition
+
+
 def is_translation_valid(original, translated, src_lang, dst_lang):
     """
     Check if translation is valid
@@ -137,7 +164,19 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
     if not _placeholders_preserved(original, translated):
         app_logger.warning("Translation dropped structural placeholders, marking invalid")
         return False
- 
+
+    # Machine tokens (%s / ${var} / {count}) were masked then restored; if the
+    # model dropped one, the restore can't bring it back -> the rendered string
+    # would be broken. Validate the multiset round-trips.
+    if not _machine_tokens_preserved(original, translated):
+        app_logger.warning("Translation dropped machine tokens (%s/${}/{}), marking invalid")
+        return False
+
+    # Runaway repetition loop (degenerate output) -> retry instead of shipping.
+    if _is_repetition_degenerate(original, translated):
+        app_logger.warning("Translation looks like a repetition loop, marking invalid")
+        return False
+
     # Language validation
     non_latin_langs = ["zh", "zh-Hant", "ja", "ko", "ru", "th"]
        
