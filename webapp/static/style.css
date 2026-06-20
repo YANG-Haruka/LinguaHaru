@@ -555,6 +555,12 @@ button.mini.danger:hover { background: #c0392b; border-color: #c0392b; color: #f
 .modal { width: min(460px, 92vw); max-height: 88vh; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
 .modal h3 { margin: 0 0 16px; }
 .modal .field { margin-bottom: 12px; }
+/* Per-model parameter editor rows */
+.model-param-sub { margin: -8px 0 14px; color: var(--muted); font-size: 0.85rem; }
+.model-param-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.model-param-row > span { color: var(--text-2); font-size: 0.9rem; }
+.model-param-row input[type="number"] { width: 96px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); }
+.model-param-row input[type="checkbox"] { width: 18px; height: 18px; }
 .modal-actions { display: flex; align-items: center; gap: 10px; margin-top: 18px; }
 /* Cohesive modal button set: same shape/height/font; only the color differs. */
 .modal-actions button {

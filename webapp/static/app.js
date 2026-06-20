@@ -178,7 +178,8 @@ function modelRow(plugin, s) {
   row.className = "model-row";
 
   const main = document.createElement("div"); main.className = "model-row-main";
-  const name = document.createElement("span"); name.className = "model-row-name"; name.textContent = s.label;
+  const name = document.createElement("span"); name.className = "model-row-name";
+  name.textContent = _label(s.label, s.label);
   main.appendChild(name);
   (s.tags || []).forEach((t) => {
     const c = document.createElement("span");
@@ -192,6 +193,14 @@ function modelRow(plugin, s) {
   size.textContent = (s.size || "") + (s.vram ? ` · ${s.vram}` : "");
 
   const act = document.createElement("div"); act.className = "model-row-act";
+  // Per-model parameter entry (between capacity and Install/Delete) for models
+  // that expose tunable params (STT only).
+  if (s.params && s.params.length) {
+    const p = document.createElement("button"); p.className = "mini";
+    p.textContent = _label("Parameters", "参数");
+    p.onclick = () => openModelParams(s);
+    act.appendChild(p);
+  }
   if (!s.downloaded) {
     const b = document.createElement("button"); b.className = "mini";
     b.textContent = _label("Install", "安装");
@@ -204,6 +213,67 @@ function modelRow(plugin, s) {
   }
   row.append(main, size, act);
   return row;
+}
+
+// Modal editor for a model's tunable STT params (switch / number per spec).
+function openModelParams(s) {
+  const cur = s.param_values || {};
+  const back = document.createElement("div");
+  back.className = "modal-overlay";
+  const box = document.createElement("div"); box.className = "modal";
+  const h = document.createElement("h3"); h.textContent = _label("Parameters", "参数");
+  const sub = document.createElement("p"); sub.className = "model-param-sub";
+  sub.textContent = _label(s.label, s.label);
+  box.append(h, sub);
+
+  const inputs = {};
+  s.params.forEach((spec) => {
+    const row = document.createElement("label"); row.className = "model-param-row";
+    const lbl = document.createElement("span"); lbl.textContent = _label(spec.label, spec.label);
+    let inp;
+    if (spec.type === "bool") {
+      inp = document.createElement("input"); inp.type = "checkbox";
+      inp.checked = !!(spec.key in cur ? cur[spec.key] : spec.default);
+    } else {
+      inp = document.createElement("input"); inp.type = "number";
+      inp.min = spec.min; inp.max = spec.max; inp.step = spec.step;
+      inp.value = (spec.key in cur ? cur[spec.key] : spec.default);
+    }
+    inputs[spec.key] = { inp, spec };
+    row.append(lbl, inp); box.appendChild(row);
+  });
+
+  const acts = document.createElement("div"); acts.className = "modal-actions";
+  const reset = document.createElement("button");
+  reset.textContent = _label("Reset to defaults", "恢复默认");
+  reset.onclick = () => s.params.forEach((spec) => {
+    const { inp } = inputs[spec.key];
+    if (spec.type === "bool") inp.checked = !!spec.default; else inp.value = spec.default;
+  });
+  const cancel = document.createElement("button");
+  cancel.textContent = _label("Cancel", "取消");
+  cancel.onclick = () => back.remove();
+  const save = document.createElement("button"); save.className = "primary";
+  save.textContent = _label("Save", "保存");
+  save.onclick = async () => {
+    const values = {};
+    Object.entries(inputs).forEach(([k, { inp, spec }]) => {
+      values[k] = spec.type === "bool" ? inp.checked : Number(inp.value);
+    });
+    try {
+      const r = await api("/api/models/params", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model_id: s.id, values }),
+      });
+      s.param_values = { ...(s.param_values || {}), ...values };
+      toast(_label("Parameters saved", "参数已保存"), "ok");
+      back.remove();
+    } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+  };
+  acts.append(reset, cancel, save); box.appendChild(acts);
+  back.appendChild(box);
+  back.onclick = (e) => { if (e.target === back) back.remove(); };
+  document.body.appendChild(back);
 }
 
 async function installModel(plugin, s, btn) {

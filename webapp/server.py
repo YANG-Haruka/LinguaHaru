@@ -317,9 +317,27 @@ def list_models():
     the unified download location."""
     from core import model_store
     from core.optional_modules import plugin_model_states
+    from core.pipelines.video_translation_pipeline import stt_param_specs, get_stt_params
+    stt = plugin_model_states("Video/Audio")
+    for s in stt:   # attach per-model tunable params (STT only; OCR has none)
+        specs = stt_param_specs(s["id"])
+        if specs:
+            s["params"] = specs
+            s["param_values"] = get_stt_params(s["id"])
     return {"dir": model_store.current_dir(),
             "ocr": plugin_model_states("Image OCR"),
-            "stt": plugin_model_states("Video/Audio")}
+            "stt": stt}
+
+
+@app.post("/api/models/params")
+async def model_params(payload: dict):
+    """Persist a model's tunable STT params (only non-defaults are stored)."""
+    _block_in_server_mode()
+    from core.pipelines.video_translation_pipeline import set_stt_params
+    model_id, values = payload.get("model_id"), payload.get("values") or {}
+    if not model_id:
+        raise HTTPException(400, "model_id is required")
+    return {"ok": True, "saved": set_stt_params(model_id, values)}
 
 
 @app.get("/api/modules/models")
