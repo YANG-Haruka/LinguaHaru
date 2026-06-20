@@ -551,7 +551,8 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
         segments, info = model.transcribe(wav_path, **_wkw)
         duration = getattr(info, "duration", None) or 0
 
-    out = [(s, e, t) for s, e, t in done if t]
+    # 4-tuples (start, end, text, words). Resumed segments have no words (None).
+    out = [(s, e, t, None) for s, e, t in done if t]
     ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
     try:
         for seg in segments:
@@ -562,8 +563,13 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
                 check_stop()
             text = _clean_asr_text(seg.text)
             s, e = seg.start + offset, seg.end + offset   # shift past the clip
+            # Word-level timestamps (word_timestamps=True) -> (w_start, w_end, word),
+            # shifted past the resume clip; consumed by _resegment_cues.
+            words = [(w.start + offset, w.end + offset, w.word)
+                     for w in (getattr(seg, "words", None) or [])
+                     if w.start is not None and w.end is not None]
             if text:
-                out.append((s, e, text))
+                out.append((s, e, text, words or None))
             if ckpt_f:   # record every segment (even empty) so offset advances
                 ckpt_f.write(json.dumps([s, e, text]) + "\n")
                 ckpt_f.flush()
@@ -1476,6 +1482,123 @@ def _is_hallucination_phrase(text, src_lang):
     return any(norm == _norm_phrase(p) for p in phrases)
 
 
+# --- cue re-segmentation (split over-long/fast cues, merge flicker-short) ------
+_CUE_SENT_END = "。！？!?."
+_CUE_CLAUSE = "、，,；;:"
+_CUE_MAX_DUR = 7.0      # a single subtitle shouldn't linger past this
+_CUE_MIN_DUR = 1.2      # below this is a flicker -> merge with a neighbor
+_CUE_MERGE_GAP = 0.4    # only merge cues separated by less than this silence
+
+
+def _resegment_enabled():
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("subtitle_resegment", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _cue_cells(s):
+    return sum(2 if ("　" <= c <= "鿿" or "＀" <= c <= "￯") else 1 for c in (s or ""))
+
+
+def _cue_split_index(text):
+    """Best char index to split `text` near the middle: sentence-end punct first,
+    then clause punct, then nearest space; -1 if no good interior point."""
+    n = len(text)
+    mid = n / 2
+    best = -1
+    best_d = n
+    for cls in (_CUE_SENT_END, _CUE_CLAUSE, " "):
+        for i, ch in enumerate(text):
+            if 0 < i < n - 1 and ch in cls:
+                d = abs((i + 1) - mid)
+                if d < best_d:
+                    best_d, best = d, i + 1
+        if best != -1:
+            return best
+    return -1
+
+
+def _time_at_index(s, e, text, words, idx):
+    """Timestamp at char index `idx`: walk word timestamps when available (accurate
+    at the boundary), else interpolate proportionally."""
+    if words:
+        acc = 0
+        for w_s, w_e, w_t in words:
+            acc += len(w_t)
+            if acc >= idx:
+                return max(s, min(e, w_e))
+    return s + (e - s) * (idx / max(len(text), 1))
+
+
+def _split_cue(cue, max_cells, max_cps):
+    """Recursively split one (s, e, text, words) cue until each piece fits two
+    lines AND the reading speed / duration limits."""
+    s, e, text, words = cue
+    text = (text or "").strip()
+    if not text:
+        return []
+    dur = max(e - s, 0.001)
+    too_wide = _cue_cells(text) > 2 * max_cells
+    too_fast = len(text) / dur > max_cps
+    too_long = dur > _CUE_MAX_DUR
+    if not (too_wide or too_fast or too_long) or len(text) < 8:
+        return [(s, e, text, words)]
+    idx = _cue_split_index(text)
+    if idx <= 0:
+        return [(s, e, text, words)]
+    t = _time_at_index(s, e, text, words, idx)
+    if not (s < t < e):
+        return [(s, e, text, words)]
+    lw = [w for w in (words or []) if w[1] <= t] or None
+    rw = [w for w in (words or []) if w[1] > t] or None
+    left = _split_cue((s, t, text[:idx], lw), max_cells, max_cps)
+    right = _split_cue((t, e, text[idx:], rw), max_cells, max_cps)
+    return left + right
+
+
+def _merge_short_cues(cues, max_cells):
+    """Merge adjacent flicker-short cues separated by a tiny gap, as long as the
+    merged cue still fits two lines and the max duration."""
+    out = []
+    for c in cues:
+        if out:
+            ps, pe, pt, pw = out[-1]
+            s, e, t, w = c
+            short = (pe - ps) < _CUE_MIN_DUR or (e - s) < _CUE_MIN_DUR
+            if (short and (s - pe) < _CUE_MERGE_GAP
+                    and (e - ps) <= _CUE_MAX_DUR
+                    and _cue_cells(pt + t) <= 2 * max_cells):
+                joiner = "" if (pt and pt[-1] in _CUE_SENT_END + _CUE_CLAUSE) else " "
+                merged_w = ((pw or []) + (w or [])) or None
+                out[-1] = (ps, e, (pt + joiner + t).strip(), merged_w)
+                continue
+        out.append(c)
+    return out
+
+
+def _resegment_cues(cues, src_lang):
+    """Split over-long/fast cues at word/punctuation boundaries and merge
+    flicker-short ones, for readable subtitles. No-op if disabled or empty."""
+    if not cues or not _resegment_enabled():
+        return cues
+    try:
+        from core.engine.translation_qa import _subtitle_max_cells, _subtitle_max_cps
+        max_cells = _subtitle_max_cells(src_lang)
+        max_cps = _subtitle_max_cps(src_lang)
+    except Exception:  # noqa: BLE001
+        max_cells, max_cps = 42, 20.0
+    split = []
+    for c in cues:
+        split.extend(_split_cue(c, max_cells, max_cps))
+    merged = _merge_short_cues(split, max_cells)
+    if len(merged) != len(cues):
+        app_logger.info(f"Re-segmented cues: {len(cues)} -> {len(merged)}")
+    return merged
+
+
 # Back-compat alias (older call sites).
 _strip_sensevoice_marks = _clean_asr_text
 
@@ -1591,13 +1714,20 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
 
     # Drop whole-segment ASR hallucinations (channel outros / music notes that
     # Whisper emits on silence). Whole-segment match only, so legit lines survive.
+    # Normalize to 4-tuples (start, end, text, words|None) — only whisper carries
+    # word timestamps; the rest pass None and fall back to proportional splitting.
+    triples = [(t[0], t[1], t[2], t[3] if len(t) > 3 else None) for t in triples]
     before = len(triples)
-    triples = [(s, e, t) for (s, e, t) in triples if not _is_hallucination_phrase(t, src_lang)]
+    triples = [c for c in triples if not _is_hallucination_phrase(c[2], src_lang)]
     if len(triples) < before:
         app_logger.info(f"Dropped {before - len(triples)} hallucinated segment(s)")
 
+    # Re-segment cues for readability (split over-long / fast cues at the best
+    # word/punctuation boundary using word timestamps; merge flicker-short ones).
+    triples = _resegment_cues(triples, src_lang)
+
     srt_lines = []
-    for i, (start, end, text) in enumerate(triples, start=1):
+    for i, (start, end, text, _w) in enumerate(triples, start=1):
         srt_lines.append(f"{i}\n{_format_srt_time(start)} --> {_format_srt_time(end)}\n{text}\n\n")
 
     srt_path = os.path.join(temp_dir, f"{filename}.srt")

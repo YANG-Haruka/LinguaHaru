@@ -891,13 +891,20 @@ function renderQa(qa) {
     const row = document.createElement("div"); row.className = "qa-row";
     const lbl = _label(_QA_LABELS[k]?.[0] || k, _QA_LABELS[k]?.[1] || k);
     let detail;
-    if (k === "glossary_terms") {   // [{id, term, expected}]
+    if (k === "glossary_terms") {   // [{id, term, expected}] — user glossary content
       detail = items.slice(0, 12).map((it) => `#${it.id} ${it.term}→${it.expected}`).join("、");
     } else {                         // [count_src ...]
       detail = items.slice(0, 30).map((id) => `#${id}`).join(" ");
     }
     if (items.length > (k === "glossary_terms" ? 12 : 30)) detail += " …";
-    row.innerHTML = `<span class="qa-k">${lbl} <b>${items.length}</b></span><span class="qa-d">${detail}</span>`;
+    // Build with DOM APIs + textContent (detail can contain user glossary terms /
+    // source text — never inject as HTML).
+    const kSpan = document.createElement("span"); kSpan.className = "qa-k";
+    kSpan.append(lbl + " ");
+    const b = document.createElement("b"); b.textContent = items.length; kSpan.append(b);
+    const dSpan = document.createElement("span"); dSpan.className = "qa-d";
+    dSpan.textContent = detail;
+    row.append(kSpan, dSpan);
     body.appendChild(row);
   }
   box.hidden = false;
