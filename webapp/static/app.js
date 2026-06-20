@@ -787,6 +787,7 @@ function renderCoverage(cov) {
     if (n) parts.push(`${cat} ${n}`);
   }
   parts.push(`${cov.fallback || 0} ${_label("Untranslated", "未翻译")}`);
+  if (cov.needs_review) parts.push(`${cov.needs_review} ${_label("Needs review", "需复核")}`);
   $("coverage-body").textContent = parts.join(" · ");
   box.hidden = false;
 }

@@ -158,11 +158,22 @@ def is_translation_valid(original, translated, src_lang, dst_lang):
     
     return True
 
-def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, src_lang, dst_lang, last_try=False):
+def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH, FAILED_JSON_PATH, src_lang, dst_lang, last_try=False, needs_review_path=None):
     """
-    Process translation results
+    Process translation results.
+
+    Three terminal states for each item:
+      * translated   — passed validation; written to the result normally.
+      * needs_review — ONLY on the final round (last_try): a non-empty output that
+                       still fails validation. We keep the best-effort text (so the
+                       document has content, not a hole) but record it in
+                       needs_review_path so coverage can report it honestly instead
+                       of silently counting garbage as "translated".
+      * failed       — empty/unparseable output; re-queued (or, after the last
+                       round, left to fall back to the source text downstream).
     """
     CONSOLE = Console(highlight=True, tab_size=4)
+    needs_review = []   # [{count_split, original, translated}] — last_try only
     
     if not translated_text:
         app_logger.warning("No translated text received")
@@ -262,7 +273,8 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         else:
             translated_value = ""
         
-        # Last try mode - accept any non-empty
+        # Last try mode - keep any non-empty output, but flag invalid ones for
+        # review instead of silently passing them off as a clean translation.
         if last_try:
             if translated_value and translated_value.strip() != "":
                 successful_translations.append({
@@ -271,14 +283,21 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                     "translated": translated_value
                 })
                 result_dict[key] = translated_value
-                
+
                 try:
                     successful_count_splits.append(int(key))
                 except (ValueError, TypeError):
                     successful_count_splits.append(key)
+
+                if not is_translation_valid(value, translated_value, src_lang, dst_lang):
+                    needs_review.append({
+                        "count_split": int(key),
+                        "original": value,
+                        "translated": translated_value
+                    })
             else:
                 failed_translations.append({
-                    "count_split": int(key), 
+                    "count_split": int(key),
                     "value": value
                 })
         else:
@@ -365,6 +384,13 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
     # Save failed translations
     if failed_translations:
         save_failed_json_without_duplicates(FAILED_JSON_PATH, failed_translations)
+
+    # Record best-effort-but-invalid items (last_try only) so coverage can report
+    # them. Appended (not overwritten) since one round calls this per batch.
+    if needs_review and needs_review_path:
+        _append_needs_review(needs_review_path, needs_review)
+        app_logger.warning(f"{len(needs_review)} item(s) accepted as best-effort "
+                           f"(needs review)")
     
     # Update translation status in source file
     if successful_count_splits:
@@ -497,6 +523,27 @@ def save_failed_json_without_duplicates(filepath, data):
 
     # Save (atomic)
     _atomic_write_json(filepath, existing_data)
+
+
+def _append_needs_review(filepath, items):
+    """Append best-effort-but-invalid items to the needs-review list, deduped by
+    count_split. Atomic; never raises (review tracking must not break a run)."""
+    try:
+        existing = []
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+            if not isinstance(existing, list):
+                existing = []
+        seen = {int(it["count_split"]) for it in existing if "count_split" in it}
+        for it in items:
+            if int(it["count_split"]) not in seen:
+                existing.append(it)
+                seen.add(int(it["count_split"]))
+        _atomic_write_json(filepath, existing)
+    except Exception as e:  # noqa: BLE001
+        app_logger.warning(f"Could not record needs-review items: {e}")
+
 
 def check_and_sort_translations(SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH):
     """

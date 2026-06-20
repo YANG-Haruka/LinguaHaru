@@ -113,7 +113,7 @@ TYPE_TO_CATEGORY = {
 
 
 def _zeroed():
-    return {"total": 0, "translated": 0, "fallback": 0, "by_category": {}}
+    return {"total": 0, "translated": 0, "fallback": 0, "needs_review": 0, "by_category": {}}
 
 
 def _load(path):
@@ -131,15 +131,18 @@ def category_for(item_type):
     return TYPE_TO_CATEGORY.get(item_type, CAT_OTHER)
 
 
-def summarize(src_json_path, dst_json_path):
+def summarize(src_json_path, dst_json_path, needs_review_path=None):
     """Compute a coverage report for one finished translation.
 
     Returns a dict:
       - ``total``: extracted segments (from src.json; dst is used if src absent)
       - ``translated``: segments with a real translation (non-empty AND differs
-        from the original — an unchanged value means it fell back to source)
+        from the original — an unchanged value means it fell back to source).
+        Includes best-effort items still pending review.
       - ``fallback``: segments left as the original (empty translation, or equal
         to the original)
+      - ``needs_review``: best-effort items the final round accepted but that did
+        not pass validation (a subset of ``translated``); 0 when none.
       - ``by_category``: {friendly_category: count} over ALL extracted segments
 
     Robust: missing files / bad JSON -> a zeroed report, never raises.
@@ -194,10 +197,13 @@ def summarize(src_json_path, dst_json_path):
                 "Coverage: unmatched item type(s) -> 其它: "
                 + ", ".join(sorted(unknown_types)))
 
+        needs_review = len(_load(needs_review_path)) if needs_review_path else 0
+
         return {
             "total": total,
             "translated": translated,
             "fallback": fallback,
+            "needs_review": needs_review,
             "by_category": by_category,
         }
     except Exception as e:  # noqa: BLE001 — coverage must never raise
@@ -215,4 +221,7 @@ def format_line(report):
     if parts:
         body += f" — {parts}"
     body += f"; {fallback} 未翻译"
+    needs_review = report.get("needs_review", 0)
+    if needs_review:
+        body += f" · {needs_review} 需复核"
     return body

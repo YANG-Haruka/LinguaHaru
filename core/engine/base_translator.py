@@ -30,6 +30,7 @@ SRC_DEDUPED_JSON_PATH = "src_deduped.json"
 SRC_SPLIT_JSON_PATH = "src_deduped_split.json"
 RESULT_SPLIT_JSON_PATH = "dst_translated_split.json"
 FAILED_JSON_PATH = "dst_translated_failed.json"
+NEEDS_REVIEW_JSON_PATH = "dst_needs_review.json"
 RESULT_JSON_PATH = "dst_translated.json"
 MAX_PREVIOUS_TOKENS = 128
 
@@ -91,6 +92,7 @@ class DocumentTranslator:
         self.src_split_json_path = os.path.join(self.file_dir, SRC_SPLIT_JSON_PATH)
         self.result_split_json_path = os.path.join(self.file_dir, RESULT_SPLIT_JSON_PATH)
         self.failed_json_path = os.path.join(self.file_dir, FAILED_JSON_PATH)
+        self.needs_review_json_path = os.path.join(self.file_dir, NEEDS_REVIEW_JSON_PATH)
         self.result_json_path = os.path.join(self.file_dir, RESULT_JSON_PATH)
         
         # Deduplication mapping
@@ -621,7 +623,7 @@ class DocumentTranslator:
                         segment, translated_text,
                         self.src_split_json_path, self.result_split_json_path,
                         self.failed_json_path, self.src_lang, self.dst_lang,
-                        last_try=last_try
+                        last_try=last_try, needs_review_path=self.needs_review_json_path
                     )
                     if translation_results:
                         if self.num_threads == 1:
@@ -1237,7 +1239,8 @@ class DocumentTranslator:
         NEVER break a translation."""
         try:
             from core import coverage
-            report = coverage.summarize(self.src_json_path, self.result_json_path)
+            report = coverage.summarize(self.src_json_path, self.result_json_path,
+                                        self.needs_review_json_path)
             app_logger.info("Coverage: " + coverage.format_line(report))
             os.makedirs(self.result_dir, exist_ok=True)
             out_path = os.path.join(self.result_dir, "coverage.json")

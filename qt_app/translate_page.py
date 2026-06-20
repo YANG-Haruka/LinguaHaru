@@ -933,16 +933,18 @@ class TranslatePage(QStackedWidget):
         Returns None when no coverage was produced."""
         if not self._coverage:
             return None
-        total = translated = fallback = 0
+        total = translated = fallback = needs_review = 0
         by_category = {}
         for rep in self._coverage:
             total += rep.get("total", 0)
             translated += rep.get("translated", 0)
             fallback += rep.get("fallback", 0)
+            needs_review += rep.get("needs_review", 0)
             for cat, n in (rep.get("by_category") or {}).items():
                 by_category[cat] = by_category.get(cat, 0) + n
         return {"total": total, "translated": translated,
-                "fallback": fallback, "by_category": by_category}
+                "fallback": fallback, "needs_review": needs_review,
+                "by_category": by_category}
 
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
