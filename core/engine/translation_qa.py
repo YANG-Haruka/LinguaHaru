@@ -29,9 +29,37 @@ SUBTITLE_MAX_CELLS_BY_LANG = {
 }
 SUBTITLE_MAX_LINES = 2
 
+# Reading-speed ceiling (characters per second) by target language. Netflix-
+# derived: CJK count full characters (lower ceilings), Latin counts characters.
+SUBTITLE_MAX_CPS = 20.0
+SUBTITLE_MAX_CPS_BY_LANG = {"ja": 7.0, "zh": 9.0, "zh-Hant": 9.0, "zh-Hans": 9.0, "ko": 12.0}
+
 # Item "type" values that are actually subtitle cues (so width/line checks don't
 # fire on ordinary document paragraphs, which are legitimately long).
 _SUBTITLE_TYPES = {"subtitle", "srt", "vtt", "ass"}
+
+
+def _is_subtitle(item):
+    """A cue is a subtitle if it carries timing (the SRT/VTT/ASS extractors emit
+    start_time/end_time but no 'type'), or its type says so."""
+    return ("start_time" in item and "end_time" in item) \
+        or item.get("type") in _SUBTITLE_TYPES
+
+
+def _ts_seconds(ts):
+    """SRT/VTT timestamp 'HH:MM:SS,mmm' (or '.mmm') -> seconds; None if unpar.."""
+    m = re.match(r"(\d{1,2}):(\d{2}):(\d{2})[,.](\d{1,3})", str(ts or "").strip())
+    if not m:
+        return None
+    h, mm, s, ms = (int(g) for g in m.groups())
+    return h * 3600 + mm * 60 + s + ms / 1000.0
+
+
+def _subtitle_max_cps(dst_lang):
+    base = (dst_lang or "").split("-")[0]
+    return (SUBTITLE_MAX_CPS_BY_LANG.get(dst_lang)
+            or SUBTITLE_MAX_CPS_BY_LANG.get(base)
+            or SUBTITLE_MAX_CPS)
 
 
 def _subtitle_max_cells(dst_lang):
@@ -81,27 +109,45 @@ def check_length_ratio(pairs, lo=0.25, hi=4.0, min_len=8):
     return bad
 
 
-def check_subtitle_length(pairs, dst_lang=None):
+def _subtitle_cues(dst_items):
+    """[(count_src, translated_text, item)] for items that are subtitle cues."""
+    out = []
+    for it in (dst_items or []):
+        if isinstance(it, dict) and _is_subtitle(it):
+            out.append((it.get("count_src"), str(it.get("translated", "") or ""), it))
+    return out
+
+
+def check_subtitle_length(dst_items, dst_lang=None):
     """Flag subtitle cues whose translated line is too wide for the target
-    language (per-language cell budget). Only subtitle-typed items are checked."""
+    language (per-language cell budget)."""
     max_cells = _subtitle_max_cells(dst_lang)
     bad = []
-    for k, _src, dst, typ in pairs:
-        if typ not in _SUBTITLE_TYPES:
-            continue
+    for k, dst, _it in _subtitle_cues(dst_items):
         lines = (dst or "").splitlines() or [dst or ""]
         if any(_cells(line) > max_cells for line in lines):
             bad.append(k)
     return bad
 
 
-def check_subtitle_lines(pairs, max_lines=SUBTITLE_MAX_LINES):
+def check_subtitle_lines(dst_items, max_lines=SUBTITLE_MAX_LINES):
     """Flag subtitle cues that wrap to more than max_lines lines."""
+    return [k for k, dst, _it in _subtitle_cues(dst_items)
+            if len((dst or "").splitlines()) > max_lines]
+
+
+def check_subtitle_cps(dst_items, dst_lang=None):
+    """Flag subtitle cues whose translated text exceeds the language's reading
+    speed (chars per second). Needs cue timing; cues without it are skipped."""
+    max_cps = _subtitle_max_cps(dst_lang)
     bad = []
-    for k, _src, dst, typ in pairs:
-        if typ not in _SUBTITLE_TYPES:
+    for k, dst, it in _subtitle_cues(dst_items):
+        s = _ts_seconds(it.get("start_time"))
+        e = _ts_seconds(it.get("end_time"))
+        if s is None or e is None or e <= s:
             continue
-        if len((dst or "").splitlines()) > max_lines:
+        chars = len((dst or "").replace("\n", "").strip())
+        if chars and chars / (e - s) > max_cps:
             bad.append(k)
     return bad
 
@@ -129,12 +175,15 @@ def run(mode_qa, dst_items, glossary=None, dst_lang=None):
         if b:
             warns["length_ratio"] = b
     if "subtitle_length" in qa:
-        b = check_subtitle_length(pairs, dst_lang)
+        b = check_subtitle_length(dst_items, dst_lang)
         if b:
             warns["subtitle_length"] = b
-        b = check_subtitle_lines(pairs)
+        b = check_subtitle_lines(dst_items)
         if b:
             warns["subtitle_lines"] = b
+        b = check_subtitle_cps(dst_items, dst_lang)
+        if b:
+            warns["subtitle_cps"] = b
     if "glossary_terms" in qa and glossary:
         b = check_glossary_terms(pairs, glossary)
         if b:

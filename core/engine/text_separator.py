@@ -813,12 +813,18 @@ def restore_translations_from_deduped(dst_translated_split_path, count_src_to_de
             app_logger.warning(f"No deduped mapping found for count_src: {count_src}")
         
         # Create result entry
-        result.append({
+        entry = {
             "count_src": count_src,
             "type": item_type,
             "original": original_value,
             "translated": translated_value
-        })
+        }
+        # Carry subtitle cue timing through (the SRT/VTT extractors emit these);
+        # downstream QA reads them for reading-speed (CPS) checks.
+        if "start_time" in item and "end_time" in item:
+            entry["start_time"] = item["start_time"]
+            entry["end_time"] = item["end_time"]
+        result.append(entry)
     
     # Statistics
     app_logger.info(f"Restoration complete: {len(result)} items, {missing_translations} missing translations")
