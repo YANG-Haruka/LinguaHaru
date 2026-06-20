@@ -8,6 +8,10 @@ test/
 data/log/
 data/mykeys/
 data/models/
+data/tm.sqlite
+data/tm.sqlite-wal
+data/tm.sqlite-shm
+data/_bench/
 build/
 dist/
 .claude/

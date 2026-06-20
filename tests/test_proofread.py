@@ -49,7 +49,7 @@ def check(name, cond, detail=""):
 
 def fake_translate_text(segments, previous_text, model, use_online, api_key,
                         system_prompt, user_prompt, previous_prompt, glossary_prompt,
-                        glossary_terms=None, check_stop_callback=None):
+                        glossary_terms=None, check_stop_callback=None, **kwargs):
     """Fake LLM: prefix every value with [T] and echo the same keys back."""
     from core.engine.translation_checker import clean_json
     data = json.loads(clean_json(segments))

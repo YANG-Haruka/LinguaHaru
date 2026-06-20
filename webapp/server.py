@@ -580,6 +580,30 @@ async def save_glossary(payload: dict):
 # --------------------------------------------------------------------------- #
 # Translation
 # --------------------------------------------------------------------------- #
+def _merge_coverage(acc, cov):
+    """Sum two coverage reports (multi-file batches share one task_id)."""
+    if not acc:
+        return cov
+    out = dict(acc)
+    for k in ("total", "translated", "fallback", "needs_review"):
+        out[k] = (acc.get(k, 0) or 0) + (cov.get(k, 0) or 0)
+    by = dict(acc.get("by_category") or {})
+    for cat, n in (cov.get("by_category") or {}).items():
+        by[cat] = by.get(cat, 0) + n
+    out["by_category"] = by
+    return out
+
+
+def _merge_qa(acc, qa):
+    """Merge two qa warning dicts ({check: [ids/details]}) by concatenating lists."""
+    if not acc:
+        return qa
+    out = {k: list(v) for k, v in acc.items()}
+    for k, v in (qa or {}).items():
+        out[k] = out.get(k, []) + list(v or [])
+    return out
+
+
 def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                    dst_lang, glossary_name, bilingual_flags, on_progress,
                    continue_mode=False, resume_dirs=None, resume_record_id=None,
@@ -680,7 +704,8 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
             t["tokens"] = t.get("tokens", 0) + getattr(translator, "total_tokens", 0)
 
     # Translation coverage (best-effort): base_translator drops coverage.json in
-    # the result dir; stash it on the task so the SSE 'done' event can carry it.
+    # the result dir; ACCUMULATE across the batch's files (a multi-file run shares
+    # one task_id, so overwriting would only show the last file's numbers).
     try:
         cov_path = os.path.join(result_dir, "coverage.json")
         if os.path.exists(cov_path):
@@ -688,12 +713,13 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                 cov = json.load(f)
             with _TASKS_LOCK:
                 if task_id in TASKS:
-                    TASKS[task_id]["coverage"] = cov
+                    TASKS[task_id]["coverage"] = _merge_coverage(
+                        TASKS[task_id].get("coverage"), cov)
     except Exception:  # noqa: BLE001
         pass
 
     # Quality-check warnings (best-effort): base_translator drops qa.json next to
-    # coverage.json; carry it so the 'done' event can surface the problem list.
+    # coverage.json; merge across the batch's files (same task_id).
     try:
         qa_path = os.path.join(result_dir, "qa.json")
         if os.path.exists(qa_path):
@@ -702,7 +728,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
             if qa:
                 with _TASKS_LOCK:
                     if task_id in TASKS:
-                        TASKS[task_id]["qa"] = qa
+                        TASKS[task_id]["qa"] = _merge_qa(TASKS[task_id].get("qa"), qa)
     except Exception:  # noqa: BLE001
         pass
     return output_path

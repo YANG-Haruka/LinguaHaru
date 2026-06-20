@@ -103,15 +103,30 @@ _ENGINE_COLLECTS = [rapidocr_collect, faster_whisper_collect, ctranslate2_collec
                     qwen_asr_collect, transformers_collect,
                     ten_vad_collect, soundcard_collect]
 
-translator_modules = [
-    "core.translators.excel_translator",
-    "core.translators.word_translator",
-    "core.translators.ppt_translator",
-    "core.translators.pdf_translator",
-    "core.translators.subtitle_translator",
-    "core.translators.txt_translator",
-    "core.translators.md_translator",
-]
+# Translators are loaded dynamically (importlib) by extension -> class string, so
+# PyInstaller can't see them. Derive the module list straight from the source of
+# truth (backend.TRANSLATOR_MODULES) so EVERY format (epub/csv/html/odt/json/vtt/
+# ass/lrc/image/video/...) is bundled and nothing silently shows "unsupported".
+def _derive_translator_modules():
+    try:
+        from core.backend import TRANSLATOR_MODULES
+        mods = set()
+        for dotted_cls in TRANSLATOR_MODULES.values():
+            mods.add(dotted_cls.rsplit(".", 1)[0])   # strip the class name
+        return sorted(mods)
+    except Exception as e:
+        print(f"[spec] WARN: could not derive translators ({e}); using static list")
+        return [
+            "core.translators.excel_translator", "core.translators.word_translator",
+            "core.translators.ppt_translator", "core.translators.pdf_translator",
+            "core.translators.subtitle_translator", "core.translators.txt_translator",
+            "core.translators.md_translator", "core.translators.epub_translator",
+            "core.translators.csv_translator", "core.translators.extra_formats_translator",
+            "core.translators.image_translator", "core.translators.video_translator",
+        ]
+
+translator_modules = _derive_translator_modules()
+print(f"[spec] bundling {len(translator_modules)} translator modules: {translator_modules}")
 
 webapp_modules = [
     "webapp", "webapp.server", "webapp.sessions",
