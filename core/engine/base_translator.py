@@ -588,10 +588,13 @@ class DocumentTranslator:
                 all_failed_segments = processed_segments
                 app_logger.info(f"Processing {len(processed_segments)} individual lines")
         
-        # Clear failed list
+        # Clear failed list (atomic: temp + os.replace, so a crash mid-write can't
+        # truncate the file and silently drop the failed segments awaiting retry)
         with self.lock:
-            with open(self.failed_json_path, 'w', encoding='utf-8') as f:
+            tmp = self.failed_json_path + ".tmp"
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump([], f, ensure_ascii=False, indent=4)
+            os.replace(tmp, self.failed_json_path)
         
         total = len(all_failed_segments)
         retry_desc = f"{self._get_status_message('Retry')}"
@@ -853,8 +856,10 @@ class DocumentTranslator:
                         item[field] = replaced
                         changed += 1
             if changed:
-                with open(json_file_path, 'w', encoding='utf-8') as f:
+                tmp = json_file_path + ".tmp"
+                with open(tmp, 'w', encoding='utf-8') as f:
                     json.dump(data, f, ensure_ascii=False, indent=4)
+                os.replace(tmp, json_file_path)
                 app_logger.info(f"Applied {phase} rules to {changed} items")
         except Exception as e:
             app_logger.warning(f"Failed to apply {phase} rules: {e}")

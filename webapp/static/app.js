@@ -16,9 +16,13 @@ const EICON = {
   inbox: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13l3-7h12l3 7"/><path d="M3 13v5a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-5"/><path d="M3 13h5l1.5 2.5h5L21 13"/></svg>',
   files: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h5l4 4v11a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/><path d="M5 7v12a1 1 0 0 0 1 1h8"/></svg>',
 };
+const _esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+// icon is a trusted SVG constant; title/sub are text (sub may be a server error
+// message) so they are HTML-escaped to avoid injection.
 const emptyState = (icon, title, sub) =>
   `<div class="empty-state"><div class="es-icon">${icon}</div>` +
-  `<div class="es-title">${title}</div><div class="es-sub">${sub}</div></div>`;
+  `<div class="es-title">${_esc(title)}</div><div class="es-sub">${_esc(sub)}</div></div>`;
 function tableSkeleton(t, n) {
   t.innerHTML = "";
   for (let i = 0; i < (n || 5); i++)
@@ -369,8 +373,15 @@ function renderIfaceGroup(id, items) {
   for (const it of items) {
     const card = document.createElement("div");
     card.className = "iface-card" + (it.name === _ifaceActive ? " active" : "");
-    card.innerHTML = `<div class="if-name">${it.name}</div><div class="if-sub mono">${it.sub || ""}</div>` +
-      (it.name === _ifaceActive ? '<span class="if-badge">✓</span>' : "");
+    // Build with textContent (NOT innerHTML) — the interface name/model are
+    // user-entered strings and would otherwise allow stored XSS.
+    const nameEl = document.createElement("div"); nameEl.className = "if-name"; nameEl.textContent = it.name;
+    const subEl = document.createElement("div"); subEl.className = "if-sub mono"; subEl.textContent = it.sub || "";
+    card.append(nameEl, subEl);
+    if (it.name === _ifaceActive) {
+      const badge = document.createElement("span"); badge.className = "if-badge"; badge.textContent = "✓";
+      card.append(badge);
+    }
     card.onclick = () => activateIface(it.name, it.online);
     // Online: full config. Offline/local: open config too so its thread count
     // can be set (default 4); other fields are harmless for local models.
@@ -683,7 +694,8 @@ async function checkUpdate() {
   try {
     const u = await api("/api/update-check");
     if (u && u.update) {
-      $("update-text").textContent = `发现新版本 ${u.latest}（当前 ${u.current}）`;
+      $("update-text").textContent = `${_label("Update Available", "发现新版本")} ${u.latest}` +
+        `（${_label("Current Version", "当前")} ${u.current}）`;
       $("update-link").href = u.url;
       $("update-banner").hidden = false;
     }
@@ -1187,7 +1199,8 @@ function renderModules() {
   const t = $("modules-table");
   t.innerHTML = "";
   const head = document.createElement("tr");
-  head.innerHTML = "<th>模块</th><th>模型</th><th>状态</th><th>操作</th>";
+  head.innerHTML = `<th>${_label("Plugin", "模块")}</th><th>${_label("Model", "模型")}</th>` +
+    `<th>${_label("Status", "状态")}</th><th>${_label("Actions", "操作")}</th>`;
   t.appendChild(head);
   for (const m of BOOT.modules) {
     const tr = document.createElement("tr");
@@ -2932,4 +2945,10 @@ async function quickSpeak() {
   } catch (e) { $("quick-status").textContent = "朗读失败：" + (e.message || "").slice(0, 120); }
 }
 
-boot().catch((e) => { document.body.innerHTML = "<pre style='padding:24px'>启动失败: " + e.message + "</pre>"; });
+boot().catch((e) => {
+  const pre = document.createElement("pre");
+  pre.style.padding = "24px";
+  pre.textContent = "启动失败: " + (e && e.message ? e.message : e);
+  document.body.innerHTML = "";
+  document.body.appendChild(pre);
+});

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260621C" />
+  <link rel="stylesheet" href="/static/style.css?v=20260621D" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -213,11 +213,11 @@
       <div class="segmented" id="translate-mode" role="tablist">
         <button class="seg active" data-sub="doc" role="tab">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l2-2h5l2 2h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>
-          文件翻译
+          <span data-i18n="File Translation">文件翻译</span>
         </button>
         <button class="seg" data-sub="live" role="tab">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
-          实时语音
+          <span data-i18n="Real-Time Voice">实时语音</span>
         </button>
       </div>
 
@@ -306,7 +306,7 @@
         <div class="actions">
           <button id="translate-btn" class="primary">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
-            开始翻译
+            <span data-i18n="Start Translation">开始翻译</span>
           </button>
         </div>
         </div><!-- /translate-form -->
@@ -738,6 +738,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260621C"></script>
+  <script src="/static/app.js?v=20260621D"></script>
 </body>
 </html>

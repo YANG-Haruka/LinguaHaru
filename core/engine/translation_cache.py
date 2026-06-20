@@ -140,6 +140,8 @@ def put_many(pairs, sig):
             and d.strip() != s.strip()]
     if not rows:
         return
+    global _puts_since_prune
+    do_prune = False
     try:
         conn = _get_conn()
         with _LOCK:
@@ -148,14 +150,17 @@ def put_many(pairs, sig):
                 "ON CONFLICT(key) DO UPDATE SET dst=excluded.dst, used_at=excluded.used_at",
                 rows)
             conn.commit()
+            # Counter lives under the lock so concurrent workers don't both trip
+            # the threshold; prune() runs AFTER releasing (it re-acquires _LOCK).
+            _puts_since_prune += 1
+            if _puts_since_prune >= _PRUNE_EVERY:
+                _puts_since_prune = 0
+                do_prune = True
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"TM put_many failed: {e}")
         return
     # Amortized LRU cap so the DB can't grow unbounded (prune was never called).
-    global _puts_since_prune
-    _puts_since_prune += 1
-    if _puts_since_prune >= _PRUNE_EVERY:
-        _puts_since_prune = 0
+    if do_prune:
         prune()
 
 

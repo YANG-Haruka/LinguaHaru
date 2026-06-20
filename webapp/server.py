@@ -49,6 +49,27 @@ if getattr(sys, "frozen", False):
 else:
     STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
     _ASSETS_DIR = os.path.join(backend.REPO_ROOT, "assets")
+
+# Web neural-VAD assets (onnxruntime WASM + Silero ONNX + JS loaders) must live in
+# a WRITABLE dir: in a frozen build STATIC_DIR is under _MEIPASS, which is read-only
+# when the app is installed to a protected location, so /api/ensure-web-vad's
+# on-demand download would fail. Frozen -> use a runtime dir under data/ and seed it
+# once from the bundled loaders/models; source run -> the writable static/vad.
+if getattr(sys, "frozen", False):
+    from core.paths import DATA_DIR as _DATA_DIR
+    VAD_DIR = os.path.join(_DATA_DIR, "web_vad")
+    _bundled_vad = os.path.join(STATIC_DIR, "vad")
+    try:
+        os.makedirs(VAD_DIR, exist_ok=True)
+        if os.path.isdir(_bundled_vad):
+            for _f in os.listdir(_bundled_vad):
+                _dst = os.path.join(VAD_DIR, _f)
+                if not os.path.exists(_dst):
+                    shutil.copy2(os.path.join(_bundled_vad, _f), _dst)
+    except Exception:  # noqa: BLE001 — fall back to the (read-only) bundle dir
+        VAD_DIR = os.path.join(STATIC_DIR, "vad")
+else:
+    VAD_DIR = os.path.join(STATIC_DIR, "vad")
 # Uploads must live OUTSIDE the translation temp dir: DocumentTranslator.process()
 # wipes temp/ on a fresh run, which would delete the file being translated.
 # DATA_DIR is the writable runtime data root (next to the exe in a frozen build),
@@ -1821,7 +1842,7 @@ def ensure_web_vad():
     into static/vad on first use, so they're self-hosted (same-origin) and the
     page's COEP:require-corp doesn't block them. Small JS loaders are shipped."""
     import urllib.request
-    vad_dir = os.path.join(STATIC_DIR, "vad")
+    vad_dir = VAD_DIR
     os.makedirs(vad_dir, exist_ok=True)
     assets = {
         "ort-wasm-simd-threaded.wasm":
@@ -2037,6 +2058,11 @@ class _NoCacheStatic(StaticFiles):
         return resp
 
 
+# Mount the writable VAD dir at /static/vad BEFORE /static so it takes precedence
+# (Starlette matches mounts in order). Frozen builds serve the seeded/downloaded
+# neural-VAD assets from data/web_vad instead of the read-only bundle.
+if os.path.isdir(VAD_DIR):
+    app.mount("/static/vad", _NoCacheStatic(directory=VAD_DIR), name="static-vad")
 app.mount("/static", _NoCacheStatic(directory=STATIC_DIR), name="static")
 
 # Serve assets/ (file-type SVG icons, images) so the Web UI can reuse the same
