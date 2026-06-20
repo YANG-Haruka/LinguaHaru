@@ -886,6 +886,7 @@ def _get_animewhisper(model_name):
 # genuinely-repeated speech this model is meant to capture (moaning/aizuchi), so
 # we leave it off; max_new_tokens bounds runaway and the post cleaner trims it.
 _ANIME_GEN_KW = {"language": "Japanese", "max_new_tokens": 256}
+_ANIME_BATCH = 8   # VAD segments per pipeline batch (GPU throughput vs resume granularity)
 
 
 def _animewhisper_text(result):
@@ -934,27 +935,42 @@ def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, 
     texts = [done.get(k) for k in keys]
     total = len(segments) or 1
 
+    # Batch pending clips through the HF pipeline (whisper-large-v2 sized): GPU
+    # utilization is far higher feeding a list than one short clip at a time. Group
+    # so a Stop/checkpoint/progress still happens every _ANIME_BATCH segments
+    # (resumability stays fine-grained instead of all-or-nothing per file).
+    pending = [i for i, t in enumerate(texts) if t is None]
     ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
     try:
         first = True
-        for i, (s_ms, e_ms) in enumerate(segments):
-            if texts[i] is None:
-                if check_stop:
-                    check_stop()
+        for b in range(0, len(pending), _ANIME_BATCH):
+            if check_stop:
+                check_stop()
+            group = pending[b:b + _ANIME_BATCH]
+            clips, idx_with_audio = [], []
+            for i in group:
+                s_ms, e_ms = segments[i]
                 clip = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
                 if clip.size == 0:
                     texts[i] = ""
                 else:
-                    _bt = time.time()
-                    res = pipe(clip, generate_kwargs=_ANIME_GEN_KW)
-                    texts[i] = _clean_asr_text(_animewhisper_text(res))
-                    if first:
-                        first = False
-                        app_logger.info(f"anime-whisper first segment: "
-                                        f"{(e_ms - s_ms) / 1000:.0f}s audio in {time.time() - _bt:.1f}s")
-                if ckpt_f:
+                    clips.append(clip)
+                    idx_with_audio.append(i)
+            if clips:
+                _bt = time.time()
+                res = pipe(clips, generate_kwargs=_ANIME_GEN_KW, batch_size=len(clips))
+                # A list input yields a list of results, in order.
+                res = res if isinstance(res, list) else [res]
+                for i, r in zip(idx_with_audio, res):
+                    texts[i] = _clean_asr_text(_animewhisper_text(r))
+                if first:
+                    first = False
+                    app_logger.info(f"anime-whisper first batch: {len(clips)} clips "
+                                    f"in {time.time() - _bt:.1f}s")
+            if ckpt_f:
+                for i in group:
                     ckpt_f.write(json.dumps([keys[i][0], keys[i][1], texts[i]]) + "\n")
-                    ckpt_f.flush()
+                ckpt_f.flush()
             if progress_callback:
                 got = sum(1 for t in texts if t is not None)
                 progress_callback(min(1.0, got / total),
