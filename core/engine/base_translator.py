@@ -1100,6 +1100,11 @@ class DocumentTranslator:
                 app_logger.info("Split files not found, splitting content...")
                 self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Splitting text')}...")
                 split_text_by_token_limit(self.src_deduped_json_path)
+                # Re-apply the same pre-translation steps the fresh path does, so a
+                # resume that rebuilt the split produces identical output (the
+                # replace_before rules + auto-glossary were otherwise skipped).
+                self._apply_text_rules(self.src_split_json_path, "replace_before")
+                self._maybe_extract_glossary(deduped_data, progress_callback)
 
             # Create result file if missing
             if not os.path.exists(self.result_split_json_path):
