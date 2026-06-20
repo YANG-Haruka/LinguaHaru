@@ -62,8 +62,11 @@ def should_translate_enhanced(text):
 # The {index -> original-text} map is persisted per line in structure.json and
 # restored on write-back, so the round-trip is lossless.
 
-_MD_SENT_OPEN = ""
-_MD_SENT_CLOSE = ""
+# DISJOINT from placeholder_mask U+E000/E001 (a line can hold both an MD
+# sentinel and a machine-token sentinel; sharing delimiters made them collide
+# and _unmask_reply restored the wrong one, losing inline code/URLs).
+_MD_SENT_OPEN = ""
+_MD_SENT_CLOSE = ""
 
 
 def _md_sentinel(i):
@@ -172,10 +175,13 @@ def extract_md_content_to_json(file_path, temp_dir):
     # Counter
     count = 0
 
-    # Code block tracker (records the opening fence so ``` / ~~~ are matched
-    # by their own marker, per CommonMark).
+    # Code block tracker. CommonMark: a fence is >=3 of the SAME char (` or ~),
+    # closed only by a line of the same char with length >= the opener and NO
+    # info string. Track char+length, not a 3-char prefix (else a 4-backtick
+    # block is closed early by an inner ``` line, corrupting the document).
     in_code_block = False
-    fence_marker = None
+    fence_char = None
+    fence_len = 0
 
     # YAML/TOML front-matter: a leading '---' (or '+++') fenced block at the very
     # top is metadata, not prose — translating it corrupts the keys. Find its
@@ -203,9 +209,11 @@ def extract_md_content_to_json(file_path, temp_dir):
 
         # Handle code blocks — ``` or ~~~ (CommonMark fenced code).
         stripped = line.strip()
-        if not in_code_block and (stripped.startswith("```") or stripped.startswith("~~~")):
+        _open = re.match(r"^(`{3,}|~{3,})", stripped) if not in_code_block else None
+        if _open:
             in_code_block = True
-            fence_marker = stripped[:3]
+            fence_char = _open.group(1)[0]
+            fence_len = len(_open.group(1))
             structure_items.append({
                 "index": position_index,
                 "type": "code_marker",
@@ -214,9 +222,12 @@ def extract_md_content_to_json(file_path, temp_dir):
             })
             position_index += 1
             continue
-        if in_code_block and stripped.startswith(fence_marker):
+        # Close only on a BARE line of the same fence char, length >= the opener
+        # (no info string allowed on a closing fence).
+        if in_code_block and re.match(r"^" + re.escape(fence_char) + r"{" + str(fence_len) + r",}\s*$", stripped):
             in_code_block = False
-            fence_marker = None
+            fence_char = None
+            fence_len = 0
             structure_items.append({
                 "index": position_index,
                 "type": "code_marker",

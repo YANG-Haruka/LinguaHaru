@@ -161,12 +161,29 @@ def _machine_tokens_preserved(original, translated):
     return have == need
 
 
+# Markdown inline-mask sentinels (md_translation_pipeline uses U+E002/U+E003 to
+# protect inline code / links / URLs). They're still present at validation time
+# (the MD writer unmasks only at write-back), so a dropped/duplicated one means
+# inline code/URLs would be lost — treat as a structural break.
+_MD_SENTINEL_RE = re.compile("\\d+")
+
+
+def _md_sentinels_preserved(original, translated):
+    from collections import Counter
+    need = Counter(_MD_SENTINEL_RE.findall(original))
+    if not need:
+        return True
+    return Counter(_MD_SENTINEL_RE.findall(translated)) == need
+
+
 def _structural_intact(original, translated):
     """Hard structural integrity: placeholders + formula/field/line markers +
-    machine tokens all match exactly. A failure here must NEVER be shipped (even
-    as best-effort) — the document would be corrupted; fall back to source."""
+    machine tokens + Markdown inline-mask sentinels all match exactly. A failure
+    here must NEVER be shipped (even as best-effort) — the document would be
+    corrupted; fall back to source."""
     return _placeholders_preserved(original, translated) and \
-        _machine_tokens_preserved(original, translated)
+        _machine_tokens_preserved(original, translated) and \
+        _md_sentinels_preserved(original, translated)
 
 
 def _is_repetition_degenerate(original, translated):
