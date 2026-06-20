@@ -34,6 +34,26 @@ RESULT_DIR = os.path.join(WORK_DIR, "result")
 LOG_DIR = os.path.join(WORK_DIR, "log")
 
 T = "[T]"
+
+
+def _prepare_sandbox():
+    """Reset the test sandbox and point the proofread engine's storage at it.
+    Used by both the __main__ runner and the pytest fixture below."""
+    shutil.rmtree(WORK_DIR, ignore_errors=True)
+    for d in (WORK_DIR, TEMP_DIR, RESULT_DIR, LOG_DIR):
+        os.makedirs(d, exist_ok=True)
+    backend.get_custom_paths = lambda: (TEMP_DIR, RESULT_DIR, LOG_DIR)
+
+
+try:   # under pytest: run the same setup before each test (also makes it green there)
+    import pytest
+
+    @pytest.fixture(autouse=True)
+    def _pytest_sandbox():
+        _prepare_sandbox()
+        yield
+except ImportError:
+    pass
 EDIT_MARK = "EDITED-BY-PROOFREADER"
 
 PASSED, FAILED = [], []
@@ -193,12 +213,7 @@ def test_pdf_excluded():
 
 
 def main():
-    shutil.rmtree(WORK_DIR, ignore_errors=True)
-    for d in (WORK_DIR, TEMP_DIR, RESULT_DIR, LOG_DIR):
-        os.makedirs(d, exist_ok=True)
-
-    # Point the proofread engine's paths at the test sandbox (no config churn).
-    backend.get_custom_paths = lambda: (TEMP_DIR, RESULT_DIR, LOG_DIR)
+    _prepare_sandbox()
 
     # NOTE: a fresh translation clears the whole temp dir, so each format must
     # finish its full proofread cycle before the next one starts.

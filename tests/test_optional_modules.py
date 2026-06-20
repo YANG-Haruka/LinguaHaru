@@ -14,7 +14,20 @@ os.chdir(REPO_ROOT)
 os.environ.setdefault("LINGUAHARU_WHISPER_MODEL", "tiny")  # small download for tests
 
 WORK_DIR = os.path.join(REPO_ROOT, "tests", "_roundtrip_work", "optional")
+# Create at import so the round-trips run under pytest too (not just __main__).
+os.makedirs(WORK_DIR, exist_ok=True)
 T = "[T]"
+
+try:   # under pytest: install the fake LLM before each test (as __main__ does)
+    import pytest
+
+    @pytest.fixture(autouse=True)
+    def _pytest_fake_llm():
+        install_fake_llm()
+        os.makedirs(WORK_DIR, exist_ok=True)
+        yield
+except ImportError:
+    pass
 
 
 def install_fake_llm():
