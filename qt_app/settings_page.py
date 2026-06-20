@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, CaptionLabel,
     CardWidget, PushButton, LineEdit, FluentIcon, MessageBox, ComboBox,
-    ToolTipFilter, ToolTipPosition,
+    ToolTipFilter, ToolTipPosition, MessageBoxBase, SpinBox, DoubleSpinBox,
 )
 
 from core import backend
@@ -117,6 +117,73 @@ class _SubSection(QWidget):
 
     def set_title(self, title):
         self._title.setText(title)
+
+
+class _ModelParamsDialog(MessageBoxBase):
+    """Per-model STT parameter editor. One control per spec (switch/spin), a
+    Reset-to-defaults link, and Save. Title shows the model description."""
+
+    def __init__(self, label, specs, current, lang, parent=None):
+        super().__init__(parent)
+        self._specs = specs
+        self._lang = lang
+        self._controls = {}   # key -> widget
+
+        self.titleLabel = StrongBodyLabel(tr("Parameters", lang))
+        self.viewLayout.addWidget(self.titleLabel)
+        self.viewLayout.addWidget(CaptionLabel(label))
+
+        form = QFormLayout()
+        form.setContentsMargins(0, 8, 0, 4)
+        form.setSpacing(10)
+        for s in specs:
+            w = self._make_control(s, current.get(s["key"], s["default"]))
+            self._controls[s["key"]] = w
+            form.addRow(BodyLabel(tr(s["label"], lang)), w)
+        holder = QWidget()
+        holder.setLayout(form)
+        self.viewLayout.addWidget(holder)
+
+        reset = PushButton(tr("Reset to defaults", lang))
+        reset.clicked.connect(self._reset)
+        self.viewLayout.addWidget(reset)
+
+        self.yesButton.setText(tr("Save", lang))
+        self.cancelButton.setText(tr("Cancel", lang))
+        self.widget.setMinimumWidth(440)
+
+    def _make_control(self, spec, value):
+        if spec["type"] == "bool":
+            sw = SwitchButton()
+            sw.setChecked(bool(value))
+            return sw
+        if spec["type"] == "int":
+            sp = SpinBox()
+            sp.setRange(int(spec["min"]), int(spec["max"]))
+            sp.setSingleStep(int(spec.get("step", 1)))
+            sp.setValue(int(value))
+            return sp
+        sp = DoubleSpinBox()
+        sp.setRange(float(spec["min"]), float(spec["max"]))
+        sp.setSingleStep(float(spec.get("step", 0.05)))
+        sp.setDecimals(2)
+        sp.setValue(float(value))
+        return sp
+
+    def _reset(self):
+        for s in self._specs:
+            w = self._controls[s["key"]]
+            if s["type"] == "bool":
+                w.setChecked(bool(s["default"]))
+            else:
+                w.setValue(s["default"])
+
+    def values(self):
+        out = {}
+        for s in self._specs:
+            w = self._controls[s["key"]]
+            out[s["key"]] = w.isChecked() if s["type"] == "bool" else w.value()
+        return out
 
 
 class SettingsPage(ScrollArea):
@@ -680,7 +747,7 @@ class SettingsPage(ScrollArea):
         h = QHBoxLayout(row)
         h.setContentsMargins(10, 7, 10, 7)
         h.setSpacing(8)
-        h.addWidget(StrongBodyLabel(st["label"]))
+        h.addWidget(StrongBodyLabel(tr(st["label"], self._lang)))
         for t in st.get("tags", []):
             h.addWidget(self._tag_chip(t))
         h.addStretch(1)
@@ -688,6 +755,14 @@ class SettingsPage(ScrollArea):
         if st.get("vram"):
             size = f"{size} · {st['vram']}"
         h.addWidget(CaptionLabel(size))
+        # Per-model parameter entry (between capacity and Install/Delete) — only
+        # for models that expose tunable params (STT models; OCR has none).
+        from core.pipelines.video_translation_pipeline import stt_param_specs
+        if stt_param_specs(st["id"]):
+            pbtn = PushButton(tr("Parameters", self._lang))
+            pbtn.clicked.connect(
+                lambda _=False, i=st["id"], lbl=tr(st["label"], self._lang): self._edit_model_params(i, lbl))
+            h.addWidget(pbtn)
         if not st["downloaded"]:
             b = PushButton(tr("Install", self._lang))
             b.clicked.connect(lambda _=False, p=plugin, i=st["id"], btn=b: self._install_model(p, i, btn))
@@ -699,6 +774,19 @@ class SettingsPage(ScrollArea):
         row.setStyleSheet(
             "#modelRow{border:1px solid rgba(128,128,128,0.28);border-radius:8px;}")
         return row
+
+    def _edit_model_params(self, model_id, label):
+        from core.pipelines.video_translation_pipeline import (
+            stt_param_specs, get_stt_params, set_stt_params)
+        specs = stt_param_specs(model_id)
+        if not specs:
+            return
+        dlg = _ModelParamsDialog(label, specs, get_stt_params(model_id),
+                                 self._lang, self.window())
+        if dlg.exec():
+            set_stt_params(model_id, dlg.values())
+            self._toast(tr("Model Management", self._lang),
+                        tr("Parameters saved", self._lang))
 
     def _install_model(self, plugin, model_id, btn):
         from qt_app.worker import ModelDownloadWorker

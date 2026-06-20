@@ -426,7 +426,7 @@ class TranslatePage(QStackedWidget):
         self._stt_ids = [s["id"] for s in states]
         self.stt_combo.blockSignals(True)
         self.stt_combo.clear()
-        self.stt_combo.addItems([s["label"] for s in states])
+        self.stt_combo.addItems([tr(s["label"], self._lang) for s in states])
         sel = get_selected_stt_model()
         if sel in self._stt_ids:
             self.stt_combo.setCurrentIndex(self._stt_ids.index(sel))
