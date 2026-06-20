@@ -353,7 +353,7 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
     # word_timestamps enables hallucination_silence_threshold: faster-whisper then
     # skips long silences where it would otherwise emit hallucinated text — exactly
     # the gasps/pauses case. (The threshold is a no-op without word timestamps.)
-    _wkw = dict(language=language, vad_filter=True,
+    _wkw = dict(language=language, vad_filter=not _stt_disable_vad(),
                 condition_on_previous_text=False, no_repeat_ngram_size=4,
                 no_speech_threshold=0.6, compression_ratio_threshold=2.4,
                 word_timestamps=True, hallucination_silence_threshold=2.0)
@@ -537,6 +537,16 @@ def _vad_params():
     return thr, min_ms
 
 
+def _stt_disable_vad():
+    """Config flag: skip external VAD and window the whole file (singing/BGM)."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("stt_disable_vad", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _ten_vad_segments(audio_i16, sr=16000, check_stop=None):
     """Segment 16 kHz mono int16 audio into [[s_ms, e_ms], ...] speech regions with
     TEN-VAD. Returns None if ten_vad is unavailable / errors, so the caller falls
@@ -600,8 +610,14 @@ def _segment_speech(wav_path, audio_i16, sr, check_stop=None):
     """Speech segments [[s_ms, e_ms], ...] for the external-VAD engines. Prefers
     TEN-VAD (noise-robust neural VAD, shared with real-time); on a None OR EMPTY
     result falls back to fsmn-vad; if that is also empty, to overlapping windows
-    (never one whole-file segment)."""
+    (never one whole-file segment).
+
+    Config stt_disable_vad bypasses both VADs and uses overlapping windows over
+    the whole file — for sung/BGM-heavy audio where VAD wrongly drops vocals."""
     total_ms = len(audio_i16) / sr * 1000.0
+    if _stt_disable_vad():
+        app_logger.info("External VAD disabled (config); using overlapping windows")
+        return _window_segments(total_ms)
     segs = _ten_vad_segments(audio_i16, sr, check_stop)
     if segs:
         app_logger.info(f"TEN-VAD: {len(segs)} speech segments")
