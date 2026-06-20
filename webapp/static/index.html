@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260620A" />
+  <link rel="stylesheet" href="/static/style.css?v=20260620B" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -346,6 +346,10 @@
             <span class="cov-label" data-i18n="Translation Coverage">翻译覆盖</span>
             <span id="coverage-body" class="cov-body"></span>
           </div>
+          <details id="qa-panel" class="qa-panel" hidden>
+            <summary id="qa-head"></summary>
+            <div id="qa-body" class="qa-body"></div>
+          </details>
         </div>
         </div><!-- /translate-run -->
         <div id="status" class="muted"></div>
@@ -715,6 +719,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260620D"></script>
+  <script src="/static/app.js?v=20260620E"></script>
 </body>
 </html>

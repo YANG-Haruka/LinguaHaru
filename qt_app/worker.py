@@ -298,6 +298,7 @@ class TranslationWorker(QThread):
         self._paused = False
         # Coverage report for this file (filled after process(); read by the page)
         self.coverage = None
+        self.qa = None        # quality-check warnings (qa.json), read by the page
 
     def request_stop(self):
         self._stop = True
@@ -430,6 +431,15 @@ class TranslationWorker(QThread):
                 with open(cov_path, "r", encoding="utf-8") as f:
                     self.coverage = json.load(f)
         except Exception:  # noqa: BLE001 — coverage is non-essential
+            pass
+        # Quality-check warnings (best-effort): qa.json next to coverage.json.
+        try:
+            qa_path = os.path.join(result_dir, "qa.json")
+            if os.path.exists(qa_path):
+                with open(qa_path, "r", encoding="utf-8") as f:
+                    qa = json.load(f)
+                self.qa = qa or None
+        except Exception:  # noqa: BLE001
             pass
 
         total_tokens = getattr(translator, "total_tokens", 0)

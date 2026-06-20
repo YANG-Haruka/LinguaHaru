@@ -831,6 +831,7 @@ function listenProgress(taskId) {
       $("download-link").href = "/api/download/" + taskId;
       $("result").hidden = false; setStatus("翻译完成");
       renderCoverage(d.coverage);
+      renderQa(d.qa);
       showThanks(d.tokens, d.cost);
     } else if (d.status === "error") {
       es.close(); stopElapsed(); setRunState("error"); setStatus("错误: " + (d.error || "未知错误"));
@@ -860,6 +861,45 @@ function renderCoverage(cov) {
   parts.push(`${cov.fallback || 0} ${_label("Untranslated", "未翻译")}`);
   if (cov.needs_review) parts.push(`${cov.needs_review} ${_label("Needs review", "需复核")}`);
   $("coverage-body").textContent = parts.join(" · ");
+  box.hidden = false;
+}
+
+// Friendly label per QA check key.
+const _QA_LABELS = {
+  placeholders: ["Placeholder mismatch", "占位符不一致"],
+  length_ratio: ["Length anomaly", "长度异常"],
+  subtitle_length: ["Subtitle line too wide", "字幕行过宽"],
+  subtitle_lines: ["Subtitle >2 lines", "字幕超过2行"],
+  subtitle_cps: ["Reading speed too fast", "阅读速度过快"],
+  glossary_terms: ["Glossary term not applied", "术语未应用"],
+};
+
+// Collapsible quality-warning panel: each failed check + count, expandable to
+// the offending segment ids / glossary terms. Hidden when there are no warnings.
+function renderQa(qa) {
+  const box = $("qa-panel");
+  if (!box) return;
+  const keys = qa ? Object.keys(qa).filter((k) => (qa[k] || []).length) : [];
+  if (!keys.length) { box.hidden = true; return; }
+  const total = keys.reduce((n, k) => n + qa[k].length, 0);
+  const head = $("qa-head");
+  head.textContent = `${_label("Quality warnings", "质量提示")} (${total})`;
+  const body = $("qa-body");
+  body.replaceChildren();
+  for (const k of keys) {
+    const items = qa[k];
+    const row = document.createElement("div"); row.className = "qa-row";
+    const lbl = _label(_QA_LABELS[k]?.[0] || k, _QA_LABELS[k]?.[1] || k);
+    let detail;
+    if (k === "glossary_terms") {   // [{id, term, expected}]
+      detail = items.slice(0, 12).map((it) => `#${it.id} ${it.term}→${it.expected}`).join("、");
+    } else {                         // [count_src ...]
+      detail = items.slice(0, 30).map((id) => `#${id}`).join(" ");
+    }
+    if (items.length > (k === "glossary_terms" ? 12 : 30)) detail += " …";
+    row.innerHTML = `<span class="qa-k">${lbl} <b>${items.length}</b></span><span class="qa-d">${detail}</span>`;
+    body.appendChild(row);
+  }
   box.hidden = false;
 }
 

@@ -57,6 +57,7 @@ class TranslatePage(QStackedWidget):
         self._results = []          # successful output paths
         self._file_results = []     # (name, status, detail)
         self._coverage = []         # per-file coverage reports
+        self._qa = []
         self._run_stamp = None      # per-run output subfolder (start datetime)
         self._running = False
         self._total = 0
@@ -506,6 +507,7 @@ class TranslatePage(QStackedWidget):
         self._results = []
         self._file_results = []
         self._coverage = []         # per-file coverage reports
+        self._qa = []
         self._workers = []
         self._progress = {}
         self._tokens = 0
@@ -670,6 +672,9 @@ class TranslatePage(QStackedWidget):
         cov = getattr(worker, "coverage", None)
         if cov:
             self._coverage.append(cov)
+        qa = getattr(worker, "qa", None)
+        if qa:
+            self._qa.append(qa)
         self._exact_tokens += getattr(worker, "total_tokens", 0) or 0
         self._prompt_tokens += getattr(worker, "prompt_tokens", 0) or 0
         self._completion_tokens += getattr(worker, "completion_tokens", 0) or 0
@@ -782,6 +787,7 @@ class TranslatePage(QStackedWidget):
         self._results = []
         self._file_results = []
         self._coverage = []
+        self._qa = []
         self._workers = []
         self._progress = {}
         self._tokens = 0
@@ -824,6 +830,7 @@ class TranslatePage(QStackedWidget):
         self._results = []
         self._file_results = []
         self._coverage = []
+        self._qa = []
         self._workers = []
         self._progress = {}
         self._tokens = 0
@@ -910,7 +917,8 @@ class TranslatePage(QStackedWidget):
         # Stay on the dashboard so the metrics (speed/tokens/time) remain visible;
         # just show a "done" banner + Open-folder / New-translation buttons.
         self.dashboard.show_done(summary, can_open=bool(self._results),
-                                 coverage=self._aggregate_coverage())
+                                 coverage=self._aggregate_coverage(),
+                                 qa=self._aggregate_qa())
         # A user-initiated stop is not an error; only real failures flag the popup.
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
         # Thank-you + token/cost summary for the finished (long) translation run.
@@ -927,6 +935,18 @@ class TranslatePage(QStackedWidget):
             from qt_app.thanks import show_thanks
             show_thanks(self.window(), self._lang, self._exact_tokens,
                         cost_amount, cost_symbol, cost_currency)
+
+    def _aggregate_qa(self):
+        """Merge per-file qa warning dicts into {check: total_count}. Returns None
+        when there are no warnings."""
+        if not self._qa:
+            return None
+        merged = {}
+        for rep in self._qa:
+            for k, v in (rep or {}).items():
+                if v:
+                    merged[k] = merged.get(k, 0) + len(v)
+        return merged or None
 
     def _aggregate_coverage(self):
         """Merge per-file coverage reports into one (summed totals + categories).

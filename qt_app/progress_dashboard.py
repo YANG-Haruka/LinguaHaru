@@ -129,6 +129,12 @@ class ProgressDashboard(QWidget):
         self.coverage.setWordWrap(True)
         self.coverage.hide()
         layout.addWidget(self.coverage)
+        # Quality-check warnings (shown only after completion, if any).
+        self.qa = CaptionLabel("")
+        self.qa.setWordWrap(True)
+        self.qa.setStyleSheet("color:#d08700;")
+        self.qa.hide()
+        layout.addWidget(self.qa)
         layout.addStretch(1)
 
         self._cards = {
@@ -191,7 +197,14 @@ class ProgressDashboard(QWidget):
             if self._start_time:
                 self._clock.start()
 
-    def show_done(self, summary, can_open, coverage=None):
+    # QA check key -> i18n label key.
+    _QA_LABELS = {
+        "placeholders": "Placeholder mismatch", "length_ratio": "Length anomaly",
+        "subtitle_length": "Subtitle line too wide", "subtitle_lines": "Subtitle >2 lines",
+        "subtitle_cps": "Reading speed too fast", "glossary_terms": "Glossary term not applied",
+    }
+
+    def show_done(self, summary, can_open, coverage=None, qa=None):
         """Finished: keep all metrics on screen, swap Stop for Open/New."""
         self._clock.stop()
         self.pause_btn.hide()
@@ -203,6 +216,23 @@ class ProgressDashboard(QWidget):
         if summary:
             self.status.setText("✓ " + summary)
         self._show_coverage(coverage)
+        self._show_qa(qa)
+
+    def _show_qa(self, qa):
+        """One-line quality-warning summary: '质量提示: 占位符不一致 3 · 阅读速度过快 12'."""
+        if not qa:
+            self.qa.hide()
+            return
+        parts = []
+        for k, n in qa.items():
+            cnt = len(n) if isinstance(n, (list, dict)) else n
+            if cnt:
+                parts.append(f"{tr(self._QA_LABELS.get(k, k), self._lang)} {cnt}")
+        if not parts:
+            self.qa.hide()
+            return
+        self.qa.setText(f"{tr('Quality warnings', self._lang)}: " + " · ".join(parts))
+        self.qa.show()
 
     def _show_coverage(self, coverage):
         """Compact coverage line: '翻译覆盖：正文 80 · 表格 20 · 0 未翻译'."""

@@ -691,6 +691,20 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                     TASKS[task_id]["coverage"] = cov
     except Exception:  # noqa: BLE001
         pass
+
+    # Quality-check warnings (best-effort): base_translator drops qa.json next to
+    # coverage.json; carry it so the 'done' event can surface the problem list.
+    try:
+        qa_path = os.path.join(result_dir, "qa.json")
+        if os.path.exists(qa_path):
+            with open(qa_path, "r", encoding="utf-8") as f:
+                qa = json.load(f)
+            if qa:
+                with _TASKS_LOCK:
+                    if task_id in TASKS:
+                        TASKS[task_id]["qa"] = qa
+    except Exception:  # noqa: BLE001
+        pass
     return output_path
 
 
@@ -943,6 +957,8 @@ def progress(task_id: str, request: Request):
                 payload["paused"] = bool(state.get("paused"))
                 if state.get("coverage") is not None:
                     payload["coverage"] = state.get("coverage")
+                if state.get("qa"):
+                    payload["qa"] = state.get("qa")
                 if state.get("status") == "done":
                     payload["tokens"] = state.get("tokens", 0)
                     payload["cost"] = state.get("cost")

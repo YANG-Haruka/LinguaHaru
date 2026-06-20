@@ -707,6 +707,12 @@ button:disabled { opacity: 0.4; cursor: not-allowed; transform: none !important;
   padding: 10px 14px; border-radius: var(--r); border: 1px solid var(--border); background: var(--surface); }
 .coverage .cov-label { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
 .coverage .cov-body { font-size: 0.82rem; font-family: var(--font-mono); }
+.qa-panel { margin-top: 10px; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 10px; background: var(--surface-2); }
+.qa-panel > summary { cursor: pointer; font-size: 0.82rem; font-weight: 600; color: #d08700; }
+.qa-body { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.qa-row { display: flex; gap: 10px; font-size: 0.8rem; align-items: baseline; }
+.qa-row .qa-k { white-space: nowrap; color: var(--text-2); }
+.qa-row .qa-d { color: var(--muted); font-family: var(--font-mono); overflow-wrap: anywhere; }
 #status { margin-top: 12px; font-family: var(--font-mono); font-size: 0.78rem; }
 
 /* ============================ tables ============================ */
