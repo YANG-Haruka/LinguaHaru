@@ -278,7 +278,7 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, 
 
 
 def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key,
-                                 usage_sink=None):
+                                 usage_sink=None, context=""):
     """Like translate_text_simple but a GENERATOR yielding the translation
     progressively (cumulative string), for live captions' optional stream mode.
 
@@ -302,6 +302,9 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         return
     system_prompt = (f"You are a professional translator. Translate the following text "
                      f"from {src_lang} to {dst_lang}. Output only the translation, nothing else.")
+    if context and str(context).strip():
+        system_prompt += (" Context for disambiguation only (do NOT translate it or"
+                          f" include it in the output): {str(context).strip()}")
     messages = [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}]
     try:

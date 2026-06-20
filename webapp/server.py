@@ -1723,6 +1723,7 @@ async def live_translate_text(payload: dict):
         return {"translated": ""}
     dst_lang = payload.get("dst_lang", "en")
     src_code = payload.get("src_lang") or "auto"
+    context = _capped_text(payload, "context")
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)
@@ -1732,7 +1733,8 @@ async def live_translate_text(payload: dict):
     loop = asyncio.get_event_loop()
 
     def _translate():
-        return translate_text_simple(source, src_code, dst_lang, model, use_online, api_key)
+        return translate_text_simple(source, src_code, dst_lang, model, use_online,
+                                     api_key, context=context)
     try:
         translated, ok, usage = await loop.run_in_executor(None, _translate)
     except Exception as e:  # noqa: BLE001
@@ -1776,6 +1778,7 @@ def live_translate_stream(payload: dict):
     source = _capped_text(payload, "source")
     dst_lang = payload.get("dst_lang", "en")
     src_code = payload.get("src_lang") or "auto"
+    context = _capped_text(payload, "context")
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)
@@ -1788,7 +1791,8 @@ def live_translate_stream(payload: dict):
             sink = {}
             try:
                 for partial in translate_text_simple_stream(
-                        source, src_code, dst_lang, model, use_online, api_key, usage_sink=sink):
+                        source, src_code, dst_lang, model, use_online, api_key,
+                        usage_sink=sink, context=context):
                     yield f"data: {_json.dumps(partial)}\n\n"
             except Exception:  # noqa: BLE001
                 yield f"data: {_json.dumps('')}\n\n"

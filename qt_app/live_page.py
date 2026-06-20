@@ -481,6 +481,7 @@ class LivePage(ScrollArea):
         self._partial_ms = 0.0          # ms since the last partial dispatch
         self._stream_committed = ""     # raw text prefix committed this utterance
         self._stream_last = ""          # previous partial (LocalAgreement-2)
+        self._ctx_history = []          # recent committed source lines (translation coherence)
         self._session_tokens = 0        # tokens used this session (for the thanks card)
         self._recog_busy = False        # one STT worker in flight at a time
         self._recog_pending = None      # (pcm, is_final) — latest-wins while busy
@@ -1082,6 +1083,7 @@ class LivePage(ScrollArea):
         self._partial_ms = 0.0
         self._stream_committed = ""
         self._stream_last = ""
+        self._ctx_history = []
         self._recog_pending = None
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1338,6 +1340,15 @@ class LivePage(ScrollArea):
             self._recog_pending = None
             self._dispatch_recognize(pcm, fin)
 
+    def _live_context(self):
+        """Recent committed source lines as disambiguation context for the live
+        translation (pronouns/terminology coherence across sentences). Capped to
+        the last few lines / ~200 chars so the prompt stays small."""
+        if not self._ctx_history:
+            return ""
+        ctx = " ".join(self._ctx_history[-3:])
+        return ctx[-200:]
+
     def _commit_stream_sentence(self, source):
         source = (source or "").strip()
         if not source:
@@ -1347,6 +1358,9 @@ class LivePage(ScrollArea):
         self.input_text.insertPlainText(f"[{ts}] {source}\n")
         self.input_text.ensureCursorVisible()
         self._push_caption(source=source)
+        ctx = self._live_context()
+        self._ctx_history.append(source)   # after building ctx (don't include self)
+        del self._ctx_history[:-6]         # keep only the last few lines
         online = backend.get_config("default_online", True)
         model = backend.get_active_model(online)
         api_key = load_api_key_for_model(model) if online else ""
@@ -1357,7 +1371,7 @@ class LivePage(ScrollArea):
             self.output_text.ensureCursorVisible()
             self._stream_text[ts] = ""
             w = LiveTranslateStreamWorker(ts, source, self._stream_detected, dst,
-                                          model, online, api_key)
+                                          model, online, api_key, context=ctx)
             w.chunk.connect(self._on_stream_chunk)
             w.done.connect(self._on_stream_done)
             w.finished.connect(lambda w=w: self._retire_local(w))
@@ -1365,7 +1379,7 @@ class LivePage(ScrollArea):
             w.start()
             return
         w = LiveTranslateWorker(ts, source, self._stream_detected, dst, model,
-                                online, api_key)
+                                online, api_key, context=ctx)
         w.done.connect(self._on_translated_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)

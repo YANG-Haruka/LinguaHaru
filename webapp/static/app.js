@@ -1768,6 +1768,7 @@ async function startLocal() {
     } else { setLiveStatus("VAD 初始化失败：" + e.message); stopLocal(); return; }
   }
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
+  liveCtxHistory = [];   // fresh coherence context per session
   startMicMeter();
 }
 // Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
@@ -1861,7 +1862,14 @@ function stopLocal() {
 // appear — so sentence 1 is translated while you're already saying sentence 2.
 let liveCommittedText = "";  // raw text prefix already committed this utterance
 let liveLastText = "";       // previous partial (for LocalAgreement-2 stable prefix)
+let liveCtxHistory = [];     // recent committed source lines (translation coherence context)
 let liveSessionTokens = 0;   // accumulated tokens this live session (for the thanks card)
+
+// Recent committed source as disambiguation context (last 3 lines / ~200 chars).
+function liveContext() {
+  if (!liveCtxHistory.length) return "";
+  return liveCtxHistory.slice(-3).join(" ").slice(-200);
+}
 let livePartialBusy = false, livePendingPcm = null;
 let liveLastDetected = "auto";
 
@@ -2015,13 +2023,16 @@ function commitLiveSentence(source) {
 async function _doCommitSentence(source) {
   const ts = liveTimeStamp();
   appendLive("live-input", `[${ts}] ${source}\n`);
+  const ctx = liveContext();
+  liveCtxHistory.push(source);                 // after building ctx (don't include self)
+  if (liveCtxHistory.length > 6) liveCtxHistory.splice(0, liveCtxHistory.length - 6);
   const streaming = !!(BOOT.config && BOOT.config.live_stream_translation);
   const dst = $("live-target").value;
   if (!streaming) {
     try {
       const t = await api("/api/live-translate-text", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst }) });
+        body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx }) });
       liveSessionTokens += (t.tokens || 0);
       if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`);
     } catch (e) { /* leave source line; translation failed */ }
@@ -2042,7 +2053,7 @@ async function _doCommitSentence(source) {
   try {
     const resp = await fetch("/api/live-translate-stream", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst }) });
+      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx }) });
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "";

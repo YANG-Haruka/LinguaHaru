@@ -63,7 +63,7 @@ class LiveTranslateWorker(QThread):
     done = Signal(str, str, int)   # (timestamp, translated, total_tokens)
 
     def __init__(self, ts, source, src_code, dst_code, model, use_online,
-                 api_key, parent=None):
+                 api_key, parent=None, context=""):
         super().__init__(parent)
         self._ts = ts
         self._source = source
@@ -72,13 +72,14 @@ class LiveTranslateWorker(QThread):
         self._model = model
         self._online = use_online
         self._key = api_key
+        self._context = context
 
     def run(self):
         try:
             from core.llm.llm_wrapper import translate_text_simple
             translated, ok, usage = translate_text_simple(
                 self._source, self._src or "auto", self._dst, self._model,
-                self._online, self._key)
+                self._online, self._key, context=self._context)
             tokens = int((usage or {}).get("total_tokens", 0) or 0)
             self.done.emit(self._ts, translated if ok else "", tokens)
         except Exception:  # noqa: BLE001
@@ -93,7 +94,7 @@ class LiveTranslateStreamWorker(QThread):
     done = Signal(str, int)    # (timestamp, total_tokens)
 
     def __init__(self, ts, source, src_code, dst_code, model, use_online,
-                 api_key, parent=None):
+                 api_key, parent=None, context=""):
         super().__init__(parent)
         self._ts = ts
         self._source = source
@@ -102,6 +103,7 @@ class LiveTranslateStreamWorker(QThread):
         self._model = model
         self._online = use_online
         self._key = api_key
+        self._context = context
 
     def run(self):
         sink = {}
@@ -109,7 +111,7 @@ class LiveTranslateStreamWorker(QThread):
             from core.llm.llm_wrapper import translate_text_simple_stream
             for partial in translate_text_simple_stream(
                     self._source, self._src or "auto", self._dst, self._model,
-                    self._online, self._key, usage_sink=sink):
+                    self._online, self._key, usage_sink=sink, context=self._context):
                 self.chunk.emit(self._ts, partial or "")
         except Exception:  # noqa: BLE001
             pass
