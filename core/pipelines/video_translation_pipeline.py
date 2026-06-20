@@ -1143,24 +1143,23 @@ def _clean_asr_text(text):
     return _collapse_repeats(text)
 
 
-def _collapse_repeats(text, max_run=3):
-    """Collapse a space-separated token repeated more than max_run times in a row
-    down to max_run — cleans the residual ASR hallucination loops that the
-    max_new_tokens cap shortens but doesn't remove ("Oh, Angkor, Angkor, Angkor,
-    …", "Hey, hey, hey, hey!"). Compares case-insensitively, ignoring trailing
-    punctuation, so 'Angkor,' == 'Angkor'.
+def _collapse_repeats(text, max_run=8):
+    """CONSERVATIVELY trim only EXTREME, near-certain hallucination loops; never
+    touch genuine expressive repetition. Expressive/JAV speech really does repeat
+    (だめ×5, あ×5, もっと×5, "I love you"×4), so the default is to LEAVE the raw
+    transcription alone — the original garbage source (Japanese mis-read as English
+    -> "Angkor, Angkor…") is now fixed upstream by forcing the language, so heavy
+    cleaning is no longer needed and was corrupting real lines.
 
-    Two layers: (1) a generic unit-repetition regex that also catches space-less
-    CJK loops ("アンコール、アンコール、…") — a 1-12 char unit repeated 5+ times in a
-    row collapses to 2; the high count (5+) keeps legit short repeats like
-    'ねえねえ' / 'very very good' safe. (2) the original token-run collapse for
-    space-separated words repeated more than max_run. A single-CHAR rule was tried
-    and rejected (changed 56 Japanese cues vs the real garbage) — the unit rule is
-    much more specific."""
+    Two layers, both with high thresholds:
+    (1) a 1-12 char unit repeated **10+** times in a row collapses to 4 (catches a
+        runaway ××20 loop; a real ×5 survives untouched);
+    (2) a space-separated token repeated **more than max_run (8)** times collapses
+        to max_run."""
     if not text:
         return text
     import re
-    text = re.sub(r"(.{1,12}?)\1{4,}", lambda m: m.group(1) * 2, text)
+    text = re.sub(r"(.{1,12}?)\1{9,}", lambda m: m.group(1) * 4, text)
     toks = text.split()
     if len(toks) <= max_run:
         return text
@@ -1170,7 +1169,7 @@ def _collapse_repeats(text, max_run=3):
         if key and key == prev:
             run += 1
             if run > max_run:
-                continue   # drop the excess repeats
+                continue   # drop only the truly excessive tail
         else:
             run, prev = 1, key
         out.append(t)
