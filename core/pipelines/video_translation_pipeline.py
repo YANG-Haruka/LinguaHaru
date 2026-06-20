@@ -65,6 +65,102 @@ STT_MODELS = [
 # Default for video subtitles AND real-time voice: SenseVoice is small + fast.
 DEFAULT_STT_MODEL = "sensevoice-small"
 
+# --- Per-model tunable STT parameters ---------------------------------------
+# Different STT models want different settings, so each model exposes its own
+# params (edited in Model Management). Specs are per ENGINE; per-model default
+# overrides (tuned empirically on local clips) live in _STT_PARAM_DEFAULTS.
+# Each spec: key, label (i18n key), type (float|int|bool), default, min, max, step.
+_VAD_PARAMS = [
+    {"key": "vad_threshold", "label": "VAD sensitivity threshold", "type": "float",
+     "default": 0.35, "min": 0.1, "max": 0.9, "step": 0.05},
+    {"key": "vad_min_ms", "label": "Min speech segment (ms)", "type": "int",
+     "default": 160, "min": 50, "max": 1000, "step": 10},
+    {"key": "disable_vad", "label": "Disable VAD (window whole file)", "type": "bool",
+     "default": False},
+]
+STT_PARAM_SPECS = {
+    "sensevoice": _VAD_PARAMS + [
+        {"key": "sdh_events", "label": "SDH event tags (laughter/breath…)",
+         "type": "bool", "default": False}],
+    "qwen3asr": _VAD_PARAMS,
+    "animewhisper": _VAD_PARAMS,
+    "whisper": [
+        {"key": "vad_filter", "label": "VAD filter (drop non-speech)", "type": "bool",
+         "default": True},
+        {"key": "no_speech_threshold", "label": "No-speech threshold", "type": "float",
+         "default": 0.6, "min": 0.1, "max": 0.9, "step": 0.05},
+        {"key": "hallucination_silence_threshold", "label": "Hallucination silence (s)",
+         "type": "float", "default": 2.0, "min": 0.0, "max": 6.0, "step": 0.5},
+    ],
+}
+# Per-model default overrides (benchmark-tuned). SenseVoice does best with a
+# higher threshold (more, shorter cues → better subtitle granularity); the
+# expressive engines (anime/qwen) want the sensitive 0.35/160 to catch
+# breathy/short utterances.
+_STT_PARAM_DEFAULTS = {
+    "sensevoice-small": {"vad_threshold": 0.5, "vad_min_ms": 250},
+    "anime-whisper":    {"vad_threshold": 0.35, "vad_min_ms": 160},
+    "qwen3-asr-0.6b":   {"vad_threshold": 0.35, "vad_min_ms": 160},
+    "qwen3-asr-1.7b":   {"vad_threshold": 0.35, "vad_min_ms": 160},
+}
+
+
+def stt_param_specs(model_id):
+    """Param specs for a model (with per-model default applied), or [] if the
+    engine has no tunable params."""
+    model = get_stt_model(model_id)
+    specs = STT_PARAM_SPECS.get(model.get("engine"), [])
+    overrides = _STT_PARAM_DEFAULTS.get(model_id, {})
+    out = []
+    for s in specs:
+        s = dict(s)
+        if s["key"] in overrides:
+            s["default"] = overrides[s["key"]]
+        out.append(s)
+    return out
+
+
+def get_stt_params(model_id):
+    """Effective params for a model: spec defaults ⊕ per-model defaults ⊕ the
+    user's saved overrides (config stt_model_params[model_id])."""
+    params = {s["key"]: s["default"] for s in stt_param_specs(model_id)}
+    try:
+        with open(_SYSTEM_CONFIG, encoding="utf-8") as f:
+            saved = (json.load(f).get("stt_model_params") or {}).get(model_id) or {}
+        for k, v in saved.items():
+            if k in params:
+                params[k] = v
+    except Exception:  # noqa: BLE001
+        pass
+    return params
+
+
+def set_stt_params(model_id, values):
+    """Persist user overrides for a model (only keys that differ from default are
+    kept, so resetting to default removes the override). Returns the saved dict."""
+    from core.backend import get_config, set_config
+    specs = {s["key"]: s for s in stt_param_specs(model_id)}
+    clean = {}
+    for k, v in (values or {}).items():
+        if k not in specs:
+            continue
+        spec = specs[k]
+        if spec["type"] == "bool":
+            v = bool(v)
+        elif spec["type"] == "int":
+            v = max(spec["min"], min(spec["max"], int(v)))
+        elif spec["type"] == "float":
+            v = max(spec["min"], min(spec["max"], float(v)))
+        if v != spec["default"]:
+            clean[k] = v
+    all_params = dict(get_config("stt_model_params") or {})
+    if clean:
+        all_params[model_id] = clean
+    else:
+        all_params.pop(model_id, None)
+    set_config("stt_model_params", all_params)
+    return clean
+
 # Single source of truth mapping a UI language code (core.languages_config)
 # to the language SenseVoice's recognizer expects. SenseVoice recognizes
 # Mandarin and Cantonese; Traditional-Chinese audio is Mandarin, so zh-Hant
@@ -396,7 +492,7 @@ def _get_whisper_model(size):
 
 
 def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en",
-                        check_stop=None, checkpoint_path=None):
+                        check_stop=None, checkpoint_path=None, params=None):
     """Yield (start, end, text) tuples for each spoken segment.
 
     Resumable: whisper segments the audio itself (no external VAD), so a resume
@@ -433,10 +529,12 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
     # word_timestamps enables hallucination_silence_threshold: faster-whisper then
     # skips long silences where it would otherwise emit hallucinated text — exactly
     # the gasps/pauses case. (The threshold is a no-op without word timestamps.)
-    _wkw = dict(language=language, vad_filter=not _stt_disable_vad(),
+    p = params or {}
+    _wkw = dict(language=language, vad_filter=bool(p.get("vad_filter", True)),
                 condition_on_previous_text=False, no_repeat_ngram_size=4,
-                no_speech_threshold=0.6, compression_ratio_threshold=2.4,
-                word_timestamps=True, hallucination_silence_threshold=2.0)
+                no_speech_threshold=float(p.get("no_speech_threshold", 0.6)),
+                compression_ratio_threshold=2.4, word_timestamps=True,
+                hallucination_silence_threshold=float(p.get("hallucination_silence_threshold", 2.0)))
     if offset > 0:
         import wave
         import numpy as np
@@ -593,8 +691,8 @@ def _get_vad():
 _TEN_HOP = 256          # 16 ms @ 16 kHz (TEN-VAD's frame size)
 # Defaults tuned for EXPRESSIVE speech (JAV/anime): a lower threshold + shorter
 # minimum catch quiet/breathy/short utterances (あっ, んっ, whispers, gasps) that
-# 0.5/280ms would drop. Override per dataset via config (stt_vad_threshold /
-# stt_vad_min_ms). VAD thresholds are meant to be tuned to the audio.
+# 0.5/280ms would drop. Tunable per model in Model Management (vad_threshold /
+# vad_min_ms). VAD thresholds are meant to be tuned to the audio.
 _TEN_THRESHOLD = 0.35
 _TEN_HANG_MS = 300.0    # bridge silences shorter than this inside one segment
 _TEN_MIN_MS = 160.0     # drop blips shorter than this (low, to keep short interjections)
@@ -602,37 +700,12 @@ _TEN_MAX_MS = 30000.0   # cap a segment (also keeps Qwen/SenseVoice batches even
 _TEN_PAD_MS = 100.0     # keep a little lead-in/out so boundary words aren't clipped
 
 
-def _vad_params():
-    """(threshold, min_ms) for TEN-VAD, with optional config overrides so the VAD
-    can be tuned to the dataset without code changes."""
-    thr, min_ms = _TEN_THRESHOLD, _TEN_MIN_MS
-    try:
-        from core.paths import SYSTEM_CONFIG
-        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
-            cfg = json.load(f)
-        thr = float(cfg.get("stt_vad_threshold", thr))
-        min_ms = float(cfg.get("stt_vad_min_ms", min_ms))
-    except Exception:  # noqa: BLE001
-        pass
-    return thr, min_ms
-
-
-def _stt_disable_vad():
-    """Config flag: skip external VAD and window the whole file (singing/BGM)."""
-    try:
-        from core.paths import SYSTEM_CONFIG
-        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
-            return bool(json.load(f).get("stt_disable_vad", False))
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _ten_vad_segments(audio_i16, sr=16000, check_stop=None):
+def _ten_vad_segments(audio_i16, sr=16000, check_stop=None,
+                      threshold=_TEN_THRESHOLD, min_ms=_TEN_MIN_MS):
     """Segment 16 kHz mono int16 audio into [[s_ms, e_ms], ...] speech regions with
     TEN-VAD. Returns None if ten_vad is unavailable / errors, so the caller falls
     back to fsmn-vad. Deterministic (fixed threshold) so resume keys stay stable."""
     import numpy as np
-    threshold, min_ms = _vad_params()
     try:
         from ten_vad import TenVad
         vad = TenVad(hop_size=_TEN_HOP, threshold=threshold)
@@ -686,19 +759,29 @@ def _window_segments(total_ms, win_ms=25000.0, overlap_ms=1000.0):
     return out
 
 
-def _segment_speech(wav_path, audio_i16, sr, check_stop=None):
+def _vad_args(params):
+    """(threshold, min_ms, disable_vad) from a per-model params dict, with the
+    global defaults when a key is absent (e.g. live path passes nothing)."""
+    p = params or {}
+    return (float(p.get("vad_threshold", _TEN_THRESHOLD)),
+            float(p.get("vad_min_ms", _TEN_MIN_MS)),
+            bool(p.get("disable_vad", False)))
+
+
+def _segment_speech(wav_path, audio_i16, sr, check_stop=None,
+                    threshold=_TEN_THRESHOLD, min_ms=_TEN_MIN_MS, disable_vad=False):
     """Speech segments [[s_ms, e_ms], ...] for the external-VAD engines. Prefers
     TEN-VAD (noise-robust neural VAD, shared with real-time); on a None OR EMPTY
     result falls back to fsmn-vad; if that is also empty, to overlapping windows
     (never one whole-file segment).
 
-    Config stt_disable_vad bypasses both VADs and uses overlapping windows over
-    the whole file — for sung/BGM-heavy audio where VAD wrongly drops vocals."""
+    disable_vad bypasses both VADs and uses overlapping windows over the whole
+    file — for sung/BGM-heavy audio where VAD wrongly drops vocals."""
     total_ms = len(audio_i16) / sr * 1000.0
-    if _stt_disable_vad():
-        app_logger.info("External VAD disabled (config); using overlapping windows")
+    if disable_vad:
+        app_logger.info("External VAD disabled; using overlapping windows")
         return _window_segments(total_ms)
-    segs = _ten_vad_segments(audio_i16, sr, check_stop)
+    segs = _ten_vad_segments(audio_i16, sr, check_stop, threshold, min_ms)
     if segs:
         app_logger.info(f"TEN-VAD: {len(segs)} speech segments")
         return segs
@@ -841,7 +924,7 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
 
 
 def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
-                     check_stop=None, checkpoint_path=None):
+                     check_stop=None, checkpoint_path=None, params=None):
     """VAD-segment the audio (for SRT timing) then batch-recognize the segments
     with Qwen3-ASR. Falls back to a single whole-file pass if VAD is unavailable.
 
@@ -863,7 +946,7 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     audio = audio_i16.astype(np.float32) / 32768.0
     if progress_callback:   # VAD on a long file takes a while with no inner ticks
         progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
-    segments = _segment_speech(wav_path, audio_i16, sr, check_stop)
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params))
     if not segments:   # only reachable on empty audio
         segments = _window_segments(len(audio) / sr * 1000.0)
 
@@ -1001,7 +1084,7 @@ def _recognize_animewhisper(audio, src_lang, model_name, sample_rate=16000):
 
 
 def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
-                             check_stop=None, checkpoint_path=None):
+                             check_stop=None, checkpoint_path=None, params=None):
     """VAD-segment then recognize each segment with anime-whisper. Japanese-only
     (src_lang ignored — the model is fixed-Japanese). Resumable like the others."""
     import wave
@@ -1015,7 +1098,7 @@ def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, 
     audio = audio_i16.astype(np.float32) / 32768.0
     if progress_callback:
         progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
-    segments = _segment_speech(wav_path, audio_i16, sr, check_stop)
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params))
     if not segments:   # only reachable on empty audio
         segments = _window_segments(len(audio) / sr * 1000.0)
     keys = [(int(round(s)), int(round(e))) for s, e in segments]
@@ -1084,7 +1167,7 @@ def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, 
 
 
 def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
-                           check_stop=None, checkpoint_path=None):
+                           check_stop=None, checkpoint_path=None, params=None):
     """VAD-segment the audio, recognize each segment with SenseVoice, and return
     (start, end, text) tuples. Timing comes from the VAD so the SRT is aligned.
 
@@ -1105,7 +1188,7 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
     audio = audio_i16.astype(np.float32) / 32768.0
 
     # TEN-VAD (noise-robust) first; fall back to fsmn-vad, then windows.
-    segments = _segment_speech(wav_path, audio_i16, sr, check_stop)
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params))
 
     lang = _sensevoice_lang(src_lang)
     total = len(segments) or 1
@@ -1144,7 +1227,7 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
                     res = asr.generate(input=chunk, fs=sr, language=lang, use_itn=True)
                     if res:
                         raw = res[0]["text"]
-                        sdh = _sensevoice_sdh_prefix(raw)
+                        sdh = _sensevoice_sdh_prefix(raw, (params or {}).get("sdh_events", False))
                         texts[i] = sdh + _clean_asr_text(rich_transcription_postprocess(raw))
                     else:
                         texts[i] = ""
@@ -1340,21 +1423,16 @@ def _collapse_repeats(text, max_run=8):
 
 # SenseVoice audio-event tags -> SDH annotations (subtitles for the deaf/HoH).
 # Read from the RAW SenseVoice output (<|Laughter|> etc.) — unambiguous, unlike
-# the lossy emoji conversion. Gated by config stt_sdh_events (default off).
+# the lossy emoji conversion. Gated by the model's sdh_events param (default off).
 _SDH_EVENTS = {"Laughter": "[laughter]", "Cry": "[crying]", "Crying": "[crying]",
                "Applause": "[applause]", "BGM": "[music]", "Sneeze": "[sneeze]",
                "Cough": "[cough]", "Breath": "[breath]"}
 
 
-def _sensevoice_sdh_prefix(raw_text):
+def _sensevoice_sdh_prefix(raw_text, enabled=False):
     """'[laughter] ' style SDH prefix for the events present in SenseVoice's raw
     <|EVENT|> tags, or '' when disabled / none found."""
-    try:
-        from core.paths import SYSTEM_CONFIG
-        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
-            if not json.load(f).get("stt_sdh_events", False):
-                return ""
-    except Exception:  # noqa: BLE001
+    if not enabled:
         return ""
     seen = []
     for tag in re.findall(r"<\|([^|]+)\|>", raw_text or ""):
@@ -1387,13 +1465,14 @@ def _ckpt_path(temp_dir, filename, model_id, src_lang, wav_path):
     the model, the forced language, the VAD profile, and the audio size. Resuming
     after the user switches model/language (or re-encodes the audio) then starts a
     FRESH checkpoint instead of cross-reading a mismatched one. Was keyed by engine
-    alone, so e.g. whisper-turbo -> whisper-tiny silently reused the old segments."""
-    thr, min_ms = _vad_params()
+    alone, so e.g. whisper-turbo -> whisper-tiny silently reused the old segments.
+    Includes the model's params so changing the VAD profile re-transcribes."""
     try:
         sz = os.path.getsize(wav_path)
     except OSError:
         sz = 0
-    sig = f"{model_id}|{src_lang}|{thr}|{min_ms}|{sz}"
+    params = json.dumps(get_stt_params(model_id), sort_keys=True)
+    sig = f"{model_id}|{src_lang}|{params}|{sz}"
     h = hashlib.sha1(sig.encode("utf-8")).hexdigest()[:10]
     return os.path.join(temp_dir, f"{filename}.{h}.asr_ckpt.jsonl")
 
@@ -1402,18 +1481,20 @@ def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
                        session_lang, model_id, check_stop=None, checkpoint_path=None):
     """Dispatch to the selected STT engine; log WHY on failure (download/load
     error) to the per-file log instead of failing silently, then re-raise."""
+    params = get_stt_params(model_id)
+    app_logger.info(f"STT params for {model_id}: {params}")
     try:
         if engine == "sensevoice":
             return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang,
-                                          check_stop, checkpoint_path)
+                                          check_stop, checkpoint_path, params)
         if engine == "qwen3asr":
             return _transcribe_qwen(wav_path, size, src_lang, progress_callback, session_lang,
-                                    check_stop, checkpoint_path)
+                                    check_stop, checkpoint_path, params)
         if engine == "animewhisper":
             return _transcribe_animewhisper(wav_path, size, src_lang, progress_callback, session_lang,
-                                            check_stop, checkpoint_path)
+                                            check_stop, checkpoint_path, params)
         return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang,
-                                   check_stop, checkpoint_path)
+                                   check_stop, checkpoint_path, params)
     except Exception as e:  # noqa: BLE001
         app_logger.error(
             f"STT transcription failed (engine={engine}, model={model_id}): "
