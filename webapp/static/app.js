@@ -577,7 +577,55 @@ async function boot() {
   renderDropBg();
   initUiLang();
   checkUpdate();
+  maybeShowOnboarding();
 }
+
+// ----- first-run onboarding tutorial -----
+const _ONBOARD_STEPS = [
+  { icon: "✨", t: "Onboarding T1 Title", b: "Onboarding T1 Body" },
+  { icon: "🔑", t: "Onboarding T2 Title", b: "Onboarding T2 Body" },
+  { icon: "📄", t: "Onboarding T3 Title", b: "Onboarding T3 Body" },
+  { icon: "🎙️", t: "Onboarding T4 Title", b: "Onboarding T4 Body" },
+  { icon: "📚", t: "Onboarding T5 Title", b: "Onboarding T5 Body" },
+];
+let _onboardStep = 0;
+function _olbl(key) {
+  const L = (BOOT.labels && BOOT.labels[_uiLang]) || {};
+  const EN = (BOOT.labels && BOOT.labels.en) || {};
+  return L[key] || EN[key] || key;
+}
+function _renderOnboard() {
+  const s = _ONBOARD_STEPS[_onboardStep];
+  $("onboard-icon").textContent = s.icon;
+  $("onboard-title").textContent = _olbl(s.t);
+  $("onboard-body").textContent = _olbl(s.b);
+  $("onboard-skip").textContent = _olbl("Onboarding Skip");
+  $("onboard-back").textContent = _olbl("Onboarding Back");
+  $("onboard-back").hidden = _onboardStep === 0;
+  const last = _onboardStep === _ONBOARD_STEPS.length - 1;
+  $("onboard-next").textContent = last ? _olbl("Onboarding Done") : _olbl("Onboarding Next");
+  const dots = _ONBOARD_STEPS.map((_, i) => `<span class="${i === _onboardStep ? "on" : ""}"></span>`).join("");
+  $("onboard-dots").innerHTML = dots;
+}
+function _closeOnboard() {
+  $("onboard-modal").hidden = true;
+  try { localStorage.setItem("lh-onboarded", "1"); } catch (e) {}
+}
+function maybeShowOnboarding() {
+  if (BOOT.server_mode) return;                 // public deploy: anonymous users, no setup
+  let seen = false;
+  try { seen = localStorage.getItem("lh-onboarded") === "1"; } catch (e) {}
+  if (seen) return;
+  _onboardStep = 0;
+  _renderOnboard();
+  $("onboard-modal").hidden = false;
+}
+if ($("onboard-skip")) $("onboard-skip").onclick = _closeOnboard;
+if ($("onboard-back")) $("onboard-back").onclick = () => { if (_onboardStep > 0) { _onboardStep--; _renderOnboard(); } };
+if ($("onboard-next")) $("onboard-next").onclick = () => {
+  if (_onboardStep < _ONBOARD_STEPS.length - 1) { _onboardStep++; _renderOnboard(); }
+  else _closeOnboard();
+};
 
 // ----- update banner -----
 async function checkUpdate() {

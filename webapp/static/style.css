@@ -577,6 +577,13 @@ button.mini.danger:hover { background: #c0392b; border-color: #c0392b; color: #f
 .modal-actions button.danger { background: #ef4444; color: #fff; border-color: transparent; }
 .modal-actions button.danger:hover { background: #dc2626; color: #fff; }
 button.danger { color: #fff; background: #ef4444; border: none; }
+.onboard-card { width: min(440px, 92vw); text-align: center; }
+.onboard-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; }
+.onboard-card h3 { margin: 0 0 12px; }
+.onboard-body { margin: 0 0 18px; color: var(--text-soft); line-height: 1.6; min-height: 4.8em; text-align: left; }
+.onboard-dots { display: flex; gap: 7px; justify-content: center; margin-bottom: 4px; }
+.onboard-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--border-strong); transition: all .2s; }
+.onboard-dots span.on { background: var(--accent); width: 18px; border-radius: 4px; }
 
 /* ----- interface language selector (sidebar bottom) ----- */
 .bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }

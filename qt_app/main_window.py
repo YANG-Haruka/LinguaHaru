@@ -271,6 +271,15 @@ class MainWindow(FluentWindow):
         self.history_page.on_continue_resume_batch = _continue_batch_on_dashboard
         self._auto_nav(animate=False)
 
+        # First-run onboarding tutorial (once per install; deferred so it pops
+        # over a fully-painted window).
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(120, self._maybe_onboard)
+
+    def _maybe_onboard(self):
+        from qt_app.onboarding import maybe_show_onboarding
+        maybe_show_onboarding(self, self._lang)
+
     def closeEvent(self, event):
         """Deterministically stop every page's background QThreads before the app
         tears down — otherwise a running mic/STT/translate/update thread is
