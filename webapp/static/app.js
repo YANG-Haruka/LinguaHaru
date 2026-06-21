@@ -1289,6 +1289,52 @@ function renderModules() {
     if (m.available) checkModuleUpdate(m.name, foot, statEl);
   }
   loadModuleUsage();
+  renderMarket();
+}
+
+// ----- plugin market: remote downloadable plugins (not yet installed) -----
+async function renderMarket() {
+  const grid = $("modules-grid");
+  // drop any previous market cards before re-rendering
+  grid.querySelectorAll(".plugin-card.market").forEach((c) => c.remove());
+  let list = [];
+  try { list = (await api("/api/modules/market")).plugins || []; } catch (e) { return; }
+  for (const p of list) {
+    const card = document.createElement("div");
+    card.className = "plugin-card market";
+    const head = document.createElement("div"); head.className = "plugin-card-head";
+    const ic = document.createElement("span"); ic.className = "plugin-card-icon"; ic.innerHTML = ICON.download;
+    const nm = document.createElement("div"); nm.className = "plugin-card-name"; nm.textContent = p.name || p.key;
+    const badge = document.createElement("span"); badge.className = "plugin-card-status";
+    badge.innerHTML = pill("off", _label("Available", "可下载"), ICON.download);
+    head.append(ic, nm, badge); card.appendChild(head);
+    const sub = document.createElement("div"); sub.className = "plugin-card-sub";
+    sub.textContent = (p.detail || "") + (p.version ? ` · v${p.version}` : "");
+    card.appendChild(sub);
+    const foot = document.createElement("div"); foot.className = "plugin-card-foot";
+    const btn = document.createElement("button"); btn.className = "primary";
+    btn.innerHTML = ICON.download + `<span>${_label("Download", "下载")}</span>`;
+    btn.onclick = () => downloadMarketPlugin(p, btn);
+    foot.appendChild(btn); card.appendChild(foot);
+    grid.appendChild(card);
+  }
+}
+
+async function downloadMarketPlugin(p, btn) {
+  btn.disabled = true;
+  $("modules-status").textContent = `${_label("Downloading", "正在下载…")} ${p.name || p.key}`;
+  try {
+    await api("/api/modules/download", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: p.key, url: p.url }) });
+  } catch (e) {
+    btn.disabled = false;
+    $("modules-status").textContent = (e && e.message) || _label("Try Again Later", "请稍后重试");
+    return;
+  }
+  // Refresh bootstrap so the downloaded plugin appears as an installable card.
+  try { BOOT = await api("/api/bootstrap"); } catch (e) {}
+  renderModules();
+  $("modules-status").textContent = `${p.name || p.key}: ${_label("Downloaded Install Below", "已下载，请在上方安装其依赖")}`;
 }
 
 function humanSize(n) {

@@ -49,6 +49,11 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 # is shown, so the UI appears instantly.
 from core.model_store import setup_model_env  # noqa: E402
 setup_model_env(defer_network=True)
+try:   # let downloaded market plugins hook into the app (best-effort)
+    from core import plugins_registry as _pr  # noqa: E402
+    _pr.activate_downloaded_plugins()
+except Exception:  # noqa: BLE001
+    pass
 
 
 def _install_qt_log_filter():

@@ -29,6 +29,11 @@ from fastapi.staticfiles import StaticFiles
 from core import backend
 from core.model_store import setup_model_env
 setup_model_env()  # unify model cache dirs before whisper/funasr/babeldoc import
+try:   # let downloaded market plugins hook into the app (best-effort)
+    from core import plugins_registry as _pr
+    _pr.activate_downloaded_plugins()
+except Exception:  # noqa: BLE001
+    pass
 from webapp import sessions
 from core.api_keys import (
     load_api_key_for_model, save_api_key_for_model, provider_of)
@@ -1617,6 +1622,31 @@ def module_update_check(name: str):
     _block_in_server_mode()
     from core.module_manager import check_module_update
     return check_module_update(name) or {}
+
+
+@app.get("/api/modules/market")
+def modules_market():
+    """Remote plugins available to download (not already present locally)."""
+    _block_in_server_mode()
+    from core import plugins_registry
+    return {"plugins": plugins_registry.remote_available()}
+
+
+@app.post("/api/modules/download")
+def modules_download(payload: dict):
+    """Download a self-contained plugin from the remote market into the writable
+    plugins dir. Dependency install is the normal install step afterwards."""
+    _block_in_server_mode()
+    from core import plugins_registry
+    key, url = payload.get("key"), payload.get("url")
+    if not key or not url:
+        raise HTTPException(400, "key and url are required")
+    if _module_busy():
+        raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
+    ok, msg = plugins_registry.download_remote_plugin(key, url)
+    if not ok:
+        raise HTTPException(400, msg)
+    return {"ok": True, "message": msg}
 
 
 # --------------------------------------------------------------------------- #

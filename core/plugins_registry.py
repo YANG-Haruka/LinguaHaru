@@ -12,22 +12,38 @@ This replaces the old hard-coded MODULE_SPECS / OPTIONAL_REQUIREMENTS dicts so a
 plugin can be added/changed by dropping a folder in plugins/ — no code edits.
 """
 import os
+import io
+import sys
 import json
+import zipfile
+import urllib.request
 
-from core.paths import PLUGINS_DIR
+from core.paths import PLUGINS_DIR, DATA_DIR
 from core.log_config import app_logger
 
 _cache = None
 
+# Built-in plugins ship under PLUGINS_DIR (read-only bundle). Plugins DOWNLOADED
+# from the remote market land in this writable dir so they survive app updates
+# (the smart updater preserves data/).
+USER_PLUGINS_DIR = os.path.join(DATA_DIR, "plugins")
 
-def _load():
-    plugins = {}
+# Remote plugin index (a JSON you host on GitHub). Lets you publish NEW
+# self-contained plugins that users install without updating the main app.
+GITHUB_REPO = "YANG-Haruka/LinguaHaru"
+_INDEX_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/plugins-index.json"
+_PROXIES = ["", "https://ghproxy.net/", "https://mirror.ghproxy.com/", "https://gh-proxy.com/"]
+
+
+def _load_dir(base, source):
+    """Load every <base>/<key>/plugin.json, tagging each with its source."""
+    out = {}
     try:
-        keys = sorted(os.listdir(PLUGINS_DIR))
+        keys = sorted(os.listdir(base))
     except OSError:
-        return plugins
+        return out
     for entry in keys:
-        manifest = os.path.join(PLUGINS_DIR, entry, "plugin.json")
+        manifest = os.path.join(base, entry, "plugin.json")
         if not os.path.isfile(manifest):
             continue
         try:
@@ -36,10 +52,19 @@ def _load():
         except Exception as e:  # noqa: BLE001
             app_logger.warning(f"Bad plugin manifest {manifest}: {e}")
             continue
-        m["dir"] = os.path.join(PLUGINS_DIR, entry)
+        m["dir"] = os.path.join(base, entry)
+        m["source"] = source
         req = m.get("requirements", "requirements.txt")
-        m["requirements_path"] = os.path.join(PLUGINS_DIR, entry, req)
-        plugins[m["name"]] = m
+        m["requirements_path"] = os.path.join(base, entry, req)
+        out[m["name"]] = m
+    return out
+
+
+def _load():
+    # Built-in first, then downloaded (downloaded can't shadow a built-in name).
+    plugins = _load_dir(PLUGINS_DIR, "builtin")
+    for name, m in _load_dir(USER_PLUGINS_DIR, "downloaded").items():
+        plugins.setdefault(name, m)
     return plugins
 
 
@@ -82,3 +107,109 @@ def removable_packages(name):
         return []
     shared = set(m.get("shared_packages", []))
     return [p for p in m.get("packages", []) if p not in shared]
+
+
+def _invalidate():
+    global _cache
+    _cache = None
+
+
+# --- Remote plugin market ---------------------------------------------------
+def fetch_remote_index(timeout=6):
+    """Fetch the published plugin index (list of available downloadable plugins).
+    Returns [] on any failure. Each entry: {key,name,detail,version,url}."""
+    for proxy in _PROXIES:
+        url = f"{proxy}{_INDEX_URL}" if proxy else _INDEX_URL
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "LinguaHaru"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                data = json.load(r)
+            items = data.get("plugins", []) if isinstance(data, dict) else []
+            return [p for p in items if isinstance(p, dict) and p.get("key") and p.get("url")]
+        except Exception:  # noqa: BLE001 — offline / not published yet
+            continue
+    return []
+
+
+def remote_available():
+    """Remote plugins NOT already present locally (downloadable). Keyed by key."""
+    have = {m["key"] for m in all_plugins().values()}
+    return [p for p in fetch_remote_index() if p["key"] not in have]
+
+
+def download_remote_plugin(key, url):
+    """Download a self-contained plugin zip into USER_PLUGINS_DIR/<key>/ and
+    register it. The zip must contain plugin.json (at root or one level down).
+    Returns (ok, message). Dependency install is the caller's normal pip/uv step."""
+    import shutil
+    import tempfile
+    dest = os.path.join(USER_PLUGINS_DIR, key)
+    tmp = tempfile.mkdtemp(prefix="lh_plugin_")
+    try:
+        last = None
+        for proxy in _PROXIES:
+            try:
+                u = f"{proxy}{url}" if proxy else url
+                req = urllib.request.Request(u, headers={"User-Agent": "LinguaHaru"})
+                with urllib.request.urlopen(req, timeout=60) as r:
+                    blob = r.read()
+                break
+            except Exception as e:  # noqa: BLE001
+                last = e
+                blob = None
+        if blob is None:
+            return False, f"Download failed: {last}"
+        ex = os.path.join(tmp, "x")
+        with zipfile.ZipFile(io.BytesIO(blob)) as z:
+            z.extractall(ex)
+        # locate plugin.json (root or single wrapper dir)
+        root = ex
+        if not os.path.exists(os.path.join(root, "plugin.json")):
+            subs = [d for d in os.listdir(ex) if os.path.isdir(os.path.join(ex, d))]
+            for d in subs:
+                if os.path.exists(os.path.join(ex, d, "plugin.json")):
+                    root = os.path.join(ex, d)
+                    break
+        if not os.path.exists(os.path.join(root, "plugin.json")):
+            return False, "Invalid plugin package (no plugin.json)."
+        os.makedirs(USER_PLUGINS_DIR, exist_ok=True)
+        shutil.rmtree(dest, ignore_errors=True)
+        shutil.copytree(root, dest)
+        _invalidate()
+        return True, f"Downloaded plugin '{key}'."
+    except Exception as e:  # noqa: BLE001
+        return False, f"Download failed: {e}"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class _PluginAPI:
+    """Minimal API passed to a downloaded plugin's entry register() so its code can
+    extend the app (e.g. add a translator for a new file extension)."""
+    def register_translator(self, ext, dotted_class):
+        from core import backend
+        backend.TRANSLATOR_MODULES[ext.lower()] = dotted_class
+
+
+def activate_downloaded_plugins():
+    """Import each DOWNLOADED plugin's `entry` module and call its register(api),
+    so plugin code actually hooks into the app. Best-effort: a plugin whose deps
+    aren't installed yet (needs restart) is skipped. Built-in plugins are
+    integrated in core/ and have no entry. Call once at startup."""
+    api = _PluginAPI()
+    for m in all_plugins().values():
+        entry = m.get("entry")
+        if not entry or m.get("source") != "downloaded":
+            continue
+        try:
+            if m["dir"] not in sys.path:
+                sys.path.insert(0, m["dir"])
+            mod_name, _, fn_name = entry.partition(":")
+            import importlib
+            mod = importlib.import_module(mod_name)
+            fn = getattr(mod, fn_name or "register", None)
+            if callable(fn):
+                fn(api)
+                app_logger.info(f"Activated downloaded plugin: {m['name']}")
+        except Exception as e:  # noqa: BLE001 — deps missing / needs restart
+            app_logger.warning(f"Plugin '{m.get('name')}' entry not activated: {e}")

@@ -1,0 +1,4 @@
+{
+  "_comment": "Remote plugin market index. To publish a plugin: host a zip of its self-contained folder (plugin.json + requirements.txt + optional code with an `entry` register hook), then add an entry here. Users see it in the Plugins page market and can download+install without updating the main app.",
+  "plugins": []
+}
