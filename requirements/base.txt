@@ -26,3 +26,4 @@ regex>=2024.0
 colorama>=0.4.6
 tqdm
 tenacity
+rich>=13.0    # core: translation_checker renders the per-batch results table
