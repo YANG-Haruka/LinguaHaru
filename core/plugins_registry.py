@@ -13,6 +13,7 @@ plugin can be added/changed by dropping a folder in plugins/ — no code edits.
 """
 import os
 import io
+import re
 import sys
 import json
 import zipfile
@@ -22,6 +23,9 @@ from core.paths import PLUGINS_DIR, DATA_DIR
 from core.log_config import app_logger
 
 _cache = None
+
+# A plugin key must be a safe slug (used as a folder name + download key).
+_KEY_RE = re.compile(r"[A-Za-z0-9_-]{1,64}$")
 
 # Built-in plugins ship under PLUGINS_DIR (read-only bundle). Plugins DOWNLOADED
 # from the remote market land in this writable dir so they survive app updates
@@ -51,6 +55,16 @@ def _load_dir(base, source):
                 m = json.load(f)
         except Exception as e:  # noqa: BLE001
             app_logger.warning(f"Bad plugin manifest {manifest}: {e}")
+            continue
+        # Validate the manifest: must be a dict with a name + a safe slug key, and
+        # (for downloaded plugins) the key MUST match the folder it lives in — so a
+        # crafted manifest can't impersonate another plugin or carry a bad key.
+        if not isinstance(m, dict) or not isinstance(m.get("name"), str) \
+                or not _KEY_RE.match(str(m.get("key") or "")):
+            app_logger.warning(f"Invalid plugin manifest (name/key): {manifest}")
+            continue
+        if source == "downloaded" and m["key"] != entry:
+            app_logger.warning(f"Plugin key '{m['key']}' != folder '{entry}'; skipping")
             continue
         m["dir"] = os.path.join(base, entry)
         m["source"] = source
@@ -137,15 +151,23 @@ def remote_available():
     return [p for p in fetch_remote_index() if p["key"] not in have]
 
 
-import re as _re
-_KEY_RE = _re.compile(r"[A-Za-z0-9_-]{1,64}$")
+# Zip-bomb guards for downloaded plugin packages (a plugin is manifest + small
+# code + requirements — never huge).
+_MAX_MEMBERS = 2000
+_MAX_FILE_BYTES = 50 * 1024 * 1024        # 50 MB per file
+_MAX_TOTAL_BYTES = 200 * 1024 * 1024      # 200 MB uncompressed total
 
 
 def _safe_extract(z, ex):
-    """Extract a zip rejecting path-traversal (zip slip), absolute paths and
-    symlink entries — the zip is downloaded code, so it must not escape `ex`."""
+    """Extract a zip rejecting path-traversal (zip slip), absolute paths, symlink
+    entries, and zip bombs — the zip is downloaded code, so it must neither escape
+    `ex` nor blow up disk."""
     base = os.path.realpath(ex)
-    for info in z.infolist():
+    infos = z.infolist()
+    if len(infos) > _MAX_MEMBERS:
+        raise ValueError(f"too many entries ({len(infos)})")
+    total = 0
+    for info in infos:
         name = info.filename
         if name.startswith(("/", "\\")) or ".." in name.replace("\\", "/").split("/"):
             raise ValueError(f"unsafe zip entry: {name}")
@@ -154,6 +176,11 @@ def _safe_extract(z, ex):
             raise ValueError(f"zip slip: {name}")
         if (info.external_attr >> 16) & 0o170000 == 0o120000:  # symlink
             raise ValueError(f"symlink in zip: {name}")
+        if info.file_size > _MAX_FILE_BYTES:
+            raise ValueError(f"zip entry too large: {name}")
+        total += info.file_size
+        if total > _MAX_TOTAL_BYTES:
+            raise ValueError("zip uncompressed size exceeds limit")
     z.extractall(ex)
 
 

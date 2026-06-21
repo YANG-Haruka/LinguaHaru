@@ -71,15 +71,21 @@ def check_for_update():
     if not latest:
         return None
     assets = data.get("assets") or {}
+    a = assets.get(flavor())
+    # An asset may be a bare URL string (no integrity) or {url, sha256}. Self-update
+    # requires a sha256 — without a checksum we will NOT auto-apply downloaded code
+    # (the user can still use the manual download link).
+    asset_url = asset_sha = None
+    if portable_root() and isinstance(a, dict) and a.get("url") and a.get("sha256"):
+        asset_url, asset_sha = a["url"], a["sha256"]
     return {
         "update": _to_tuple(latest) > _to_tuple(__version__),
         "current": __version__,
         "latest": latest,
         "url": data.get("url") or RELEASES_PAGE,
         "notes": data.get("notes", ""),
-        # Direct zip for THIS flavor (web/desktop), if version.json provides it and
-        # this is a portable install -> enables one-click in-app self-update.
-        "asset_url": assets.get(flavor()) if portable_root() else None,
+        "asset_url": asset_url,
+        "asset_sha256": asset_sha,
     }
 
 
@@ -138,8 +144,9 @@ def _find_inner_root(extracted):
 
 
 def _sync_base_deps(root):
-    """Re-install base deps with the bundled uv (pip fallback) so a new version
-    that added a base dependency works without a full python/ replacement."""
+    """Re-install base deps with the bundled uv (pip fallback). Returns True only
+    if the install actually succeeded (checked via returncode) — a new version that
+    added a base dependency must not be reported as a success if deps didn't land."""
     py = os.path.join(root, "python", "python.exe" if os.name == "nt" else "python")
     uv = os.path.join(root, "python", "uv.exe" if os.name == "nt" else "uv")
     reqs = [os.path.join(root, "requirements", "base.txt"),
@@ -149,64 +156,136 @@ def _sync_base_deps(root):
         if os.path.exists(r):
             args += ["-r", r]
     if not args:
-        return
+        return True   # nothing to sync
     cmd = ([uv, "pip", "install", "--python", py, *args] if os.path.exists(uv)
            else [py, "-m", "pip", "install", *args])
     try:
-        subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-    except Exception:  # noqa: BLE001 — dep sync is best-effort
-        pass
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+        return proc.returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
 
 
-def download_and_apply(asset_url, progress_cb=None):
+def _safe_extract(zpath, ex):
+    """Extract a zip rejecting zip-slip / absolute paths / symlinks (it's
+    downloaded code that overwrites program files)."""
+    base = os.path.realpath(ex)
+    with zipfile.ZipFile(zpath) as z:
+        for info in z.infolist():
+            name = info.filename
+            if name.startswith(("/", "\\")) or ".." in name.replace("\\", "/").split("/"):
+                raise ValueError(f"unsafe zip entry: {name}")
+            target = os.path.realpath(os.path.join(ex, name))
+            if target != base and not target.startswith(base + os.sep):
+                raise ValueError(f"zip slip: {name}")
+            if (info.external_attr >> 16) & 0o170000 == 0o120000:
+                raise ValueError(f"symlink in zip: {name}")
+        z.extractall(ex)
+
+
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+# Config files the user OWNS — preserved across an update (the rest of config/,
+# e.g. prompts/locales/default template, is replaced with the new version's).
+_PRESERVE_IN_CONFIG = ["api_config", "system_config.json", "text_rules.json"]
+
+
+def download_and_apply(asset_url, sha256=None, progress_cb=None):
     """Download the release zip and overlay the SOURCE layer onto the portable
-    install, preserving python/ + models/ + data/ + the user's system_config.json.
-    Returns (ok, message). Caller should prompt the user to restart on success."""
+    install — verified, transactional, and preserving user data. Preserves python/
+    (installed plugins), models/, data/, AND the user's config (api_config/,
+    system_config.json, text_rules.json). Verifies a SHA-256, applies via a
+    backup-and-rollback so a mid-way failure can't leave a half-updated install,
+    and fails (with rollback) if the post-update dependency sync fails.
+    Returns (ok, message)."""
     root = portable_root()
     if not root:
         return False, "Smart update is only available in the portable build."
     if not asset_url:
         return False, "No downloadable package URL for this build."
+    if not sha256:
+        # Refuse to apply downloaded code without an integrity checksum.
+        return False, "No checksum published for this update; use the download page."
     tmp = tempfile.mkdtemp(prefix="lh_update_")
+    backup = os.path.join(tmp, "backup")
+    os.makedirs(backup)
+    applied = []   # (item, had_backup) for rollback
     try:
         zpath = os.path.join(tmp, "update.zip")
-        _download(asset_url, zpath, progress_cb, base=0.0, span=0.7)
+        _download(asset_url, zpath, progress_cb, base=0.0, span=0.6)
         if progress_cb:
-            progress_cb(0.72, "extracting")
+            progress_cb(0.62, "verifying")
+        got = _sha256(zpath)
+        if got.lower() != str(sha256).lower():
+            return False, f"Checksum mismatch (expected {sha256[:12]}…, got {got[:12]}…)."
+        if progress_cb:
+            progress_cb(0.66, "extracting")
         ex = os.path.join(tmp, "x")
         os.makedirs(ex)
-        with zipfile.ZipFile(zpath) as z:
-            z.extractall(ex)
+        _safe_extract(zpath, ex)   # zip-slip safe
         src_root = _find_inner_root(ex)
         if not os.path.exists(os.path.join(src_root, "version.json")):
             return False, "Downloaded package is not a valid LinguaHaru build."
-        # Preserve the user's live config (config/ gets replaced with the default).
-        user_cfg = os.path.join(root, "config", "system_config.json")
-        backup_cfg = None
-        if os.path.exists(user_cfg):
-            backup_cfg = os.path.join(tmp, "system_config.json")
-            shutil.copy2(user_cfg, backup_cfg)
+
+        # Stage the NEW config with the user's owned files merged in, so replacing
+        # config/ never loses custom interfaces / settings / rules.
+        new_cfg = os.path.join(src_root, "config")
+        if os.path.isdir(new_cfg):
+            for keep in _PRESERVE_IN_CONFIG:
+                old = os.path.join(root, "config", keep)
+                dst = os.path.join(new_cfg, keep)
+                if os.path.exists(old):
+                    if os.path.isdir(old):
+                        shutil.rmtree(dst, ignore_errors=True)
+                        shutil.copytree(old, dst)
+                    else:
+                        shutil.copy2(old, dst)
+
         if progress_cb:
-            progress_cb(0.78, "applying")
+            progress_cb(0.7, "applying")
+        # Transactional apply: back up each item, then replace; rollback on error.
         for item in _SOURCE_LAYER:
             s = os.path.join(src_root, item)
             d = os.path.join(root, item)
             if not os.path.exists(s):
                 continue
+            had = os.path.exists(d)
+            if had:
+                bdst = os.path.join(backup, item)
+                os.makedirs(os.path.dirname(bdst), exist_ok=True)
+                shutil.move(d, bdst)
+            applied.append((item, had))
             if os.path.isdir(s):
-                shutil.rmtree(d, ignore_errors=True)
                 shutil.copytree(s, d)
             else:
                 shutil.copy2(s, d)
-        if backup_cfg:   # restore the user's settings after replacing config/
-            shutil.copy2(backup_cfg, user_cfg)
+
         if progress_cb:
-            progress_cb(0.9, "syncing dependencies")
-        _sync_base_deps(root)
+            progress_cb(0.85, "syncing dependencies")
+        if not _sync_base_deps(root):
+            raise RuntimeError("dependency sync failed")
         if progress_cb:
             progress_cb(1.0, "done")
         return True, "Update applied. Please restart the app to use the new version."
-    except Exception as e:  # noqa: BLE001
-        return False, f"Update failed: {e}"
+    except Exception as e:  # noqa: BLE001 — roll back to the pre-update state
+        for item, had in reversed(applied):
+            d = os.path.join(root, item)
+            try:
+                if os.path.isdir(d):
+                    shutil.rmtree(d, ignore_errors=True)
+                elif os.path.exists(d):
+                    os.remove(d)
+                if had:
+                    shutil.move(os.path.join(backup, item), d)
+            except Exception:  # noqa: BLE001
+                pass
+        return False, f"Update failed (rolled back): {e}"
     finally:
         shutil.rmtree(tmp, ignore_errors=True)

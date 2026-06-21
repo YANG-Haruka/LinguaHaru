@@ -116,7 +116,11 @@ def _delta_path(key):
     from core.paths import DATA_DIR
     d = os.path.join(DATA_DIR, "plugin_state")
     os.makedirs(d, exist_ok=True)
-    return os.path.join(d, f"{_norm(key)}.json")
+    # _norm lowercases + collapses separators but does NOT strip path separators;
+    # a manifest key like "/escape" or "a/b" could write outside plugin_state.
+    # Keep only safe slug chars so the state file can't escape the dir.
+    safe = re.sub(r"[^a-z0-9_-]", "_", _norm(key))[:64] or "_"
+    return os.path.join(d, f"{safe}.json")
 
 
 def _freeze_names():

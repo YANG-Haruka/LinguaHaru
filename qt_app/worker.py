@@ -41,62 +41,39 @@ class InstallWorker(QThread):
         self.freed_bytes = 0   # disk space freed by model cleanup (uninstall)
 
     def run(self):
-        import sys
-        from core.module_manager import MODULE_SPECS
-        spec = MODULE_SPECS.get(self.module_name)
-        if not spec:
+        # Route through the SAME backend as the web app (core.module_manager /
+        # optional_modules) instead of a second raw-pip implementation — so the Qt
+        # path also gets uv, the frozen guard, single-package upgrade (no CUDA
+        # torch churn), the freeze-delta + loaded-DLL-aware uninstall, and model
+        # cleanup. (Was duplicating all that with `pip`, missing every safeguard.)
+        from core import plugins_registry
+        if plugins_registry.get(self.module_name) is None:
             self.finished_ok.emit(False, f"Unknown module: {self.module_name}")
             return
-        reqfile, _packages = spec
-        if self.action == "uninstall":
-            # Only remove deps NOT shared with another plugin (keep the shared STT
-            # stack while a sibling still needs it).
-            from core.module_manager import packages_to_uninstall
-            packages = packages_to_uninstall(self.module_name)
-            if not packages:
-                self.line.emit("All dependencies are shared with another plugin; kept.")
-            else:
-                cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *packages]
-                if not self._stream(cmd):
-                    return
-            # Delete this plugin's NON-shared models (OCR/PDF); shared STT kept.
-            try:
-                from core.optional_modules import cleanup_plugin_models
-                removed, freed = cleanup_plugin_models(self.module_name)
-                self.freed_bytes = freed
-                if removed:
-                    self.line.emit("Removed models: " + ", ".join(removed))
-            except Exception as e:  # noqa: BLE001
-                self.line.emit(f"Model cleanup skipped: {e}")
-            self.finished_ok.emit(True, "Uninstall finished")
-            return
-        elif self.action == "upgrade":
-            cmd = [sys.executable, "-m", "pip", "install", "-U", "-r", reqfile]
-        else:
-            cmd = [sys.executable, "-m", "pip", "install", "-r", reqfile]
-        if self._stream(cmd):
-            self.finished_ok.emit(True, "Installation finished")
-
-    def _stream(self, cmd):
-        """Run a pip command, streaming output lines. Returns True on success;
-        emits finished_ok(False, ...) and returns False on failure."""
-        self.line.emit("$ " + " ".join(cmd))
         try:
-            proc = subprocess.Popen(
-                cmd, cwd=backend.REPO_ROOT, stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-                errors="replace", bufsize=1,
-            )
-            for raw in proc.stdout:
-                self.line.emit(raw.rstrip())
-            proc.wait()
-        except Exception as e:  # noqa: BLE001 - surface any launch failure
+            if self.action == "uninstall":
+                from core.optional_modules import uninstall_plugin
+                ok, out, freed = uninstall_plugin(self.module_name)
+                self.freed_bytes = freed or 0
+            elif self.action == "upgrade":
+                from core.module_manager import upgrade_module
+                ok, out = upgrade_module(self.module_name)
+            else:
+                from core.module_manager import install_module
+                ok, out = install_module(self.module_name)
+                if ok:   # warm the default model (best-effort; may need restart)
+                    try:
+                        from core.optional_modules import download_plugin_model
+                        download_plugin_model(self.module_name)
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception as e:  # noqa: BLE001
             self.finished_ok.emit(False, f"Error: {e}")
-            return False
-        if proc.returncode != 0:
-            self.finished_ok.emit(False, f"pip exited with code {proc.returncode}")
-            return False
-        return True
+            return
+        if out:
+            self.line.emit(str(out)[-400:])
+        self.finished_ok.emit(bool(ok), out or (
+            "Done" if ok else "Failed"))
 
 
 class ModelDownloadWorker(QThread):

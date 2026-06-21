@@ -337,9 +337,10 @@ def plugin_lib_size(name):
     if name in _LIB_SIZE_CACHE:
         return _LIB_SIZE_CACHE[name]
     import importlib.metadata as im
-    from core import model_store, module_manager
+    from core import model_store
     total, seen = 0, set()
-    for pkg in module_manager.MODULE_SPECS.get(name, (None, []))[1]:
+    _m = plugins_registry.get(name) or {}
+    for pkg in (_m.get("packages", []) + _m.get("shared_packages", [])):
         try:
             dist = im.distribution(pkg)
         except Exception:  # noqa: BLE001 — not installed
@@ -468,7 +469,7 @@ def module_status():
             "fixed_model": fixed_model,
         }
 
-    return [
+    entries = [
         _entry("PDF", "pdf", pdf_translation_available(),
                "BabelDOC", fixed_model="DocLayout (BabelDOC)"),
         _entry("Image OCR", "ocr", image_translation_available(), ocr_engine),
@@ -479,3 +480,31 @@ def module_status():
         _entry("翻译语音输入", "speechio", quick_voice_available(),
                "edge-tts 朗读 + 语音输入 · 速译"),
     ]
+    # DOWNLOADED market plugins (beyond the 5 built-ins): show them too so the user
+    # can install their deps + see status. Availability = all declared packages
+    # importable. The 5 built-ins above have bespoke availability/model logic.
+    builtin = {e["name"] for e in entries}
+    for m in plugins_registry.all_plugins().values():
+        if m["name"] in builtin or m.get("source") != "downloaded":
+            continue
+        pkgs = m.get("packages", []) + m.get("shared_packages", [])
+        avail = all(importlib.util.find_spec(_pkg_import_name(p)) is not None for p in pkgs) if pkgs else True
+        entries.append({
+            "name": m["name"], "key": m["key"], "available": avail,
+            "detail": m.get("detail", ""),
+            "install": plugins_registry.install_hint(m["name"]) or "",
+            "models": None, "current_model": None, "fixed_model": None,
+        })
+    return entries
+
+
+# pip name -> import name for the generic availability probe of downloaded plugins.
+_PKG_IMPORT = {"opencv-python-headless": "cv2", "opencv-python": "cv2", "Pillow": "PIL",
+               "faster-whisper": "faster_whisper", "qwen-asr": "qwen_asr",
+               "ten-vad": "ten_vad", "edge-tts": "edge_tts",
+               "imageio-ffmpeg": "imageio_ffmpeg", "paddlepaddle": "paddle",
+               "python-pptx": "pptx", "huggingface_hub": "huggingface_hub"}
+
+
+def _pkg_import_name(pkg):
+    return _PKG_IMPORT.get(pkg, pkg.replace("-", "_"))

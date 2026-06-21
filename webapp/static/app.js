@@ -609,7 +609,7 @@ const _TOUR_STEPS = [
   { tab: "translate", sel: "#dropzone",               t: "Onboarding T3 Title", b: "Onboarding T3 Body" },
   { tab: "live",      sel: "#live-go",                t: "Onboarding T4 Title", b: "Onboarding T4 Body" },
   { tab: "glossary",  sel: "#glossary-edit-select",   t: "Onboarding T5 Title", b: "Onboarding T5 Body" },
-  { tab: "modules",   sel: "#modules-table",          t: "Onboarding T6 Title", b: "Onboarding T6 Body" },
+  { tab: "modules",   sel: "#modules-grid",           t: "Onboarding T6 Title", b: "Onboarding T6 Body" },
   { tab: "settings",  sel: "#set-translation-mode",   t: "Onboarding T7 Title", b: "Onboarding T7 Body" },
 ];
 let _tourStep = 0;

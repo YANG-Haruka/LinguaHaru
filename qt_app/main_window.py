@@ -40,15 +40,16 @@ class _SelfUpdateWorker(QThread):
     progress = Signal(float, str)
     finished_ok = Signal(bool, str)
 
-    def __init__(self, asset_url, parent=None):
+    def __init__(self, asset_url, sha256, parent=None):
         super().__init__(parent)
         self._asset = asset_url
+        self._sha = sha256
 
     def run(self):
         try:
             from core.updater import download_and_apply
             ok, msg = download_and_apply(
-                self._asset, lambda f, s="": self.progress.emit(float(f), s))
+                self._asset, self._sha, lambda f, s="": self.progress.emit(float(f), s))
             self.finished_ok.emit(ok, msg)
         except Exception as e:  # noqa: BLE001
             self.finished_ok.emit(False, str(e))
@@ -375,25 +376,26 @@ class MainWindow(FluentWindow):
         if notes:
             body += "\n\n" + str(notes)
         asset = info.get("asset_url")
+        sha = info.get("asset_sha256")
         box = MessageBox(title, body, self)
-        # Portable build with a direct package URL -> one-click in-app update that
-        # keeps installed plugins + models. Otherwise just open the download page.
-        box.yesButton.setText(tr("Update Now", self._lang) if asset
+        # Portable build with a verified package (url + sha256) -> one-click in-app
+        # update that keeps installed plugins + models. Else open the download page.
+        box.yesButton.setText(tr("Update Now", self._lang) if (asset and sha)
                               else tr("Go to Download", self._lang))
         box.cancelButton.setText(tr("Later", self._lang))
         if not box.exec():
             return
-        if asset:
-            self._start_self_update(asset)
+        if asset and sha:
+            self._start_self_update(asset, sha)
         else:
             QDesktopServices.openUrl(QUrl(info.get("url") or ""))
 
-    def _start_self_update(self, asset):
+    def _start_self_update(self, asset, sha256):
         from qfluentwidgets import StateToolTip, InfoBar, InfoBarPosition
         self._update_tip = StateToolTip(tr("Updating", self._lang), "0%", self)
         self._update_tip.move(self.width() - 240, 20)
         self._update_tip.show()
-        self._self_update_worker = _SelfUpdateWorker(asset, self)
+        self._self_update_worker = _SelfUpdateWorker(asset, sha256, self)
 
         def on_prog(frac, stage):
             if hasattr(self, "_update_tip") and self._update_tip:

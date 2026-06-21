@@ -1496,6 +1496,17 @@ def _module_busy():
         return any(j.get("status") == "running" for j in MODULE_JOBS.values())
 
 
+def _claim_module_job(name):
+    """Atomically refuse if any plugin job is running, else mark `name` running.
+    Returns True if the caller now owns the job (avoids the check-then-set race
+    where two requests both pass _module_busy and then both mutate the env)."""
+    with _TASKS_LOCK:
+        if any(j.get("status") == "running" for j in MODULE_JOBS.values()):
+            return False
+        MODULE_JOBS[name] = {"status": "running", "output": ""}
+        return True
+
+
 def _run_module_job(name, action):
     freed = 0
     ok, out = False, ""
@@ -1555,13 +1566,13 @@ async def module_action(action: str, payload: dict):
     if action not in ("install", "uninstall", "upgrade"):
         raise HTTPException(400, "action must be install|uninstall|upgrade")
     name = payload.get("name")
-    from core.module_manager import MODULE_SPECS
-    if name not in MODULE_SPECS:
+    # Query the registry LIVE (not the import-time MODULE_SPECS snapshot) so a
+    # plugin downloaded from the market this session is recognized.
+    from core import plugins_registry
+    if plugins_registry.get(name) is None:
         raise HTTPException(404, f"Unknown module: {name}")
-    if _module_busy():
+    if not _claim_module_job(name):
         raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
-    with _TASKS_LOCK:
-        MODULE_JOBS[name] = {"status": "running", "output": ""}
     threading.Thread(target=_run_module_job, args=(name, action), daemon=True).start()
     return {"started": True}
 
@@ -1573,13 +1584,17 @@ async def module_set_model(payload: dict):
     _block_in_server_mode()
     name = payload.get("name")
     model_id = payload.get("model_id")
-    from core.optional_modules import set_plugin_model
-    if not name or not model_id or not set_plugin_model(name, model_id):
-        raise HTTPException(400, "name and a valid model_id are required")
-    if _module_busy():
+    if not name or not model_id:
+        raise HTTPException(400, "name and model_id are required")
+    # Atomically claim the job BEFORE mutating config, so a 409 doesn't leave the
+    # plugin pointed at a not-yet-downloaded model and two requests can't race.
+    if not _claim_module_job(name):
         raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
-    with _TASKS_LOCK:
-        MODULE_JOBS[name] = {"status": "running", "output": ""}
+    from core.optional_modules import set_plugin_model
+    if not set_plugin_model(name, model_id):
+        with _TASKS_LOCK:
+            MODULE_JOBS.pop(name, None)   # release the claim on bad input
+        raise HTTPException(400, "name and a valid model_id are required")
     threading.Thread(target=_run_model_job, args=(name, model_id),
                      daemon=True).start()
     return {"started": True}
@@ -2106,15 +2121,16 @@ def update_check():
 
 
 _SELF_UPDATE = {"status": "idle", "progress": 0.0, "stage": "", "message": ""}
+_SELF_UPDATE_LOCK = threading.Lock()
 
 
-def _run_self_update(asset_url):
+def _run_self_update(asset_url, sha256):
     from core.updater import download_and_apply
 
     def cb(frac, stage=""):
         _SELF_UPDATE.update(progress=round(float(frac), 3), stage=stage)
     try:
-        ok, msg = download_and_apply(asset_url, cb)
+        ok, msg = download_and_apply(asset_url, sha256, cb)
         _SELF_UPDATE.update(status="done" if ok else "error", message=msg,
                             progress=1.0 if ok else _SELF_UPDATE["progress"])
     except Exception as e:  # noqa: BLE001
@@ -2129,14 +2145,17 @@ def self_update(payload: dict = None):
     from core.updater import portable_root, check_for_update
     if not portable_root():
         raise HTTPException(400, "Smart update is only available in the portable build.")
-    if _SELF_UPDATE["status"] == "running":
-        raise HTTPException(409, "An update is already in progress.")
     info = check_for_update() or {}
-    asset = info.get("asset_url")
-    if not asset:
-        raise HTTPException(400, "No downloadable package for this build.")
-    _SELF_UPDATE.update(status="running", progress=0.0, stage="starting", message="")
-    threading.Thread(target=_run_self_update, args=(asset,), daemon=True).start()
+    asset, sha = info.get("asset_url"), info.get("asset_sha256")
+    if not asset or not sha:
+        raise HTTPException(400, "No verified package available for this build.")
+    # Atomic check-and-set so two concurrent requests can't both start an update
+    # (each would delete+replace the program dir).
+    with _SELF_UPDATE_LOCK:
+        if _SELF_UPDATE["status"] == "running":
+            raise HTTPException(409, "An update is already in progress.")
+        _SELF_UPDATE.update(status="running", progress=0.0, stage="starting", message="")
+    threading.Thread(target=_run_self_update, args=(asset, sha), daemon=True).start()
     return {"started": True}
 
 

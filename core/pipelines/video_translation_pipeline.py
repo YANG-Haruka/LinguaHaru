@@ -281,6 +281,21 @@ def _resolve_stt_engine(model_def):
         app_logger.warning(
             "faster-whisper not installed; falling back to SenseVoice.")
         return "sensevoice", "iic/SenseVoiceSmall"
+    # Final safety net: if the chosen engine's deps are NOT installed (e.g. only
+    # transformers present, no torch/whisper/funasr — the anime/qwen branches above
+    # found no fallback), route to whatever IS available so we never return an
+    # unusable engine that crashes on load. Prefer torch-free faster-whisper.
+    avail = {"whisper": has_whisper, "sensevoice": has_funasr,
+             "qwen3asr": has_qwen, "animewhisper": has_transformers}
+    if not avail.get(engine, False):
+        if has_whisper:
+            return "whisper", "small"
+        if has_funasr:
+            return "sensevoice", "iic/SenseVoiceSmall"
+        # Nothing usable at all — surface a clear error instead of a cryptic
+        # ModuleNotFoundError deep inside the engine loader.
+        raise RuntimeError("No speech-to-text engine is installed. Install the "
+                           "Video/Audio plugin (faster-whisper).")
     return engine, size
 
 
