@@ -34,6 +34,25 @@ class _UpdateCheckWorker(QThread):
         except Exception:
             pass
 
+
+class _SelfUpdateWorker(QThread):
+    """Download + apply the portable in-place update, reporting progress."""
+    progress = Signal(float, str)
+    finished_ok = Signal(bool, str)
+
+    def __init__(self, asset_url, parent=None):
+        super().__init__(parent)
+        self._asset = asset_url
+
+    def run(self):
+        try:
+            from core.updater import download_and_apply
+            ok, msg = download_and_apply(
+                self._asset, lambda f, s="": self.progress.emit(float(f), s))
+            self.finished_ok.emit(ok, msg)
+        except Exception as e:  # noqa: BLE001
+            self.finished_ok.emit(False, str(e))
+
 from core import backend
 from qt_app.i18n import tr, UI_LANGS, lang_display_name
 from qt_app.translate_page import TranslatePage
@@ -293,6 +312,9 @@ class MainWindow(FluentWindow):
             lambda: self.translate_page and self.translate_page.shutdown(),
             lambda: self.plugins_page and self.plugins_page.shutdown(),
             lambda: (self._update_worker.isRunning() and self._update_worker.wait(2000)),
+            lambda: (getattr(self, "_self_update_worker", None)
+                     and self._self_update_worker.isRunning()
+                     and self._self_update_worker.wait(3000)),
         ):
             try:
                 fn()
@@ -352,11 +374,46 @@ class MainWindow(FluentWindow):
         notes = info.get("notes")
         if notes:
             body += "\n\n" + str(notes)
+        asset = info.get("asset_url")
         box = MessageBox(title, body, self)
-        box.yesButton.setText(tr("Go to Download", self._lang))
+        # Portable build with a direct package URL -> one-click in-app update that
+        # keeps installed plugins + models. Otherwise just open the download page.
+        box.yesButton.setText(tr("Update Now", self._lang) if asset
+                              else tr("Go to Download", self._lang))
         box.cancelButton.setText(tr("Later", self._lang))
-        if box.exec():
+        if not box.exec():
+            return
+        if asset:
+            self._start_self_update(asset)
+        else:
             QDesktopServices.openUrl(QUrl(info.get("url") or ""))
+
+    def _start_self_update(self, asset):
+        from qfluentwidgets import StateToolTip, InfoBar, InfoBarPosition
+        self._update_tip = StateToolTip(tr("Updating", self._lang), "0%", self)
+        self._update_tip.move(self.width() - 240, 20)
+        self._update_tip.show()
+        self._self_update_worker = _SelfUpdateWorker(asset, self)
+
+        def on_prog(frac, stage):
+            if hasattr(self, "_update_tip") and self._update_tip:
+                self._update_tip.setContent(f"{int(frac * 100)}% {stage}")
+
+        def on_done(ok, msg):
+            if hasattr(self, "_update_tip") and self._update_tip:
+                self._update_tip.setState(ok)
+                self._update_tip = None
+            pos = InfoBarPosition.TOP
+            if ok:
+                InfoBar.success(tr("Update Done Restart", self._lang), "",
+                                duration=-1, position=pos, parent=self)
+            else:
+                InfoBar.error(tr("Update Failed", self._lang), str(msg)[-200:],
+                              duration=8000, position=pos, parent=self)
+
+        self._self_update_worker.progress.connect(on_prog)
+        self._self_update_worker.finished_ok.connect(on_done)
+        self._self_update_worker.start()
 
     def _show_lang_menu(self):
         """Dropdown of interface languages, opened from the bottom nav item."""

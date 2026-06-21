@@ -706,11 +706,37 @@ async function checkUpdate() {
       $("update-text").textContent = `${_label("Update Available", "发现新版本")} ${u.latest}` +
         `（${_label("Current Version", "当前")} ${u.current}）`;
       $("update-link").href = u.url;
+      // Portable build with a direct package URL -> offer one-click in-app update
+      // (keeps installed plugins + models). Otherwise just the download link.
+      if ($("update-now")) $("update-now").hidden = !u.asset_url;
       $("update-banner").hidden = false;
     }
   } catch (e) { /* offline / unreachable — silently skip */ }
 }
 $("update-dismiss").onclick = () => { $("update-banner").hidden = true; };
+if ($("update-now")) $("update-now").onclick = async () => {
+  const btn = $("update-now");
+  btn.disabled = true;
+  try {
+    await api("/api/self-update", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  } catch (e) {
+    btn.disabled = false;
+    $("update-text").textContent = (e && e.message) || _label("Try Again Later", "请稍后重试");
+    return;
+  }
+  const poll = setInterval(async () => {
+    let s; try { s = await api("/api/self-update/status"); } catch (e) { return; }
+    const pct = Math.round((s.progress || 0) * 100);
+    $("update-text").textContent = `${_label("Updating", "正在更新")} ${pct}% (${s.stage || ""})`;
+    if (s.status === "running") return;
+    clearInterval(poll);
+    btn.disabled = false;
+    $("update-text").textContent = s.status === "done"
+      ? `${_label("Update Done Restart", "更新完成，请重启程序")}`
+      : `${_label("Update Failed", "更新失败")}: ${(s.message || "").slice(-200)}`;
+    if (s.status === "done") btn.hidden = true;
+  }, 1000);
+};
 
 // In public-deploy (server) mode the server owns the model + key, so hide the
 // admin/settings UI and the per-translate model picker. Inline display:none

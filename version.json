@@ -1,5 +1,9 @@
 {
     "version": "5.1.0",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": ""
+    "notes": "",
+    "assets": {
+        "web": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-web.zip",
+        "desktop": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-desktop.zip"
+    }
 }

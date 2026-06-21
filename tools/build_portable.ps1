@@ -110,7 +110,7 @@ function Build-Flavor([string]$flavor) {
   }
 
   # 4. App source for this flavor
-  $common = @("core","config","plugins","assets","version.json","README.md","LICENSE")
+  $common = @("core","config","plugins","assets","requirements","version.json","README.md","LICENSE")
   $ui = if ($flavor -eq "web") { @("webapp") } else { @("qt_app","app_qt.py") }
   foreach ($it in ($common + $ui)) {
     $src = Join-Path $repo $it

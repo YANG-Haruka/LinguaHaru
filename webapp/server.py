@@ -2073,6 +2073,46 @@ def update_check():
     return _UPDATE_CACHE["data"] or {"update": False}
 
 
+_SELF_UPDATE = {"status": "idle", "progress": 0.0, "stage": "", "message": ""}
+
+
+def _run_self_update(asset_url):
+    from core.updater import download_and_apply
+
+    def cb(frac, stage=""):
+        _SELF_UPDATE.update(progress=round(float(frac), 3), stage=stage)
+    try:
+        ok, msg = download_and_apply(asset_url, cb)
+        _SELF_UPDATE.update(status="done" if ok else "error", message=msg,
+                            progress=1.0 if ok else _SELF_UPDATE["progress"])
+    except Exception as e:  # noqa: BLE001
+        _SELF_UPDATE.update(status="error", message=str(e))
+
+
+@app.post("/api/self-update")
+def self_update(payload: dict = None):
+    """Download + apply the new portable build in place (keeps python/, models/,
+    data/, user settings). Portable-only; poll /api/self-update/status."""
+    _block_in_server_mode()
+    from core.updater import portable_root, check_for_update
+    if not portable_root():
+        raise HTTPException(400, "Smart update is only available in the portable build.")
+    if _SELF_UPDATE["status"] == "running":
+        raise HTTPException(409, "An update is already in progress.")
+    info = check_for_update() or {}
+    asset = info.get("asset_url")
+    if not asset:
+        raise HTTPException(400, "No downloadable package for this build.")
+    _SELF_UPDATE.update(status="running", progress=0.0, stage="starting", message="")
+    threading.Thread(target=_run_self_update, args=(asset,), daemon=True).start()
+    return {"started": True}
+
+
+@app.get("/api/self-update/status")
+def self_update_status():
+    return dict(_SELF_UPDATE)
+
+
 class _NoCacheStatic(StaticFiles):
     """StaticFiles that asks browsers to revalidate every time, so UI edits to
     style.css / app.js show up on reload instead of serving a stale cached copy
