@@ -69,9 +69,20 @@ def _cache_sig(model, system_prompt, user_prompt, previous_prompt, glossary_term
     except Exception:  # noqa: BLE001
         mask = True
     # Fold top_p into the prompt_version hash too (params_sig has no top_p slot),
-    # so a sampling change can't reuse a stale translation. The model NAME keys the
-    # interface config (api model / thinking), assumed stable per name.
-    pv = f"{prompt_h}|tp={top_p}"
+    # so a sampling change can't reuse a stale translation. ALSO fold the actual
+    # interface config (base_url / real api model / thinking_type) so editing a
+    # same-NAMED interface to point at a different backend doesn't reuse the old
+    # cache (the model NAME alone is not enough — it's user-editable).
+    iface_h = ""
+    try:
+        from core import backend
+        cfg = backend.read_api_config(model) or {}
+        iface_h = hashlib.sha1(
+            json.dumps({k: cfg.get(k) for k in ("base_url", "model", "thinking_type")},
+                       sort_keys=True).encode("utf-8")).hexdigest()[:10]
+    except Exception:  # noqa: BLE001
+        iface_h = ""
+    pv = f"{prompt_h}|tp={top_p}|if={iface_h}"
     return tc.params_sig(model, "", "", mode=mode, temperature=temp,
                          glossary_hash=tc.glossary_hash(glossary_terms),
                          mask=mask, prompt_version=pv)
