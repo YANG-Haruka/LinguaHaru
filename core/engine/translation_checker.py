@@ -375,9 +375,14 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
 
     # Process each item
     for key, value in original_json.items():
-        # Get translated value
+        # Get translated value. NOTE: .get(key, "") returns the stored value when
+        # the key is present, so a JSON null -> None (not the "" default); calling
+        # .strip() on it would raise and crash the ENTIRE batch (losing valid
+        # sibling translations). Coerce any non-string (null / number / object) to
+        # "" so only that one id is treated as missing -> failed, siblings accepted.
         if translated_json is not None:
-            translated_value = translated_json.get(key, "").strip()
+            _tv = translated_json.get(key, "")
+            translated_value = _tv.strip() if isinstance(_tv, str) else ""
         else:
             translated_value = ""
         
@@ -477,7 +482,8 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         failed_table.add_column("Result", style=result_style, overflow="fold")
         
         for item in failed_translations:
-            if not translated_json.get(str(item['count_split']), "").strip():
+            _fv = translated_json.get(str(item['count_split']), "")
+            if not (_fv.strip() if isinstance(_fv, str) else ""):
                 failed_table.add_row(
                     str(item['count_split']),
                     markup.escape(str(item['value'])),

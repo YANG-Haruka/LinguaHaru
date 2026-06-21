@@ -300,19 +300,18 @@ def stream_segment_json(json_file_path, max_token, system_prompt, user_prompt, p
                 current_glossary_terms = []
                 current_segment_types = {}
             
-            # Split large text
-            chunks = split_by_sentences_and_combine(value, segment_available_tokens)
-            
-            for chunk in chunks:
-                chunk_dict = {str(count_split): chunk}
-                chunk_json = json.dumps(chunk_dict, ensure_ascii=False)
-                chunk_tokens = num_tokens_from_string(chunk_json)
-                
-                if chunk_tokens <= segment_available_tokens:
-                    segment_dict = chunk_dict
-                    progress = calculate_progress(segment_dict, max_count_split)
-                    segment_output = create_segment_output(segment_dict)
-                    all_segments.append((segment_output, progress, segment_glossary_terms, {sid: line_type}))
+            # Oversized single line: send it as its OWN one-item segment instead of
+            # splitting into chunks. The old code split a long value into N chunks
+            # that ALL reused the same count_split key — so on result restoration
+            # (keyed by count_split) every chunk but the last was silently dropped,
+            # losing most of a long paragraph's translation. Modern LLMs have huge
+            # context (DeepSeek: 1M in / 384K out), so one oversized item in one
+            # call is fine; a genuine failure is then marked failed (visible), not
+            # silently truncated.
+            segment_dict = {sid: value}
+            progress = calculate_progress(segment_dict, max_count_split)
+            segment_output = create_segment_output(segment_dict)
+            all_segments.append((segment_output, progress, segment_glossary_terms, {sid: line_type}))
         
         # Check if adding line exceeds limit
         elif current_token_count + line_tokens > segment_available_tokens:

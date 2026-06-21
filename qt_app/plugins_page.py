@@ -536,6 +536,12 @@ class PluginsPage(ScrollArea):
         from core.log_config import system_event
         from core.model_store import human_size
         if action == "uninstall":
+            if not ok:
+                # Honor the failure — don't report success when uninstall errored.
+                self._info(card._mod["name"], f"{tr('Failed', self._lang)}: {(msg or '')[-200:]}", error=True)
+                system_event(f"Plugin uninstall FAILED: {card._mod['name']}")
+                self._worker = None
+                return
             # Cleanup report: "Cleanup done, freed N MB" (freed=0 when everything
             # was shared and kept).
             freed = getattr(worker, "freed_bytes", 0) or 0

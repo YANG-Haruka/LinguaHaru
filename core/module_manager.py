@@ -87,11 +87,48 @@ def _run_uninstall(pkgs):
     return _run(cmd)
 
 
+def _norm(pkg):
+    """Canonical distribution name (PEP 503): lowercase, runs of -_. -> -."""
+    return re.sub(r"[-_.]+", "-", str(pkg)).lower()
+
+
+def _delta_path(key):
+    """File recording the packages a plugin's install ADDED (freeze diff), so an
+    uninstall can remove exactly those (minus what siblings added) — true cleanup
+    of transitive deps WITHOUT the risk of an autoremove deleting base/undeclared
+    deps the app needs at runtime."""
+    from core.paths import DATA_DIR
+    d = os.path.join(DATA_DIR, "plugin_state")
+    os.makedirs(d, exist_ok=True)
+    return os.path.join(d, f"{_norm(key)}.json")
+
+
+def _freeze_names():
+    """Set of currently-installed distribution names (canonical)."""
+    return {_norm(d.metadata["Name"]) for d in importlib.metadata.distributions()
+            if d.metadata and d.metadata.get("Name")}
+
+
+def _record_install_delta(key, before):
+    """After an install, persist (now - before) = the dists this plugin pulled in."""
+    try:
+        added = sorted(_freeze_names() - before)
+        with open(_delta_path(key), "w", encoding="utf-8") as f:
+            json.dump(added, f, ensure_ascii=False, indent=2)
+    except Exception as e:  # noqa: BLE001 — recording is best-effort
+        app_logger.warning(f"Could not record install delta for {key}: {e}")
+
+
 def install_module(name):
     req = plugins_registry.requirements_path(name)
     if not req:
         return False, f"Unknown module: {name}"
-    return _run_install(req)
+    m = plugins_registry.get(name)
+    before = _freeze_names()
+    ok, out = _run_install(req)
+    if ok and m:
+        _record_install_delta(m["key"], before)   # for full cleanup on uninstall
+    return ok, out
 
 
 def packages_to_uninstall(name):
@@ -113,15 +150,69 @@ def packages_to_uninstall(name):
     return sorted(mine - others)
 
 
+def _transitive_to_remove(name):
+    """Packages this plugin's install ADDED that are safe to also remove on
+    uninstall: this plugin's recorded freeze-delta, MINUS the delta + manifest
+    packages of every OTHER plugin, MINUS anything still REQUIRED by a remaining
+    distribution (live dependency-graph gate), MINUS tooling. Empty if no delta
+    was recorded (older install) — then we fall back to manifest-only removal."""
+    m = plugins_registry.get(name)
+    if not m:
+        return []
+    try:
+        with open(_delta_path(m["key"]), encoding="utf-8") as f:
+            mine = {_norm(p) for p in json.load(f)}
+    except Exception:  # noqa: BLE001 — no recorded delta -> nothing extra
+        return []
+    keep = {"pip", "setuptools", "wheel", "uv"}
+    for other in plugins_registry.all_plugins().values():
+        if other["name"] == name:
+            continue
+        keep |= {_norm(p) for p in other.get("packages", [])}
+        keep |= {_norm(p) for p in other.get("shared_packages", [])}
+        try:
+            with open(_delta_path(other["key"]), encoding="utf-8") as f:
+                keep |= {_norm(p) for p in json.load(f)}
+        except Exception:  # noqa: BLE001
+            pass
+    candidates = mine - keep
+    # Safety gate: never remove a package still required by a distribution we are
+    # NOT removing (protects shared/undeclared-but-pulled deps).
+    survivors = {_norm(d.metadata["Name"]) for d in importlib.metadata.distributions()
+                 if d.metadata and d.metadata.get("Name")
+                 and _norm(d.metadata["Name"]) not in candidates}
+    required_by_survivors = set()
+    for d in importlib.metadata.distributions():
+        nm = _norm(d.metadata["Name"]) if d.metadata and d.metadata.get("Name") else None
+        if nm not in survivors:
+            continue
+        for req in (d.requires or []):
+            if "; extra" in req and "extra ==" in req:
+                continue
+            dep = _norm(re.split(r"[<>=!~;\[\(\s]", req.strip())[0])
+            required_by_survivors.add(dep)
+    return sorted(candidates - required_by_survivors)
+
+
 def uninstall_module(name):
-    if not plugins_registry.get(name):
+    m = plugins_registry.get(name)
+    if not m:
         return False, f"Unknown module: {name}"
-    pkgs = packages_to_uninstall(name)
+    # This plugin's own top-level packages (shared-aware) + the transitive deps its
+    # install pulled in (freeze-delta, gated so siblings/base are never touched).
+    pkgs = set(packages_to_uninstall(name)) | set(_transitive_to_remove(name))
+    pkgs = sorted(pkgs)
     if not pkgs:
         # All of this plugin's packages are shared with another plugin -> removing
         # them would break the sibling. Nothing to uninstall at the pip level.
         return True, "All dependencies are shared with another plugin; kept."
-    return _run_uninstall(pkgs)
+    ok, out = _run_uninstall(pkgs)
+    if ok and m:   # forget the recorded delta so a reinstall re-records fresh
+        try:
+            os.remove(_delta_path(m["key"]))
+        except OSError:
+            pass
+    return ok, out
 
 
 def upgrade_module(name):

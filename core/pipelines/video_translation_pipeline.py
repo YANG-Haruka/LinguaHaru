@@ -246,10 +246,15 @@ def _resolve_stt_engine(model_def):
     e.g. config selects SenseVoice but only faster-whisper is installed -> use
     whisper 'small' rather than crashing with ModuleNotFoundError: funasr."""
     import importlib.util
-    has_funasr = importlib.util.find_spec("funasr") is not None
+    has_torch = importlib.util.find_spec("torch") is not None
+    # faster-whisper runs on ctranslate2 (NO torch). SenseVoice (funasr),
+    # Qwen3-ASR and anime-whisper (transformers) ALL need torch — so a missing
+    # torch makes them unavailable, and the fallbacks below correctly route to the
+    # torch-free whisper instead of crashing with ModuleNotFoundError: torch.
     has_whisper = importlib.util.find_spec("faster_whisper") is not None
-    has_qwen = importlib.util.find_spec("qwen_asr") is not None
-    has_transformers = importlib.util.find_spec("transformers") is not None
+    has_funasr = (importlib.util.find_spec("funasr") is not None) and has_torch
+    has_qwen = (importlib.util.find_spec("qwen_asr") is not None) and has_torch
+    has_transformers = (importlib.util.find_spec("transformers") is not None) and has_torch
     engine, size = model_def["engine"], model_def["size"]
     if engine == "animewhisper" and not has_transformers:
         # transformers missing -> degrade to a MULTILINGUAL whisper (anime-whisper
@@ -261,7 +266,7 @@ def _resolve_stt_engine(model_def):
         if has_funasr:
             return "sensevoice", "iic/SenseVoiceSmall"
     if engine == "qwen3asr" and not has_qwen:
-        # Qwen3-ASR package not installed -> degrade to the best available engine.
+        # Qwen3-ASR package (or torch) not installed -> degrade to best available.
         if has_funasr:
             app_logger.warning("qwen-asr not installed; falling back to SenseVoice.")
             return "sensevoice", "iic/SenseVoiceSmall"
