@@ -137,16 +137,53 @@ def remote_available():
     return [p for p in fetch_remote_index() if p["key"] not in have]
 
 
-def download_remote_plugin(key, url):
-    """Download a self-contained plugin zip into USER_PLUGINS_DIR/<key>/ and
-    register it. The zip must contain plugin.json (at root or one level down).
-    Returns (ok, message). Dependency install is the caller's normal pip/uv step."""
+import re as _re
+_KEY_RE = _re.compile(r"[A-Za-z0-9_-]{1,64}$")
+
+
+def _safe_extract(z, ex):
+    """Extract a zip rejecting path-traversal (zip slip), absolute paths and
+    symlink entries — the zip is downloaded code, so it must not escape `ex`."""
+    base = os.path.realpath(ex)
+    for info in z.infolist():
+        name = info.filename
+        if name.startswith(("/", "\\")) or ".." in name.replace("\\", "/").split("/"):
+            raise ValueError(f"unsafe zip entry: {name}")
+        target = os.path.realpath(os.path.join(ex, name))
+        if target != base and not target.startswith(base + os.sep):
+            raise ValueError(f"zip slip: {name}")
+        if (info.external_attr >> 16) & 0o170000 == 0o120000:  # symlink
+            raise ValueError(f"symlink in zip: {name}")
+    z.extractall(ex)
+
+
+def download_remote_plugin(key, url=None):
+    """Download a self-contained plugin into USER_PLUGINS_DIR/<key>/ and register
+    it. SECURITY: `key` must be a safe slug, and the download URL is taken from the
+    TRUSTED server-side market index (never from the caller) — so a request can
+    only ever install a plugin you actually published. Returns (ok, message)."""
     import shutil
     import tempfile
+    if not _KEY_RE.match(key or ""):
+        return False, "Invalid plugin key."
+    # URL ALWAYS comes from the trusted index, not the caller (prevents RCE via an
+    # arbitrary URL). Verify the key is published and use the index's https URL.
+    entry = next((p for p in fetch_remote_index() if p.get("key") == key), None)
+    if not entry:
+        return False, f"Plugin '{key}' is not in the market index."
+    url = entry.get("url", "")
+    if not url.lower().startswith("https://"):
+        return False, "Plugin URL must be https."
     dest = os.path.join(USER_PLUGINS_DIR, key)
+    # Containment: dest must stay inside USER_PLUGINS_DIR (defense in depth on top
+    # of the key regex).
+    if os.path.realpath(dest) != os.path.realpath(os.path.join(USER_PLUGINS_DIR, key)) or \
+            not os.path.realpath(dest).startswith(os.path.realpath(USER_PLUGINS_DIR) + os.sep):
+        return False, "Invalid plugin path."
     tmp = tempfile.mkdtemp(prefix="lh_plugin_")
     try:
         last = None
+        blob = None
         for proxy in _PROXIES:
             try:
                 u = f"{proxy}{url}" if proxy else url
@@ -161,7 +198,7 @@ def download_remote_plugin(key, url):
             return False, f"Download failed: {last}"
         ex = os.path.join(tmp, "x")
         with zipfile.ZipFile(io.BytesIO(blob)) as z:
-            z.extractall(ex)
+            _safe_extract(z, ex)
         # locate plugin.json (root or single wrapper dir)
         root = ex
         if not os.path.exists(os.path.join(root, "plugin.json")):

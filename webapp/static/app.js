@@ -1325,7 +1325,7 @@ async function downloadMarketPlugin(p, btn) {
   $("modules-status").textContent = `${_label("Downloading", "正在下载…")} ${p.name || p.key}`;
   try {
     await api("/api/modules/download", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key: p.key, url: p.url }) });
+      body: JSON.stringify({ key: p.key }) });   // url resolved server-side from the trusted index
   } catch (e) {
     btn.disabled = false;
     $("modules-status").textContent = (e && e.message) || _label("Try Again Later", "请稍后重试");

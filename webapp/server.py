@@ -1635,15 +1635,17 @@ def modules_market():
 @app.post("/api/modules/download")
 def modules_download(payload: dict):
     """Download a self-contained plugin from the remote market into the writable
-    plugins dir. Dependency install is the normal install step afterwards."""
+    plugins dir. Only the KEY is taken from the client — the download URL is
+    resolved server-side from the trusted market index (so a request can't point
+    the download at an arbitrary URL). Dependency install is the normal step after."""
     _block_in_server_mode()
     from core import plugins_registry
-    key, url = payload.get("key"), payload.get("url")
-    if not key or not url:
-        raise HTTPException(400, "key and url are required")
+    key = payload.get("key")
+    if not key:
+        raise HTTPException(400, "key is required")
     if _module_busy():
         raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
-    ok, msg = plugins_registry.download_remote_plugin(key, url)
+    ok, msg = plugins_registry.download_remote_plugin(key)   # url resolved from index
     if not ok:
         raise HTTPException(400, msg)
     return {"ok": True, "message": msg}
