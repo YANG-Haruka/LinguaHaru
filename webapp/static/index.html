@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260621D" />
+  <link rel="stylesheet" href="/static/style.css?v=20260621E" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -583,11 +583,8 @@
         <h2 data-i18n="Plugins">插件</h2>
         <p data-i18n="Plugins Subtitle">按需安装可选能力模块。安装后重启程序即可扩展支持的文件类型。</p>
       </div>
-      <div class="card">
-        <h3>可选模块</h3>
-        <table id="modules-table"></table>
-        <div id="modules-status" class="muted"></div>
-      </div>
+      <div id="modules-grid" class="plugin-grid"></div>
+      <div id="modules-status" class="muted" style="margin-top:14px"></div>
     </section>
 
     <!-- Settings -->
@@ -738,6 +735,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260621D"></script>
+  <script src="/static/app.js?v=20260621E"></script>
 </body>
 </html>

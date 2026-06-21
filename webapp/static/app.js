@@ -8,6 +8,15 @@ const ICON = {
   check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 6.5"/></svg>',
   cross:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   chevron:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>',
+};
+// Per-plugin glyphs for the plaza cards (mirrors the Qt OptionalPluginCard icons).
+const PLUGIN_ICON = {
+  "PDF":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 16h6"/></svg>',
+  "Image OCR":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M21 16l-5-5L5 20"/></svg>',
+  "Video/Audio":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>',
+  "Real-Time Voice":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
+  "翻译语音输入":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2M7 8v8M11 5v14M15 8v8M19 11v2"/></svg>',
 };
 const pill = (cls, label, icon) => `<span class="pill ${cls}">${icon || ""}${label}</span>`;
 
@@ -1196,60 +1205,62 @@ function _currentModelLabel(m) {
 }
 
 function renderModules() {
-  const t = $("modules-table");
-  t.innerHTML = "";
-  const head = document.createElement("tr");
-  head.innerHTML = `<th>${_label("Plugin", "模块")}</th><th>${_label("Model", "模型")}</th>` +
-    `<th>${_label("Status", "状态")}</th><th>${_label("Actions", "操作")}</th>`;
-  t.appendChild(head);
+  const grid = $("modules-grid");
+  grid.innerHTML = "";
   for (const m of BOOT.modules) {
-    const tr = document.createElement("tr");
+    const card = document.createElement("div");
+    card.className = "plugin-card" + (m.available ? " installed" : "");
 
-    // Name + short engine subtitle, stacked.
-    const nameTd = document.createElement("td");
-    nameTd.className = "plugin-name-cell";
-    const nm = document.createElement("div"); nm.className = "plugin-name"; nm.textContent = m.name;
-    const sub = document.createElement("div"); sub.className = "plugin-sub"; sub.textContent = _engineSubtitle(m.detail);
-    nameTd.append(nm, sub);
+    // Head: icon + name + status badge.
+    const head = document.createElement("div"); head.className = "plugin-card-head";
+    const ic = document.createElement("span"); ic.className = "plugin-card-icon";
+    ic.innerHTML = PLUGIN_ICON[m.name] || ICON.download;
+    const nm = document.createElement("div"); nm.className = "plugin-card-name"; nm.textContent = m.name;
+    const statEl = document.createElement("span"); statEl.className = "plugin-card-status";
+    statEl.innerHTML = m.available ? pill("on", _label("Installed", "已安装"), ICON.check)
+                                   : pill("off", _label("Not Installed", "未安装"), ICON.cross);
+    head.append(ic, nm, statEl);
+    card.appendChild(head);
 
-    // Current model: a compact clickable chip that opens the picker modal.
-    // Plugins without models (PDF) show a muted dash.
-    const modelTd = document.createElement("td");
-    const modelMain = document.createElement("div");
+    // Engine subtitle (muted).
+    const sub = document.createElement("div"); sub.className = "plugin-card-sub";
+    sub.textContent = _engineSubtitle(m.detail);
+    card.appendChild(sub);
+
+    // Model line: clickable chip (selectable) / read-only fixed model / nothing.
+    const modelLine = document.createElement("div"); modelLine.className = "plugin-card-model";
     if (m.models && m.models.length) {
       const chip = document.createElement("button");
-      chip.type = "button";
-      chip.className = "model-chip";
+      chip.type = "button"; chip.className = "model-chip";
       const txt = document.createElement("span"); txt.textContent = _currentModelLabel(m);
       const aff = document.createElement("span"); aff.className = "model-chip-aff"; aff.innerHTML = ICON.chevron;
       chip.append(txt, aff);
       chip.onclick = () => openPluginModelModal(m, chip, txt);
-      modelMain.appendChild(chip);
+      modelLine.appendChild(chip);
     } else if (m.fixed_model) {
-      // Fixed (non-selectable) model, e.g. PDF's DocLayout — shown read-only.
-      modelMain.className = "plugin-sub"; modelMain.textContent = m.fixed_model;
-    } else {
-      modelMain.className = "plugin-sub"; modelMain.textContent = "—";
+      modelLine.className = "plugin-card-model plugin-sub";
+      modelLine.textContent = `${_label("Model", "模型")}: ${m.fixed_model}`;
     }
-    modelTd.appendChild(modelMain);
-    // Disk-usage line (filled by loadModuleUsage): downloaded models + size.
+    card.appendChild(modelLine);
+
+    // Usage line (downloaded models + disk), filled by loadModuleUsage.
     const usageEl = document.createElement("div");
     usageEl.className = "plugin-sub plugin-usage";
     usageEl.dataset.plugin = m.name;
-    usageEl.style.marginTop = "4px";
-    modelTd.appendChild(usageEl);
+    card.appendChild(usageEl);
 
-    const statTd = document.createElement("td"); statTd.innerHTML = m.available ? pill("on", "已安装", ICON.check) : pill("off", "未安装", ICON.cross);
-
-    const actTd = document.createElement("td");
+    // Footer: action button(s).
+    const foot = document.createElement("div"); foot.className = "plugin-card-foot";
     const btn = document.createElement("button");
-    btn.textContent = m.available ? "卸载" : "安装";
-    btn.onclick = () => moduleAction(m.name, m.available ? "uninstall" : "install", btn, statTd);
-    actTd.appendChild(btn);
+    btn.className = m.available ? "" : "primary";
+    btn.innerHTML = (m.available ? "" : ICON.download) +
+      `<span>${m.available ? _label("Uninstall", "卸载") : _label("Install", "安装")}</span>`;
+    btn.onclick = () => moduleAction(m.name, m.available ? "uninstall" : "install", btn, statEl);
+    foot.appendChild(btn);
+    card.appendChild(foot);
 
-    tr.append(nameTd, modelTd, statTd, actTd);
-    t.appendChild(tr);
-    if (m.available) checkModuleUpdate(m.name, actTd, statTd);
+    grid.appendChild(card);
+    if (m.available) checkModuleUpdate(m.name, foot, statEl);
   }
   loadModuleUsage();
 }
