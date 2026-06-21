@@ -295,8 +295,15 @@ class PdfTranslator(DocumentTranslator):
                             check_stop=self._check_stop_and_signal_cancel, options=self.topts)
                         self._add_token_usage(pol_usage)
                         pv = self._parse_single_translation(polished)
-                        if pv:
+                        # Re-validate the polish: a second pass can drop
+                        # placeholders, copy the source, or emit the wrong language.
+                        # Only accept it if it passes the SAME check as the first
+                        # pass; otherwise keep the already-validated result.
+                        if pv and is_translation_valid(stripped, pv, self.src_lang, self.dst_lang):
                             result = pv
+                        elif pv:
+                            app_logger.warning(
+                                f"Paragraph {paragraph_index} polish failed validation; keeping first pass")
                     except Exception as e:  # noqa: BLE001 — never break on polish
                         app_logger.warning(f"PDF polish skipped: {e}")
                 with self.lock:

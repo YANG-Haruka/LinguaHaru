@@ -1416,10 +1416,22 @@ async function moduleAction(name, action, btn, statTd) {
   btn.disabled = true;
   const verb = _MODULE_VERBS[action] || action;
   statTd.innerHTML = pill("busy", verb + "中", "");
-  await api("/api/modules/" + action, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }) });
+  try {
+    await api("/api/modules/" + action, { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }) });
+  } catch (e) {
+    // e.g. 409 (another op in progress) or network error — re-enable the button so
+    // it never gets stuck disabled, and surface the reason.
+    btn.disabled = false;
+    statTd.innerHTML = pill("bad", "失败", ICON.cross);
+    $("modules-status").textContent = `${name}: ` + ((e && e.message) || _label("Try Again Later", "请稍后重试"));
+    return;
+  }
   const poll = setInterval(async () => {
-    const s = await api("/api/modules/status?name=" + encodeURIComponent(name));
+    let s;
+    try {
+      s = await api("/api/modules/status?name=" + encodeURIComponent(name));
+    } catch (e) { return; }   // transient poll error -> keep polling
     if (s.status === "running") return;
     clearInterval(poll);
     btn.disabled = false;

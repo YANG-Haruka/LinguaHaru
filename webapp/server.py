@@ -1480,46 +1480,68 @@ def proofread_download(name: str, request: Request):
 # Optional module install / uninstall (runs pip in the background)
 # --------------------------------------------------------------------------- #
 MODULE_JOBS = {}  # name -> {"status": running|done|error, "output": str}
+# pip/uv install/uninstall + model downloads all mutate the SAME interpreter env;
+# running two at once corrupts it. Serialize every job through one lock, and refuse
+# a new job (409) while one is running.
+_MODULE_JOB_LOCK = threading.Lock()
+
+
+def _module_busy():
+    with _TASKS_LOCK:
+        return any(j.get("status") == "running" for j in MODULE_JOBS.values())
 
 
 def _run_module_job(name, action):
-    from core.module_manager import install_module, upgrade_module
     freed = 0
-    if action == "uninstall":
-        # Shared-aware: removes only NON-shared deps + deletes non-shared models
-        # (shared STT stack is kept); reports freed disk space.
-        from core.optional_modules import uninstall_plugin
-        ok, out, freed = uninstall_plugin(name)
-    else:
-        fn = {"install": install_module, "upgrade": upgrade_module}[action]
-        ok, out = fn(name)
-    # On a successful install, best-effort warm the plugin's DEFAULT model so the
-    # user doesn't pay the download cost on first use. A just-pip-installed
-    # package often can't be imported until restart, so swallow any failure —
-    # the model will simply lazy-download on first real use instead.
-    if ok and action == "install":
+    ok, out = False, ""
+    # Hold the global lock for the whole job so concurrent pip/uv calls can't
+    # corrupt the shared env; ALWAYS land on a terminal status (try/finally) so a
+    # crash can't leave the job stuck "running" (which would freeze the UI button).
+    with _MODULE_JOB_LOCK:
         try:
-            from core.optional_modules import download_plugin_model
-            download_plugin_model(name)
-        except Exception:  # noqa: BLE001 — needs restart / import not ready yet
-            pass
-    if ok:
-        from core.log_config import system_event
-        from core.model_store import human_size
-        extra = f" | freed {human_size(freed)}" if (action == "uninstall" and freed) else ""
-        system_event(f"Plugin {action}: {name}{extra}")
-    with _TASKS_LOCK:
-        MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": out,
-                             "freed_bytes": freed}
+            from core.module_manager import install_module, upgrade_module
+            if action == "uninstall":
+                from core.optional_modules import uninstall_plugin
+                ok, out, freed = uninstall_plugin(name)
+            else:
+                fn = {"install": install_module, "upgrade": upgrade_module}[action]
+                ok, out = fn(name)
+            if ok and action == "install":
+                # Best-effort warm the default model; a just-installed package may
+                # not import until restart, so any failure here is non-fatal.
+                try:
+                    from core.optional_modules import download_plugin_model
+                    download_plugin_model(name)
+                except Exception:  # noqa: BLE001
+                    pass
+            if ok:
+                from core.log_config import system_event
+                from core.model_store import human_size
+                extra = f" | freed {human_size(freed)}" if (action == "uninstall" and freed) else ""
+                system_event(f"Plugin {action}: {name}{extra}")
+        except Exception as e:  # noqa: BLE001 — never leave the job stuck running
+            ok, out = False, f"{type(e).__name__}: {e}"
+            app_logger.error(f"Plugin {action} job crashed for {name}: {e}")
+        finally:
+            with _TASKS_LOCK:
+                MODULE_JOBS[name] = {"status": "done" if ok else "error",
+                                     "output": out, "freed_bytes": freed}
 
 
 def _run_model_job(name, model_id):
     """Persist the chosen model id, then download+warm it (heavy/blocking)."""
-    from core.optional_modules import set_plugin_model, download_plugin_model
-    set_plugin_model(name, model_id)
-    ok = download_plugin_model(name, model_id)
-    with _TASKS_LOCK:
-        MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": ""}
+    ok = False
+    with _MODULE_JOB_LOCK:
+        try:
+            from core.optional_modules import set_plugin_model, download_plugin_model
+            set_plugin_model(name, model_id)
+            ok = download_plugin_model(name, model_id)
+        except Exception as e:  # noqa: BLE001
+            ok = False
+            app_logger.error(f"Model download job crashed for {name}/{model_id}: {e}")
+        finally:
+            with _TASKS_LOCK:
+                MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": ""}
 
 
 @app.post("/api/modules/{action}")
@@ -1531,6 +1553,8 @@ async def module_action(action: str, payload: dict):
     from core.module_manager import MODULE_SPECS
     if name not in MODULE_SPECS:
         raise HTTPException(404, f"Unknown module: {name}")
+    if _module_busy():
+        raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
     with _TASKS_LOCK:
         MODULE_JOBS[name] = {"status": "running", "output": ""}
     threading.Thread(target=_run_module_job, args=(name, action), daemon=True).start()
@@ -1547,6 +1571,8 @@ async def module_set_model(payload: dict):
     from core.optional_modules import set_plugin_model
     if not name or not model_id or not set_plugin_model(name, model_id):
         raise HTTPException(400, "name and a valid model_id are required")
+    if _module_busy():
+        raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
     with _TASKS_LOCK:
         MODULE_JOBS[name] = {"status": "running", "output": ""}
     threading.Thread(target=_run_model_job, args=(name, model_id),

@@ -65,9 +65,22 @@ def _uv_exe():
     return shutil.which("uv")
 
 
+def _frozen_block():
+    """In a PyInstaller build sys.executable is the app exe, not a Python — pip/uv
+    can't install into it. Plugin install requires a real Python (the portable
+    build), so refuse cleanly instead of spawning the exe and failing cryptically."""
+    if getattr(sys, "frozen", False):
+        return (False, "Plugin install is not available in the packaged (PyInstaller) "
+                       "build. Use the portable build to install plugins.")
+    return None
+
+
 def _run_install(req, upgrade=False):
     """Install from a requirements file into THIS interpreter. uv (with --python
     pointing at our interpreter) when available, else `python -m pip`."""
+    blocked = _frozen_block()
+    if blocked:
+        return blocked
     uv = _uv_exe()
     up = ["--upgrade"] if upgrade else []
     if uv:
@@ -79,6 +92,9 @@ def _run_install(req, upgrade=False):
 
 def _run_uninstall(pkgs):
     """Uninstall packages from THIS interpreter (uv if available, else pip)."""
+    blocked = _frozen_block()
+    if blocked:
+        return blocked
     uv = _uv_exe()
     if uv:
         cmd = [uv, "pip", "uninstall", "--python", sys.executable, *pkgs]

@@ -45,7 +45,9 @@ def _atomic_write_json(path, obj):
 def flush_results(path=None):
     """Force-write buffered RESULT data to disk. Call before anything reads the
     result file from disk (check/sort, restore) and on stop/finish so partial
-    progress is always persisted (resumable)."""
+    progress is always persisted (resumable). Returns True if every targeted path
+    is now clean on disk, False if any write was deferred (left dirty to retry)."""
+    ok = True
     with _result_lock:
         paths = [path] if path else list(_result_cache.keys())
         for p in paths:
@@ -62,7 +64,20 @@ def flush_results(path=None):
             except Exception as e:  # noqa: BLE001 — e.g. Windows os.replace lock
                 # Leave it dirty so the next flush retries; never let a transient
                 # write error mask the caller's stop/finish handling.
+                ok = False
                 app_logger.warning(f"Result flush deferred (will retry): {e}")
+    return ok
+
+
+def flush_results_blocking(path, attempts=5):
+    """Final-flush helper: retry flush_results with backoff so the on-disk result
+    is current BEFORE check/sort + restore read it (otherwise they'd read stale
+    data and silently drop the latest translations). Returns True on success."""
+    for i in range(attempts):
+        if flush_results(path):
+            return True
+        time.sleep(min(0.3 * (2 ** i), 3.0))
+    return flush_results(path)
 
 
 def invalidate_results(path):

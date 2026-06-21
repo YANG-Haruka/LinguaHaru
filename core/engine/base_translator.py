@@ -22,7 +22,7 @@ from core.load_prompt import load_prompt
 from core.languages_config import LABEL_TRANSLATIONS
 from .translation_checker import (
     process_translation_results, clean_json, check_and_sort_translations,
-    flush_results, invalidate_results)
+    flush_results, flush_results_blocking, invalidate_results)
 
 # File path constants
 SRC_JSON_PATH = "src.json"
@@ -1200,8 +1200,14 @@ class DocumentTranslator:
             retry_count += 1
 
         # Post-processing — flush the buffered results to disk first, since
-        # check/sort and restore read the result file directly.
-        flush_results(self.result_split_json_path)
+        # check/sort and restore read the result file directly. This is the FINAL
+        # flush: retry with backoff and hard-fail if it can't land, so we never
+        # proceed to read a stale on-disk file (which would silently drop the
+        # latest translations).
+        if not flush_results_blocking(self.result_split_json_path):
+            raise RuntimeError(
+                "Failed to persist final translation results to disk "
+                f"({self.result_split_json_path}); aborting to avoid shipping stale output.")
         self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Checking results')}...")
         missing_counts = check_and_sort_translations(self.src_split_json_path, self.result_split_json_path)
 
