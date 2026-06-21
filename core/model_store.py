@@ -10,10 +10,15 @@ change can `migrate_to()` the existing files.
 import os
 import shutil
 
-from core.paths import DATA_DIR, SYSTEM_CONFIG
+from core.paths import DATA_DIR, RUNTIME_ROOT, SYSTEM_CONFIG
 from core.log_config import app_logger
 
-_DEFAULT = os.path.join(DATA_DIR, "models")
+# Models live in a TOP-LEVEL `models/` folder (next to the exe / at the repo root),
+# NOT under data/, so the whole set can be distributed/dropped in independently of
+# the mutable data dir. Honors a "models_dir" override in system_config.
+_DEFAULT = os.path.join(RUNTIME_ROOT, "models")
+# Legacy location (pre-2026-06-21) — auto-adopted if present and the new one isn't.
+_LEGACY_DEFAULT = os.path.join(DATA_DIR, "models")
 
 
 def _read_cfg():
@@ -26,9 +31,16 @@ def _read_cfg():
 
 
 def current_dir():
-    """The configured models directory (absolute), defaulting to data/models."""
+    """The configured models directory (absolute). Defaults to the top-level
+    models/; if that doesn't exist yet but a legacy data/models does, use the
+    legacy one (so existing installs keep working until migrated)."""
     cfg = _read_cfg()
-    d = cfg.get("models_dir") or _DEFAULT
+    d = cfg.get("models_dir")
+    if not d:
+        if os.path.isdir(_DEFAULT) or not os.path.isdir(_LEGACY_DEFAULT):
+            d = _DEFAULT
+        else:
+            d = _LEGACY_DEFAULT
     return os.path.abspath(d)
 
 

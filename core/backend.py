@@ -78,7 +78,14 @@ def get_translator_class(
         module_name, class_name = module_path.rsplit('.', 1)
         module = import_module(module_name)
         translator_class = getattr(module, class_name)
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError) as e:
+        # Don't fail silently: a missing bundled dep here surfaces to the user as
+        # the misleading "Unsupported file type" — log the real cause.
+        import traceback
+        from core.log_config import app_logger
+        app_logger.error(f"Translator load failed for '{file_extension}' "
+                         f"({module_path}): {type(e).__name__}: {e}\n"
+                         + traceback.format_exc())
         return None
 
     ext = file_extension.lower()
