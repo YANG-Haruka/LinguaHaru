@@ -94,6 +94,11 @@ def setup_model_env(defer_network=False):
     from the PDF translator just before its first run."""
     md = current_dir()
     os.makedirs(md, exist_ok=True)
+    # On Windows without Developer Mode/admin, the HF cache can't create symlinks
+    # and falls back to real file copies — which is what we WANT for a portable,
+    # distributable models/ folder (zip to a netdisk, works elsewhere, no dangling
+    # symlinks). Just silence the noisy per-download warning about it.
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     # faster-whisper + any huggingface_hub download
     os.environ.setdefault("HF_HOME", md)
     os.environ.setdefault("HUGGINGFACE_HUB_CACHE", os.path.join(md, "hub"))
