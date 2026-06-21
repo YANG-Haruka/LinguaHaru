@@ -117,6 +117,13 @@ function Build-Flavor([string]$flavor) {
     if (Test-Path $src) { Copy-Item -Recurse -Force $src (Join-Path $out $it) }
   }
   Get-ChildItem $out -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  # Never ship the developer's LOCAL runtime config / secrets / mutable data — only
+  # the tracked default template (the app seeds system_config.json from it on first
+  # run). config/system_config.json is gitignored but exists in a dev checkout.
+  Remove-Item (Join-Path $out "config\system_config.json") -Force -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force (Join-Path $out "data") -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force (Join-Path $out "config\mykeys") -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force (Join-Path $out "data\mykeys") -ErrorAction SilentlyContinue
 
   # 5. Launcher
   if ($flavor -eq "web") {
