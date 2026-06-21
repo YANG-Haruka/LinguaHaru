@@ -10,7 +10,7 @@ Two sections:
     availability on finish.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
 )
@@ -18,9 +18,38 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel,
     SimpleCardWidget, CardWidget, IconWidget, FluentIcon, FlowLayout,
-    PushButton, HyperlinkButton, InfoBadge, InfoBar, InfoBarPosition,
+    PushButton, PrimaryPushButton, HyperlinkButton, InfoBadge, InfoBar, InfoBarPosition,
     MessageBox, MessageBoxBase,
 )
+
+
+class _MarketFetchWorker(QThread):
+    """Fetch the remote plugin index off the UI thread."""
+    done = Signal(list)
+
+    def run(self):
+        try:
+            from core import plugins_registry
+            self.done.emit(plugins_registry.remote_available())
+        except Exception:  # noqa: BLE001
+            self.done.emit([])
+
+
+class _MarketDownloadWorker(QThread):
+    """Download a self-contained plugin from the market."""
+    done = Signal(bool, str)
+
+    def __init__(self, key, url, parent=None):
+        super().__init__(parent)
+        self._key, self._url = key, url
+
+    def run(self):
+        try:
+            from core import plugins_registry
+            ok, msg = plugins_registry.download_remote_plugin(self._key, self._url)
+            self.done.emit(ok, msg)
+        except Exception as e:  # noqa: BLE001
+            self.done.emit(False, str(e))
 
 from qt_app.i18n import tr
 from qt_app.worker import (
@@ -414,6 +443,30 @@ class PluginsPage(ScrollArea):
         opt_layout.addWidget(opt_flow_host)
         layout.addWidget(opt_card)
 
+        # --- Plugin market (downloadable plugins, fetched on demand) ---
+        mkt_head = QHBoxLayout()
+        self.market_header = StrongBodyLabel(tr("Plugin Market", lang))
+        mkt_head.addWidget(self.market_header)
+        mkt_head.addStretch(1)
+        self.market_refresh = PushButton(FluentIcon.SYNC, tr("Refresh Market", lang))
+        self.market_refresh.clicked.connect(self._refresh_market)
+        mkt_head.addWidget(self.market_refresh)
+        layout.addLayout(mkt_head)
+        market_card = SimpleCardWidget()
+        m_layout = QVBoxLayout(market_card)
+        m_layout.setContentsMargins(20, 16, 20, 16)
+        self.market_hint = CaptionLabel(tr("Refresh Market", lang))
+        m_layout.addWidget(self.market_hint)
+        m_flow_host = QWidget()
+        self.market_flow = FlowLayout(m_flow_host, needAni=False)
+        self.market_flow.setHorizontalSpacing(14)
+        self.market_flow.setVerticalSpacing(14)
+        m_layout.addWidget(m_flow_host)
+        layout.addWidget(market_card)
+        self._market_cards = []
+        self._market_fetch = None
+        self._market_dl = None
+
         # --- Built-in formats ---
         self.builtin_header = StrongBodyLabel(tr("Built-in Formats", lang))
         layout.addWidget(self.builtin_header)
@@ -437,6 +490,8 @@ class PluginsPage(ScrollArea):
         self.subtitle.setText(tr("Every format is a plugin", lang))
         self.opt_header.setText(tr("Optional Plugins", lang))
         self.builtin_header.setText(tr("Built-in Formats", lang))
+        self.market_header.setText(tr("Plugin Market", lang))
+        self.market_refresh.setText(tr("Refresh Market", lang))
         for card in self._opt_cards:
             card._lang = lang
             card.set_state(card._mod["available"])
@@ -452,6 +507,9 @@ class PluginsPage(ScrollArea):
         workers = list(self._check_workers) + list(self._dl_workers)
         if self._worker is not None:
             workers.append(self._worker)
+        for w in (getattr(self, "_market_fetch", None), getattr(self, "_market_dl", None)):
+            if w is not None:
+                workers.append(w)
         for card in self._opt_cards:
             workers.extend(getattr(card, "_workers", []) or [])
             sw = getattr(card, "_space_worker", None)
@@ -464,6 +522,73 @@ class PluginsPage(ScrollArea):
                     w.wait(3000)
             except RuntimeError:
                 pass   # C++ object already deleted
+
+    # --- Plugin market ---
+    def _refresh_market(self):
+        self.market_refresh.setEnabled(False)
+        self.market_hint.setText(tr("Downloading", self._lang))
+        self._market_fetch = _MarketFetchWorker(self)
+        self._market_fetch.done.connect(self._populate_market)
+        self._market_fetch.start()
+
+    def _populate_market(self, plugins):
+        self.market_refresh.setEnabled(True)
+        for c in self._market_cards:
+            self.market_flow.removeWidget(c)
+            c.deleteLater()
+        self._market_cards = []
+        if not plugins:
+            self.market_hint.setText(tr("Plugin Market", self._lang) + " — 0")
+            return
+        self.market_hint.setText("")
+        for p in plugins:
+            card = self._market_card(p)
+            self._market_cards.append(card)
+            self.market_flow.addWidget(card)
+
+    def _market_card(self, p):
+        card = SimpleCardWidget()
+        card.setFixedWidth(CARD_WIDTH)
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setSpacing(6)
+        lay.addWidget(StrongBodyLabel(p.get("name", p["key"]), card))
+        det = CaptionLabel((p.get("detail", "") + (f" · v{p['version']}" if p.get("version") else "")), card)
+        det.setWordWrap(True)
+        det.setTextColor("#808080", "#a0a0a0")
+        lay.addWidget(det)
+        lay.addStretch(1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        btn = PrimaryPushButton(FluentIcon.DOWNLOAD, tr("Download", self._lang), card)
+        btn.clicked.connect(lambda _=False, pl=p, b=btn: self._download_market(pl, b))
+        row.addWidget(btn)
+        lay.addLayout(row)
+        return card
+
+    def _download_market(self, p, btn):
+        btn.setEnabled(False)
+        self._market_dl = _MarketDownloadWorker(p["key"], p["url"], self)
+
+        def done(ok, msg):
+            if ok:
+                # Downloaded plugins need a restart to activate their entry hook +
+                # appear in Optional Plugins (where deps are installed).
+                InfoBar.success(tr("Download", self._lang),
+                                tr("Update Done Restart", self._lang),
+                                duration=-1, position=InfoBarPosition.TOP, parent=self)
+                for c in self._market_cards:
+                    if c is btn.parent():
+                        self.market_flow.removeWidget(c)
+                        c.deleteLater()
+                        self._market_cards.remove(c)
+                        break
+            else:
+                btn.setEnabled(True)
+                InfoBar.error(tr("Update Failed", self._lang), str(msg)[-200:],
+                              duration=6000, position=InfoBarPosition.TOP, parent=self)
+        self._market_dl.done.connect(done)
+        self._market_dl.start()
 
     def _start_update_check(self, card):
         """Ask PyPI (off the UI thread) whether this installed plugin has a
