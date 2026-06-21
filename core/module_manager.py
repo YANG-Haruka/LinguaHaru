@@ -36,9 +36,11 @@ _PYPI_JSON = [
 ]
 
 
-def _run_pip(args):
-    """Run `python -m pip <args>`; return (ok, tail_of_output)."""
-    cmd = [sys.executable, "-m", "pip", *args]
+import shutil
+
+
+def _run(cmd):
+    """Run a command list; return (ok, tail_of_output)."""
     app_logger.info(f"Running: {' '.join(cmd)}")
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True,
@@ -49,11 +51,47 @@ def _run_pip(args):
         return False, str(e)
 
 
+def _uv_exe():
+    """A uv executable if available — bundled next to python.exe (portable build)
+    or on PATH. uv installs MUCH faster than pip (parallel, cached resolver), so it
+    is used when present; pip is the universal fallback. Returns None if absent."""
+    exe = "uv.exe" if os.name == "nt" else "uv"
+    cand = os.path.join(os.path.dirname(sys.executable), exe)
+    if os.path.exists(cand):
+        return cand
+    cand = os.path.join(os.path.dirname(sys.executable), "Scripts", exe)
+    if os.path.exists(cand):
+        return cand
+    return shutil.which("uv")
+
+
+def _run_install(req, upgrade=False):
+    """Install from a requirements file into THIS interpreter. uv (with --python
+    pointing at our interpreter) when available, else `python -m pip`."""
+    uv = _uv_exe()
+    up = ["--upgrade"] if upgrade else []
+    if uv:
+        cmd = [uv, "pip", "install", "--python", sys.executable, *up, "-r", req]
+    else:
+        cmd = [sys.executable, "-m", "pip", "install", *up, "-r", req]
+    return _run(cmd)
+
+
+def _run_uninstall(pkgs):
+    """Uninstall packages from THIS interpreter (uv if available, else pip)."""
+    uv = _uv_exe()
+    if uv:
+        cmd = [uv, "pip", "uninstall", "--python", sys.executable, *pkgs]
+    else:
+        cmd = [sys.executable, "-m", "pip", "uninstall", "-y", *pkgs]
+    return _run(cmd)
+
+
 def install_module(name):
     req = plugins_registry.requirements_path(name)
     if not req:
         return False, f"Unknown module: {name}"
-    return _run_pip(["install", "-r", req])
+    return _run_install(req)
 
 
 def packages_to_uninstall(name):
@@ -83,7 +121,7 @@ def uninstall_module(name):
         # All of this plugin's packages are shared with another plugin -> removing
         # them would break the sibling. Nothing to uninstall at the pip level.
         return True, "All dependencies are shared with another plugin; kept."
-    return _run_pip(["uninstall", "-y", *pkgs])
+    return _run_uninstall(pkgs)
 
 
 def upgrade_module(name):
@@ -91,7 +129,7 @@ def upgrade_module(name):
     req = plugins_registry.requirements_path(name)
     if not req:
         return False, f"Unknown module: {name}"
-    return _run_pip(["install", "-U", "-r", req])
+    return _run_install(req, upgrade=True)
 
 
 def _version_tuple(v):

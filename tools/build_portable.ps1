@@ -56,19 +56,32 @@ function Build-Flavor([string]$flavor) {
   if (-not (Test-Path $getpip)) { Invoke-WebRequest "https://bootstrap.pypa.io/get-pip.py" -OutFile $getpip }
   $env:PYTHONNOUSERSITE = "1"
   & $py $getpip --no-warn-script-location | Out-Null
+
+  # 2b. Bundle uv next to python.exe so the Plugins page installs deps with uv
+  #     (much faster than pip; core.module_manager._uv_exe() finds it here) and
+  #     fall back to pip if absent. Also used for this build's own base install.
+  $uvExe = Join-Path $out "python\uv.exe"
+  $uvZip = Join-Path $env:TEMP "uv-win-x64.zip"
+  if (-not (Test-Path $uvZip)) {
+    Invoke-WebRequest "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-pc-windows-msvc.zip" -OutFile $uvZip
+  }
+  $uvTmp = Join-Path $env:TEMP "uv-extract"
+  Remove-Item -Recurse -Force $uvTmp -ErrorAction SilentlyContinue
+  Expand-Archive $uvZip -DestinationPath $uvTmp -Force
+  Copy-Item (Join-Path $uvTmp "uv.exe") $uvExe -Force
+
   # setuptools + wheel: the embeddable python ships NEITHER, so any later plugin
   # whose dependency builds from an sdist (no prebuilt wheel) fails with
   # "Cannot import 'setuptools.build_meta'". Needed for the Plugins page to install
   # such plugins at runtime.
-  & $py -m pip install --no-warn-script-location -q setuptools wheel | Out-Null
+  & $uvExe pip install --python $py -q setuptools wheel
 
-  # 3. Base deps for this flavor (NO ML plugins)
+  # 3. Base deps for this flavor (NO ML plugins) — installed with uv (fast).
   $reqs = @("-r", (Join-Path $repo "requirements\base.txt"))
   if ($flavor -eq "web")     { $reqs += @("-r", (Join-Path $repo "requirements\web.txt")) }
   if ($flavor -eq "desktop") { $reqs += @("-r", (Join-Path $repo "requirements\qt.txt")) }
-  Write-Host ">>> pip install ($flavor) base deps"
-  & $py -m pip install --no-warn-script-location --no-user -q @reqs
-  & $py -m pip cache purge 2>$null | Out-Null
+  Write-Host ">>> uv pip install ($flavor) base deps"
+  & $uvExe pip install --python $py @reqs
 
   # 3b. Prune PySide6 (desktop only): drop WebEngine/Quick/QML/3D + unused modules.
   if ($flavor -eq "desktop") {
