@@ -15,7 +15,7 @@ One-stop AI translation — documents, subtitles, images, real-time voice. Porta
 
 ## 使用 / Usage
 1. 解压到任意目录(路径可含中文)。Unzip anywhere.
-2. 双击 `Start-Web.bat`(网页版,浏览器打开 http://127.0.0.1:8080)或 `Start-Desktop.bat`(桌面版)。
+2. 双击 `Start-Web.bat`(网页版,**会自动打开浏览器**,无需手动输网址)或 `Start-Desktop.bat`(桌面版)。
 3. 「接口管理」添加翻译接口(如 DeepSeek),填 API Key,点卡片激活。
 4. 需要 PDF / 图片 OCR / 视频字幕 / 实时语音时,到「插件」页按需安装(自带 uv,安装很快)。
 
@@ -33,8 +33,8 @@ One-stop AI translation — documents, subtitles, images, real-time voice. Porta
 
 ## 校验和 / Checksums (SHA-256)
 ```
-LinguaHaru-web.zip      4b3b29e6275644c70963a913cc86fb3d6ddfa014392b87a720f337300d070907
-LinguaHaru-desktop.zip  61c2cf6daefd49e828b30cc80dda3ef3026af0b66c2bfff3c0b66e247aaf388d
+LinguaHaru-web.zip      8bcedf2242027ea6fc30805cd821895d2c83ab798760005a3ac3ff67762700d3
+LinguaHaru-desktop.zip  d1d7c69aff76341b4cad151be4a05572b45c566b163f758ec575c5e085f47711
 ```
 > 这两个哈希已写入 `version.json`(assets[flavor].sha256),智能更新已启用。
 > ⚠️ 上传到 GitHub Release 的 zip 必须是本次构建的同一文件,否则哈希不匹配、自更新会拒绝。
