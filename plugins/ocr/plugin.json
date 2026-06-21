@@ -5,5 +5,5 @@
   "requirements": "requirements.txt",
   "packages": ["paddleocr", "paddlepaddle", "rapidocr", "opencv-python-headless", "Pillow"],
   "shared_packages": ["numpy", "onnxruntime", "huggingface_hub"],
-  "version_package": null
+  "version_package": "rapidocr"
 }

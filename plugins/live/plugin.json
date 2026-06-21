@@ -5,6 +5,6 @@
   "requirements": "requirements.txt",
   "packages": ["faster-whisper", "funasr", "qwen-asr", "soundcard", "ten-vad"],
   "shared_packages": ["torch", "torchaudio"],
-  "version_package": null,
+  "version_package": "faster-whisper",
   "detail": "SenseVoice / faster-whisper · 麦克风即时口译"
 }

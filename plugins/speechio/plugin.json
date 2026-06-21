@@ -5,6 +5,6 @@
   "requirements": "requirements.txt",
   "packages": ["edge-tts"],
   "shared_packages": ["torch", "torchaudio", "faster-whisper", "funasr"],
-  "version_package": null,
+  "version_package": "edge-tts",
   "detail": "edge-tts 朗读 + 语音输入 · 速译"
 }

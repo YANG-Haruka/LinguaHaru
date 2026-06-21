@@ -261,11 +261,24 @@ def uninstall_module(name):
 
 
 def upgrade_module(name):
-    """Upgrade a module's packages to the latest from its requirements file."""
-    req = plugins_registry.requirements_path(name)
-    if not req:
+    """Upgrade a plugin. Prefer upgrading ONLY its tracked version_package (the one
+    check_module_update watches) — NOT `-U` over the whole requirements file, which
+    would also upgrade torch/paddle and could replace a user's CUDA build with the
+    CPU wheel. Falls back to the full requirements only when no version_package is
+    declared."""
+    m = plugins_registry.get(name)
+    if not m:
         return False, f"Unknown module: {name}"
-    return _run_install(req, upgrade=True)
+    blocked = _frozen_block()
+    if blocked:
+        return blocked
+    pkg = m.get("version_package")
+    if pkg:
+        uv = _uv_exe()
+        if uv:
+            return _run([uv, "pip", "install", "--upgrade", "--python", sys.executable, pkg])
+        return _run([sys.executable, "-m", "pip", "install", "--upgrade", pkg])
+    return _run_install(m["requirements_path"], upgrade=True)
 
 
 def _version_tuple(v):

@@ -5,6 +5,6 @@
   "requirements": "requirements.txt",
   "packages": ["faster-whisper", "funasr", "qwen-asr", "imageio-ffmpeg", "soundcard", "ten-vad"],
   "shared_packages": ["torch", "torchaudio"],
-  "version_package": null,
+  "version_package": "faster-whisper",
   "detail": "faster-whisper / SenseVoice · ffmpeg 已内置 · 视频字幕"
 }
