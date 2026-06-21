@@ -1,5 +1,5 @@
 # Optional module: image translation (OCR + render back).
-# Requires: pip install -r requirements/ocr.txt
+# Requires: pip install -r plugins/ocr/requirements.txt
 from core.pipelines.image_translation_pipeline import (
     extract_image_content_to_json, write_translated_content_to_image)
 from core.engine.base_translator import DocumentTranslator

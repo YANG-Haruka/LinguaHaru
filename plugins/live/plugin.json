@@ -1,0 +1,10 @@
+{
+  "name": "Real-Time Voice",
+  "key": "live",
+  "order": 4,
+  "requirements": "requirements.txt",
+  "packages": ["faster-whisper", "funasr", "qwen-asr", "soundcard", "ten-vad"],
+  "shared_packages": ["torch", "torchaudio"],
+  "version_package": null,
+  "detail": "SenseVoice / faster-whisper · 麦克风即时口译"
+}

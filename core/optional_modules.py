@@ -6,6 +6,8 @@ import importlib.util
 import os
 import shutil
 
+from core import plugins_registry
+
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
 MEDIA_EXTENSIONS = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".m4a", ".flac"]
 
@@ -453,11 +455,12 @@ def module_status():
                   else "PP-OCRv5 (RapidOCR)")
     specs = _plugin_model_specs()
 
-    def _entry(name, key, available, detail, requirements, fixed_model=None):
+    def _entry(name, key, available, detail, fixed_model=None):
         spec = specs.get(name)
         return {
             "name": name, "key": key, "available": available, "detail": detail,
-            "install": f"pip install -r {requirements}",
+            # Install hint comes from the plugin manifest (plugins/<key>/).
+            "install": plugins_registry.install_hint(name) or "",
             "models": spec["models"] if spec else None,
             "current_model": plugin_current_model(name) if spec else None,
             # For plugins with a FIXED (non-selectable) model — shown read-only so
@@ -467,13 +470,12 @@ def module_status():
 
     return [
         _entry("PDF", "pdf", pdf_translation_available(),
-               "BabelDOC", "requirements/pdf.txt", fixed_model="DocLayout (BabelDOC)"),
-        _entry("Image OCR", "ocr", image_translation_available(),
-               ocr_engine, "requirements/ocr.txt"),
+               "BabelDOC", fixed_model="DocLayout (BabelDOC)"),
+        _entry("Image OCR", "ocr", image_translation_available(), ocr_engine),
         _entry("Video/Audio", "video", video_translation_available(),
-               "faster-whisper / SenseVoice · ffmpeg 已内置 · 视频字幕", "requirements/video.txt"),
+               "faster-whisper / SenseVoice · ffmpeg 已内置 · 视频字幕"),
         _entry("Real-Time Voice", "live", realtime_voice_available(),
-               "SenseVoice / faster-whisper · 麦克风即时口译", "requirements/video.txt"),
+               "SenseVoice / faster-whisper · 麦克风即时口译"),
         _entry("翻译语音输入", "speechio", quick_voice_available(),
-               "edge-tts 朗读 + 语音输入 · 速译", "requirements/speechio.txt"),
+               "edge-tts 朗读 + 语音输入 · 速译"),
     ]

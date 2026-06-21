@@ -34,6 +34,7 @@ API_CONFIG_DIR = os.path.join(CONFIG_DIR, "api_config")
 LOCALES_DIR = os.path.join(CONFIG_DIR, "locales")
 
 ASSETS_DIR = os.path.join(BUNDLE_ROOT, "assets")
+PLUGINS_DIR = os.path.join(BUNDLE_ROOT, "plugins")        # per-plugin manifests + requirements
 DATA_DIR = os.path.join(RUNTIME_ROOT, "data")             # WRITABLE — models/temp/result/log
 
 # system_config.json is WRITTEN at runtime (model choices, settings, theme), so

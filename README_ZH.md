@@ -43,17 +43,17 @@
     - 可选模块（按需安装，UI 会自动启用对应功能）
         ```bash
         # 图像翻译（.png/.jpg 等）：OCR 识别 + 译文回填渲染
-        pip install -r requirements/ocr.txt
+        pip install -r plugins/ocr/requirements.txt
 
         # PDF 翻译（.pdf）：基于 BabelDOC，保留排版
-        pip install -r requirements/pdf.txt
+        pip install -r plugins/pdf/requirements.txt
 
         # 视频/音频字幕翻译（.mp4/.mp3 等）：转写（Whisper / SenseVoice / Qwen-ASR）后翻译
         # 已内置 ffmpeg（imageio-ffmpeg），无需在 PATH 安装。也用于实时语音 + 可选的说话人标注
-        pip install -r requirements/video.txt
+        pip install -r plugins/video/requirements.txt
 
         # 速译语音：麦克风输入 + 朗读（edge-tts + 共享 STT）
-        pip install -r requirements/speechio.txt
+        pip install -r plugins/speechio/requirements.txt
         # 注：可选模型（OCR / 语音转文字 / 说话人分离 / PDF 版面）首次使用时自动下载到 data/models
         ```
 

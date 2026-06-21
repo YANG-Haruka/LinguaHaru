@@ -1,5 +1,5 @@
 # Optional module: video/audio subtitle translation.
-# Requires: pip install -r requirements/video.txt, plus ffmpeg on PATH.
+# Requires: pip install -r plugins/video/requirements.txt, plus ffmpeg on PATH.
 import os
 import json
 from datetime import datetime

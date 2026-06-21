@@ -1,5 +1,5 @@
 # Optional: "翻译语音输入" plugin — read-aloud (edge-tts TTS) + voice input (STT)
 # for the Quick-Translate (翻译) page. Pulls the shared speech stack + edge-tts.
 # edge-tts is online (no model download); STT models live in data/models.
--r video.txt
+-r ../video/requirements.txt
 edge-tts>=6.1.0

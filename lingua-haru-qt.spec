@@ -185,7 +185,8 @@ all_datas = filter_datas(
     + sum((c[0] for c in _ENGINE_COLLECTS), [])
 ) + [('assets/models/', 'assets/models/'), ('assets/img/', 'assets/img/'),
      ('assets/icons/', 'assets/icons/'),
-     ('config/', 'config/'), ('data/glossary/', 'data/glossary/')]
+     ('config/', 'config/'), ('data/glossary/', 'data/glossary/'),
+     ('plugins/', 'plugins/')]
 
 a = Analysis(
     ["app_qt.py"],

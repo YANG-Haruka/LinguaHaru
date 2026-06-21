@@ -45,18 +45,18 @@ You need to install CUDA (currently 11.7 and 12.1 have been tested without issue
       automatically on first use into `data/models`.
         ```bash
         # PDF translation (.pdf): layout-preserving, via BabelDOC
-        pip install -r requirements/pdf.txt
+        pip install -r plugins/pdf/requirements.txt
 
         # Image translation (.png/.jpg/...): OCR + render translation back onto the image
-        pip install -r requirements/ocr.txt
+        pip install -r plugins/ocr/requirements.txt
 
         # Video/audio subtitles (.mp4/.mp3/...): transcribe (Whisper / SenseVoice /
         # Qwen-ASR) then translate. ffmpeg is bundled (imageio-ffmpeg) — no PATH
         # install needed. Also powers real-time voice + optional speaker labels.
-        pip install -r requirements/video.txt
+        pip install -r plugins/video/requirements.txt
 
         # Quick-Translate voice: microphone input + read-aloud (edge-tts + shared STT)
-        pip install -r requirements/speechio.txt
+        pip install -r plugins/speechio/requirements.txt
         ```
 
 

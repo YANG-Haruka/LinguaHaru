@@ -1,0 +1,10 @@
+{
+  "name": "翻译语音输入",
+  "key": "speechio",
+  "order": 5,
+  "requirements": "requirements.txt",
+  "packages": ["edge-tts"],
+  "shared_packages": ["torch", "torchaudio", "faster-whisper", "funasr"],
+  "version_package": null,
+  "detail": "edge-tts 朗读 + 语音输入 · 速译"
+}

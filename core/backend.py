@@ -472,22 +472,16 @@ def set_active_model(name, use_online):
 
 # --- Optional module installation (pip in a subprocess) ----------------------
 # Maps the optional-module name (as reported by core.optional_modules) to the
-# requirements file that installs it. The Plugins page runs these in a worker.
-OPTIONAL_REQUIREMENTS = {
-    "PDF": "requirements/pdf.txt",
-    "Image OCR": "requirements/ocr.txt",
-    "Video/Audio": "requirements/video.txt",
-}
-
-
+# requirements file that installs it (resolved from the plugin manifests in
+# plugins/<key>/). The Plugins page runs these in a worker.
 def install_command_for(module_name):
     """The pip command (list form) that installs the given optional module, or
     None if unknown."""
-    req = OPTIONAL_REQUIREMENTS.get(module_name)
-    if not req:
+    from core import plugins_registry
+    req_path = plugins_registry.requirements_path(module_name)
+    if not req_path:
         return None
     import sys
-    req_path = os.path.join(REPO_ROOT, req)
     return [sys.executable, "-m", "pip", "install", "-r", req_path]
 
 

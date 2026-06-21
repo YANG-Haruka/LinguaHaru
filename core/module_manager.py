@@ -16,35 +16,18 @@ from core.log_config import app_logger
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# UI module name -> (requirements file, [pip package names to uninstall])
-# "Video/Audio" and "Real-Time Voice" share the same STT stack (video.txt);
-# they are listed as separate plugins so each gets its own model selection, but
-# (un)installing either affects the shared speech packages.
-MODULE_SPECS = {
-    "PDF": ("requirements/pdf.txt", ["babeldoc"]),
-    "Image OCR": ("requirements/ocr.txt",
-                  ["paddleocr", "paddlepaddle", "rapidocr", "onnxruntime",
-                   "opencv-python-headless"]),
-    # Video/Audio and Real-Time Voice share the STT stack (video.txt). Uninstall
-    # removes the engines + helpers so the plugin really reports unavailable; we
-    # deliberately do NOT remove torch/torchaudio (large, shared base ML libs the
-    # user may have installed as a specific CUDA build).
-    "Video/Audio": ("requirements/video.txt",
-                    ["faster-whisper", "funasr", "qwen-asr", "imageio-ffmpeg",
-                     "soundcard", "ten-vad"]),
-    "Real-Time Voice": ("requirements/video.txt",
-                        ["faster-whisper", "funasr", "qwen-asr",
-                         "soundcard", "ten-vad"]),
-    # Quick-Translate audio = read-aloud (edge-tts) + voice input (shared STT).
-    # Uninstall removes only edge-tts (keep the shared STT used by other plugins).
-    "翻译语音输入": ("requirements/speechio.txt", ["edge-tts"]),
-}
+# Plugin metadata now lives in plugins/<key>/plugin.json (+ requirements.txt),
+# loaded via core.plugins_registry — adding/editing a plugin is a folder drop, no
+# code change here. "Video/Audio" and "Real-Time Voice" share the STT stack, so
+# uninstalling one keeps any package another plugin still lists (incl. the
+# torch/torchaudio "shared_packages" the user may have as a specific CUDA build).
+from core import plugins_registry
 
-# Module -> the one PyPI package whose version we surface for "new version
-# available" prompts. Only PDF (BabelDOC) is tracked: it ships fast-moving
-# fixes and is a single self-contained package, so a simple `pip install -U`
-# is safe. The OCR/Video stacks pull torch/paddle and aren't auto-upgraded.
-_VERSION_PACKAGE = {"PDF": "babeldoc"}
+# Backward-compatible mapping view {name: (requirements_path, packages)} built from
+# the manifests — some call sites (qt worker, web server, lib-size calc) still use
+# the dict form. The manifests in plugins/<key>/ are the source of truth.
+MODULE_SPECS = {m["name"]: (m["requirements_path"], m.get("packages", []))
+                for m in plugins_registry.all_plugins().values()}
 
 # PyPI JSON metadata, official first then a mainland-China-friendly mirror.
 _PYPI_JSON = [
@@ -67,31 +50,33 @@ def _run_pip(args):
 
 
 def install_module(name):
-    spec = MODULE_SPECS.get(name)
-    if not spec:
+    req = plugins_registry.requirements_path(name)
+    if not req:
         return False, f"Unknown module: {name}"
-    return _run_pip(["install", "-r", spec[0]])
+    return _run_pip(["install", "-r", req])
 
 
 def packages_to_uninstall(name):
-    """Packages safe to remove when uninstalling ``name``: this plugin's packages
-    MINUS any package still listed by ANOTHER plugin (so a shared dependency — the
-    STT stack used by Video/Audio + Real-Time Voice + 翻译语音输入 — is kept while
-    any sibling still needs it). Empty list = everything is shared, remove nothing."""
-    spec = MODULE_SPECS.get(name)
-    if not spec:
+    """Packages safe to remove when uninstalling ``name``: this plugin's OWN
+    packages (manifest ``packages`` minus its ``shared_packages``) MINUS any
+    package still listed by ANOTHER plugin (its packages OR shared_packages), so a
+    shared dependency — the STT stack used by Video/Audio + Real-Time Voice +
+    翻译语音输入, and torch/torchaudio — is kept while any sibling still needs it.
+    Empty list = everything is shared, remove nothing."""
+    m = plugins_registry.get(name)
+    if not m:
         return []
-    mine = set(spec[1])
+    mine = set(plugins_registry.removable_packages(name))
     others = set()
-    for other, (_req, pkgs) in MODULE_SPECS.items():
-        if other != name:
-            others |= set(pkgs)
+    for other in plugins_registry.all_plugins().values():
+        if other["name"] != name:
+            others |= set(other.get("packages", []))
+            others |= set(other.get("shared_packages", []))
     return sorted(mine - others)
 
 
 def uninstall_module(name):
-    spec = MODULE_SPECS.get(name)
-    if not spec:
+    if not plugins_registry.get(name):
         return False, f"Unknown module: {name}"
     pkgs = packages_to_uninstall(name)
     if not pkgs:
@@ -103,10 +88,10 @@ def uninstall_module(name):
 
 def upgrade_module(name):
     """Upgrade a module's packages to the latest from its requirements file."""
-    spec = MODULE_SPECS.get(name)
-    if not spec:
+    req = plugins_registry.requirements_path(name)
+    if not req:
         return False, f"Unknown module: {name}"
-    return _run_pip(["install", "-U", "-r", spec[0]])
+    return _run_pip(["install", "-U", "-r", req])
 
 
 def _version_tuple(v):
@@ -145,7 +130,8 @@ def check_module_update(name):
     only — it never installs anything (the upgrade is a separate, user-confirmed
     call to ``upgrade_module``).
     """
-    pkg = _VERSION_PACKAGE.get(name)
+    m = plugins_registry.get(name)
+    pkg = m.get("version_package") if m else None
     if not pkg:
         return None
     current = _installed_version(pkg)

@@ -204,7 +204,8 @@ all_datas = filter_datas(
     + sum((c[0] for c in _ENGINE_COLLECTS), [])
 ) + [('assets/models/', 'assets/models/'), ('assets/img/', 'assets/img/'),
      ('assets/icons/', 'assets/icons/'), ('webapp/static/', 'webapp/static/'),
-     ('config/', 'config/'), ('data/glossary/', 'data/glossary/')]
+     ('config/', 'config/'), ('data/glossary/', 'data/glossary/'),
+     ('plugins/', 'plugins/')]
 
 a = Analysis(
     ["webapp/server.py"],
