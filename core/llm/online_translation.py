@@ -622,9 +622,10 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
         pass
     thinking_type = model_config.get("thinking_type")
     # Output cap. With larger input batches the reply (a translation ~ as long as
-    # the source) can exceed a provider's small default (DeepSeek defaults to 4K),
-    # truncating the JSON and forcing a retry. Let a model raise it (DeepSeek max
-    # 8192). Only sent when configured, so providers that reject it are unaffected.
+    # the source) can exceed a provider's small default, truncating the JSON and
+    # forcing a retry. Let a model raise it via config (current DeepSeek supports up
+    # to 384K output / 1M context; our default 8192 is a safe per-request cap).
+    # Only sent when configured, so providers that reject it are unaffected.
     max_completion_tokens = model_config.get("max_completion_tokens")
 
     if not base_url or not api_model:

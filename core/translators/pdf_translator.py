@@ -448,11 +448,28 @@ class PdfTranslator(DocumentTranslator):
         if progress_callback:
             progress_callback(0.0, desc=f"{self._get_status_message('Extracting PDF content')}...")
 
+        # Cache key must cover EVERYTHING that changes a paragraph's translation —
+        # otherwise BabelDOC's SQLite cache reuses a stale result after the user
+        # edits the (same-named) glossary, switches translation mode/sampling, or
+        # changes languages. Include a glossary CONTENT hash + mode/params + langs.
+        import hashlib as _hl
+        _gloss_hash = ""
+        try:
+            if self.glossary_path and os.path.exists(self.glossary_path):
+                with open(self.glossary_path, "rb") as _gf:
+                    _gloss_hash = _hl.sha1(_gf.read()).hexdigest()[:12]
+        except Exception:  # noqa: BLE001
+            _gloss_hash = ""
+        _params = (self.topts or {}).get("params", {}) if hasattr(self, "topts") else {}
         translator = _CallbackTranslator(
             self.src_lang, self.dst_lang, self._translate_paragraph,
             cache_key_parts={
                 "model": str(self.model),
-                "glossary": os.path.basename(self.glossary_path or ""),
+                "glossary": _gloss_hash,
+                "langs": f"{self.src_lang}>{self.dst_lang}",
+                "mode": str((self.topts or {}).get("mode", "")) if hasattr(self, "topts") else "",
+                "temp": str(_params.get("temperature")),
+                "top_p": str(_params.get("top_p")),
             },
         )
         config = self._create_babeldoc_config(translator)
