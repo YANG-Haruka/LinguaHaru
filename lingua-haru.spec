@@ -10,8 +10,20 @@
 # the conda-specific stdlib DLLs are bundled explicitly below.
 import os
 import sys
+import glob
 
 from PyInstaller.utils.hooks import collect_all
+
+# chardet 7.x ships mypyc-compiled *.pyd (e.g. pipeline/orchestrator__mypyc.pyd)
+# that its wrapper .pyd files import at the C level — invisible to PyInstaller's
+# bytecode scanner, so they're missed and `import chardet` fails at runtime
+# ("No module named chardet.pipeline.orchestrator__mypyc"), which made EVERY
+# document format report "Unsupported file type". Glob ALL chardet .pyd explicitly.
+import chardet as _cd
+_cd_root = os.path.dirname(os.path.dirname(_cd.__file__))
+chardet_pyds = [(p, os.path.relpath(os.path.dirname(p), _cd_root))
+                for p in glob.glob(os.path.join(os.path.dirname(_cd.__file__), "**", "*.pyd"),
+                                   recursive=True)]
 
 # Conda keeps stdlib extension DLLs (ffi, bz2, lzma, sqlite3, expat) under
 # <env>/Library/bin, which PyInstaller does not search by default - bundle them
@@ -177,7 +189,7 @@ all_binaries = filter_binaries(
     + onnxruntime_collect[2]
     + imageio_ffmpeg_collect[2]
     + sum((c[2] for c in _ENGINE_COLLECTS), [])
-) + conda_dll_binaries
+) + chardet_pyds + conda_dll_binaries
 
 all_datas = filter_datas(
     fastapi_collect[0]

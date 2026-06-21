@@ -11,8 +11,18 @@
 # DLLs are bundled explicitly below. ONEDIR (heavy ML stack -> no onefile).
 import os
 import sys
+import glob
 
 from PyInstaller.utils.hooks import collect_all
+
+# chardet 7.x mypyc-compiled *.pyd are imported at the C level (invisible to the
+# bytecode scanner) -> glob them all, else `import chardet` fails at runtime and
+# every document format reports "Unsupported file type". See lingua-haru.spec.
+import chardet as _cd
+_cd_root = os.path.dirname(os.path.dirname(_cd.__file__))
+chardet_pyds = [(p, os.path.relpath(os.path.dirname(p), _cd_root))
+                for p in glob.glob(os.path.join(os.path.dirname(_cd.__file__), "**", "*.pyd"),
+                                   recursive=True)]
 
 # Conda keeps stdlib extension DLLs under <env>/Library/bin (see web spec).
 CONDA_LIBBIN = os.path.join(os.path.dirname(sys.executable), "Library", "bin")
@@ -163,7 +173,7 @@ all_binaries = filter_binaries(
     + onnxruntime_collect[2]
     + imageio_ffmpeg_collect[2]
     + sum((c[2] for c in _ENGINE_COLLECTS), [])
-) + conda_dll_binaries
+) + chardet_pyds + conda_dll_binaries
 
 all_datas = filter_datas(
     qfluent_collect[0]
