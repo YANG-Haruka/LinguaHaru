@@ -2221,9 +2221,39 @@ def server_port(host):
     return find_free_port(8080, host)
 
 
+def _open_browser_when_ready(url, host, port):
+    """Open the default browser once the server is actually accepting connections.
+    Local desktop use only — skipped on headless/deploy (RENDER / server_mode) and
+    when LINGUAHARU_NO_BROWSER is set."""
+    import socket
+    import time
+    import threading
+    import webbrowser
+
+    def _wait_and_open():
+        probe = "127.0.0.1" if host in ("0.0.0.0", "") else host
+        for _ in range(120):   # up to ~60s while the ML stack imports
+            try:
+                with socket.create_connection((probe, port), timeout=0.5):
+                    break
+            except OSError:
+                time.sleep(0.5)
+        try:
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001 — never let browser-open break the server
+            pass
+
+    threading.Thread(target=_wait_and_open, daemon=True).start()
+
+
 if __name__ == "__main__":
     import uvicorn
     host = server_host()
     port = server_port(host)
-    print(f"LinguaHaru Web → http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}")
+    url = f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}"
+    print(f"LinguaHaru Web → {url}")
+    # Auto-open the browser for a local desktop launch (double-click Start-Web.bat),
+    # so the user doesn't have to type the address. Skip on deploy/headless.
+    if not server_mode_on() and not os.environ.get("LINGUAHARU_NO_BROWSER"):
+        _open_browser_when_ready(url, host, port)
     uvicorn.run(app, host=host, port=port)
