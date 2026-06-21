@@ -72,11 +72,12 @@ def test_xlsx_structures():
 
     # --- sheet names ---
     check("code-like sheet name untouched", "DATA2024" in sheets, str(sheets))
-    # Excel forbids []:*?/\ in sheet names, so the fake [T] marker is
-    # sanitized to -T- by design; the rename itself is what matters.
-    check("CJK sheet name translated (renamed, brackets sanitized)",
-          "-T-売上データ" in sheets, str(sheets))
-    s2 = wb2["-T-売上データ"] if "-T-売上データ" in sheets else wb2[sheets[1]]
+    # Sheet-name translation is OFF by default now (config excel_translate_sheet_names),
+    # so CJK sheet names are PRESERVED, not renamed — only the cell contents are
+    # translated. Verify the original name survived.
+    check("CJK sheet name preserved (not renamed by default)",
+          "売上データ" in sheets, str(sheets))
+    s2 = wb2["売上データ"] if "売上データ" in sheets else wb2[sheets[1]]
 
     # --- text content ---
     check("merged banner translated", s1["A1"].value == T + "Wide merged banner title",

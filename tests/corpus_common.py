@@ -38,6 +38,11 @@ def check(name, cond, detail=""):
     status = "PASS" if cond else "FAIL"
     print(f"  [{status}] {name}" + (f"\n         -> {detail}" if detail and not cond else ""))
     CHECKS.append((name, bool(cond)))
+    # Under pytest a failed check must FAIL the test (script mode keeps
+    # accumulating to print a full report). Without this, pytest reported a corpus
+    # test as "passed" even when an internal check() had failed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(f"{name}" + (f": {detail}" if detail else ""))
     return bool(cond)
 
 

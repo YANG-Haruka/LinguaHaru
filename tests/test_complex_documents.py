@@ -32,7 +32,24 @@ def check(name, cond, detail=""):
     status = "PASS" if cond else "FAIL"
     print(f"  [{status}] {name}" + (f"\n         -> {detail}" if detail and not cond else ""))
     CHECKS.append((name, bool(cond)))
+    # Under pytest, a failed check must FAIL the test (script mode accumulates for
+    # a full report). Without this, pytest passed even when a check failed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(f"{name}" + (f": {detail}" if detail else ""))
     return bool(cond)
+
+
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _ensure_work_dirs():
+    """Create the work/temp/result dirs before each test. Previously these were
+    only made in the __main__ block, so a bare `pytest` run (no prior script run)
+    failed with FileNotFoundError."""
+    for d in (WORK_DIR, TEMP_DIR, RESULT_DIR):
+        os.makedirs(d, exist_ok=True)
+    yield
 
 
 def fake_translate(src_json_path):
