@@ -56,6 +56,11 @@ function Build-Flavor([string]$flavor) {
   if (-not (Test-Path $getpip)) { Invoke-WebRequest "https://bootstrap.pypa.io/get-pip.py" -OutFile $getpip }
   $env:PYTHONNOUSERSITE = "1"
   & $py $getpip --no-warn-script-location | Out-Null
+  # setuptools + wheel: the embeddable python ships NEITHER, so any later plugin
+  # whose dependency builds from an sdist (no prebuilt wheel) fails with
+  # "Cannot import 'setuptools.build_meta'". Needed for the Plugins page to install
+  # such plugins at runtime.
+  & $py -m pip install --no-warn-script-location -q setuptools wheel | Out-Null
 
   # 3. Base deps for this flavor (NO ML plugins)
   $reqs = @("-r", (Join-Path $repo "requirements\base.txt"))

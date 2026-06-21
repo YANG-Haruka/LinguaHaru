@@ -59,7 +59,7 @@ STT_MODELS = [
      "label": "Qwen3-ASR 0.6B — multilingual (30+ langs), accurate", "disk": "~2GB", "vram": "~3GB"},
     {"id": "qwen3-asr-1.7b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-1.7B",
      "label": "Qwen3-ASR 1.7B — multilingual, most accurate (best general pick)",
-     "disk": "~4GB", "vram": "~6GB"},
+     "disk": "~4.7GB", "vram": "~6GB"},
 ]
 
 # Default for video subtitles AND real-time voice: SenseVoice is small + fast.

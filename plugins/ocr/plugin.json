@@ -3,7 +3,7 @@
   "key": "ocr",
   "order": 2,
   "requirements": "requirements.txt",
-  "packages": ["paddleocr", "paddlepaddle", "rapidocr", "onnxruntime", "opencv-python-headless", "Pillow", "huggingface_hub"],
-  "shared_packages": ["numpy"],
+  "packages": ["paddleocr", "paddlepaddle", "rapidocr", "opencv-python-headless", "Pillow"],
+  "shared_packages": ["numpy", "onnxruntime", "huggingface_hub"],
   "version_package": null
 }
