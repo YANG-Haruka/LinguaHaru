@@ -32,7 +32,7 @@ def test_error_classification():
     ot._bad_keys.clear()
 
     class FakeClient:
-        def __init__(self, api_key=None, base_url=None):
+        def __init__(self, api_key=None, base_url=None, **kwargs):
             self.api_key = api_key
             FakeClient.last_key = api_key
 
@@ -51,7 +51,7 @@ def test_error_classification():
         error_message = ""
         last_key = None
 
-        def __init__(self, api_key=None, base_url=None):
+        def __init__(self, api_key=None, base_url=None, **kwargs):
             FakeClient2.last_key = api_key
             outer = self
 
