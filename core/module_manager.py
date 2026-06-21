@@ -210,6 +210,28 @@ def _transitive_to_remove(name):
     return sorted(candidates - required_by_survivors)
 
 
+def _loaded_blockers(pkgs):
+    """Candidate packages whose import is ALREADY loaded in this process. On
+    Windows a loaded native extension (.pyd/.dll) can't be deleted, and uv/pip
+    abort mid-batch leaving a corrupted dist-info. So if a plugin was used this
+    session (its modules imported), refuse uninstall and ask for a restart instead
+    of corrupting the env."""
+    loaded = set()
+    mods = set(sys.modules)
+    for p in pkgs:
+        cand = {_norm(p).replace("-", "_"), _norm(p).replace("-", "")}
+        # common import-name aliases
+        if _norm(p) == "pymupdf":
+            cand |= {"fitz", "pymupdf"}
+        if _norm(p) == "opencv-python-headless" or _norm(p) == "opencv-python":
+            cand |= {"cv2"}
+        if _norm(p) == "pillow":
+            cand |= {"PIL"}
+        if cand & mods:
+            loaded.add(p)
+    return loaded
+
+
 def uninstall_module(name):
     m = plugins_registry.get(name)
     if not m:
@@ -218,6 +240,13 @@ def uninstall_module(name):
     # install pulled in (freeze-delta, gated so siblings/base are never touched).
     pkgs = set(packages_to_uninstall(name)) | set(_transitive_to_remove(name))
     pkgs = sorted(pkgs)
+    blockers = _loaded_blockers(pkgs)
+    if blockers:
+        # Loaded in-process -> deleting now would fail on Windows and corrupt the
+        # env. Tell the user to restart, then uninstall on a fresh process.
+        return False, ("This plugin is in use this session "
+                       f"({', '.join(sorted(blockers)[:3])}…). Please restart the app, "
+                       "then uninstall without translating first.")
     if not pkgs:
         # All of this plugin's packages are shared with another plugin -> removing
         # them would break the sibling. Nothing to uninstall at the pip level.
