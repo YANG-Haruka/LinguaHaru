@@ -43,3 +43,6 @@ mock_data/
 # Web VAD heavy assets (downloaded on demand by /api/ensure-web-vad)
 webapp/static/vad/*.wasm
 webapp/static/vad/*.onnx
+/dist_portable/
+/dist/
+/build/
