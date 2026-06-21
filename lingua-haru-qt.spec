@@ -23,6 +23,10 @@ _cd_root = os.path.dirname(os.path.dirname(_cd.__file__))
 chardet_pyds = [(p, os.path.relpath(os.path.dirname(p), _cd_root))
                 for p in glob.glob(os.path.join(os.path.dirname(_cd.__file__), "**", "*.pyd"),
                                    recursive=True)]
+# Grab chardet's data files (models/models.bin) + rich's dynamic width-data
+# submodule (rich._unicode_data.unicodeNN-N-N) — both missed by the scanner.
+chardet_collect = collect_all("chardet")
+rich_collect = collect_all("rich")
 
 # Conda keeps stdlib extension DLLs under <env>/Library/bin (see web spec).
 CONDA_LIBBIN = os.path.join(os.path.dirname(sys.executable), "Library", "bin")
@@ -154,6 +158,7 @@ all_hiddenimports = filter_strings(
     + onnxruntime_collect[1]
     + imageio_ffmpeg_collect[1]
     + sum((c[1] for c in _ENGINE_COLLECTS), [])
+    + chardet_collect[1] + rich_collect[1]
     + translator_modules
     + qt_modules
     + pyside_modules
@@ -173,6 +178,7 @@ all_binaries = filter_binaries(
     + onnxruntime_collect[2]
     + imageio_ffmpeg_collect[2]
     + sum((c[2] for c in _ENGINE_COLLECTS), [])
+    + chardet_collect[2] + rich_collect[2]
 ) + chardet_pyds + conda_dll_binaries
 
 all_datas = filter_datas(
@@ -183,6 +189,7 @@ all_datas = filter_datas(
     + onnxruntime_collect[0]
     + imageio_ffmpeg_collect[0]
     + sum((c[0] for c in _ENGINE_COLLECTS), [])
+    + chardet_collect[0] + rich_collect[0]
 ) + [('assets/models/', 'assets/models/'), ('assets/img/', 'assets/img/'),
      ('assets/icons/', 'assets/icons/'),
      ('config/', 'config/'), ('data/glossary/', 'data/glossary/'),
