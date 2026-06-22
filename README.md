@@ -99,37 +99,6 @@ requirements/        base.txt + per-feature extras (web, qt, ocr, pdf, video)
 tests/               Test suite (corpus per format, qt, web sessions, i18n, ...)
 ```
 
-## Reference Projects
-- [ollama-python](https://github.com/ollama/ollama-python)
-- [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
-
-## To-Do List
-- Add continue translation functionality.
-
-## Changelog
-- 2026/06
-**V5.1 update**: a new **portable build** (embedded Python, unzip-and-run); a **plugin market** (install on demand + download third-party plugins remotely); **smart update** (one-click, preserving plugins/models/settings); a first-run **onboarding tour**; the web build now **opens the browser automatically**; models can be **downloaded per-model from a netdisk**; automatic China-mirror fallback (HF/PyPI/GitHub); many translation-quality and stability fixes.
-- 2026/01/28
-V5.0 update: Updated PDF library. Optimized UI interface. Added more practical features. Thanks for a year of companionship!
-- 2025/05/09
-V3.0 update: Added multithreading and continuation translation features. Added translation support for Markdown files. Enhanced support for the Qwen3 series. Optimized log display.
-- 2025/04/02  
-Updated to v2.3, adding custom icons/Title and supporting multi-task queues. Optimized translation result detection logic. Added a feature to show the translation result with the original text.
-- 2025/03/14
-Updated to V2.0, added support for Txt files. Optimized Word/Excel/long text translation. Added customizable retry count functionality. Improved display of translation results.
-- 2025/02/01  
-Updated the processing logic for failed translations.
-- 2025/01/15  
-Fixed a bug in PDF translation, added multilingual support, and petted the kitty.
-- 2025/01/11  
-Added support for PDF. Reference project: [PDFMathTranslate](https://github.com/Byaidu/PDFMathTranslate)
-- 2025/01/10    
-Added support for deepseek-v3. Now you can use API for translation (more stable).  
-Get API: https://www.deepseek.com/
-- 2025/01/03  
-Happy New Year! Revised logic, added review functionality, and enhanced logging.
-
-
 ## Software Disclaimer  
 This software is fully open-source under the GPL-3.0 license and can be freely used.
 It only provides AI-based translation services; the creator holds no responsibility for the translated content.
