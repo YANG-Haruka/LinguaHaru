@@ -69,16 +69,38 @@ async function getFfmpeg() {
   _ffmpeg = ff;
   return ff;
 }
-async function extractAudio(file) {
+async function extractAudio(file, onProgress) {
   const ff = await getFfmpeg();
   const { fetchFile } = window.FFmpegUtil;
   const inName = "in_" + file.name.replace(/[^\w.]/g, "_");
-  await ff.writeFile(inName, await fetchFile(file));
-  await ff.exec(["-i", inName, "-vn", "-ac", "1", "-ar", "16000", "out.wav"]);
-  const data = await ff.readFile("out.wav");
-  try { await ff.deleteFile(inName); await ff.deleteFile("out.wav"); } catch (e) { /* ignore */ }
-  const stem = file.name.replace(/\.[^.]+$/, "");
-  return new File([data.buffer], stem + ".wav", { type: "audio/wav" });
+  // ffmpeg.wasm reports decode progress as a 0..1 fraction via the "progress"
+  // event — surface it so the user sees the extraction advancing (it can take a
+  // while for a long video) instead of a frozen UI.
+  let handler = null;
+  if (onProgress) {
+    handler = ({ progress }) => onProgress(Math.max(0, Math.min(1, progress || 0)));
+    ff.on("progress", handler);
+  }
+  try {
+    await ff.writeFile(inName, await fetchFile(file));
+    await ff.exec(["-i", inName, "-vn", "-ac", "1", "-ar", "16000", "out.wav"]);
+    const data = await ff.readFile("out.wav");
+    try { await ff.deleteFile(inName); await ff.deleteFile("out.wav"); } catch (e) { /* ignore */ }
+    const stem = file.name.replace(/\.[^.]+$/, "");
+    return new File([data.buffer], stem + ".wav", { type: "audio/wav" });
+  } finally {
+    if (handler) { try { ff.off("progress", handler); } catch (e) { /* ignore */ } }
+  }
+}
+
+// Drive the run dashboard's ring/bar during the in-browser audio-extraction
+// phase (before the server task exists), so it's not a dead 0% until upload.
+function setExtractProgress(frac, desc) {
+  const pct = Math.round(Math.max(0, Math.min(1, frac)) * 100);
+  $("progress-bar").style.width = pct + "%";
+  $("prog-ring").style.setProperty("--p", (pct * 3.6) + "deg");
+  $("prog-pct").textContent = pct + "%";
+  if (desc != null) $("progress-desc").textContent = desc;
 }
 
 // LAN admin token: kept in memory only (never localStorage), entered via a
@@ -895,14 +917,29 @@ $("translate-btn").onclick = async () => {
   $("result").hidden = true; setStatus("");
 
   // For each video, extract the audio track in-browser to avoid uploading the
-  // whole file (the result is only a subtitle file anyway).
+  // whole file (the result is only a subtitle file anyway). Client-side events
+  // (extraction start/progress/fail) are collected and sent so they land in the
+  // project log from the moment "开始翻译" is clicked.
   const fd = new FormData();
+  const clientLog = [];
+  const ts = () => new Date().toTimeString().slice(0, 8);
   for (const f of currentFiles) {
     let uploadFile = f;
     const ext = "." + f.name.split(".").pop().toLowerCase();
     if (VIDEO_EXTS.includes(ext)) {
+      const sizeMB = (f.size / 1048576).toFixed(1);
       setStatus(`正在浏览器内提取音轨：${f.name}（避免上传整段视频）…`);
-      try { uploadFile = await extractAudio(f); }
+      setExtractProgress(0, `提取音轨：${f.name}…`);
+      clientLog.push(`${ts()} audio-extract start: ${f.name} (${sizeMB} MB)`);
+      const t0 = performance.now();
+      try {
+        uploadFile = await extractAudio(f, (p) =>
+          setExtractProgress(p, `提取音轨：${f.name} ${Math.round(p * 100)}%`));
+        const secs = ((performance.now() - t0) / 1000).toFixed(1);
+        setExtractProgress(1, `音轨提取完成：${uploadFile.name}`);
+        clientLog.push(`${ts()} audio-extract ok: ${f.name} -> ${uploadFile.name} `
+          + `(${(uploadFile.size / 1048576).toFixed(1)} MB, ${secs}s)`);
+      }
       catch (e) {
         console.warn("ffmpeg.wasm failed, uploading original:", e);
         uploadFile = f;
@@ -910,6 +947,8 @@ $("translate-btn").onclick = async () => {
         // is too big for browser memory) — we now upload the whole video and let
         // the server extract audio. Say so: a multi-GB upload is slower.
         setStatus(`音轨提取未成功，将上传整段视频（${f.name}，可能较慢）…`);
+        clientLog.push(`${ts()} audio-extract FAILED: ${f.name} — `
+          + `${(e && e.message) || e}; uploading full video instead`);
       }
     }
     fd.append("files", uploadFile);
@@ -921,6 +960,7 @@ $("translate-btn").onclick = async () => {
   fd.append("glossary", $("glossary").value);
   fd.append("bilingual", $("translate-bilingual").checked);
   fd.append("ui_lang", _uiLang);
+  if (clientLog.length) fd.append("client_log", JSON.stringify(clientLog));
 
   try {
     const { task_id } = await api("/api/translate", { method: "POST", body: fd });

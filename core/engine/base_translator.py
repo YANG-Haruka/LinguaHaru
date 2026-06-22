@@ -1006,6 +1006,11 @@ class DocumentTranslator:
         base = os.path.basename(self.input_file_path)
         self._task_log_path = flog.open_task_log(self.translation_id, self.result_dir, base)
         token = flog.bind_task(self.translation_id)
+        # Replay any pre-upload client-side events (e.g. in-browser audio
+        # extraction start/progress/failure) so the project log captures the whole
+        # flow from the moment the user clicked translate — not just from here on.
+        for _ev in getattr(self, "client_events", None) or []:
+            app_logger.info(f"[client] {_ev}")
         # One standardized run-start line (project + system log) — no source text.
         log_config.system_event(
             f"Run start: {base} [{file_extension}] {self.src_lang}->{self.dst_lang} | "

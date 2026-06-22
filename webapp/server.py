@@ -655,7 +655,8 @@ def _merge_qa(acc, qa):
 def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                    dst_lang, glossary_name, bilingual_flags, on_progress,
                    continue_mode=False, resume_dirs=None, resume_record_id=None,
-                   run_subdir=None, translation_id=None, batch_id=None, batch_size=None):
+                   run_subdir=None, translation_id=None, batch_id=None, batch_size=None,
+                   client_events=None):
     """Translate a single file; returns its output path. Raises on failure.
 
     Paths are scoped to ``session_id`` so concurrent users never collide, and a
@@ -722,6 +723,10 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
         "input_file_path": file_path,
         "temp_dir": temp_dir, "result_dir": result_dir, "log_dir": log_dir,
     }
+    # In-browser audio-extraction events (from before the upload) to record at the
+    # top of this run's project log, so it captures the whole flow from click.
+    if client_events:
+        translator.client_events = client_events
 
     def check_stop():
         # Task-scoped control checkpoint (called all over the backend loops):
@@ -845,7 +850,8 @@ def _run_with_power(fn, *args):
 
 
 def _run_translation(task_id, session_id, file_paths, model, use_online,
-                     src_lang, dst_lang, glossary_name, bilingual_flags, ui_lang="en"):
+                     src_lang, dst_lang, glossary_name, bilingual_flags, ui_lang="en",
+                     client_events=None):
     """Background worker: translate one or more files; zip when more than one."""
     def set_state(**kw):
         with _TASKS_LOCK:
@@ -893,7 +899,8 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
                     task_id, session_id, fp, model, use_online, src_lang,
                     dst_lang, glossary_name, bilingual_flags, on_progress,
                     run_subdir=run_folder, translation_id=file_ids[idx],
-                    batch_id=task_id, batch_size=total))
+                    batch_id=task_id, batch_size=total,
+                    client_events=(client_events if idx == 0 else None)))
                 file_results.append((name, "success", ""))
             except HardApiError as e:
                 # Account-level fault (insufficient balance / invalid key): every
@@ -947,6 +954,7 @@ async def translate(
     glossary: str = Form(""),
     bilingual: bool = Form(False),
     ui_lang: str = Form("en"),
+    client_log: str = Form(""),
 ):
     session_id = request.state.session_id
     _prune_tasks()  # drop stale finished tasks before accounting
@@ -1001,16 +1009,27 @@ async def translate(
         "excel_bilingual_mode", "word_bilingual_mode", "pdf_bilingual_mode",
         "subtitle_bilingual_mode", "txt_bilingual_mode", "md_bilingual_mode",
         "epub_bilingual_mode", "html_bilingual_mode")}
+    # Client-side events (in-browser audio extraction start/progress/failure),
+    # captured from the moment "开始翻译" was clicked, to record in the project log.
+    client_events = []
+    if client_log:
+        try:
+            client_events = [str(x) for x in json.loads(client_log)][:100]
+        except Exception:  # noqa: BLE001 — malformed client log is non-fatal
+            client_events = []
     # System-log the enqueue (no source text): short ids, file count, model, langs.
     from core.log_config import system_event
     system_event(f"Web task {task_id[:6]} (session {session_id[:6]}): "
                  f"{len(dests)} file(s), {written // 1024} KB, "
                  f"{model} ({'online' if use_online else 'offline'}), "
                  f"{src_lang}->{dst_lang}")
+    if any("FAILED" in e for e in client_events):
+        system_event(f"Web task {task_id[:6]}: in-browser audio extraction failed; "
+                     "uploaded full video (server-side extraction)")
     threading.Thread(target=_run_with_power, args=(
         _run_translation,
         task_id, session_id, dests, model, use_online, src_lang, dst_lang,
-        glossary, flags, ui_lang), daemon=True).start()
+        glossary, flags, ui_lang, client_events), daemon=True).start()
     return {"task_id": task_id}
 
 
