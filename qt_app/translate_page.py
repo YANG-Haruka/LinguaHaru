@@ -26,7 +26,7 @@ from qfluentwidgets import (
     ComboBox, PushButton, PrimaryPushButton, SwitchButton,
     BodyLabel, CardWidget, TitleLabel, StrongBodyLabel, CaptionLabel, LineEdit,
     InfoBar, InfoBarPosition, FluentIcon, ToolButton,
-    ScrollArea,
+    ScrollArea, MessageBox,
 )
 
 from core import backend
@@ -477,6 +477,11 @@ class TranslatePage(QStackedWidget):
         if not self._files:
             self._info(tr("Translate", self._lang),
                        tr("Please select file(s) to translate.", self._lang), error=True)
+            return
+        # Pre-check optional plugins: a file whose format needs an uninstalled
+        # plugin (PDF / image OCR / video) would just fail mid-run — warn first and
+        # offer to jump to the Plugins page.
+        if not self._required_plugins_ready():
             return
         use_online, model, api_key = self._active()
         if not model:
@@ -965,6 +970,28 @@ class TranslatePage(QStackedWidget):
         return {"total": total, "translated": translated,
                 "fallback": fallback, "needs_review": needs_review,
                 "by_category": by_category}
+
+    def _required_plugins_ready(self):
+        """Check that every selected file's format has its required optional plugin
+        installed. If one is missing, ask whether to open the Plugins page and
+        return False so the run is aborted before it fails mid-way."""
+        from core.optional_modules import extension_plugin_map, module_status
+        ext_map = extension_plugin_map()
+        avail = {m["name"]: m["available"] for m in module_status()}
+        needed = []
+        for p in self._files:
+            ext = os.path.splitext(p)[1].lower()
+            plugin = ext_map.get(ext)
+            if plugin and avail.get(plugin) is False and plugin not in needed:
+                needed.append(plugin)
+        if not needed:
+            return True
+        names = "、".join(needed)
+        msg = f"{names} {tr('Plugin Needed For File', self._lang)}"
+        box = MessageBox(tr("Plugins", self._lang), msg, self.window())
+        if box.exec() and callable(self.on_open_plugins):
+            self.on_open_plugins()
+        return False
 
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success

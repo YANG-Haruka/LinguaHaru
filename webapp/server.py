@@ -41,7 +41,8 @@ from core.languages_config import LABEL_TRANSLATIONS, LANGUAGE_MAP
 from core.llm.online_translation import HardApiError, classify_fatal_error
 from core.optional_modules import (
     module_status, realtime_voice_available,
-    quick_voice_available, ocr_models, get_selected_ocr_model)
+    quick_voice_available, ocr_models, get_selected_ocr_model,
+    extension_plugin_map)
 from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, SENSEVOICE_SUPPORTED_CODES)
 from core.log_config import app_logger
@@ -268,6 +269,7 @@ def bootstrap():
         "sensevoice_codes": sorted(SENSEVOICE_SUPPORTED_CODES),
         "language_map": LANGUAGE_MAP,
         "modules": module_status(),
+        "ext_plugin": extension_plugin_map(),  # ext -> required plugin name
         "server_mode": server_mode_on(),
         "local_live_available": realtime_voice_available(),
         # "翻译语音输入" plugin: gates the Quick-Translate mic (STT) + speaker (TTS).

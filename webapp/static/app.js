@@ -860,8 +860,32 @@ function setFiles(list) {
 }
 
 // ----- translate -----
+// Return true if every uploaded file's format has its required plugin installed.
+// Otherwise warn (per missing plugin) and offer to jump to the Plugins page.
+function requiredPluginsReady(files) {
+  const extMap = (BOOT && BOOT.ext_plugin) || {};
+  const avail = {};
+  for (const m of (BOOT.modules || [])) avail[m.name] = m.available;
+  const needed = new Set();
+  for (const f of files) {
+    const ext = "." + (f.name.split(".").pop() || "").toLowerCase();
+    const plugin = extMap[ext];
+    if (plugin && avail[plugin] === false) needed.add(plugin);
+  }
+  if (!needed.size) return true;
+  const names = [...needed].join("、");
+  const msg = `${names} ${_label("Plugin Needed For File", "插件未安装,无法翻译该文件。是否前往「插件」页安装？")}`;
+  if (confirm(msg)) {
+    const t = document.querySelector('.tab[data-tab="modules"]'); if (t) t.click();
+  }
+  return false;
+}
+
 $("translate-btn").onclick = async () => {
   if (!currentFiles.length) { setStatus("请先选择文件。"); return; }
+  // Pre-check: a file whose format needs an OPTIONAL plugin that isn't installed
+  // would just fail mid-run. Warn up front and offer to go install it.
+  if (!requiredPluginsReady(currentFiles)) return;
   const online = useOnline();
   if (online && !BOOT.server_mode) {
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));

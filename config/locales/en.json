@@ -193,6 +193,7 @@
   "Available": "Available",
   "Downloaded Install Below": "Downloaded — install its dependencies above",
   "Plugin Market": "Plugin market",
+  "Plugin Needed For File": "plugin is not installed, so this file can't be translated. Go to the Plugins page to install it?",
   "Refresh Market": "Refresh market",
   "Update Now": "Update now",
   "Updating": "Updating",

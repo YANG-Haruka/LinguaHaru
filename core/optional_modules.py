@@ -79,6 +79,18 @@ def available_optional_extensions():
     return extensions
 
 
+def extension_plugin_map():
+    """{ extension -> required plugin name } for formats that need an optional
+    plugin. Lets the UI warn BEFORE translating ("PDF plugin not installed —
+    install now?") instead of failing mid-run. Plugin name matches module_status()."""
+    m = {".pdf": "PDF"}
+    for e in IMAGE_EXTENSIONS:
+        m[e] = "Image OCR"
+    for e in MEDIA_EXTENSIONS:
+        m[e] = "Video/Audio"
+    return m
+
+
 # ---------------------------------------------------------------------------
 # Per-plugin model selection. Each plugin (where it has models) exposes a list,
 # a current selection (config), and uniform install/switch behaviour:
