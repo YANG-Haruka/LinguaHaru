@@ -16,75 +16,62 @@ This translation tool is based on cutting-edge large language models, offering e
 
 It provides the following features:
 
-- Multi-format compatibility: Perfect support for common file formats including .docx, .pptx, .xlsx, .pdf, .txt, .srt, with more document types to be expanded in the future.
-- Global language translation: Covers 10+ languages including Chinese/English/Japanese/Korean/Russian, continuously expanding to meet globalization needs.
-- One-click rapid translation: No complicated operations needed, just upload a file and click translate to instantly generate accurate translations.
-- Flexible translation engines: Freely switch between local models (Ollama) and online APIs (Deepseek/OpenAI, etc.), adapting to different usage environments at any time.
-- LAN sharing: One host computer can easily be used by all devices on the local network, enabling efficient collaborative work.
+- **Two frontends**: a Web UI (browser) and a Desktop app (Qt Fluent Design) over one shared backend — pick whichever you like.
+- **Multi-format**: .docx / .pptx / .xlsx / .pdf / .txt / subtitles (srt/ass/vtt/lrc) / .md / .epub / csv / html / odt / json, plus images and video/audio.
+- **Global languages**: 13+ languages (Chinese/English/Japanese/Korean/Russian, …); the UI is localized too.
+- **One-click translation**: drag a file in; with translation modes (precise/general), glossary, bilingual output, and per-format options.
+- **Home "Translate"**: Google-Translate-style quick short-text translation, with voice input and read-aloud.
+- **Real-time voice**: translate as you speak, with automatic sentence splitting and live source/translation display.
+- **Plugin system + market**: PDF, image OCR, video/audio subtitles, real-time voice and voice-input are optional plugins, installed on demand (bundled uv, fast); you can also download self-contained third-party plugins from a remote market without updating the main app.
+- **Smart update** (portable build): one-click in-app update that preserves installed plugins, models and your settings/interfaces.
+- **First-run onboarding**: an interactive spotlight tour of every page.
+- **Flexible engines**: online APIs (DeepSeek / OpenAI, …) and local models (Ollama / LM Studio).
+- **China-friendly**: HuggingFace / PyPI / GitHub auto-probe the official source and fall back to mirrors (hf-mirror / Tsinghua / ghproxy) when unreachable.
+- **LAN sharing** (web only): one host, used by every device on the local network.
 
 
 <h2 id="install">Installation and Usage</h2>
 
-1. [CUDA](https://developer.nvidia.com/cuda-downloads)   
-You need to install CUDA (currently 11.7 and 12.1 have been tested without issues)  
+### Option A (recommended): portable build — unzip and run
 
-2. Python (python==3.12)  
-    It is recommended to use [Conda](https://www.anaconda.com/download) to create a virtual environment  
+No Python, no CUDA. Just download, unzip, double-click.
+
+1. Download from [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest):
+    - `LinguaHaru-web.zip` — Web UI (browser)
+    - `LinguaHaru-desktop.zip` — Desktop (Qt)
+2. Unzip anywhere.
+3. Launch:
+    - `Start-Web.bat` — **opens your browser automatically** (no need to type the URL)
+    - `Start-Desktop.bat` — native window
+4. In **Interface Management**, add an interface (e.g. DeepSeek), paste your API key, click the card to activate.
+5. For PDF / image OCR / video subtitles / real-time voice, install the plugin **on demand** in the **Plugins** page (bundled uv = fast; auto-uses a China mirror when needed).
+6. Models can be downloaded from the Plugins page, or fetched per-model from a netdisk (see [model guide](docs/MODELS.md)) and unzipped into the app's `models/` folder.
+
+> When a new version is available, the portable build can **smart-update** in place, preserving installed plugins, models and your settings.
+
+### Option B: run from source (dev / advanced)
+
+1. Python 3.12 (a [Conda](https://www.anaconda.com/download) env is recommended)
     ```bash
-    conda create -n lingua-haru python=3.12
-    conda activate lingua-haru
+    conda create -n lingua-haru python=3.12 && conda activate lingua-haru
+    ```
+2. Core deps + one frontend
+    ```bash
+    pip install -r requirements/base.txt
+    pip install -r requirements/web.txt   # web:     python -m webapp.server  (http://127.0.0.1:8080)
+    pip install -r requirements/qt.txt    # desktop: python app_qt.py
+    ```
+3. Optional plugins (or install them from the in-app Plugins page)
+    ```bash
+    pip install -r plugins/pdf/requirements.txt       # PDF (BabelDOC, layout-preserving)
+    pip install -r plugins/ocr/requirements.txt       # image OCR
+    pip install -r plugins/video/requirements.txt     # video/audio subtitles (ffmpeg bundled) + real-time voice
+    pip install -r plugins/speechio/requirements.txt  # Translate-page voice input + read-aloud
+    # Models download to models/ on first use (GPU speech transcription needs a CUDA build of torch).
     ```
 
-3. Install dependencies
-    - Dependency packages
-        ```bash
-        pip install -r requirements/base.txt
-        ```
-    - Optional modules (install only what you need; the UI enables them automatically).
-      Their models (OCR / speech-to-text / diarization / PDF layout) download
-      automatically on first use into `data/models`.
-        ```bash
-        # PDF translation (.pdf): layout-preserving, via BabelDOC
-        pip install -r plugins/pdf/requirements.txt
-
-        # Image translation (.png/.jpg/...): OCR + render translation back onto the image
-        pip install -r plugins/ocr/requirements.txt
-
-        # Video/audio subtitles (.mp4/.mp3/...): transcribe (Whisper / SenseVoice /
-        # Qwen-ASR) then translate. ffmpeg is bundled (imageio-ffmpeg) — no PATH
-        # install needed. Also powers real-time voice + optional speaker labels.
-        pip install -r plugins/video/requirements.txt
-
-        # Quick-Translate voice: microphone input + read-aloud (edge-tts + shared STT)
-        pip install -r plugins/speechio/requirements.txt
-        ```
-
-
-4. Run the tool
-
-    **Web app (FastAPI)** — browser UI:
-    ```bash
-    pip install -r requirements/web.txt
-    python -m webapp.server
-    ```
-    Default access address is
-    ```bash
-    http://127.0.0.1:8080
-    ```
-
-    **Desktop app (Qt)** — recommended native desktop experience (Fluent Design):
-    ```bash
-    pip install -r requirements/qt.txt
-    python app_qt.py
-    ```
-
-5. Local large language model support  
-    Currently only supports [Ollama](https://ollama.com/)  
-    You need to download Ollama dependencies and models for translation
-    - Download model (QWen series models recommended)
-        ```bash
-        ollama pull qwen2.5
-        ```
+### Local LLMs (optional)
+Besides online APIs, local [Ollama](https://ollama.com/) / LM Studio are supported, e.g. `ollama pull qwen2.5`, then activate the local interface in Interface Management.
 
 <h2 id="preview">Preview</h2>
 <div align="center">
@@ -120,6 +107,8 @@ tests/               Test suite (corpus per format, qt, web sessions, i18n, ...)
 - Add continue translation functionality.
 
 ## Changelog
+- 2026/06
+**V5.1 update**: a new **portable build** (embedded Python, unzip-and-run); a **plugin market** (install on demand + download third-party plugins remotely); **smart update** (one-click, preserving plugins/models/settings); a first-run **onboarding tour**; the web build now **opens the browser automatically**; models can be **downloaded per-model from a netdisk**; automatic China-mirror fallback (HF/PyPI/GitHub); many translation-quality and stability fixes.
 - 2026/01/28
 V5.0 update: Updated PDF library. Optimized UI interface. Added more practical features. Thanks for a year of companionship!
 - 2025/05/09

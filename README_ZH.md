@@ -16,73 +16,62 @@
 
 它提供以下功能：
 
-- 多格式兼容：完美支持 .docx、.pptx、.xlsx、.pdf、.txt、.srt 等常见文件格式，未来将拓展更多文档类型。
-- 全球语言互译：覆盖中/英/日/韩/俄等10+语言，持续扩展，满足全球化需求。
-- 一键极速翻译：无需繁琐操作，上传文件点击翻译即刻生成精准翻译。
-- 灵活翻译引擎：自由切换本地模型（Ollama）与在线API（Deepseek/OpenAI等），随时适配不同使用环境。
-- 局域网共享：一台主机，即可在本地网络内所有设备轻松使用，高效协同办公。
+- **双前端**：网页版（浏览器界面）与桌面版（Qt Fluent Design），同一套后端，按喜好选择。
+- **多格式兼容**：.docx / .pptx / .xlsx / .pdf / .txt / 字幕(srt/ass/vtt/lrc) / .md / .epub / csv / html / odt / json，以及图片、视频/音频。
+- **全球语言互译**：覆盖中/英/日/韩/俄等 13+ 语言，界面同样多语言。
+- **一键极速翻译**：拖入文件即翻；支持翻译模式（精确/通用）、术语表、双语对照、各格式专属选项。
+- **首页「翻译」**：Google-翻译式快速短文本翻译，支持语音输入与朗读。
+- **实时语音**：边说边译，自动断句，实时显示原文与译文。
+- **插件系统 + 插件市场**：PDF、图片 OCR、视频/音频字幕、实时语音、语音输入做成可选插件，按需安装（自带 uv，安装快）；还可从远程市场下载第三方自包含插件，无需更新主程序。
+- **智能更新**（便携版）：检测到新版一键自动更新，保留已装插件、模型和你的设置/接口。
+- **新手引导**：首次打开的交互式聚光灯教程，带你认识每个页面。
+- **灵活翻译引擎**：在线 API（DeepSeek / OpenAI 等）与本地模型（Ollama / LM Studio）自由切换。
+- **国内友好**：HuggingFace / PyPI / GitHub 均自动探测官方，连不上时切国内镜像（hf-mirror / 清华 / ghproxy）。
+- **局域网共享**（仅网页版）：一台主机，局域网内多设备共用。
 
 
 <h2 id="install">安装和使用</h2>
 
-1. [CUDA](https://developer.nvidia.com/cuda-downloads)   
-您需要安装CUDA（目前11.7和12.1测试没有问题）  
+### 方式一（推荐）：便携版，解压即用
 
-2. Python (python==3.12)  
-    建议使用[Conda](https://www.anaconda.com/download)创建虚拟环境  
+无需 Python、无需 CUDA，下载解压双击即可。
+
+1. 到 [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) 下载：
+    - `LinguaHaru-web.zip` —— 网页版（浏览器界面）
+    - `LinguaHaru-desktop.zip` —— 桌面版（Qt）
+2. 解压到任意目录（路径可含中文）。
+3. 双击启动：
+    - `Start-Web.bat` —— **会自动打开浏览器**，无需手动输网址
+    - `Start-Desktop.bat` —— 桌面窗口
+4. 「接口管理」添加翻译接口（如 DeepSeek），填入 API Key，点击卡片激活。
+5. 需要 PDF / 图片 OCR / 视频字幕 / 实时语音时，到「插件」页**按需安装**（自带 uv，安装快；国内自动走镜像）。
+6. 模型可在「插件」页按需下载；也可从网盘单独下载（见 [模型说明](docs/MODELS.md)）后解压进程序的 `models/` 文件夹。
+
+> 检测到新版本时，便携版可一键**智能更新**，自动保留已装插件、模型与你的设置。
+
+### 方式二：从源码运行（开发 / 进阶）
+
+1. Python 3.12（建议用 [Conda](https://www.anaconda.com/download) 建虚拟环境）
     ```bash
-    conda create -n lingua-haru python=3.12
-    conda activate lingua-haru
+    conda create -n lingua-haru python=3.12 && conda activate lingua-haru
+    ```
+2. 核心依赖 + 选一个前端
+    ```bash
+    pip install -r requirements/base.txt
+    pip install -r requirements/web.txt   # 网页版：python -m webapp.server  (默认 http://127.0.0.1:8080)
+    pip install -r requirements/qt.txt    # 桌面版：python app_qt.py
+    ```
+3. 可选插件（也可在 UI「插件」页一键安装）
+    ```bash
+    pip install -r plugins/pdf/requirements.txt       # PDF（BabelDOC，保排版）
+    pip install -r plugins/ocr/requirements.txt       # 图片 OCR
+    pip install -r plugins/video/requirements.txt     # 视频/音频字幕（内置 ffmpeg）+ 实时语音
+    pip install -r plugins/speechio/requirements.txt  # 翻译页语音输入 + 朗读
+    # 模型首次使用时自动下载到 models/（GPU 语音转写需自行安装 CUDA 版 torch）
     ```
 
-3. 安装依赖
-    - 依赖包
-        ```bash
-        pip install -r requirements/base.txt
-        ```
-    - 可选模块（按需安装，UI 会自动启用对应功能）
-        ```bash
-        # 图像翻译（.png/.jpg 等）：OCR 识别 + 译文回填渲染
-        pip install -r plugins/ocr/requirements.txt
-
-        # PDF 翻译（.pdf）：基于 BabelDOC，保留排版
-        pip install -r plugins/pdf/requirements.txt
-
-        # 视频/音频字幕翻译（.mp4/.mp3 等）：转写（Whisper / SenseVoice / Qwen-ASR）后翻译
-        # 已内置 ffmpeg（imageio-ffmpeg），无需在 PATH 安装。也用于实时语音 + 可选的说话人标注
-        pip install -r plugins/video/requirements.txt
-
-        # 速译语音：麦克风输入 + 朗读（edge-tts + 共享 STT）
-        pip install -r plugins/speechio/requirements.txt
-        # 注：可选模型（OCR / 语音转文字 / 说话人分离 / PDF 版面）首次使用时自动下载到 data/models
-        ```
-
-
-4. 运行工具
-
-    **Web 应用 (FastAPI)** —— 浏览器界面：
-    ```bash
-    pip install -r requirements/web.txt
-    python -m webapp.server
-    ```
-    默认访问地址为
-    ```bash
-    http://127.0.0.1:8080
-    ```
-
-    **桌面应用 (Qt)** —— 推荐的原生桌面体验（Fluent Design 风格）：
-    ```bash
-    pip install -r requirements/qt.txt
-    python app_qt.py
-    ```
-
-5. 本地大语言模型支持  
-    目前仅支持[Ollama](https://ollama.com/)  
-    您需要下载Ollama依赖和用于翻译的模型
-    - 下载模型（推荐QWen系列模型）
-        ```bash
-        ollama pull qwen2.5
-        ```
+### 本地大语言模型（可选）
+在线 API 之外，也支持本地 [Ollama](https://ollama.com/) / LM Studio。例如：`ollama pull qwen2.5`，再到「接口管理」激活本地接口。
 
 <h2 id="preview">预览</h2>
 <div align="center">
@@ -98,6 +87,8 @@
 - 添加继续翻译功能。
 
 ## 更新日志
+- 2026/06
+**V5.1 更新**：全新**便携版**（内嵌 Python，解压即用）；**插件市场**（按需安装 + 远程下载第三方插件）；**智能更新**（一键更新且保留插件/模型/设置）；首次打开的**新手引导**；网页版**自动打开浏览器**；模型可**单独打包从网盘下载**；国内镜像自动切换（HF/PyPI/GitHub）；大量翻译质量与稳定性修复。
 - 2026/01/28
 V5.0更新：更新PDF库，优化UI界面，增加更多实用化功能。感谢一年的陪伴！
 - 2025/05/09
