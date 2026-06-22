@@ -1478,7 +1478,11 @@ async function pickerInstall(m, s, chipText) {
       return;
     }
     clearInterval(poll);
-    status.textContent = "";
+    if (j.status === "error") {
+      status.innerHTML = pill("bad", _label("Download Failed", "下载失败,请检查网络后重试"), ICON.cross);
+    } else {
+      status.textContent = "";
+    }
     refreshPickerRows(m, chipText);
   }, 1500);
 }
@@ -1557,7 +1561,11 @@ async function moduleAction(name, action, btn, statTd) {
         msg += " —— 请重启程序以生效。";
       } else {
         msg = `${name} ${verb}完成 —— 请重启程序以生效。`;
-        if (action === "install") msg += " " + _label("Downloading Model", "正在下载模型…");
+        if (action === "install" && s.model_failed) {
+          statTd.innerHTML = pill("bad", _label("Model Download Failed", "模型下载失败"), ICON.cross);
+          msg += " ⚠ " + _label("Model Download Failed Hint",
+            "库已安装,但模型下载失败(可能是网络问题)。请重启后在插件页重新下载模型。");
+        }
       }
       $("modules-status").textContent = msg;
       // Re-fetch bootstrap so the CARD itself (status badge + install/uninstall

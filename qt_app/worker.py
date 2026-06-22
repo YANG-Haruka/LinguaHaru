@@ -53,6 +53,7 @@ class InstallWorker(QThread):
         # Stream pip/uv output to the card tooltip so the user sees live progress.
         from core import module_manager
         module_manager.set_progress_callback(lambda ln: self.line.emit(ln[:200]))
+        model_failed = False
         try:
             if self.action == "uninstall":
                 from core.optional_modules import uninstall_plugin
@@ -64,14 +65,14 @@ class InstallWorker(QThread):
             else:
                 from core.module_manager import install_module
                 ok, out = install_module(self.module_name)
-                if ok:   # warm the default model (best-effort; may need restart)
+                if ok:   # warm the default model (lib is in, but model may fail)
                     try:
                         from core.optional_modules import download_plugin_model
-                        download_plugin_model(
+                        model_failed = not download_plugin_model(
                             self.module_name,
                             progress_cb=lambda ln: self.line.emit(ln[:200]))
                     except Exception:  # noqa: BLE001
-                        pass
+                        model_failed = True
         except Exception as e:  # noqa: BLE001
             module_manager.set_progress_callback(None)
             self.finished_ok.emit(False, f"Error: {e}")
@@ -79,6 +80,11 @@ class InstallWorker(QThread):
         module_manager.set_progress_callback(None)
         if out:
             self.line.emit(str(out)[-400:])
+        if ok and model_failed:
+            # Library installed but its model download failed (often network) —
+            # surface it instead of a plain "完成" that hides a broken plugin.
+            self.finished_ok.emit(True, "__MODEL_FAILED__")
+            return
         self.finished_ok.emit(bool(ok), out or (
             "Done" if ok else "Failed"))
 

@@ -180,8 +180,10 @@ class _ModelPickerDialog(MessageBoxBase):
         self._workers.append(w)
         w.line.connect(lambda text: self.titleLabel.setText(
             tr("Downloading Model", self._lang) + ": " + text[-48:]))
-        w.finished_ok.connect(lambda _ok: (
-            self.titleLabel.setText(tr("Select Model", self._lang)), self._build()))
+        w.finished_ok.connect(lambda ok: (
+            self.titleLabel.setText(tr("Select Model", self._lang) if ok
+                                    else tr("Download Failed", self._lang)),
+            self._build()))
         w.start()
         self._build()   # reflect "downloading" by re-reading state shortly
 
@@ -628,6 +630,9 @@ class PluginsPage(ScrollArea):
 
     def _model_download_done(self, card, ok, worker):
         card.set_model_ready(ok)
+        if not ok:
+            self._info(card._mod["name"],
+                       tr("Model Download Failed Hint", self._lang), error=True)
         if worker in self._dl_workers:
             self._dl_workers.remove(worker)
 
@@ -697,10 +702,15 @@ class PluginsPage(ScrollArea):
                 else tr("Install finished", self._lang)
             self._info(card._mod["name"], finished)
             # Unified UX: a fresh install auto-downloads the default model.
-            # Best-effort — a just-pip-installed package may need a restart to
-            # import; failure is quiet (the model lazy-downloads on first use).
             if action == "install" and mod.get("models"):
+                # Re-trigger via the tracked worker so the card shows progress AND
+                # surfaces a network failure (was silent before).
                 self._start_model_download(card)
+            elif msg == "__MODEL_FAILED__":
+                # Fixed-model plugin (e.g. PDF) with no separate picker to retry
+                # from — its model download failed, so say so instead of "完成".
+                self._info(card._mod["name"],
+                           tr("Model Download Failed Hint", self._lang), error=True)
         else:
             self._info(card._mod["name"],
                        f"{tr('Install failed', self._lang)}: {msg}", error=True)

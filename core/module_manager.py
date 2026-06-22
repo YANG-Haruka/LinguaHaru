@@ -35,6 +35,11 @@ _PYPI_JSON = [
     "https://pypi.tuna.tsinghua.edu.cn/pypi/{pkg}/json",
 ]
 
+# Mainland-China PyPI mirror used as the auto-fallback (full mirror, serves both
+# metadata AND wheels, so it works where files.pythonhosted.org is throttled).
+_PYPI_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
+_PYPI_OFFICIAL = "https://pypi.org/simple"
+
 
 import shutil
 
@@ -131,32 +136,53 @@ def pick_pypi_index():
             return _pypi_index
     except Exception:  # noqa: BLE001
         pass
+    # Probe the WHEEL host (files.pythonhosted.org, a Fastly CDN), NOT pypi.org:
+    # in mainland China the metadata host often answers while the CDN that actually
+    # serves the wheels is throttled/blocked — which made installs crawl after the
+    # probe wrongly chose "official". HTTPError (e.g. 404) still means the server
+    # responded, so treat it as reachable; only a conn/timeout error -> mirror.
+    import urllib.error
     try:
         urllib.request.urlopen(
-            urllib.request.Request("https://pypi.org/simple/", method="HEAD"), timeout=3)
-        _pypi_index = "https://pypi.org/simple"
+            urllib.request.Request("https://files.pythonhosted.org/packages/",
+                                   method="HEAD"), timeout=4)
+        _pypi_index = _PYPI_OFFICIAL
+        app_logger.info("PyPI index: official")
+    except urllib.error.HTTPError:
+        _pypi_index = _PYPI_OFFICIAL
         app_logger.info("PyPI index: official")
     except Exception:  # noqa: BLE001 — unreachable/blocked -> China mirror
-        _pypi_index = "https://pypi.tuna.tsinghua.edu.cn/simple"
-        app_logger.info("PyPI index: Tsinghua mirror (official unreachable)")
+        _pypi_index = _PYPI_MIRROR
+        app_logger.info("PyPI index: Tsinghua mirror (wheel host unreachable)")
     return _pypi_index
+
+
+def _install_cmd(req, index, upgrade):
+    uv = _uv_exe()
+    up = ["--upgrade"] if upgrade else []
+    idx = ["--index-url", index]
+    if uv:
+        return [uv, "pip", "install", "--python", sys.executable, *idx, *up, "-r", req]
+    return [sys.executable, "-m", "pip", "install", *idx, *up, "-r", req]
 
 
 def _run_install(req, upgrade=False):
     """Install from a requirements file into THIS interpreter. uv (with --python
     pointing at our interpreter) when available, else `python -m pip`. Uses a
-    mainland-China PyPI mirror automatically when pypi.org is unreachable."""
+    mainland-China PyPI mirror automatically when the official wheel host is
+    unreachable, AND auto-retries on the mirror if an official install fails (so a
+    wrong probe / transient CDN block still recovers instead of just erroring)."""
     blocked = _frozen_block()
     if blocked:
         return blocked
-    uv = _uv_exe()
-    up = ["--upgrade"] if upgrade else []
-    idx = ["--index-url", pick_pypi_index()]
-    if uv:
-        cmd = [uv, "pip", "install", "--python", sys.executable, *idx, *up, "-r", req]
-    else:
-        cmd = [sys.executable, "-m", "pip", "install", *idx, *up, "-r", req]
-    return _run(cmd)
+    index = pick_pypi_index()
+    ok, out = _run(_install_cmd(req, index, upgrade))
+    if not ok and index != _PYPI_MIRROR:
+        app_logger.info("Install failed on %s — retrying on China mirror", index)
+        _emit("⚠ 官方源安装失败，正在切换国内镜像重试… / retrying on China mirror…")
+        ok, out2 = _run(_install_cmd(req, _PYPI_MIRROR, upgrade))
+        out = (out + "\n--- retry on mirror ---\n" + out2)[-4000:]
+    return ok, out
 
 
 def _run_uninstall(pkgs):

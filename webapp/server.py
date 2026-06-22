@@ -1551,6 +1551,7 @@ def _enqueue_module_job(name, fn):
 def _run_module_job(name, action):
     freed = 0
     ok, out = False, ""
+    model_failed = False
     # Hold the global lock for the whole job so concurrent pip/uv calls can't
     # corrupt the shared env; ALWAYS land on a terminal status (try/finally) so a
     # crash can't leave the job stuck "running" (which would freeze the UI button).
@@ -1576,9 +1577,10 @@ def _run_module_job(name, action):
                 # not import until restart, so any failure here is non-fatal.
                 try:
                     from core.optional_modules import download_plugin_model
-                    download_plugin_model(name, progress_cb=_prog)
-                except Exception:  # noqa: BLE001
-                    pass
+                    model_failed = not download_plugin_model(name, progress_cb=_prog)
+                except Exception as me:  # noqa: BLE001
+                    model_failed = True
+                    app_logger.warning(f"Model download failed for {name}: {me}")
             if ok:
                 # (module_manager.install/uninstall already invalidated import
                 # caches + cleared the size cache, so the next status/usage call
@@ -1594,7 +1596,8 @@ def _run_module_job(name, action):
             set_progress_callback(None)
             with _TASKS_LOCK:
                 MODULE_JOBS[name] = {"status": "done" if ok else "error",
-                                     "output": out, "freed_bytes": freed}
+                                     "output": out, "freed_bytes": freed,
+                                     "model_failed": model_failed}
 
 
 def _run_model_job(name, model_id):
