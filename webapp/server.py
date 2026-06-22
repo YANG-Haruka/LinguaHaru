@@ -215,7 +215,20 @@ MAX_ACTIVE_TASKS_PER_SESSION = 2  # per browser/session
 # tie up a translate worker, the STT lock, or memory for an unbounded time.
 _MAX_LIVE_AUDIO_BYTES = 16000 * 2 * 32   # ~32s of 16kHz mono PCM16
 _MAX_QUICK_TEXT_CHARS = 5000             # quick-translate / TTS / live captions
-_MAX_UPLOAD_BYTES = 200 * 1024 * 1024    # total bytes per /api/translate request
+
+
+def _max_upload_mb():
+    """Total-upload cap per /api/translate request, in MB. Configurable
+    (max_upload_mb, default 2GB so videos/big PDFs fit); public deploys are held
+    to a conservative ceiling so a remote peer can't exhaust server disk."""
+    mb = backend.get_config("max_upload_mb", 2048)
+    try:
+        mb = int(mb)
+    except (TypeError, ValueError):
+        mb = 2048
+    if server_mode_on():
+        mb = min(mb, 500)
+    return mb
 
 
 def _capped_text(payload, field="text", limit=_MAX_QUICK_TEXT_CHARS):
@@ -948,6 +961,8 @@ async def translate(
     os.makedirs(upload_dir, exist_ok=True)
     dests = []
     written = 0
+    max_mb = _max_upload_mb()
+    max_bytes = max_mb * 1024 * 1024
     for f in files:
         dest = os.path.join(upload_dir, os.path.basename(f.filename or "upload"))
         # Stream with a hard cap so a remote/LAN peer can't exhaust disk/memory
@@ -959,10 +974,11 @@ async def translate(
                 if not chunk:
                     break
                 written += len(chunk)
-                if written > _MAX_UPLOAD_BYTES:
+                if written > max_bytes:
                     out.close()
                     shutil.rmtree(upload_dir, ignore_errors=True)
-                    raise HTTPException(413, "Upload too large")
+                    raise HTTPException(
+                        413, f"Upload too large (max {max_mb} MB per request)")
                 out.write(chunk)
         dests.append(dest)
 

@@ -213,6 +213,9 @@ _DEFAULT_CONFIG = {
     "log_max_age_days": 30,
     "log_max_size_mb": 500,
     "result_max_size_mb": 5000,
+    # Max total bytes accepted per /api/translate request (videos/big PDFs need
+    # headroom). Public deploys (server_mode) are capped lower in the server.
+    "max_upload_mb": 2048,
     # Bilingual (双语对照): style the TRANSLATED text so it stands out from the
     # original. color is a hex without '#' ("" = no color). Subtitles (srt/vtt).
     "bilingual_bold": True,
