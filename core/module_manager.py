@@ -105,18 +105,57 @@ def _frozen_block():
     return None
 
 
+_pypi_index = None   # probed once per process
+
+
+def pick_pypi_index():
+    """The PyPI index URL to install from. Explicit env / config first, else probe
+    the official PyPI and fall back to the Tsinghua mirror when it's unreachable
+    (so mainland-China users can install plugin deps — torch/paddle etc. — without
+    timing out). Mirror used ONLY when official is unreachable, so users who can
+    reach pypi.org aren't slowed. Set PIP_INDEX_URL or config 'pypi_index' to pin."""
+    global _pypi_index
+    if _pypi_index is not None:
+        return _pypi_index
+    env = os.environ.get("PIP_INDEX_URL") or os.environ.get("UV_DEFAULT_INDEX")
+    if env:
+        _pypi_index = env
+        return _pypi_index
+    try:
+        import json as _json
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            cfg_idx = _json.load(f).get("pypi_index")
+        if cfg_idx:
+            _pypi_index = cfg_idx
+            return _pypi_index
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request("https://pypi.org/simple/", method="HEAD"), timeout=3)
+        _pypi_index = "https://pypi.org/simple"
+        app_logger.info("PyPI index: official")
+    except Exception:  # noqa: BLE001 — unreachable/blocked -> China mirror
+        _pypi_index = "https://pypi.tuna.tsinghua.edu.cn/simple"
+        app_logger.info("PyPI index: Tsinghua mirror (official unreachable)")
+    return _pypi_index
+
+
 def _run_install(req, upgrade=False):
     """Install from a requirements file into THIS interpreter. uv (with --python
-    pointing at our interpreter) when available, else `python -m pip`."""
+    pointing at our interpreter) when available, else `python -m pip`. Uses a
+    mainland-China PyPI mirror automatically when pypi.org is unreachable."""
     blocked = _frozen_block()
     if blocked:
         return blocked
     uv = _uv_exe()
     up = ["--upgrade"] if upgrade else []
+    idx = ["--index-url", pick_pypi_index()]
     if uv:
-        cmd = [uv, "pip", "install", "--python", sys.executable, *up, "-r", req]
+        cmd = [uv, "pip", "install", "--python", sys.executable, *idx, *up, "-r", req]
     else:
-        cmd = [sys.executable, "-m", "pip", "install", *up, "-r", req]
+        cmd = [sys.executable, "-m", "pip", "install", *idx, *up, "-r", req]
     return _run(cmd)
 
 
@@ -327,9 +366,10 @@ def upgrade_module(name):
     pkg = m.get("version_package")
     if pkg:
         uv = _uv_exe()
+        idx = ["--index-url", pick_pypi_index()]
         if uv:
-            return _run([uv, "pip", "install", "--upgrade", "--python", sys.executable, pkg])
-        return _run([sys.executable, "-m", "pip", "install", "--upgrade", pkg])
+            return _run([uv, "pip", "install", "--upgrade", "--python", sys.executable, *idx, pkg])
+        return _run([sys.executable, "-m", "pip", "install", "--upgrade", *idx, pkg])
     return _run_install(m["requirements_path"], upgrade=True)
 
 
