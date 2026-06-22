@@ -1576,7 +1576,7 @@ def _run_module_job(name, action):
                 # not import until restart, so any failure here is non-fatal.
                 try:
                     from core.optional_modules import download_plugin_model
-                    download_plugin_model(name)
+                    download_plugin_model(name, progress_cb=_prog)
                 except Exception:  # noqa: BLE001
                     pass
             if ok:
@@ -1600,11 +1600,16 @@ def _run_module_job(name, action):
 def _run_model_job(name, model_id):
     """Persist the chosen model id, then download+warm it (heavy/blocking)."""
     ok = False
+    def _prog(line):
+        with _TASKS_LOCK:
+            j = MODULE_JOBS.get(name)
+            if j is not None:
+                j["line"] = line[:200]
     with _MODULE_JOB_LOCK:
         try:
             from core.optional_modules import set_plugin_model, download_plugin_model
             set_plugin_model(name, model_id)
-            ok = download_plugin_model(name, model_id)
+            ok = download_plugin_model(name, model_id, progress_cb=_prog)
         except Exception as e:  # noqa: BLE001
             ok = False
             app_logger.error(f"Model download job crashed for {name}/{model_id}: {e}")

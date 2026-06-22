@@ -67,7 +67,9 @@ class InstallWorker(QThread):
                 if ok:   # warm the default model (best-effort; may need restart)
                     try:
                         from core.optional_modules import download_plugin_model
-                        download_plugin_model(self.module_name)
+                        download_plugin_model(
+                            self.module_name,
+                            progress_cb=lambda ln: self.line.emit(ln[:200]))
                     except Exception:  # noqa: BLE001
                         pass
         except Exception as e:  # noqa: BLE001
@@ -89,10 +91,12 @@ class ModelDownloadWorker(QThread):
     pass None to download the plugin's currently-selected/default model (used
     right after a fresh install).
 
-    Signal:
+    Signals:
+        line(str)         -- a live tqdm download line
         finished_ok(bool) -- True if the model is ready
     """
 
+    line = Signal(str)
     finished_ok = Signal(bool)
 
     def __init__(self, module_name, model_id=None, parent=None):
@@ -103,7 +107,9 @@ class ModelDownloadWorker(QThread):
     def run(self):
         from core.optional_modules import download_plugin_model
         try:
-            ok = bool(download_plugin_model(self.module_name, self.model_id))
+            ok = bool(download_plugin_model(
+                self.module_name, self.model_id,
+                progress_cb=lambda ln: self.line.emit(ln[:200])))
         except Exception:  # noqa: BLE001 - a failed download just reports not-ready
             ok = False
         self.finished_ok.emit(ok)

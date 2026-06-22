@@ -178,7 +178,10 @@ class _ModelPickerDialog(MessageBoxBase):
     def _install(self, st):
         w = ModelDownloadWorker(self._plugin, st["id"], self)
         self._workers.append(w)
-        w.finished_ok.connect(lambda _ok: self._build())
+        w.line.connect(lambda text: self.titleLabel.setText(
+            tr("Downloading Model", self._lang) + ": " + text[-48:]))
+        w.finished_ok.connect(lambda _ok: (
+            self.titleLabel.setText(tr("Select Model", self._lang)), self._build()))
         w.start()
         self._build()   # reflect "downloading" by re-reading state shortly
 
@@ -355,6 +358,12 @@ class OptionalPluginCard(CardWidget):
         if self.status_caption is not None:
             self.status_caption.setText(
                 tr("Downloading Model", self._lang) if busy else "")
+
+    def set_download_line(self, text):
+        """Surface a live tqdm download line under the model row while busy."""
+        if self.status_caption is not None and self._busy_download:
+            self.status_caption.setText(
+                tr("Downloading Model", self._lang) + ": " + text[-48:])
 
     def set_model_ready(self, ok):
         if self.model_link is not None:
@@ -612,6 +621,7 @@ class PluginsPage(ScrollArea):
         card.set_download_busy(True)
         worker = ModelDownloadWorker(card._mod["name"], model_id)
         self._dl_workers.append(worker)
+        worker.line.connect(lambda text, c=card: c.set_download_line(text))
         worker.finished_ok.connect(
             lambda ok, c=card, w=worker: self._model_download_done(c, ok, w))
         worker.start()

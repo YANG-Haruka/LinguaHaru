@@ -224,13 +224,79 @@ def set_plugin_model(name, model_id):
     return True
 
 
-def download_plugin_model(name, model_id=None):
+class _ProgressTee:
+    """Wrap a text stream: pass writes through unchanged, AND forward the most
+    recent complete progress segment to ``cb``. Model downloads (huggingface_hub /
+    modelscope / paddle / babeldoc) paint tqdm bars to stderr with carriage
+    returns — splitting on \\r and \\n surfaces each repaint as a status line."""
+
+    def __init__(self, raw, cb):
+        self._raw = raw
+        self._cb = cb
+        self._buf = ""
+
+    def write(self, s):
+        try:
+            self._raw.write(s)
+        except Exception:  # noqa: BLE001
+            pass
+        self._buf += s
+        if "\r" in self._buf or "\n" in self._buf:
+            parts = self._buf.replace("\r", "\n").split("\n")
+            self._buf = parts[-1]          # keep the incomplete tail
+            for seg in reversed(parts[:-1]):
+                seg = seg.strip()
+                if seg:
+                    try:
+                        self._cb(seg)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    break                  # only the latest complete line
+        return len(s)
+
+    def flush(self):
+        try:
+            self._raw.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def __getattr__(self, attr):          # isatty / encoding / fileno passthrough
+        return getattr(self._raw, attr)
+
+
+class _capture_progress:
+    """Context manager that tees stderr/stdout to ``cb`` while a model downloads.
+    A no-op when cb is None."""
+
+    def __init__(self, cb):
+        self._cb = cb
+
+    def __enter__(self):
+        import sys
+        if self._cb is None:
+            self._saved = None
+            return self
+        self._saved = (sys.stderr, sys.stdout)
+        sys.stderr = _ProgressTee(sys.stderr, self._cb)
+        sys.stdout = _ProgressTee(sys.stdout, self._cb)
+        return self
+
+    def __exit__(self, *exc):
+        import sys
+        if self._saved is not None:
+            sys.stderr, sys.stdout = self._saved
+        return False
+
+
+def download_plugin_model(name, model_id=None, progress_cb=None):
     """Download (and warm) a plugin's model. If model_id is given it is persisted
-    first. Heavy + blocking — callers run it in a background thread. Returns bool."""
+    first. Heavy + blocking — callers run it in a background thread. Returns bool.
+    progress_cb(str), if given, receives live tqdm download lines."""
     spec = _plugin_model_specs().get(name)
     if model_id and spec:
         set_plugin_model(name, model_id)
     try:
+      with _capture_progress(progress_cb):
         if name == "Image OCR":
             import core.pipelines.image_translation_pipeline as ip
             ip._ocr_engines.clear()        # drop cached engines -> re-create with new size
