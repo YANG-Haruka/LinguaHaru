@@ -1496,15 +1496,54 @@ def _module_busy():
         return any(j.get("status") == "running" for j in MODULE_JOBS.values())
 
 
-def _claim_module_job(name):
-    """Atomically refuse if any plugin job is running, else mark `name` running.
-    Returns True if the caller now owns the job (avoids the check-then-set race
-    where two requests both pass _module_busy and then both mutate the env)."""
+import queue as _queue
+# Plugin jobs (install/uninstall/upgrade/model-download) all mutate the SAME
+# interpreter env, so they can't run in parallel — but instead of rejecting a
+# second request (409) we QUEUE it and run jobs one at a time, FIFO. A single
+# worker thread = serial by construction.
+_MODULE_QUEUE = _queue.Queue()
+_MODULE_WORKER_STARTED = False
+_MODULE_WORKER_LOCK = threading.Lock()
+
+
+def _module_worker():
+    while True:
+        fn, name = _MODULE_QUEUE.get()
+        try:
+            with _TASKS_LOCK:   # queued -> running as it actually starts
+                j = MODULE_JOBS.get(name)
+                if j is not None:
+                    j["status"] = "running"
+            fn()
+        except Exception as e:  # noqa: BLE001
+            app_logger.error(f"Module job worker error for {name}: {e}")
+            with _TASKS_LOCK:
+                MODULE_JOBS[name] = {"status": "error", "output": str(e)}
+        finally:
+            _MODULE_QUEUE.task_done()
+
+
+def _ensure_module_worker():
+    global _MODULE_WORKER_STARTED
+    with _MODULE_WORKER_LOCK:
+        if not _MODULE_WORKER_STARTED:
+            threading.Thread(target=_module_worker, daemon=True).start()
+            _MODULE_WORKER_STARTED = True
+
+
+def _enqueue_module_job(name, fn):
+    """Mark `name` queued and add its work to the serial queue. Refuses only if
+    THIS plugin already has a pending/running op (avoids duplicate). Returns the
+    queue position (0 = will run now / next)."""
+    _ensure_module_worker()
     with _TASKS_LOCK:
-        if any(j.get("status") == "running" for j in MODULE_JOBS.values()):
-            return False
-        MODULE_JOBS[name] = {"status": "running", "output": ""}
-        return True
+        cur = MODULE_JOBS.get(name, {}).get("status")
+        if cur in ("queued", "running"):
+            return None   # already pending for this plugin
+        MODULE_JOBS[name] = {"status": "queued", "output": ""}
+    pos = _MODULE_QUEUE.qsize()
+    _MODULE_QUEUE.put((fn, name))
+    return pos
 
 
 def _run_module_job(name, action):
@@ -1514,6 +1553,14 @@ def _run_module_job(name, action):
     # corrupt the shared env; ALWAYS land on a terminal status (try/finally) so a
     # crash can't leave the job stuck "running" (which would freeze the UI button).
     with _MODULE_JOB_LOCK:
+        # Stream pip/uv output into the job so the UI shows live progress.
+        from core.module_manager import set_progress_callback
+        def _prog(line):
+            with _TASKS_LOCK:
+                j = MODULE_JOBS.get(name)
+                if j is not None:
+                    j["line"] = line[:200]
+        set_progress_callback(_prog)
         try:
             from core.module_manager import install_module, upgrade_module
             if action == "uninstall":
@@ -1531,6 +1578,9 @@ def _run_module_job(name, action):
                 except Exception:  # noqa: BLE001
                     pass
             if ok:
+                # (module_manager.install/uninstall already invalidated import
+                # caches + cleared the size cache, so the next status/usage call
+                # sees the change — no restart needed for detection.)
                 from core.log_config import system_event
                 from core.model_store import human_size
                 extra = f" | freed {human_size(freed)}" if (action == "uninstall" and freed) else ""
@@ -1539,6 +1589,7 @@ def _run_module_job(name, action):
             ok, out = False, f"{type(e).__name__}: {e}"
             app_logger.error(f"Plugin {action} job crashed for {name}: {e}")
         finally:
+            set_progress_callback(None)
             with _TASKS_LOCK:
                 MODULE_JOBS[name] = {"status": "done" if ok else "error",
                                      "output": out, "freed_bytes": freed}
@@ -1571,10 +1622,10 @@ async def module_action(action: str, payload: dict):
     from core import plugins_registry
     if plugins_registry.get(name) is None:
         raise HTTPException(404, f"Unknown module: {name}")
-    if not _claim_module_job(name):
-        raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
-    threading.Thread(target=_run_module_job, args=(name, action), daemon=True).start()
-    return {"started": True}
+    pos = _enqueue_module_job(name, lambda: _run_module_job(name, action))
+    if pos is None:
+        raise HTTPException(409, f"'{name}' already has a pending operation.")
+    return {"started": True, "queue_position": pos}
 
 
 @app.post("/api/modules/model")
@@ -1586,18 +1637,12 @@ async def module_set_model(payload: dict):
     model_id = payload.get("model_id")
     if not name or not model_id:
         raise HTTPException(400, "name and model_id are required")
-    # Atomically claim the job BEFORE mutating config, so a 409 doesn't leave the
-    # plugin pointed at a not-yet-downloaded model and two requests can't race.
-    if not _claim_module_job(name):
-        raise HTTPException(409, "Another plugin operation is in progress. Please wait.")
-    from core.optional_modules import set_plugin_model
-    if not set_plugin_model(name, model_id):
-        with _TASKS_LOCK:
-            MODULE_JOBS.pop(name, None)   # release the claim on bad input
-        raise HTTPException(400, "name and a valid model_id are required")
-    threading.Thread(target=_run_model_job, args=(name, model_id),
-                     daemon=True).start()
-    return {"started": True}
+    # The worker (_run_model_job) persists the choice + downloads, so a duplicate
+    # request can't repoint the model and a bad id surfaces as a job error.
+    pos = _enqueue_module_job(name, lambda: _run_model_job(name, model_id))
+    if pos is None:
+        raise HTTPException(409, f"'{name}' already has a pending operation.")
+    return {"started": True, "queue_position": pos}
 
 
 @app.get("/api/modules/status")

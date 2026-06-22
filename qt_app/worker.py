@@ -50,6 +50,9 @@ class InstallWorker(QThread):
         if plugins_registry.get(self.module_name) is None:
             self.finished_ok.emit(False, f"Unknown module: {self.module_name}")
             return
+        # Stream pip/uv output to the card tooltip so the user sees live progress.
+        from core import module_manager
+        module_manager.set_progress_callback(lambda ln: self.line.emit(ln[:200]))
         try:
             if self.action == "uninstall":
                 from core.optional_modules import uninstall_plugin
@@ -68,8 +71,10 @@ class InstallWorker(QThread):
                     except Exception:  # noqa: BLE001
                         pass
         except Exception as e:  # noqa: BLE001
+            module_manager.set_progress_callback(None)
             self.finished_ok.emit(False, f"Error: {e}")
             return
+        module_manager.set_progress_callback(None)
         if out:
             self.line.emit(str(out)[-400:])
         self.finished_ok.emit(bool(ok), out or (

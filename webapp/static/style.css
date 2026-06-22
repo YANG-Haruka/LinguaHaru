@@ -592,13 +592,14 @@ button.danger { color: #fff; background: #ef4444; border: none; }
 }
 .tour-title { font-weight: 600; font-size: 15px; margin-bottom: 7px; }
 .tour-body { color: var(--text-2); line-height: 1.55; font-size: 13.5px; margin-bottom: 14px; }
-.tour-foot { display: flex; align-items: center; gap: 8px; }
-.tour-dots { display: flex; gap: 5px; }
-.tour-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); transition: all .2s; }
+.tour-foot { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.tour-dots { display: flex; gap: 5px; flex-wrap: wrap; min-width: 0; }
+.tour-dots span { width: 6px; height: 6px; border-radius: 50%; background: var(--border-strong); transition: all .2s; flex: 0 0 auto; }
 .tour-dots span.on { background: var(--accent); width: 15px; border-radius: 3px; }
 .tour-btn {
   padding: 5px 12px; border-radius: 8px; border: 1px solid var(--border);
   background: transparent; color: var(--text-2); cursor: pointer; font-size: 13px;
+  white-space: nowrap; flex: 0 0 auto;   /* never wrap "下一步" / shrink the buttons */
 }
 .tour-btn:hover { background: var(--hover); color: var(--text); }
 .tour-btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }

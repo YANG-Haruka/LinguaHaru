@@ -39,14 +39,44 @@ _PYPI_JSON = [
 import shutil
 
 
+# Optional live-progress sink: a callable(str) invoked with each output line as a
+# job runs, so the UI can show "what pip/uv is doing now" instead of a dead
+# spinner. Jobs run serially (single worker), so a module global is safe.
+_progress_cb = None
+
+
+def set_progress_callback(cb):
+    """Set (or clear with None) the per-line progress sink for the next job."""
+    global _progress_cb
+    _progress_cb = cb
+
+
+def _emit(line):
+    if _progress_cb and line:
+        try:
+            _progress_cb(line)
+        except Exception:  # noqa: BLE001 — progress must never break the install
+            pass
+
+
 def _run(cmd):
-    """Run a command list; return (ok, tail_of_output)."""
+    """Run a command list, STREAMING output lines to the progress sink; return
+    (ok, tail_of_output)."""
     app_logger.info(f"Running: {' '.join(cmd)}")
+    tail = []
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace", cwd=REPO_ROOT)
-        out = (proc.stdout or "") + (proc.stderr or "")
-        return proc.returncode == 0, out[-4000:]
+        proc = subprocess.Popen(
+            cmd, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", bufsize=1)
+        for raw in proc.stdout:
+            line = raw.rstrip()
+            if line:
+                tail.append(line)
+                if len(tail) > 200:
+                    del tail[0]
+                _emit(line)
+        proc.wait()
+        return proc.returncode == 0, "\n".join(tail)[-4000:]
     except Exception as e:  # noqa: BLE001
         return False, str(e)
 
@@ -103,6 +133,22 @@ def _run_uninstall(pkgs):
     return _run(cmd)
 
 
+def _refresh_after_change():
+    """After an install/uninstall the running process has a STALE view of
+    site-packages (its import finders cached the dir before the change), so
+    find_spec / importlib.metadata wouldn't see the new/removed package — which is
+    why a just-installed plugin still showed 'not installed' and lib size 0.
+    Invalidate the import caches + drop the lib-size cache so the next status/usage
+    call is correct without a restart. Both the Web and Qt paths call this."""
+    import importlib
+    importlib.invalidate_caches()
+    try:
+        from core.optional_modules import clear_size_caches
+        clear_size_caches()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _norm(pkg):
     """Canonical distribution name (PEP 503): lowercase, runs of -_. -> -."""
     return re.sub(r"[-_.]+", "-", str(pkg)).lower()
@@ -148,6 +194,7 @@ def install_module(name):
     ok, out = _run_install(req)
     if ok and m:
         _record_install_delta(m["key"], before)   # for full cleanup on uninstall
+        _refresh_after_change()
     return ok, out
 
 
@@ -261,6 +308,7 @@ def uninstall_module(name):
             os.remove(_delta_path(m["key"]))
         except OSError:
             pass
+        _refresh_after_change()
     return ok, out
 
 

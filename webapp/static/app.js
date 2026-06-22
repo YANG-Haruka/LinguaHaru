@@ -1443,8 +1443,16 @@ async function pickerInstall(m, s, chipText) {
     });
   } catch (e) { status.innerHTML = pill("bad", "失败", ICON.cross); return; }
   const poll = setInterval(async () => {
-    const j = await api("/api/modules/status?name=" + encodeURIComponent(m.name));
-    if (j.status === "running") return;
+    let j;
+    try { j = await api("/api/modules/status?name=" + encodeURIComponent(m.name)); }
+    catch (e) { return; }
+    if (j.status === "queued" || j.status === "running") {
+      const t = j.line ? (": " + j.line.slice(0, 40)) : "";
+      status.innerHTML = pill("busy", (j.status === "queued"
+        ? _label("Status Queued", "排队中")
+        : _label("Downloading Model", "正在下载模型…")) + t, "");
+      return;
+    }
     clearInterval(poll);
     status.textContent = "";
     refreshPickerRows(m, chipText);
@@ -1504,7 +1512,16 @@ async function moduleAction(name, action, btn, statTd) {
     try {
       s = await api("/api/modules/status?name=" + encodeURIComponent(name));
     } catch (e) { return; }   // transient poll error -> keep polling
-    if (s.status === "running") return;
+    if (s.status === "queued") {
+      statTd.innerHTML = pill("busy", _label("Status Queued", "排队中"), "");
+      return;
+    }
+    if (s.status === "running") {
+      // Live progress: show the latest pip/uv line so it's clearly working.
+      const tip = s.line ? (": " + s.line.slice(0, 48)) : "";
+      statTd.innerHTML = pill("busy", verb + "中" + tip, "");
+      return;
+    }
     clearInterval(poll);
     btn.disabled = false;
     if (s.status === "done") {
@@ -1519,7 +1536,11 @@ async function moduleAction(name, action, btn, statTd) {
         if (action === "install") msg += " " + _label("Downloading Model", "正在下载模型…");
       }
       $("modules-status").textContent = msg;
-      loadModuleUsage();   // disk usage changed
+      // Re-fetch bootstrap so the CARD itself (status badge + install/uninstall
+      // button) reflects the new availability — not just the transient pill.
+      // (Was the bug: card still showed "未安装" after a successful install.)
+      try { BOOT = await api("/api/bootstrap"); } catch (e) {}
+      renderModules();
     } else {
       statTd.innerHTML = pill("bad", "失败", ICON.cross);
       $("modules-status").textContent = `${name} 操作失败：` + (s.output || "").slice(-300);
