@@ -1,6 +1,18 @@
 """Pytest config: make optional-dependency tests SKIP (not FAIL) when the heavy
 ML deps aren't installed, so a bare `pytest` is one-click-green in any environment
 (the full dev/build env has all deps and skips nothing)."""
+import os
+
+# Isolate the config BEFORE any core import: redirect the writable
+# system_config.json to a throwaway file under the test work dir, so a test that
+# changes settings (temp/result/log dirs, model choices…) — or is killed mid-run
+# before its restore — can NEVER corrupt the user's real config. core.paths reads
+# this env var at import time.
+os.environ.setdefault(
+    "LINGUAHARU_CONFIG",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                 "tests", "_roundtrip_work", "_test_system_config.json"))
+
 import pytest
 
 # Optional plugin deps — a test that hits one of these in an env that doesn't have

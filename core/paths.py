@@ -92,3 +92,17 @@ if _FROZEN:
 else:
     SYSTEM_CONFIG = os.path.join(CONFIG_DIR, "system_config.json")
     _seed_file(_CONFIG_TEMPLATE, SYSTEM_CONFIG)   # first run / fresh clone
+
+# Explicit override (set by the test suite via conftest.py): redirect the
+# writable config to a throwaway file so a test run NEVER mutates the user's real
+# system_config.json. A killed/interrupted test used to leave the live config
+# pointing at tests/_roundtrip_work/* (so real translations wrote into the test
+# tree). Seeded from the template when absent.
+_cfg_override = os.environ.get("LINGUAHARU_CONFIG")
+if _cfg_override:
+    SYSTEM_CONFIG = _cfg_override
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(_cfg_override)), exist_ok=True)
+        _seed_file(_CONFIG_TEMPLATE, SYSTEM_CONFIG)
+    except Exception:  # noqa: BLE001
+        pass
