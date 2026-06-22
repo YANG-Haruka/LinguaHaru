@@ -218,17 +218,24 @@ _MAX_QUICK_TEXT_CHARS = 5000             # quick-translate / TTS / live captions
 
 
 def _max_upload_mb():
-    """Total-upload cap per /api/translate request, in MB. Configurable
-    (max_upload_mb, default 2GB so videos/big PDFs fit); public deploys are held
-    to a conservative ceiling so a remote peer can't exhaust server disk."""
+    """Total-upload cap per /api/translate request, in MB (0 = uncapped).
+
+    The cap only exists to stop a REMOTE peer exhausting server disk:
+      - public deploy (server_mode): hard 500 MB.
+      - LAN mode: configurable max_upload_mb (default 2 GB) — bounded, since
+        other machines can reach it.
+      - purely local (127.0.0.1, single user): UNCAPPED. It's your own disk over
+        localhost, and a large video falls back to a full upload when in-browser
+        audio extraction (ffmpeg.wasm) can't run — capping it just blocks you."""
+    if server_mode_on():
+        return 500
+    if not backend.get_config("lan_mode", False):
+        return 0   # localhost only -> no cap
     mb = backend.get_config("max_upload_mb", 2048)
     try:
-        mb = int(mb)
+        return int(mb)
     except (TypeError, ValueError):
-        mb = 2048
-    if server_mode_on():
-        mb = min(mb, 500)
-    return mb
+        return 2048
 
 
 def _capped_text(payload, field="text", limit=_MAX_QUICK_TEXT_CHARS):
@@ -962,19 +969,18 @@ async def translate(
     dests = []
     written = 0
     max_mb = _max_upload_mb()
-    max_bytes = max_mb * 1024 * 1024
+    max_bytes = max_mb * 1024 * 1024   # 0 = uncapped (purely-local use)
     for f in files:
         dest = os.path.join(upload_dir, os.path.basename(f.filename or "upload"))
-        # Stream with a hard cap so a remote/LAN peer can't exhaust disk/memory
-        # (document uploads were the one unbounded input — short-text/audio are
-        # already capped).
+        # Stream with a cap (LAN/public only) so a remote peer can't exhaust
+        # disk/memory; localhost is uncapped (see _max_upload_mb).
         with open(dest, "wb") as out:
             while True:
                 chunk = f.file.read(1 << 20)
                 if not chunk:
                     break
                 written += len(chunk)
-                if written > max_bytes:
+                if max_bytes and written > max_bytes:
                     out.close()
                     shutil.rmtree(upload_dir, ignore_errors=True)
                     raise HTTPException(

@@ -903,7 +903,14 @@ $("translate-btn").onclick = async () => {
     if (VIDEO_EXTS.includes(ext)) {
       setStatus(`正在浏览器内提取音轨：${f.name}（避免上传整段视频）…`);
       try { uploadFile = await extractAudio(f); }
-      catch (e) { console.warn("ffmpeg.wasm failed, uploading original:", e); uploadFile = f; }
+      catch (e) {
+        console.warn("ffmpeg.wasm failed, uploading original:", e);
+        uploadFile = f;
+        // Extraction failed (often the ffmpeg.wasm CDN is blocked, or the video
+        // is too big for browser memory) — we now upload the whole video and let
+        // the server extract audio. Say so: a multi-GB upload is slower.
+        setStatus(`音轨提取未成功，将上传整段视频（${f.name}，可能较慢）…`);
+      }
     }
     fd.append("files", uploadFile);
   }
