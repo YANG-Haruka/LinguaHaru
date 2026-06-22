@@ -46,3 +46,4 @@ webapp/static/vad/*.onnx
 /dist_portable/
 /dist/
 /build/
+/dist_models/
