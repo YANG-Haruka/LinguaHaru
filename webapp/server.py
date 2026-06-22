@@ -983,6 +983,11 @@ async def translate(
                 if max_bytes and written > max_bytes:
                     out.close()
                     shutil.rmtree(upload_dir, ignore_errors=True)
+                    # Rejected before a task/per-project log exists, so leave a
+                    # trace in the GLOBAL log (otherwise the failure is invisible).
+                    from core.log_config import system_event
+                    system_event(f"Upload rejected (413): session {session_id[:6]} "
+                                 f"exceeded {max_mb} MB cap")
                     raise HTTPException(
                         413, f"Upload too large (max {max_mb} MB per request)")
                 out.write(chunk)
