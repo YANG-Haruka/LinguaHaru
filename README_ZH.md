@@ -70,8 +70,10 @@
     # 模型首次使用时自动下载到 models/（GPU 语音转写需自行安装 CUDA 版 torch）
     ```
 
-### 本地大语言模型（可选）
-在线 API 之外，也支持本地 [Ollama](https://ollama.com/) / LM Studio。例如：`ollama pull qwen2.5`，再到「接口管理」激活本地接口。
+### 翻译接口推荐
+**推荐使用 [DeepSeek](https://platform.deepseek.com/) 最新的 Flash 模型** —— 速度快、质量高、价格便宜,翻译效果最佳。在「接口管理」填入 API Key 激活即可。
+
+> 也支持本地模型（[Ollama](https://ollama.com/) / LM Studio），但**不建议**：本地模型翻译质量和速度通常明显不如在线 API,仅在无网络/隐私要求等特殊场景下考虑。
 
 <h2 id="preview">预览</h2>
 <div align="center">

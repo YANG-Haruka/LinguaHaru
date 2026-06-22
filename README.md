@@ -70,8 +70,10 @@ No Python, no CUDA. Just download, unzip, double-click.
     # Models download to models/ on first use (GPU speech transcription needs a CUDA build of torch).
     ```
 
-### Local LLMs (optional)
-Besides online APIs, local [Ollama](https://ollama.com/) / LM Studio are supported, e.g. `ollama pull qwen2.5`, then activate the local interface in Interface Management.
+### Recommended engine
+**We recommend [DeepSeek](https://platform.deepseek.com/)'s latest Flash model** — fast, high-quality, and cheap; the best translation results. Just paste your API key in Interface Management and activate it.
+
+> Local models ([Ollama](https://ollama.com/) / LM Studio) are also supported but **not recommended**: they're usually noticeably slower and lower-quality than online APIs — use them only for offline / privacy-sensitive cases.
 
 <h2 id="preview">Preview</h2>
 <div align="center">
