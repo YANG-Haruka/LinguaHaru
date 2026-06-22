@@ -4,7 +4,7 @@
     "notes": "",
     "_assets_note": "Fill sha256 at release time (sha256 of each zip). Self-update REFUSES to apply without a matching checksum; until then users use the manual download link.",
     "assets": {
-        "web": {"url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-web.zip", "sha256": "63064da1e4c37418bad6435418c579d431ebd04185abb6684fb13ca5b6a70c23"},
-        "desktop": {"url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-desktop.zip", "sha256": "eeb000bcbe20459c21147cf76f93fb54774ffa8a9aa1410172e7271143d5c2cf"}
+        "web": {"url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-web.zip", "sha256": "5936e4e404f51cc49131b02a4286a4cadbff641a13950afb3419316281e8cd70"},
+        "desktop": {"url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-desktop.zip", "sha256": "f3f341a0f9db0aa8f06cd31154812ebf0e8e905cd1daa3971d57746321f9b2c0"}
     }
 }
