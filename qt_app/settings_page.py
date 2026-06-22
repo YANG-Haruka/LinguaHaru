@@ -675,7 +675,7 @@ class SettingsPage(ScrollArea):
                          tr("Clear history confirm", self._lang), self.window())
         if box.exec():
             from core.translation_history import TranslationHistoryManager
-            _, _, log_dir = backend.get_custom_paths()
+            log_dir = backend.history_dir()
             TranslationHistoryManager(log_dir=log_dir).clear_all_records()
 
     def _clear_history_and_files(self):
@@ -683,7 +683,7 @@ class SettingsPage(ScrollArea):
                          tr("Clear history and files confirm", self._lang), self.window())
         if box.exec():
             from core.translation_history import TranslationHistoryManager
-            _, _, log_dir = backend.get_custom_paths()
+            log_dir = backend.history_dir()
             info = TranslationHistoryManager(log_dir=log_dir).clear_all_records_and_files()
             from qfluentwidgets import InfoBar
             InfoBar.success(

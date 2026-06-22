@@ -55,7 +55,9 @@ def session_paths(session_id):
     temp_dir, result_dir, log_dir = backend.get_custom_paths()
     paths = tuple(os.path.join(d, session_id)
                   for d in (temp_dir, result_dir, log_dir))
-    for d in paths:
+    # Only create temp + result; the log dir is legacy (per-project logs live in
+    # the result folder, history in data/history) so we never materialize data/log.
+    for d in paths[:2]:
         os.makedirs(d, exist_ok=True)
     return paths
 

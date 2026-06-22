@@ -58,10 +58,18 @@ class DocumentTranslator:
         self.result_dir = result_dir
         self.session_lang = session_lang
         self.log_dir = log_dir
-        # Where the translation-history DB lives; defaults to log_dir. The web
-        # frontend overrides this so local single-user mode shares ONE history
-        # with the Qt desktop app, while LAN/server mode stays per-session.
-        self.history_dir = history_dir or log_dir
+        # Where the translation-history DB lives. Callers (web/qt) pass it
+        # explicitly; otherwise default to the global data/history store — NOT
+        # log_dir, which would resurrect a data/log tree. (Web local mode shares
+        # ONE history with Qt; LAN/server passes a per-session dir.)
+        if history_dir:
+            self.history_dir = history_dir
+        else:
+            try:
+                from core import backend
+                self.history_dir = backend.history_dir()
+            except Exception:  # noqa: BLE001 — fall back to log_dir if backend unavailable
+                self.history_dir = log_dir
 
         # Translation history tracking
         self.translation_id = str(uuid.uuid4())

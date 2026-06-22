@@ -104,7 +104,7 @@ def main():
         from core import backend
         from core.translation_history import TranslationHistoryManager
         _n = TranslationHistoryManager(
-            log_dir=backend.get_custom_paths()[2]).mark_running_as_interrupted()
+            log_dir=backend.history_dir()).mark_running_as_interrupted()
         if _n:
             print(f"Recovered {_n} interrupted translation(s) from a previous session")
     except Exception:  # noqa: BLE001 — never block startup on history recovery

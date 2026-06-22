@@ -37,12 +37,16 @@ _FILE_FMT = logging.Formatter(fmt='%(asctime)s - [%(levelname)s] - %(message)s',
 
 
 class _SystemFilter(logging.Filter):
-    """system.log keeps only PROBLEMS (warnings/errors) + explicit lifecycle
-    events (records flagged sysevent=True). Routine INFO chatter — progress,
-    per-segment stages — stays out, so the system log is a clean, monitorable
-    record of 'what happened / what went wrong'."""
+    """system.log keeps only SYSTEM-level records: problems (warnings/errors) or
+    explicit lifecycle events (sysevent=True) that are NOT bound to a translation
+    task. Anything happening inside a project (its progress, retries, even its
+    errors) is task-bound and belongs ONLY in that project's own log folder — so
+    system.log stays a clean record of system-wide events (server start, plugin
+    install/download, crashes), never per-project chatter."""
 
     def filter(self, record):
+        if _log_task.get() is not None:
+            return False   # bound to a project -> its log, not the system log
         return record.levelno >= logging.WARNING or getattr(record, "sysevent", False)
 
 
@@ -136,14 +140,14 @@ class FileLogger:
 
     def _setup_system_log(self):
         """One always-on, size-bounded system log so a system-level error is
-        always captured even when no translation is running. Kept simple: a
-        single rotating file under data/log."""
+        always captured even when no translation is running. Kept simple: a single
+        rotating file at data/system.log (per-project logs live in each project's
+        result folder; this captures only system-wide events)."""
         try:
             from core.paths import DATA_DIR
-            log_dir = os.path.join(DATA_DIR, "log")
-            os.makedirs(log_dir, exist_ok=True)
+            os.makedirs(DATA_DIR, exist_ok=True)
             h = RotatingFileHandler(
-                os.path.join(log_dir, "system.log"),
+                os.path.join(DATA_DIR, "system.log"),
                 maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8")
             h.setLevel(logging.INFO)
             h.setFormatter(_FILE_FMT)

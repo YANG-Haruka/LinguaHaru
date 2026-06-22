@@ -548,7 +548,7 @@ class TranslatePage(QStackedWidget):
         try:
             from core.translation_history import (
                 TranslationHistoryManager, create_translation_record)
-            _, _, log_dir = backend.get_custom_paths()
+            log_dir = backend.history_dir()
             mgr = TranslationHistoryManager(log_dir=log_dir)
             src_disp, dst_disp = self.src_combo.currentText(), self.dst_combo.currentText()
             src_code, dst_code = backend.language_code(src_disp), backend.language_code(dst_disp)
@@ -724,7 +724,7 @@ class TranslatePage(QStackedWidget):
             return
         try:
             from core.translation_history import TranslationHistoryManager
-            _, _, log_dir = backend.get_custom_paths()
+            log_dir = backend.history_dir()
             mgr = TranslationHistoryManager(log_dir=log_dir)
             for fp in files:
                 tid = self._task_ids.get(fp)
@@ -741,7 +741,7 @@ class TranslatePage(QStackedWidget):
             return
         try:
             from core.translation_history import TranslationHistoryManager
-            _, _, log_dir = backend.get_custom_paths()
+            log_dir = backend.history_dir()
             mgr = TranslationHistoryManager(log_dir=log_dir)
             for w in pending:
                 tid = getattr(w, "translation_id", None)
@@ -771,7 +771,7 @@ class TranslatePage(QStackedWidget):
         history row, so the History page mirrors the real state in real time."""
         try:
             from core.translation_history import TranslationHistoryManager
-            _, _, log_dir = backend.get_custom_paths()
+            log_dir = backend.history_dir()
             mgr = TranslationHistoryManager(log_dir=log_dir)
             for worker in list(self._workers):
                 if worker.isRunning():

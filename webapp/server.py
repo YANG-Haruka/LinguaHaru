@@ -93,7 +93,7 @@ def _recover_interrupted_history():
     try:
         from core.translation_history import TranslationHistoryManager
         n = TranslationHistoryManager(
-            log_dir=backend.get_custom_paths()[2]).mark_running_as_interrupted()
+            log_dir=backend.history_dir()).mark_running_as_interrupted()
         if n:
             app_logger.info(f"Recovered {n} interrupted translation(s) from a previous run")
     except Exception:  # noqa: BLE001
@@ -130,13 +130,11 @@ def history_log_dir(session_id):
     """Where the translation-history DB lives for this request.
 
     Local single-user mode shares ONE global history DB with the Qt desktop app
-    (data/log), so both frontends show the same records. LAN / server / deploy
-    mode keeps history per browser session, so users on a shared host can't see
-    each other's translations."""
+    (data/history), so both frontends show the same records. LAN / server / deploy
+    mode keeps history per browser session (data/history/<session>), so users on a
+    shared host can't see each other's translations."""
     external = backend.get_config("lan_mode", False) or server_mode_on()
-    if external:
-        return sessions.session_paths(session_id)[2]
-    return backend.get_custom_paths()[2]
+    return backend.history_dir(session_id if external else None)
 
 
 # Carries the per-request admin token (set by the middleware) so the sync admin
@@ -679,7 +677,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     if resume_dirs:
         temp_dir, result_dir, log_dir = resume_dirs
     else:
-        temp_dir, result_dir, log_dir = sessions.session_paths(session_id)
+        temp_dir, result_dir, _ = sessions.session_paths(session_id)
         # Per-task subdir so two same-named files in ONE session don't collide
         # (DocumentTranslator.file_dir is derived from basename). Named by the run
         # start datetime (+ a short id for uniqueness) so each task gets its own
@@ -687,8 +685,10 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
         sub = run_subdir or task_id
         temp_dir = os.path.join(temp_dir, sub)
         result_dir = os.path.join(result_dir, sub)
-        log_dir = os.path.join(log_dir, sub)
-    for _d in (temp_dir, result_dir, log_dir):
+        # The per-project log lives IN the result folder (with the译文) — no
+        # separate data/log tree, so deleting a project removes its log too.
+        log_dir = result_dir
+    for _d in (temp_dir, result_dir):
         os.makedirs(_d, exist_ok=True)
     config = backend.read_config()
 
@@ -2107,11 +2107,12 @@ def live_save_history(payload: dict, request: Request):
 
 # --- quick (short-text) translate, Google-Translate-style -------------------
 def _quick_store_dir(request):
-    """Per-session history dir so users on a shared/LAN deploy never see each
-    other's quick-translate history (falls back to the global dir if no session)."""
+    """Quick-translate history dir: global locally (shared with Qt), per-session
+    on a shared/LAN deploy so users never see each other's history. Lives under
+    data/history (not data/log)."""
     try:
-        _, _, log_dir = sessions.session_paths(request.state.session_id)
-        return log_dir
+        external = backend.get_config("lan_mode", False) or server_mode_on()
+        return backend.history_dir(request.state.session_id if external else None)
     except Exception:  # noqa: BLE001
         return None
 

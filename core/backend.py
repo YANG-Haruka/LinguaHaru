@@ -286,16 +286,86 @@ def verify_lan_password(pw, stored):
 
 
 def get_custom_paths():
-    """Resolve and create temp/result/log dirs (absolute, anchored at repo)."""
+    """Resolve and create temp/result/log dirs (absolute, anchored at repo).
+
+    log_dir is kept for backward-compat (resume metadata) but per-project logs now
+    live in the project's RESULT folder, not here — see history_dir() for the
+    translation-history database location."""
     config = read_config()
     paths = []
     for key, default in (("temp_dir", "data/temp"), ("result_dir", "data/result"), ("log_dir", "data/log")):
         d = config.get(key, default)
         if not os.path.isabs(d):
             d = os.path.join(RUNTIME_ROOT, d)   # writable runtime root, not bundle
-        os.makedirs(d, exist_ok=True)
+        # Only create temp/result; log_dir is legacy (per-project logs live in the
+        # result folder now) so we DON'T materialize an empty data/log.
+        if key != "log_dir":
+            os.makedirs(d, exist_ok=True)
         paths.append(d)
     return tuple(paths)
+
+
+_history_migrated = False
+
+
+def _migrate_history_once():
+    """One-time move of the translation-history DB(s) from the old data/log
+    location into data/history, so upgrading users keep their history when data/log
+    goes away. Best-effort; never raises."""
+    global _history_migrated
+    if _history_migrated:
+        return
+    _history_migrated = True
+    old_base = os.path.join(DATA_DIR, "log")
+    new_base = os.path.join(DATA_DIR, "history")
+    if not os.path.isdir(old_base):
+        return
+    import shutil
+    try:
+        os.makedirs(new_base, exist_ok=True)
+        for name in os.listdir(old_base):
+            src = os.path.join(old_base, name)
+            if name == "translation_history.db":
+                dst = os.path.join(new_base, name)
+                if not os.path.exists(dst):
+                    shutil.move(src, dst)
+            elif os.path.isdir(src):   # per-session subdir holding its own DB
+                db = os.path.join(src, "translation_history.db")
+                if os.path.exists(db):
+                    dst_dir = os.path.join(new_base, name)
+                    os.makedirs(dst_dir, exist_ok=True)
+                    dst = os.path.join(dst_dir, "translation_history.db")
+                    if not os.path.exists(dst):
+                        shutil.move(db, dst)
+        # The old global system.log moved to data/system.log — drop the stale copy.
+        for name in list(os.listdir(old_base)):
+            if name.startswith("system.log"):
+                try:
+                    os.remove(os.path.join(old_base, name))
+                except OSError:
+                    pass
+        # Remove now-empty leftovers so data/log disappears entirely (non-empty
+        # dirs with legacy per-project .log files are left for the user to keep).
+        for name in list(os.listdir(old_base)):
+            p = os.path.join(old_base, name)
+            if os.path.isdir(p) and not os.listdir(p):
+                os.rmdir(p)
+        if not os.listdir(old_base):
+            os.rmdir(old_base)
+    except Exception:  # noqa: BLE001 — migration is best-effort
+        pass
+
+
+def history_dir(session_id=None):
+    """Where the translation-history DB lives: data/history (global, Qt) or
+    data/history/<session_id> (web per-session isolation). NOT under data/log —
+    history is data, not a log, so data/log can go away entirely."""
+    _migrate_history_once()
+    base = os.path.join(DATA_DIR, "history")
+    if session_id:
+        base = os.path.join(base, session_id)
+    os.makedirs(base, exist_ok=True)
+    return base
 
 
 def thread_count_for_mode(use_online, model=None):

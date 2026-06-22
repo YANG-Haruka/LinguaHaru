@@ -6,6 +6,9 @@ test/
 .gradio/
 .qodo/
 data/log/
+data/history/
+data/system.log
+data/system.log.*
 data/mykeys/
 data/models/
 /models/

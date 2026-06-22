@@ -361,7 +361,7 @@ class TranslationWorker(QThread):
             for d in (temp_dir, result_dir, log_dir):
                 os.makedirs(d, exist_ok=True)
         else:
-            temp_dir, result_dir, log_dir = backend.get_custom_paths()
+            temp_dir, result_dir, _ = backend.get_custom_paths()
             # One subfolder per run (start datetime), so each task's outputs are
             # grouped instead of dumped together; same-name files inside a run
             # still get the isolation_subdir nested below.
@@ -371,19 +371,20 @@ class TranslationWorker(QThread):
             if sub:
                 temp_dir = os.path.join(temp_dir, sub)
                 result_dir = os.path.join(result_dir, sub)
-                log_dir = os.path.join(log_dir, sub)
-                for d in (temp_dir, result_dir, log_dir):
+                for d in (temp_dir, result_dir):
                     os.makedirs(d, exist_ok=True)
+            # The per-project log lives IN the result folder (with the译文), so a
+            # project's log is self-contained and there's no separate data/log tree.
+            log_dir = result_dir
 
         # The per-project log is opened by base_translator.process() into the
         # result folder, bound to this run's context (so concurrent files don't
         # interleave). Nothing to set up here.
 
-        # The history DB must be the ONE global store the History page reads
-        # (data/log), NOT the per-run stamped subdir — otherwise records never
-        # show up and a resumed run can't update its original row. The per-project
-        # .log still lives in the run's result folder (opened by process()).
-        _, _, history_dir = backend.get_custom_paths()
+        # The history DB is the ONE global store the History page reads
+        # (data/history), NOT the per-run stamped subdir — otherwise records never
+        # show up and a resumed run can't update its original row.
+        history_dir = backend.history_dir()
         translator = translator_class(
             self.file_path, self.model, self.use_online, self.api_key,
             src_code, dst_code, self.continue_mode,

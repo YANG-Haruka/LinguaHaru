@@ -274,8 +274,7 @@ class HistoryPage(QWidget):
         self.reload()
 
     def reload(self):
-        _, _, log_dir = backend.get_custom_paths()
-        manager = TranslationHistoryManager(log_dir=log_dir)
+        manager = TranslationHistoryManager(log_dir=backend.history_dir())
         # Populate the file-type filter once (preserve current selection).
         if not self._types_loaded:
             cur = self.type_combo.currentData()
@@ -523,8 +522,7 @@ class HistoryPage(QWidget):
             if os.path.isdir(file_dir):
                 shutil.rmtree(file_dir, ignore_errors=True)
         # 3) The DB row.
-        _, _, log_dir = backend.get_custom_paths()
-        TranslationHistoryManager(log_dir=log_dir).delete_record(rec.get("id"))
+        TranslationHistoryManager(log_dir=backend.history_dir()).delete_record(rec.get("id"))
         self.reload()
 
     def _delete_batch(self, recs):
@@ -533,8 +531,7 @@ class HistoryPage(QWidget):
         box = MessageBox(tr("Delete Record", L), tr("Delete Record Confirm", L), self.window())
         if not box.exec():
             return
-        _, _, log_dir = backend.get_custom_paths()
-        mgr = TranslationHistoryManager(log_dir=log_dir)
+        mgr = TranslationHistoryManager(log_dir=backend.history_dir())
         for rec in recs:
             for key in ("output_file_path", "log_file_path"):
                 p = rec.get(key)
