@@ -1,7 +1,7 @@
 # Shared per-provider API-key storage used by BOTH the Web (Gradio) app and the
 # Qt desktop app, so a key entered in one place works in the other.
 #
-# Keys are stored per PROVIDER (not per model) under mykeys/<provider>.json, so
+# Keys are stored per PROVIDER (not per model) under data/keys/<provider>.json, so
 # models from the same company share one key (e.g. DeepSeek Flash and Pro).
 import os
 import json
@@ -86,12 +86,13 @@ def _restrict_perms(path):
 
 
 def get_mykeys_dir():
-    """Return the mykeys directory (created if missing). Anchored to the writable
-    runtime DATA_DIR so a frozen build stores keys next to the exe, not in the
-    ephemeral read-only bundle."""
-    mykeys_dir = os.path.join(DATA_DIR, "mykeys")
-    os.makedirs(mykeys_dir, exist_ok=True)
-    return mykeys_dir
+    """Return the local API-keys directory (created if missing). Lives in
+    data/keys — sensitive, so tucked inside data/ rather than at the root; anchored
+    to the writable runtime DATA_DIR so a frozen build stores keys next to the exe.
+    A legacy data/mykeys is migrated to data/keys by migrate_data_layout()."""
+    keys_dir = os.path.join(DATA_DIR, "keys")
+    os.makedirs(keys_dir, exist_ok=True)
+    return keys_dir
 
 
 def provider_of(model_name):

@@ -76,11 +76,11 @@ if _FROZEN:
     except Exception:  # noqa: BLE001 — fall back to bundled (read-only) path
         API_CONFIG_DIR = os.path.join(CONFIG_DIR, "api_config")
     # Example glossaries ship in the (read-only) bundle but the app reads from
-    # the writable DATA_DIR/glossary — seed them on first run so new users see
+    # the writable top-level glossary/ — seed them on first run so new users see
     # Default.csv instead of an empty list.
     try:
-        _seed_gl = os.path.join(BUNDLE_ROOT, "data", "glossary")
-        _dst_gl = os.path.join(DATA_DIR, "glossary")
+        _seed_gl = os.path.join(BUNDLE_ROOT, "glossary")
+        _dst_gl = os.path.join(RUNTIME_ROOT, "glossary")
         if os.path.isdir(_seed_gl):
             os.makedirs(_dst_gl, exist_ok=True)
             import shutil
@@ -106,3 +106,42 @@ if _cfg_override:
         _seed_file(_CONFIG_TEMPLATE, SYSTEM_CONFIG)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _migrate_data_layout():
+    """One-time move from the old all-in-data/ layout to the split layout:
+    user content (result/, glossary/, log/) at the top level; internals stay in
+    data/ (uploads, keys, history, …). Moves only the default locations, only
+    when the destination doesn't already exist, and never merges/clobbers — so a
+    custom path or an already-migrated install is left untouched. Best-effort."""
+    marker = os.path.join(DATA_DIR, ".layout_v2")
+    if os.path.exists(marker):
+        return
+    import shutil
+    moves = [
+        (os.path.join(DATA_DIR, "result"),      os.path.join(RUNTIME_ROOT, "result")),
+        (os.path.join(DATA_DIR, "glossary"),    os.path.join(RUNTIME_ROOT, "glossary")),
+        (os.path.join(DATA_DIR, "web_uploads"), os.path.join(DATA_DIR, "uploads")),
+        (os.path.join(DATA_DIR, "mykeys"),      os.path.join(DATA_DIR, "keys")),
+    ]
+    try:
+        for src, dst in moves:
+            if os.path.isdir(src) and not os.path.exists(dst):
+                shutil.move(src, dst)
+        # The global system.log moved from data/ to log/.
+        new_log = os.path.join(RUNTIME_ROOT, "log")
+        for name in ("system.log", "system.log.1", "system.log.2", "system.log.3"):
+            s = os.path.join(DATA_DIR, name)
+            if os.path.isfile(s):
+                os.makedirs(new_log, exist_ok=True)
+                d = os.path.join(new_log, name)
+                if not os.path.exists(d):
+                    shutil.move(s, d)
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(marker, "w", encoding="utf-8") as f:
+            f.write("1")
+    except Exception:  # noqa: BLE001 — migration is best-effort, never fatal
+        pass
+
+
+_migrate_data_layout()

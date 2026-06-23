@@ -192,7 +192,7 @@ all_datas = filter_datas(
     + chardet_collect[0] + rich_collect[0]
 ) + [('assets/models/', 'assets/models/'), ('assets/img/', 'assets/img/'),
      ('assets/icons/', 'assets/icons/'),
-     ('config/', 'config/'), ('data/glossary/', 'data/glossary/'),
+     ('config/', 'config/'), ('glossary/', 'glossary/'),
      ('plugins/', 'plugins/')]
 
 a = Analysis(

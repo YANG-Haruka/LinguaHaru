@@ -200,8 +200,8 @@ _DEFAULT_CONFIG = {
     "default_online_model": "",
     "default_local_model": "",
     "temp_dir": "data/temp",
-    "result_dir": "data/result",
-    "log_dir": "data/log",
+    "result_dir": "result",
+    "log_dir": "log",
     # History retention: prune beyond N records and/or older than D days
     # (0 = unlimited / no age limit).
     "history_max_records": 1000,
@@ -293,7 +293,7 @@ def get_custom_paths():
     translation-history database location."""
     config = read_config()
     paths = []
-    for key, default in (("temp_dir", "data/temp"), ("result_dir", "data/result"), ("log_dir", "data/log")):
+    for key, default in (("temp_dir", "data/temp"), ("result_dir", "result"), ("log_dir", "log")):
         d = config.get(key, default)
         if not os.path.isabs(d):
             d = os.path.join(RUNTIME_ROOT, d)   # writable runtime root, not bundle
@@ -559,8 +559,9 @@ def install_command_for(module_name):
 
 
 # --- Glossary (CSV, utf-8-sig, multi-encoding read) -------------------------
-# User-editable -> writable runtime data dir (not the read-only bundle).
-GLOSSARY_DIR = os.path.join(DATA_DIR, "glossary")
+# User-editable content -> top-level glossary/ (next to result/), not buried in
+# data/, so it's easy to find and edit.
+GLOSSARY_DIR = os.path.join(RUNTIME_ROOT, "glossary")
 _GLOSSARY_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "shift-jis")
 
 

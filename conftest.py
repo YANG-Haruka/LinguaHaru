@@ -8,10 +8,17 @@ import os
 # changes settings (temp/result/log dirs, model choices…) — or is killed mid-run
 # before its restore — can NEVER corrupt the user's real config. core.paths reads
 # this env var at import time.
-os.environ.setdefault(
-    "LINGUAHARU_CONFIG",
-    os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                 "tests", "_roundtrip_work", "_test_system_config.json"))
+_test_cfg = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "tests", "_roundtrip_work", "_test_system_config.json")
+os.environ.setdefault("LINGUAHARU_CONFIG", _test_cfg)
+# Start from a FRESH copy of the current default each session: a throwaway left
+# over from an older run could carry stale values (e.g. an old result_dir) that
+# tests then write into. core.paths re-seeds it from the template on import.
+try:
+    if os.environ["LINGUAHARU_CONFIG"] == _test_cfg and os.path.exists(_test_cfg):
+        os.remove(_test_cfg)
+except OSError:
+    pass
 
 import pytest
 

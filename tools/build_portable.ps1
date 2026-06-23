@@ -109,8 +109,8 @@ function Build-Flavor([string]$flavor) {
     }
   }
 
-  # 4. App source for this flavor
-  $common = @("core","config","plugins","assets","requirements","version.json","README.md","LICENSE")
+  # 4. App source for this flavor. glossary/ ships its Default.csv (top-level now).
+  $common = @("core","config","plugins","assets","requirements","glossary","version.json","README.md","LICENSE")
   $ui = if ($flavor -eq "web") { @("webapp") } else { @("qt_app","app_qt.py") }
   foreach ($it in ($common + $ui)) {
     $src = Join-Path $repo $it
@@ -119,11 +119,11 @@ function Build-Flavor([string]$flavor) {
   Get-ChildItem $out -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
   # Never ship the developer's LOCAL runtime config / secrets / mutable data — only
   # the tracked default template (the app seeds system_config.json from it on first
-  # run). config/system_config.json is gitignored but exists in a dev checkout.
+  # run). Mutable runtime dirs (data/, result/, log/) are dev-local; scrub them all.
   Remove-Item (Join-Path $out "config\system_config.json") -Force -ErrorAction SilentlyContinue
   Remove-Item -Recurse -Force (Join-Path $out "data") -ErrorAction SilentlyContinue
-  Remove-Item -Recurse -Force (Join-Path $out "config\mykeys") -ErrorAction SilentlyContinue
-  Remove-Item -Recurse -Force (Join-Path $out "data\mykeys") -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force (Join-Path $out "result") -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force (Join-Path $out "log") -ErrorAction SilentlyContinue
 
   # 5. Launcher
   if ($flavor -eq "web") {

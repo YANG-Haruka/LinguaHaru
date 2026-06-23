@@ -141,13 +141,14 @@ class FileLogger:
     def _setup_system_log(self):
         """One always-on, size-bounded system log so a system-level error is
         always captured even when no translation is running. Kept simple: a single
-        rotating file at data/system.log (per-project logs live in each project's
-        result folder; this captures only system-wide events)."""
+        rotating file at log/system.log (top-level; per-project logs live in each
+        project's result folder; this captures only system-wide events)."""
         try:
-            from core.paths import DATA_DIR
-            os.makedirs(DATA_DIR, exist_ok=True)
+            from core.paths import RUNTIME_ROOT
+            log_dir = os.path.join(RUNTIME_ROOT, "log")
+            os.makedirs(log_dir, exist_ok=True)
             h = RotatingFileHandler(
-                os.path.join(DATA_DIR, "system.log"),
+                os.path.join(log_dir, "system.log"),
                 maxBytes=2 * 1024 * 1024, backupCount=3, encoding="utf-8")
             h.setLevel(logging.INFO)
             h.setFormatter(_FILE_FMT)

@@ -129,10 +129,12 @@ def run_retention():
     """Apply log + result retention from config. Best-effort; never raises."""
     try:
         from core import backend
-        from core.paths import DATA_DIR
+        from core.paths import RUNTIME_ROOT
         cfg = backend.read_config()
-        log_dir = os.path.join(DATA_DIR, "log")
-        result_dir = cfg.get("result_dir") or os.path.join(DATA_DIR, "result")
+        # Per-project logs live in the result folders now; this only sweeps any
+        # legacy top-level .log files. system.log (log/) is self-bounded.
+        log_dir = os.path.join(RUNTIME_ROOT, "log")
+        _, result_dir, _ = backend.get_custom_paths()
         prune_logs(
             log_dir,
             max_files=int(cfg.get("log_max_files", 0) or 0),
