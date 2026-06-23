@@ -38,7 +38,7 @@ class _Callout(QFrame):
     def __init__(self, parent, lang):
         super().__init__(parent)
         self.setObjectName("tourCallout")
-        self.setFixedWidth(330)
+        self.setFixedWidth(340)
         self.setStyleSheet(
             "#tourCallout{background:palette(base);border:1px solid rgba(127,127,127,.35);"
             "border-radius:12px;}")
@@ -51,14 +51,20 @@ class _Callout(QFrame):
         self.body.setWordWrap(True)
         lay.addWidget(self.title)
         lay.addWidget(self.body)
-        foot = QHBoxLayout()
+        # Progress dots on their OWN line so the button row gets the full width —
+        # otherwise dots + 3 buttons crammed in one row clipped the primary
+        # button's text on the last step ("开始使用" showed "开"/"用" half-cut).
         self.dots = QLabel("")
-        foot.addWidget(self.dots)
+        self.dots.setAlignment(Qt.AlignHCenter)
+        lay.addWidget(self.dots)
+        foot = QHBoxLayout()
+        foot.setSpacing(6)
         foot.addStretch(1)
         self._skip = TransparentPushButton(tr("Onboarding Skip", lang))
         self._back = PushButton(tr("Onboarding Back", lang))
         self._next = PrimaryPushButton(tr("Onboarding Next", lang))
         for b in (self._skip, self._back, self._next):
+            b.setMinimumWidth(b.sizeHint().width())   # never shrink below its text
             foot.addWidget(b)
         self._skip.clicked.connect(self.skip)
         self._back.clicked.connect(self.back)
@@ -111,6 +117,9 @@ class TourOverlay(QWidget):
         last = self._i == len(_STEPS) - 1
         self._callout._next.setText(
             tr("Onboarding Done" if last else "Onboarding Next", self._lang))
+        # The last step's label ("开始使用") is wider than "下一步" — grow the
+        # button to its new text so it isn't clipped.
+        self._callout._next.setMinimumWidth(self._callout._next.sizeHint().width())
         self._callout.dots.setText("  ".join(
             "●" if i == self._i else "○" for i in range(len(_STEPS))))
         # Locate AFTER the page-switch animation so geometry is final.
