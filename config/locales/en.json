@@ -197,6 +197,7 @@
   "Download Failed": "Download failed — check your network and retry",
   "Model Download Failed": "Model download failed",
   "Model Download Failed Hint": "The library is installed, but the model download failed (likely a network issue). Restart, then re-download the model on the Plugins page.",
+  "Restart To Activate": "Installed — restart the app to activate this plugin.",
   "Refresh Market": "Refresh market",
   "Update Now": "Update now",
   "Updating": "Updating",

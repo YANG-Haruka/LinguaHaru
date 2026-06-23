@@ -197,6 +197,7 @@
   "Download Failed": "下载失败,请检查网络后重试",
   "Model Download Failed": "模型下载失败",
   "Model Download Failed Hint": "库已安装,但模型下载失败(可能是网络问题)。请重启后在「插件」页重新下载模型。",
+  "Restart To Activate": "已安装,请重启程序以启用该插件。",
   "Refresh Market": "刷新市场",
   "Update Now": "立即更新",
   "Updating": "正在更新",

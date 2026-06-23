@@ -361,6 +361,12 @@ class OptionalPluginCard(CardWidget):
             self.status_caption.setText(
                 tr("Downloading Model", self._lang) if busy else "")
 
+    def set_install_line(self, text):
+        """Show a live pip/uv + model-download line on the visible usage line
+        while the plugin is installing (so it's not a silent spinner)."""
+        if self.status_caption is not None:
+            self.status_caption.setText(text[-60:])
+
     def set_download_line(self, text):
         """Surface a live tqdm download line under the model row while busy."""
         if self.status_caption is not None and self._busy_download:
@@ -653,9 +659,12 @@ class PluginsPage(ScrollArea):
                  "install": tr("Installing", self._lang)}
         verb = verbs.get(action, verbs["install"])
         self._info(card._mod["name"], verb + " " + card._mod["name"])
+        card.set_install_line(verb + "…")   # immediate visible feedback
         worker = InstallWorker(card._mod["name"], action=action)
         self._worker = worker
-        worker.line.connect(lambda text: card.install_btn.setToolTip(text[-200:]))
+        # Show the live pip/uv + model-download output on the card (visible),
+        # not just the button tooltip (hover-only) — so the user can SEE it work.
+        worker.line.connect(lambda text, c=card: c.set_install_line(text))
         worker.finished_ok.connect(
             lambda ok, msg, c=card, a=action, w=worker: self._install_done(c, ok, msg, a, w))
         worker.start()
@@ -711,6 +720,14 @@ class PluginsPage(ScrollArea):
                 # from — its model download failed, so say so instead of "完成".
                 self._info(card._mod["name"],
                            tr("Model Download Failed Hint", self._lang), error=True)
+        elif ok:
+            # Installed/upgraded OK, but the new package can't be imported in this
+            # already-running process yet (heavy deps like torch/funasr) — so the
+            # card still reads "not installed". It activates after a restart; say
+            # so instead of the misleading "failed".
+            card.set_install_line(tr("Restart To Activate", self._lang))
+            self._info(card._mod["name"], tr("Restart To Activate", self._lang))
+            system_event(f"Plugin {action} (pending restart): {card._mod['name']}")
         else:
             self._info(card._mod["name"],
                        f"{tr('Install failed', self._lang)}: {msg}", error=True)
