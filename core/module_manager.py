@@ -135,10 +135,13 @@ def _run(cmd):
     (ok, tail_of_output)."""
     app_logger.info(f"Running: {' '.join(cmd)}")
     tail = []
+    # On Windows, hide the child console window (uv/pip would otherwise flash a
+    # black terminal on the GUI).
+    no_window = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
     try:
         proc = subprocess.Popen(
             cmd, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", bufsize=1)
+            text=True, encoding="utf-8", errors="replace", bufsize=1, **no_window)
         for raw in proc.stdout:
             line = raw.rstrip()
             if line:
@@ -326,12 +329,76 @@ def _record_install_delta(key, before):
         app_logger.warning(f"Could not record install delta for {key}: {e}")
 
 
+# PyTorch CUDA wheel index. cu121 is broadly driver-compatible (>=525); override
+# via config "torch_cuda_index" (e.g. cu124), or set it to "" to force the CPU
+# build even on a GPU machine.
+_PYTORCH_CUDA_INDEX = "https://download.pytorch.org/whl/cu121"
+
+
+def _config_get(key, default=None):
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return json.load(f).get(key, default)
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def _nvidia_gpu_present():
+    """True if an NVIDIA GPU/driver is present (so a CUDA torch build would run)."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.WinDLL("nvcuda.dll")   # only loads when the NVIDIA driver is installed
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+    return bool(shutil.which("nvidia-smi"))
+
+
+def _torch_is_cuda():
+    """True if the installed torch is a CUDA build (torch.version.cuda set)."""
+    try:
+        import torch
+        return bool(getattr(torch.version, "cuda", None))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _maybe_install_cuda_torch(name):
+    """If this plugin uses torch and an NVIDIA GPU is present but torch is CPU-only
+    (or absent), install the CUDA torch wheels FIRST so transcription runs on the
+    GPU. Without this the portable build's default CPU torch makes a 4090 idle.
+    Best-effort; controlled by config 'torch_cuda_index' ("" disables)."""
+    m = plugins_registry.get(name)
+    pkgs = (set(m.get("packages", [])) | set(m.get("shared_packages", []))) if m else set()
+    if "torch" not in pkgs:
+        return
+    if not _nvidia_gpu_present() or _torch_is_cuda():
+        return
+    idx = _config_get("torch_cuda_index", _PYTORCH_CUDA_INDEX)
+    if not idx:
+        return   # explicitly disabled -> keep CPU torch
+    app_logger.info("NVIDIA GPU detected + CPU torch — installing CUDA torch from %s", idx)
+    _emit("检测到 NVIDIA GPU，正在安装 GPU 版 torch（较大，请耐心）… / installing CUDA torch…")
+    uv = _uv_exe()
+    if uv:
+        cmd = [uv, "pip", "install", "--python", sys.executable, "--index-url", idx,
+               "torch", "torchaudio"]
+    else:
+        cmd = [sys.executable, "-m", "pip", "install", "--index-url", idx, "torch", "torchaudio"]
+    ok, _ = _run(cmd)
+    if not ok:
+        app_logger.warning("CUDA torch install failed; the CPU build will be used instead.")
+
+
 def install_module(name):
     req = plugins_registry.requirements_path(name)
     if not req:
         return False, f"Unknown module: {name}"
     m = plugins_registry.get(name)
     before = _freeze_names()
+    _maybe_install_cuda_torch(name)   # GPU machines get CUDA torch before the rest
     ok, out = _run_install(req)
     if ok and m:
         _record_install_delta(m["key"], before)   # for full cleanup on uninstall

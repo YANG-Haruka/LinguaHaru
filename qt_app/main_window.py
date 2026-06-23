@@ -276,6 +276,7 @@ class MainWindow(FluentWindow):
         self.translate_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
         self.translate_page.on_open_interface = lambda: self.switchTo(self.interface_page)
         self.quick_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
+        self.quick_page.on_open_interface = lambda: self.switchTo(self.interface_page)
         self.live_page.on_open_plugins = lambda: self.switchTo(self.plugins_page)
 
         def _continue_on_dashboard(worker, name):

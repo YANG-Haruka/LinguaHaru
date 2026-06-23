@@ -216,6 +216,10 @@ _DEFAULT_CONFIG = {
     # Max total bytes accepted per /api/translate request (videos/big PDFs need
     # headroom). Public deploys (server_mode) are capped lower in the server.
     "max_upload_mb": 2048,
+    # When installing a torch-using plugin on an NVIDIA-GPU machine, install the
+    # CUDA torch wheels from this index (so STT runs on the GPU, not the CPU).
+    # Change to .../cu124 for newer drivers, or set "" to force the CPU build.
+    "torch_cuda_index": "https://download.pytorch.org/whl/cu121",
     # Bilingual (双语对照): style the TRANSLATED text so it stands out from the
     # original. color is a hex without '#' ("" = no color). Subtitles (srt/vtt).
     "bilingual_bold": True,

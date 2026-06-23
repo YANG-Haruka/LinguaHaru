@@ -2948,6 +2948,18 @@ function onQuickShow() {
 async function quickTranslate() {
   const text = $("quick-input").value.trim();
   if (!text) return;
+  // The active online interface needs an API key — same gate as document
+  // translation (was missing here, so it translated then failed generically).
+  if (useOnline() && !BOOT.server_mode) {
+    const m = $("model") ? $("model").value : "";
+    try {
+      const st = await api("/api/apikey?model=" + encodeURIComponent(m));
+      if (!st.has_key) {
+        $("quick-status").textContent = _label("Api Key Required", "尚未设置 API 密钥，请在设置中填写。");
+        return;
+      }
+    } catch (e) { /* if the check itself fails, let the translate attempt surface it */ }
+  }
   $("quick-status").textContent = _label("Translate", "翻译") + "…";
   try {
     const r = await api("/api/quick-translate", {

@@ -387,13 +387,18 @@ def _format_srt_time(seconds):
 _AUDIO_STREAM_RE = re.compile(r"Stream #0:(\d+)(?:\[[^\]]*\])?(?:\(([^)]*)\))?: Audio:")
 
 
+# On Windows every ffmpeg subprocess pops a console window unless suppressed —
+# 3 concurrent video tasks = 3 stray black terminals. CREATE_NO_WINDOW hides them.
+_NO_WINDOW = {"creationflags": subprocess.CREATE_NO_WINDOW} if os.name == "nt" else {}
+
+
 def _list_audio_tracks(exe, media_path):
     """[{a_idx, stream, lang}] for each audio stream, in file order. a_idx is the
     audio-relative index for ffmpeg's `-map 0:a:<a_idx>`. Empty if none/parse
     fails. ffmpeg prints stream info to stderr (and exits non-zero with no
     output file requested — that's expected)."""
     proc = subprocess.run([exe, "-i", media_path], capture_output=True, text=True,
-                          encoding="utf-8", errors="replace")
+                          encoding="utf-8", errors="replace", **_NO_WINDOW)
     tracks, a_idx = [], 0
     for m in _AUDIO_STREAM_RE.finditer(proc.stderr or ""):
         lang = (m.group(2) or "").strip()
@@ -409,7 +414,7 @@ def _track_mean_volume(exe, media_path, a_idx, sample_s=90):
     proc = subprocess.run(
         [exe, "-t", str(sample_s), "-i", media_path, "-map", f"0:a:{a_idx}",
          "-af", "volumedetect", "-f", "null", os.devnull],
-        capture_output=True, text=True, encoding="utf-8", errors="replace")
+        capture_output=True, text=True, encoding="utf-8", errors="replace", **_NO_WINDOW)
     m = re.search(r"mean_volume:\s*(-?\d+(?:\.\d+)?)\s*dB", proc.stderr or "")
     return float(m.group(1)) if m else None
 
@@ -478,7 +483,8 @@ def extract_audio_to_wav(media_path, output_dir):
     if a_idx is not None:
         cmd += ["-map", f"0:a:{a_idx}"]
     cmd += ["-ac", "1", "-ar", "16000", "-f", "wav", wav_path]
-    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace", **_NO_WINDOW)
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg audio extraction failed: {proc.stderr[-500:]}")
     return wav_path

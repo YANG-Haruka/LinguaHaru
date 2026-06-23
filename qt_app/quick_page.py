@@ -30,6 +30,7 @@ from qfluentwidgets import (
 
 from core import backend
 from core import quick_translate
+from core.api_keys import load_api_key_for_model
 from qt_app.i18n import tr
 from qt_app.worker import QuickTranslateWorker, TtsWorker
 
@@ -47,6 +48,7 @@ class QuickPage(ScrollArea):
         self._audio_out = None
         self._tts_path = None
         self.on_open_plugins = None  # set by MainWindow -> jump to Plugins page
+        self.on_open_interface = None  # set by MainWindow -> jump to Interface page
 
         # voice capture state (reuses live_page's QAudioSource approach)
         self._source = None
@@ -289,6 +291,21 @@ class QuickPage(ScrollArea):
         text = self.input_text.toPlainText().strip()
         if not text:
             return
+        # The active online interface needs an API key — same gate as File
+        # Translation (the quick page used to translate then fail generically).
+        online = backend.get_config("default_online", True)
+        if online:
+            model = backend.get_active_model(online)
+            if not model:
+                self._info(tr("Please select a model first", self._lang), error=True)
+                if callable(self.on_open_interface):
+                    self.on_open_interface()
+                return
+            if not load_api_key_for_model(model):
+                self._info(tr("API key is required for online models.", self._lang), error=True)
+                if callable(self.on_open_interface):
+                    self.on_open_interface()
+                return
         self._set_busy(True)
         self.output_text.setPlainText(tr("Translating", self._lang) + "...")
         self._worker = QuickTranslateWorker(
