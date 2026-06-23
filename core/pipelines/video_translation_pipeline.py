@@ -733,7 +733,7 @@ _TEN_PAD_MS = 100.0     # keep a little lead-in/out so boundary words aren't cli
 
 
 def _ten_vad_segments(audio_i16, sr=16000, check_stop=None,
-                      threshold=_TEN_THRESHOLD, min_ms=_TEN_MIN_MS):
+                      threshold=_TEN_THRESHOLD, min_ms=_TEN_MIN_MS, progress_cb=None):
     """Segment 16 kHz mono int16 audio into [[s_ms, e_ms], ...] speech regions with
     TEN-VAD. Returns None if ten_vad is unavailable / errors, so the caller falls
     back to fsmn-vad. Deterministic (fixed threshold) so resume keys stay stable."""
@@ -755,8 +755,11 @@ def _ten_vad_segments(audio_i16, sr=16000, check_stop=None,
                          min(n * frame_ms, e_ms + _TEN_PAD_MS)])
 
     for i in range(n):
-        if check_stop and (i & 0x3FF) == 0:   # interruptible every ~16s of audio
-            check_stop()
+        if (i & 0x3FF) == 0:                   # every ~16s of audio
+            if check_stop:
+                check_stop()
+            if progress_cb and n:
+                progress_cb(i / n)             # frame-level VAD progress
         fr = np.ascontiguousarray(audio_i16[i * _TEN_HOP:(i + 1) * _TEN_HOP])
         try:
             _p, flag = vad.process(fr)
@@ -803,7 +806,8 @@ def _vad_args(params):
 
 
 def _segment_speech(wav_path, audio_i16, sr, check_stop=None,
-                    threshold=_TEN_THRESHOLD, min_ms=_TEN_MIN_MS, disable_vad=False):
+                    threshold=_TEN_THRESHOLD, min_ms=_TEN_MIN_MS, disable_vad=False,
+                    progress_cb=None):
     """Speech segments [[s_ms, e_ms], ...] for the external-VAD engines. Prefers
     TEN-VAD (noise-robust neural VAD, shared with real-time); on a None OR EMPTY
     result falls back to fsmn-vad; if that is also empty, to overlapping windows
@@ -815,7 +819,8 @@ def _segment_speech(wav_path, audio_i16, sr, check_stop=None,
     if disable_vad:
         app_logger.info("External VAD disabled; using overlapping windows")
         return _window_segments(total_ms)
-    segs = _ten_vad_segments(audio_i16, sr, check_stop, threshold, min_ms)
+    segs = _ten_vad_segments(audio_i16, sr, check_stop, threshold, min_ms,
+                             progress_cb=progress_cb)
     if segs:
         app_logger.info(f"TEN-VAD: {len(segs)} speech segments")
         return segs
@@ -830,6 +835,20 @@ def _segment_speech(wav_path, audio_i16, sr, check_stop=None,
         return segs
     app_logger.info("VAD found no speech; using overlapping windows")
     return _window_segments(total_ms)
+
+
+def _vad_progress(progress_callback, ui_lang):
+    """A cb(frac) mapping VAD frame progress into the FIRST 5% of the STT bar with
+    a moving '正在检测语音片段 X%' label — so VAD isn't a frozen status. The
+    transcription loops then fill 5%-100% (so the bar never goes backwards)."""
+    if not progress_callback:
+        return None
+
+    def cb(frac):
+        frac = max(0.0, min(1.0, frac))
+        progress_callback(0.05 * frac,
+                          desc=f"{_tr('Detecting speech', ui_lang)} {int(frac * 100)}%")
+    return cb
 
 
 # --- Qwen3-ASR engine (qwen-asr) -------------------------------------------
@@ -978,9 +997,8 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
         raw = wf.readframes(wf.getnframes())
     audio_i16 = np.frombuffer(raw, dtype=np.int16)
     audio = audio_i16.astype(np.float32) / 32768.0
-    if progress_callback:   # VAD on a long file takes a while with no inner ticks
-        progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
-    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params))
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params),
+                               progress_cb=_vad_progress(progress_callback, ui_lang))
     if not segments:   # only reachable on empty audio
         segments = _window_segments(len(audio) / sr * 1000.0)
 
@@ -1065,7 +1083,7 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
                 ckpt_f.flush()
             if progress_callback:
                 got = sum(1 for t in texts if t is not None)
-                progress_callback(min(1.0, got / total),
+                progress_callback(0.05 + 0.95 * min(1.0, got / total),
                                   desc=f"{_tr('Transcribing', ui_lang)} {got}/{total}")
     finally:
         if ckpt_f:
@@ -1156,9 +1174,9 @@ def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, 
         raw = wf.readframes(wf.getnframes())
     audio_i16 = np.frombuffer(raw, dtype=np.int16)
     audio = audio_i16.astype(np.float32) / 32768.0
-    if progress_callback:
-        progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
-    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params))
+    # (VAD streams its own moving progress via _segment_speech / _vad_progress.)
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params),
+                               progress_cb=_vad_progress(progress_callback, ui_lang))
     if not segments:   # only reachable on empty audio
         segments = _window_segments(len(audio) / sr * 1000.0)
     keys = [(int(round(s)), int(round(e))) for s, e in segments]
@@ -1214,7 +1232,7 @@ def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, 
                 ckpt_f.flush()
             if progress_callback:
                 got = sum(1 for t in texts if t is not None)
-                progress_callback(min(1.0, got / total),
+                progress_callback(0.05 + 0.95 * min(1.0, got / total),
                                   desc=f"{_tr('Transcribing', ui_lang)} {got}/{total}")
     finally:
         if ckpt_f:
@@ -1236,8 +1254,7 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
     from funasr.utils.postprocess_utils import rich_transcription_postprocess
 
     asr, _vad = _get_sensevoice(model_name)  # _vad: ensure fsmn-vad is loaded for _segment_speech
-    if progress_callback:
-        progress_callback(0.04, desc=f"{_tr('Detecting speech', ui_lang)}...")
+    # (VAD streams its own moving progress via _segment_speech / _vad_progress.)
 
     with wave.open(wav_path, "rb") as wf:
         sr = wf.getframerate()
@@ -1246,7 +1263,8 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
     audio = audio_i16.astype(np.float32) / 32768.0
 
     # TEN-VAD (noise-robust) first; fall back to fsmn-vad, then windows.
-    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params))
+    segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params),
+                               progress_cb=_vad_progress(progress_callback, ui_lang))
 
     lang = _sensevoice_lang(src_lang)
     total = len(segments) or 1
@@ -1295,7 +1313,7 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
             if progress_callback:
                 # Emit the full 0..1 of this phase; the caller maps it into the
                 # extraction sub-range (e.g. 0..50%) via EXTRACTION_PROGRESS_SHARE.
-                progress_callback((i + 1) / total,
+                progress_callback(0.05 + 0.95 * ((i + 1) / total),
                                   desc=f"{_tr('Transcribing', ui_lang)} {i + 1}/{total}")
     finally:
         if ckpt_f:
