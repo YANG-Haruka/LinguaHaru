@@ -910,6 +910,9 @@ $("translate-btn").onclick = async () => {
   if (!requiredPluginsReady(currentFiles)) return;
   const online = useOnline();
   if (online && !BOOT.server_mode) {
+    if (!($("model").value || "").trim()) {   // parity with Qt: require a model
+      setStatus(_label("Please select a model first", "请先选择一个模型（接口管理）。")); return;
+    }
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));
     if (!st.has_key) { setStatus("尚未设置 API 密钥，请在设置中填写。"); return; }
   }
@@ -1031,7 +1034,12 @@ function listenProgress(taskId) {
     const fm = desc.match(/^\[(\d+)\/(\d+)\]/) || desc.match(/\((\d+)\/(\d+)\)/);
     if (fm) $("m-files").textContent = fm[1] + "/" + fm[2];
     $("m-speed").textContent = m(/([\d.]+)\s*lines\/min/i);
-    $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
+    // Tokens: prefer the authoritative live count from the payload (also drives
+    // the live cost); fall back to parsing the desc.
+    if (d.tokens != null) $("m-tokens").textContent = _fmtTokens(d.tokens);
+    else $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
+    // Live cost estimate (parity with Qt) — shown whenever the payload carries it.
+    if ($("m-cost")) $("m-cost").textContent = d.cost ? ("≈" + (d.cost.symbol || "") + d.cost.amount) : "";
     $("m-eta").textContent = m(/ETA\s+([\d:]+)/i);
     $("m-threads").textContent = m(/(\d+)\s*threads/i);
     // Sync the pause UI to the server's authoritative state.
@@ -1075,6 +1083,13 @@ function startSysmonPoll() {
   _sysmonTimer = setInterval(tick, 2000);
 }
 function stopSysmonPoll() { if (_sysmonTimer) { clearInterval(_sysmonTimer); _sysmonTimer = null; } }
+
+function _fmtTokens(n) {
+  n = +n || 0;
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+  if (n >= 1000) return (n / 1000).toFixed(n >= 1e4 ? 0 : 1) + "K";
+  return String(Math.round(n));
+}
 
 function _label(key, fallback) {
   const lang = localStorage.getItem("lh-lang") || "zh";

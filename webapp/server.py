@@ -752,8 +752,20 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                     return
             time.sleep(0.15)
     translator.check_stop_requested = check_stop
-    output_path, _missing = translator.process(
-        stem, ext, progress_callback=lambda v, desc=None: (check_stop(), on_progress(v, desc)))
+
+    def _progress(v, desc=None):
+        check_stop()
+        # Stash the in-flight file's LIVE token counts + model so the progress SSE
+        # can show a live cost estimate (the Qt dashboard already does this).
+        with _TASKS_LOCK:
+            t = TASKS.get(task_id)
+            if t is not None:
+                t["live_prompt"] = getattr(translator, "total_prompt_tokens", 0)
+                t["live_completion"] = getattr(translator, "total_completion_tokens", 0)
+                t["live_tokens"] = getattr(translator, "total_tokens", 0)
+                t["model"] = model
+        on_progress(v, desc)
+    output_path, _missing = translator.process(stem, ext, progress_callback=_progress)
 
     # Accumulate this file's token usage onto the task (summed across files) so
     # the 'done' event can show a thank-you with total tokens + cost.
@@ -763,6 +775,9 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
             t["tok_prompt"] = t.get("tok_prompt", 0) + getattr(translator, "total_prompt_tokens", 0)
             t["tok_completion"] = t.get("tok_completion", 0) + getattr(translator, "total_completion_tokens", 0)
             t["tokens"] = t.get("tokens", 0) + getattr(translator, "total_tokens", 0)
+            # File done -> its live counts are now folded into the totals; reset so
+            # the next file's live counts don't double-count.
+            t["live_prompt"] = t["live_completion"] = t["live_tokens"] = 0
 
     # Translation coverage (best-effort): base_translator drops coverage.json in
     # the result dir; ACCUMULATE across the batch's files (a multi-file run shares
@@ -1012,7 +1027,8 @@ async def translate(
     with _TASKS_LOCK:
         TASKS[task_id] = {"progress": 0.0, "desc": "Queued...",
                           "status": "running", "output": None, "error": None,
-                          "stop": False, "paused": False, "session_id": session_id}
+                          "stop": False, "paused": False, "session_id": session_id,
+                          "ui_lang": ui_lang}
     flags = {k: bilingual for k in (
         "excel_bilingual_mode", "word_bilingual_mode", "pdf_bilingual_mode",
         "subtitle_bilingual_mode", "txt_bilingual_mode", "md_bilingual_mode",
@@ -1039,6 +1055,27 @@ async def translate(
         task_id, session_id, dests, model, use_online, src_lang, dst_lang,
         glossary, flags, ui_lang, client_events), daemon=True).start()
     return {"task_id": task_id}
+
+
+def _live_usage(state):
+    """During a run: total tokens so far (finished files + the in-flight file) and
+    an estimated cost — parity with the Qt dashboard's live cost. None if no tokens
+    yet. Cost currency follows the task's UI language (zh→CNY, etc.)."""
+    p = int(state.get("tok_prompt", 0)) + int(state.get("live_prompt", 0))
+    c = int(state.get("tok_completion", 0)) + int(state.get("live_completion", 0))
+    tot = int(state.get("tokens", 0)) + int(state.get("live_tokens", 0))
+    if tot <= 0:
+        return None
+    out = {"tokens": tot, "cost": None}
+    model = state.get("model")
+    if model and (p or c):
+        try:
+            from core.pricing import estimate_cost
+            amt, sym, ccy = estimate_cost(model, p, c, state.get("ui_lang", "en"))
+            out["cost"] = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
+        except Exception:  # noqa: BLE001 — cost is best-effort
+            pass
+    return out
 
 
 @app.get("/api/progress/{task_id}")
@@ -1070,6 +1107,13 @@ def progress(task_id: str, request: Request):
                 if state.get("status") == "done":
                     payload["tokens"] = state.get("tokens", 0)
                     payload["cost"] = state.get("cost")
+                else:
+                    # Live token count + cost estimate during the run (parity with
+                    # the Qt dashboard, which shows cost live).
+                    live = _live_usage(state)
+                    if live:
+                        payload["tokens"] = live["tokens"]
+                        payload["cost"] = live["cost"]
                 yield f"data: {json.dumps(payload)}\n\n"
             if state.get("status") in ("done", "error", "stopped"):
                 break
