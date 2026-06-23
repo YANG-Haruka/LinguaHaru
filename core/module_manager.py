@@ -300,6 +300,16 @@ def _delta_path(key):
     return os.path.join(d, f"{safe}.json")
 
 
+def _plugin_installed(key):
+    """A sibling 'still needs' a shared package only if it was actually INSTALLED
+    (has a recorded freeze-delta), not merely declared. The voice trio
+    (Video/Audio + Real-Time Voice + 翻译语音输入) all declare the same STT
+    packages, so without this gate none of them could ever be uninstalled — each
+    thought a (never-installed) sibling needed the stack, leaving it 'available'
+    after a 'successful' uninstall."""
+    return bool(key) and os.path.exists(_delta_path(key))
+
+
 def _freeze_names():
     """Set of currently-installed distribution names (canonical)."""
     return {_norm(d.metadata["Name"]) for d in importlib.metadata.distributions()
@@ -342,7 +352,9 @@ def packages_to_uninstall(name):
     mine = set(plugins_registry.removable_packages(name))
     others = set()
     for other in plugins_registry.all_plugins().values():
-        if other["name"] != name:
+        # Only an INSTALLED sibling reserves shared packages — a sibling that's
+        # merely declared (never installed) must not keep the stack alive.
+        if other["name"] != name and _plugin_installed(other.get("key", "")):
             others |= set(other.get("packages", []))
             others |= set(other.get("shared_packages", []))
     return sorted(mine - others)
@@ -365,6 +377,9 @@ def _transitive_to_remove(name):
     keep = {"pip", "setuptools", "wheel", "uv"}
     for other in plugins_registry.all_plugins().values():
         if other["name"] == name:
+            continue
+        # Only an INSTALLED sibling's packages are protected from removal.
+        if not _plugin_installed(other.get("key", "")):
             continue
         keep |= {_norm(p) for p in other.get("packages", [])}
         keep |= {_norm(p) for p in other.get("shared_packages", [])}
