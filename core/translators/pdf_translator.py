@@ -61,10 +61,13 @@ class _CallbackTranslator(BaseTranslator):
     """
     name = "linguaharu"  # Must be <= 20 chars for cache
 
-    def __init__(self, lang_in, lang_out, translate_callback, cache_key_parts):
-        # ignore_cache=False: BabelDOC's SQLite cache dedupes repeated
-        # paragraphs and makes re-runs of the same document nearly free
-        super().__init__(lang_in, lang_out, ignore_cache=False)
+    def __init__(self, lang_in, lang_out, translate_callback, cache_key_parts,
+                 ignore_cache=False):
+        # ignore_cache=False: BabelDOC's SQLite cache dedupes repeated paragraphs
+        # and makes re-runs of the same document nearly free. Proofread re-export
+        # passes ignore_cache=True so BabelDOC always calls our callback (which
+        # returns the user's EDITED text) instead of serving the stale cached one.
+        super().__init__(lang_in, lang_out, ignore_cache=ignore_cache)
         self._translate_callback = translate_callback
         for key, value in cache_key_parts.items():
             self.add_cache_impact_parameters(key, value)
@@ -112,6 +115,12 @@ class PdfTranslator(DocumentTranslator):
         self._failed_paragraphs = []
         # (original, translated) pairs for the post-run QA report
         self._qa_pairs = []
+        # Proofread support: every attempted paragraph (source -> translation, or
+        # source -> source when it failed) so we can persist an editable table;
+        # and, during a proofread RE-EXPORT, a {source: edited_translation} map
+        # that _translate_paragraph returns instead of calling the LLM.
+        self._proofread_pairs = []
+        self._proofread_overrides = None
 
     def _preflight_check(self):
         """Catch the two silent-failure PDFs before the expensive BabelDOC run.
@@ -254,6 +263,14 @@ class PdfTranslator(DocumentTranslator):
         if not should_translate(stripped):
             return text
 
+        # Proofread RE-EXPORT: return the user's edited translation directly (no
+        # LLM). An empty edit means "keep the source". Anything not in the map
+        # (shouldn't happen — the table was captured on the first pass) also keeps
+        # the source, so re-export never silently calls the API.
+        if self._proofread_overrides is not None:
+            edited = self._proofread_overrides.get(stripped)
+            return edited if (edited and edited.strip()) else text
+
         with self.lock:
             self._paragraph_counter += 1
             paragraph_index = self._paragraph_counter
@@ -310,6 +327,7 @@ class PdfTranslator(DocumentTranslator):
                         app_logger.warning(f"PDF polish skipped: {e}")
                 with self.lock:
                     self._qa_pairs.append((stripped, result))
+                    self._proofread_pairs.append((stripped, result))
                 return result
             app_logger.warning(
                 f"Unparseable translation output for paragraph {paragraph_index} "
@@ -318,6 +336,9 @@ class PdfTranslator(DocumentTranslator):
 
         with self.lock:
             self._failed_paragraphs.append(paragraph_index)
+            # Keep it in the proofread table (translation = source) so the user
+            # can supply a translation for it by hand.
+            self._proofread_pairs.append((stripped, stripped))
         app_logger.warning(f"Paragraph {paragraph_index} kept untranslated: {stripped[:80]}")
         return text
 
@@ -542,6 +563,7 @@ class PdfTranslator(DocumentTranslator):
 
         self._save_translation_summary(status="success", output_file_path=output_path)
         self._write_qa_report()   # mode-aware QA over the translated paragraphs
+        self._write_pdf_proofread_data(file_extension)   # editable table for Proofread
 
         if progress_callback:
             progress_callback(1.0, desc=self._get_status_message('Translation completed'))
@@ -578,3 +600,88 @@ class PdfTranslator(DocumentTranslator):
                 app_logger.info("Cleaned up BabelDOC working directory")
         except Exception as e:
             app_logger.warning(f"Failed to clean up BabelDOC working directory: {e}")
+
+    # --- Proofread support ------------------------------------------------- #
+    def _write_pdf_proofread_data(self, file_extension):
+        """Persist an editable source->translation table so the Proofread tab can
+        edit this PDF's translations and re-export. Written into self.file_dir
+        (temp_dir/<base>) — the same place other formats put their proofread data:
+        dst_translated.json (the editable table), src.json, a copy of the original
+        PDF, and manifest.json. Best-effort; failures only log."""
+        try:
+            os.makedirs(self.file_dir, exist_ok=True)
+            # Dedup by source text (BabelDOC can surface a paragraph more than
+            # once); keep the first occurrence so count_src stays stable.
+            seen, rows = set(), []
+            for original, translated in self._proofread_pairs:
+                if original in seen:
+                    continue
+                seen.add(original)
+                rows.append({"count_src": len(rows) + 1,
+                             "original": original, "translated": translated})
+            if not rows:
+                return   # nothing translated -> nothing to proofread
+            with open(self.result_json_path, "w", encoding="utf-8") as f:
+                json.dump(rows, f, ensure_ascii=False, indent=4)
+            with open(self.src_json_path, "w", encoding="utf-8") as f:
+                json.dump([{"count_src": r["count_src"], "original": r["original"]}
+                           for r in rows], f, ensure_ascii=False, indent=4)
+            base_name = os.path.splitext(os.path.basename(self.input_file_path))[0]
+            original_copy = f"{base_name}{file_extension.lower()}"
+            copy_path = os.path.join(self.file_dir, original_copy)
+            if not os.path.exists(copy_path) and os.path.exists(self.input_file_path):
+                shutil.copyfile(self.input_file_path, copy_path)
+            manifest = {
+                "input_file": os.path.basename(self.input_file_path),
+                "original_copy": original_copy,
+                "file_extension": file_extension.lower(),
+                "src_lang": self.src_lang,
+                "dst_lang": self.dst_lang,
+                "model": self.model,
+                "use_online": self.use_online,
+                "bilingual_mode": bool(self.word_bilingual_mode),
+            }
+            with open(os.path.join(self.file_dir, "manifest.json"), "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False, indent=2)
+            app_logger.info(f"Wrote PDF proofread table ({len(rows)} paragraphs)")
+        except Exception as e:  # noqa: BLE001 — proofread data is best-effort
+            app_logger.warning(f"Could not write PDF proofread data: {e}")
+
+    def reexport_proofread(self, overrides):
+        """Re-render the translated PDF using the user's EDITED translations
+        (overrides: {source_text: edited_translation}) instead of calling the LLM.
+
+        Runs one more BabelDOC pass with the cache ignored so every paragraph
+        picks up the edited text (an empty edit keeps the source). Returns the
+        output PDF path. No API key/tokens needed — _translate_paragraph short-
+        circuits to the override map."""
+        self._proofread_overrides = overrides or {}
+        translator = _CallbackTranslator(
+            self.src_lang, self.dst_lang, self._translate_paragraph,
+            cache_key_parts={"proofread": "1"}, ignore_cache=True,
+        )
+        config = self._create_babeldoc_config(translator)
+        app_logger.info(f"Re-exporting proofread PDF: {self.input_file_path}")
+        try:
+            stages = get_translation_stage(config)
+            with ProgressMonitor(
+                stages,
+                progress_change_callback=self._make_progress_callback(None),
+                cancel_event=self._cancel_event,
+                finish_callback=lambda **kwargs: None,
+            ) as pm:
+                result = do_translate(pm, config)
+            if result:
+                self.mono_pdf_path = result.mono_pdf_path
+                self.dual_pdf_path = result.dual_pdf_path
+        finally:
+            self.cleanup()
+        self._finalize_output()
+        output_path = None
+        if self.word_bilingual_mode and self.dual_pdf_path and os.path.exists(self.dual_pdf_path):
+            output_path = str(self.dual_pdf_path)
+        elif self.mono_pdf_path and os.path.exists(self.mono_pdf_path):
+            output_path = str(self.mono_pdf_path)
+        if not output_path:
+            raise RuntimeError("BabelDOC did not produce a proofread PDF")
+        return output_path

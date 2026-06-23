@@ -1501,7 +1501,10 @@ async def proofread_export(payload: dict, request: Request):
     if sessions.proofread_doc_dir(name, sid) is None:
         raise HTTPException(404, "Translation data not found")
     try:
-        path = backend.export_proofread_doc(name)
+        # Offload to a thread: a PDF re-export re-renders via BabelDOC (slow), and
+        # this is an async endpoint — running it inline would block the event loop
+        # (freezing every other request) for the whole render.
+        path = await asyncio.to_thread(backend.export_proofread_doc, name)
         # Move the export into the caller's session result dir so two users
         # proofreading same-named docs can't read each other's output.
         _, result_dir, _ = sessions.session_paths(sid)

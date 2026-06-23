@@ -1,16 +1,17 @@
 """Proofread page: edit a finished translation's segments and re-export.
 
 Mirrors the web Proofread tab. A ComboBox lists proofreadable docs (finished
-translations with dst_translated.json + manifest.json, PDF excluded). Loading a
-doc fills an editable table (count_src | original [read-only] | translated
-[editable]). Save writes the edited translations back; Re-export regenerates the
-document via the original-format writer. All proofread logic is pure and lives
-in core.backend.
+translations with dst_translated.json + manifest.json; PDF included — it
+re-renders via BabelDOC from the edited text). Loading a doc fills an editable
+table (count_src | original [read-only] | translated [editable]). Save writes the
+edited translations back; Re-export regenerates the document (original-format
+writer, or a BabelDOC re-render for PDF). All proofread logic lives in
+core.backend.
 """
 
 import os
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView,
 )
@@ -23,6 +24,23 @@ from qfluentwidgets import (
 from core import backend
 from qt_app.i18n import tr
 from qt_app.history_page import open_folder
+
+
+class _ExportWorker(QThread):
+    """Re-export a proofread doc off the UI thread (PDF re-renders via BabelDOC,
+    which is slow). Emits the output path or an error message."""
+    done = Signal(str)
+    failed = Signal(str)
+
+    def __init__(self, doc_name, parent=None):
+        super().__init__(parent)
+        self._doc_name = doc_name
+
+    def run(self):
+        try:
+            self.done.emit(backend.export_proofread_doc(self._doc_name))
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(str(e))
 
 
 class ProofreadPage(QWidget):
@@ -212,16 +230,27 @@ class ProofreadPage(QWidget):
         if not self._doc_name:
             self._info(tr("No proofread documents", self._lang), error=True)
             return
-        try:
-            out_path = backend.export_proofread_doc(self._doc_name)
-        except Exception as e:  # noqa: BLE001
-            self._info(str(e), error=True)
-            return
+        # Re-export off the UI thread: a PDF re-export re-renders via BabelDOC and
+        # would otherwise freeze the window for the whole render.
+        self.export_btn.setEnabled(False)
+        self.status_label.setText(tr("Re-export", self._lang) + "…")
+        self._export_worker = _ExportWorker(self._doc_name, self)
+        self._export_worker.done.connect(self._on_export_done)
+        self._export_worker.failed.connect(self._on_export_failed)
+        self._export_worker.start()
+
+    def _on_export_done(self, out_path):
+        self.export_btn.setEnabled(True)
         self._last_output_dir = os.path.dirname(out_path)
         self.open_output_btn.setEnabled(True)
         msg = tr("Export completed", self._lang)
         self.status_label.setText(f"{msg}: {os.path.basename(out_path)}")
         self._info(msg)
+
+    def _on_export_failed(self, err):
+        self.export_btn.setEnabled(True)
+        self.status_label.setText("")
+        self._info(err, error=True)
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success

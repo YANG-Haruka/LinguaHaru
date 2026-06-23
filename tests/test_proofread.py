@@ -6,7 +6,8 @@
 #      dst_translated.json (and rejects row-count mismatches).
 #   3. export_proofread_doc regenerates the document and the edited text
 #      appears in it.
-# Covers TXT and DOCX, and that PDF is excluded from the proofread list.
+# Covers TXT and DOCX end-to-end, and that PDF is now listed + its export routes
+# to the BabelDOC re-render path carrying the edited translations.
 #
 # The base temp/result/log dirs are monkeypatched to a sandbox, so there is no
 # churn to config/system_config.json.
@@ -199,16 +200,55 @@ def test_docx():
               T + "Closing paragraph with different words" in xml, xml[:400])
 
 
-def test_pdf_excluded():
-    print("PDF: excluded from the proofread list")
+def test_pdf_included():
+    print("PDF: listed for proofreading + export routes to a BabelDOC re-render")
     pdf_dir = os.path.join(TEMP_DIR, "fake_pdf_doc")
     os.makedirs(pdf_dir, exist_ok=True)
+    rows = [{"count_src": 1, "original": "Hello world", "translated": T + "Hello world"},
+            {"count_src": 2, "original": "Second para", "translated": T + "Second para"}]
     with open(os.path.join(pdf_dir, "dst_translated.json"), "w", encoding="utf-8") as f:
-        json.dump([], f)
+        json.dump(rows, f)
+    with open(os.path.join(pdf_dir, "fake_pdf_doc.pdf"), "wb") as f:
+        f.write(b"%PDF-1.4 fake")
     with open(os.path.join(pdf_dir, "manifest.json"), "w", encoding="utf-8") as f:
-        json.dump({"file_extension": ".pdf"}, f)
-    check("pdf doc not listed", "fake_pdf_doc" not in backend.list_proofread_docs(),
+        json.dump({"file_extension": ".pdf", "original_copy": "fake_pdf_doc.pdf",
+                   "src_lang": "en", "dst_lang": "fr", "model": "fake",
+                   "bilingual_mode": False}, f)
+
+    check("pdf doc now listed", "fake_pdf_doc" in backend.list_proofread_docs(),
           str(backend.list_proofread_docs()))
+
+    table = backend.load_proofread_table("fake_pdf_doc")
+    check("pdf table loaded (2 rows)", len(table) == 2, str(table))
+    edited = [list(r) for r in table]
+    edited[0][2] = EDIT_MARK + " bonjour"
+    changed = backend.save_proofread_table("fake_pdf_doc", [tuple(r) for r in edited])
+    check("pdf edit saved", changed == 1, f"changed={changed}")
+
+    # Export must route PDF to the BabelDOC re-render path, passing the EDITED
+    # translations as overrides. Stub the heavy re-render (no BabelDOC needed).
+    captured = {}
+
+    def fake_pdf_export(folder, manifest, doc_name, dst_json, original_copy):
+        with open(dst_json, encoding="utf-8") as f:
+            data = json.load(f)
+        captured["overrides"] = {it["original"]: it["translated"] for it in data}
+        out = os.path.join(RESULT_DIR, "fake_pdf_doc_en2fr_proofread.pdf")
+        with open(out, "wb") as f:
+            f.write(b"%PDF re-rendered")
+        return out
+
+    orig = backend._export_pdf_proofread
+    backend._export_pdf_proofread = fake_pdf_export
+    try:
+        exported = backend.export_proofread_doc("fake_pdf_doc")
+    finally:
+        backend._export_pdf_proofread = orig
+    check("pdf export routed to BabelDOC re-render",
+          bool(exported) and os.path.exists(exported), str(exported))
+    check("edited translation handed to the re-render",
+          captured.get("overrides", {}).get("Hello world") == EDIT_MARK + " bonjour",
+          str(captured.get("overrides")))
     shutil.rmtree(pdf_dir, ignore_errors=True)
 
 
@@ -217,7 +257,7 @@ def main():
 
     # NOTE: a fresh translation clears the whole temp dir, so each format must
     # finish its full proofread cycle before the next one starts.
-    for fn in (test_txt, test_docx, test_pdf_excluded):
+    for fn in (test_txt, test_docx, test_pdf_included):
         try:
             fn()
         except Exception:

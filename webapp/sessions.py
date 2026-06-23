@@ -125,8 +125,8 @@ def proofread_doc_dir(doc_name, session_id):
 def list_proofread_docs(session_id):
     """Finished, proofreadable docs the caller may see: only their own session
     subtree (``temp/<sid>/<task>/<doc>``). Each translation runs in a per-task
-    subdir, so we scan two levels deep. PDF is excluded (handled by
-    ``backend._is_finished_doc``)."""
+    subdir, so we scan two levels deep. Proofreadability (incl. PDF now) is
+    decided by ``backend._is_finished_doc``."""
     docs = []
     if not valid_session_id(session_id):
         return docs

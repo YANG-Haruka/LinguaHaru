@@ -645,19 +645,15 @@ def _proofread_doc_dir(doc_name):
 
 
 def _is_finished_doc(folder):
-    """True if folder has dst_translated.json + manifest.json and is not PDF."""
+    """True if folder has dst_translated.json + manifest.json (proofreadable).
+
+    PDFs are included now: the PDF translator persists the same editable table,
+    and export re-renders via BabelDOC from the edited text. Old PDFs translated
+    before that change simply have no dst_translated.json, so they're filtered out
+    here naturally."""
     if not os.path.exists(os.path.join(folder, "dst_translated.json")):
         return False
-    manifest_path = os.path.join(folder, "manifest.json")
-    if not os.path.exists(manifest_path):
-        return False
-    try:
-        with open(manifest_path, encoding="utf-8") as f:
-            manifest = json.load(f)
-    except Exception:
-        return False
-    # PDF re-export would re-run the whole BabelDOC pass; exclude it
-    return str(manifest.get("file_extension", "")).lower() != ".pdf"
+    return os.path.exists(os.path.join(folder, "manifest.json"))
 
 
 def list_proofread_docs():
@@ -747,6 +743,37 @@ def save_proofread_table(doc_name, rows):
     return changed
 
 
+def _export_pdf_proofread(folder, manifest, doc_name, dst_json, original_copy):
+    """Re-render a PDF from the EDITED translations via BabelDOC (no LLM call).
+
+    Reads dst_translated.json -> {source: edited}, then runs one BabelDOC pass
+    that returns the edited text per paragraph. Returns the regenerated PDF path."""
+    if not os.path.exists(dst_json) or not os.path.exists(original_copy):
+        raise FileNotFoundError(f"Translation data not found: {doc_name}")
+    with open(dst_json, encoding="utf-8") as f:
+        data = json.load(f)
+    overrides = {item.get("original", ""): item.get("translated", "")
+                 for item in data if item.get("original")}
+    from core.translators.pdf_translator import PdfTranslator
+    temp_dir, result_dir, log_dir = get_custom_paths()
+    bilingual = bool(manifest.get("bilingual_mode", False))
+    translator = PdfTranslator(
+        original_copy, manifest.get("model", ""), False, "",
+        manifest.get("src_lang", "en"), manifest.get("dst_lang", "en"), False,
+        max_token=768, max_retries=1, thread_count=4, glossary_path=None,
+        temp_dir=temp_dir, result_dir=result_dir, session_lang="en", log_dir=log_dir,
+        word_bilingual_mode=bilingual,
+    )
+    produced = translator.reexport_proofread(overrides)
+    src_lang_code = manifest.get("src_lang", "en")
+    dst_lang_code = manifest.get("dst_lang", "en")
+    doc_leaf = os.path.basename(doc_name.replace("/", os.sep))
+    final_path = os.path.join(
+        result_dir, f"{doc_leaf}_{src_lang_code}2{dst_lang_code}_proofread.pdf")
+    os.replace(produced, final_path)
+    return final_path
+
+
 def export_proofread_doc(doc_name):
     """Re-export the document from the (edited) dst_translated.json using the
     original-format writer and the copied original file. Returns the absolute
@@ -761,6 +788,12 @@ def export_proofread_doc(doc_name):
     dst_json = os.path.join(folder, "dst_translated.json")
     original_copy = os.path.join(
         folder, manifest.get("original_copy", f"{os.path.basename(doc_name)}{ext}"))
+
+    # PDF re-export re-renders via BabelDOC from the edited translations (it has
+    # no in-place text writer like the other formats), so it takes its own path.
+    if ext == ".pdf":
+        return _export_pdf_proofread(folder, manifest, doc_name, dst_json, original_copy)
+
     for required in (src_json, dst_json, original_copy):
         if not os.path.exists(required):
             raise FileNotFoundError(f"Translation data not found: {doc_name}")
