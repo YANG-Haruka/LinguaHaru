@@ -392,24 +392,37 @@ def _transitive_to_remove(name):
     return sorted(candidates - required_by_survivors)
 
 
+def _import_names(p):
+    """Plausible import roots for a distribution name (handle common aliases)."""
+    n = _norm(p)
+    cand = {n.replace("-", "_"), n.replace("-", "")}
+    if n == "pymupdf":
+        cand |= {"fitz", "pymupdf"}
+    if n in ("opencv-python-headless", "opencv-python"):
+        cand |= {"cv2"}
+    if n == "pillow":
+        cand |= {"PIL"}
+    return cand
+
+
 def _loaded_blockers(pkgs):
-    """Candidate packages whose import is ALREADY loaded in this process. On
-    Windows a loaded native extension (.pyd/.dll) can't be deleted, and uv/pip
-    abort mid-batch leaving a corrupted dist-info. So if a plugin was used this
-    session (its modules imported), refuse uninstall and ask for a restart instead
-    of corrupting the env."""
+    """Candidate packages that have a LOADED NATIVE EXTENSION (.pyd/.dll/.so) in
+    this process. ONLY those genuinely can't be deleted on Windows (uv/pip would
+    abort mid-batch and corrupt the dist-info), so we refuse and ask for a restart.
+
+    Pure-Python modules are safe to delete even while imported — importing them is
+    exactly what probing availability does (e.g. ffmpeg_exe() imports the
+    pure-Python imageio_ffmpeg), and that must NOT block an uninstall. (The old
+    check blocked on ANY imported module, so merely opening the Plugins page made
+    Video/Audio impossible to uninstall without a restart.)"""
+    native_roots = set()
+    for mod_name, mod in list(sys.modules.items()):
+        f = (getattr(mod, "__file__", None) or "").lower()
+        if f.endswith((".pyd", ".dll", ".so")):
+            native_roots.add(mod_name.split(".")[0])
     loaded = set()
-    mods = set(sys.modules)
     for p in pkgs:
-        cand = {_norm(p).replace("-", "_"), _norm(p).replace("-", "")}
-        # common import-name aliases
-        if _norm(p) == "pymupdf":
-            cand |= {"fitz", "pymupdf"}
-        if _norm(p) == "opencv-python-headless" or _norm(p) == "opencv-python":
-            cand |= {"cv2"}
-        if _norm(p) == "pillow":
-            cand |= {"PIL"}
-        if cand & mods:
+        if _import_names(p) & native_roots:
             loaded.add(p)
     return loaded
 
