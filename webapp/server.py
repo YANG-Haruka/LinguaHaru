@@ -902,68 +902,99 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
     # task's outputs land in their own dir instead of all piling into the session
     # result folder — matches the Qt desktop layout.
     run_folder = f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{task_id[:6]}"
-    # One batch = this task: pre-register a "queued" row per file so the History
-    # page shows all N grouped under one parent from the start.
     file_ids = [uuid.uuid4().hex for _ in file_paths]
     _precreate_web_batch(session_id, task_id, file_paths, file_ids, model,
                          use_online, src_lang, dst_lang, glossary_name, bilingual_flags)
-    outputs, file_results = [], []
+    # Same-base-name files in ONE run would share a result subdir (collision);
+    # isolate each into a numbered subdir only when names actually collide.
+    bases = [os.path.splitext(os.path.basename(p))[0] for p in file_paths]
+    need_iso = len(set(bases)) != len(bases)
+    # Concurrency: a LOCAL single user runs up to MAX_CONCURRENT_TASKS files at
+    # once (matches Qt; GPU work is still serialized by GPU_LOCK). Server/LAN
+    # deploys stay sequential so concurrent users don't multiply API/memory load.
+    external = backend.get_config("lan_mode", False) or server_mode_on()
+    pool = 1 if external else max(1, min(total, backend.MAX_CONCURRENT_TASKS))
+
+    out_slot = [None] * total           # per-index so order is preserved
+    res_slot = [None] * total           # (name, status, detail)
+    fracs = [0.0] * total
+    abort = {"hard": None, "stopped": False}
+
+    def _work(idx, fp):
+        if abort["hard"] or abort["stopped"]:
+            return                       # batch already aborting -> don't start
+        name = os.path.basename(fp)
+
+        def on_progress(v, desc=None, _i=idx, _n=name):
+            fracs[_i] = float(v)
+            set_state(progress=sum(fracs) / total,
+                      desc=(f"[{_i+1}/{total}] {_n}: " + (desc or "")))
+
+        on_progress(0.0, "Extracting text...")
+        try:
+            out_slot[idx] = _translate_one(
+                task_id, session_id, fp, model, use_online, src_lang,
+                dst_lang, glossary_name, bilingual_flags, on_progress,
+                run_subdir=(f"{run_folder}/{idx}" if need_iso else run_folder),
+                translation_id=file_ids[idx], batch_id=task_id, batch_size=total,
+                client_events=(client_events if idx == 0 else None))
+            res_slot[idx] = (name, "success", "")
+        except HardApiError as e:
+            # Account-level fault (balance/invalid key): abort the whole batch
+            # (every file would fail the same way). First one wins.
+            abort["hard"] = abort["hard"] or e
+            app_logger.error(f"Web translation aborted [{getattr(e,'category','api_error')}]: {e}")
+        except RuntimeError as e:
+            if "__stopped__" in str(e):
+                abort["stopped"] = True
+            else:
+                res_slot[idx] = (name, "failed", str(e))
+        except Exception as e:  # noqa: BLE001
+            app_logger.exception(f"Web translation error for {name}")
+            res_slot[idx] = (name, "failed", str(e))
+
     try:
-        for idx, fp in enumerate(file_paths):
-            name = os.path.basename(fp)
-
-            def on_progress(v, desc=None, _idx=idx, _name=name):
-                overall = (_idx + float(v)) / total
-                set_state(progress=overall, desc=(f"[{_idx+1}/{total}] {_name}: " + (desc or "")))
-
-            on_progress(0.0, "Extracting text...")
-            try:
-                outputs.append(_translate_one(
-                    task_id, session_id, fp, model, use_online, src_lang,
-                    dst_lang, glossary_name, bilingual_flags, on_progress,
-                    run_subdir=run_folder, translation_id=file_ids[idx],
-                    batch_id=task_id, batch_size=total,
-                    client_events=(client_events if idx == 0 else None)))
-                file_results.append((name, "success", ""))
-            except HardApiError as e:
-                # Account-level fault (insufficient balance / invalid key): every
-                # remaining file would fail the same way, so abort the whole batch
-                # with a clear, localized message instead of N identical errors.
-                msg = _friendly_api_error(e, ui_lang)
-                app_logger.error(f"Web translation aborted [{getattr(e,'category','api_error')}]: {e}")
-                _mark_web_queued_stopped(session_id, file_ids[idx:])
-                set_state(status="error", error=msg)
-                return
-            except RuntimeError as e:
-                if "__stopped__" in str(e):
-                    raise
-                file_results.append((name, "failed", str(e)))
-            except Exception as e:  # noqa: BLE001
-                app_logger.exception(f"Web translation error for {name}")
-                file_results.append((name, "failed", str(e)))
-
-        if not outputs:
-            set_state(status="error", error="All files failed. See log.")
-        elif total == 1:
-            u = _usage_summary()
-            set_state(status="done", progress=1.0, desc="Translation completed",
-                      output=outputs[0], tokens=u["tokens"], cost=u["cost"])
+        if pool <= 1:
+            for idx, fp in enumerate(file_paths):
+                if abort["hard"] or abort["stopped"]:
+                    break
+                _work(idx, fp)
         else:
-            zip_path = backend.zip_results(outputs, file_results)
-            ok = sum(1 for _, s, _ in file_results if s == "success")
-            u = _usage_summary()
-            set_state(status="done", progress=1.0,
-                      desc=f"Translation completed ({ok}/{total})", output=zip_path,
-                      tokens=u["tokens"], cost=u["cost"])
-    except RuntimeError as e:
-        if "__stopped__" in str(e):
-            # Files not yet processed never started — flip their queued rows to
-            # stopped (the in-flight file's translator already wrote "stopped").
-            _mark_web_queued_stopped(session_id, file_ids[len(file_results):])
-            set_state(status="stopped", desc="Stopped")
-        else:
-            app_logger.exception("Web translation error")
-            set_state(status="error", error=str(e))
+            from concurrent.futures import ThreadPoolExecutor
+            with ThreadPoolExecutor(max_workers=pool) as ex:
+                for f in [ex.submit(_work, i, fp) for i, fp in enumerate(file_paths)]:
+                    f.result()
+    except Exception as e:  # noqa: BLE001 — never leave the task stuck "running"
+        app_logger.exception("Web multi-file dispatch error")
+        _mark_web_queued_stopped(
+            session_id, [file_ids[i] for i in range(total) if not (out_slot[i] or res_slot[i])])
+        set_state(status="error", error=str(e))
+        return
+
+    outputs = [o for o in out_slot if o]
+    file_results = [r for r in res_slot if r]
+    # Rows that never produced a result (skipped on abort / not yet run) -> stopped.
+    leftover = [file_ids[i] for i in range(total) if not (out_slot[i] or res_slot[i])]
+
+    if abort["hard"]:
+        _mark_web_queued_stopped(session_id, leftover)
+        set_state(status="error", error=_friendly_api_error(abort["hard"], ui_lang))
+    elif abort["stopped"]:
+        _mark_web_queued_stopped(session_id, leftover)
+        set_state(status="stopped", desc="Stopped")
+    elif not outputs:
+        set_state(status="error", error="All files failed. See log.")
+    elif total == 1:
+        u = _usage_summary()
+        set_state(status="done", progress=1.0, desc="Translation completed",
+                  output=outputs[0], tokens=u["tokens"], cost=u["cost"])
+    else:
+        zip_path = backend.zip_results(outputs, file_results)
+        ok = sum(1 for _, s, _ in file_results if s == "success")
+        u = _usage_summary()
+        set_state(status="done", progress=1.0,
+                  desc=f"Translation completed ({ok}/{total})", output=zip_path,
+                  tokens=u["tokens"], cost=u["cost"])
 
 
 @app.post("/api/translate")
