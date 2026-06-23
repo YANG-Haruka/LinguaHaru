@@ -33,8 +33,8 @@ One-stop AI translation — documents, subtitles, images, real-time voice. Porta
 
 ## 校验和 / Checksums (SHA-256)
 ```
-LinguaHaru-web.zip      9e7e6c3d51263847b977abb85189a23c7b6fddea8ce09e7f679574fff826916e
-LinguaHaru-desktop.zip  9bfef4345077b3dd9c485f4cb09607ce01b2237e3886f612fad4914add974184
+LinguaHaru-web.zip      6b9eebab4c8f4007e6da1b754ef8316f7873367d9ddcf0795739c7026ea2c3a9
+LinguaHaru-desktop.zip  32058c5499559b71d9512373fd4dad0ad1b5f4c3c1b62637429187303953ad72
 ```
 > 这两个哈希已写入 `version.json`(assets[flavor].sha256),智能更新已启用。
 > ⚠️ 上传到 GitHub Release 的 zip 必须是本次构建的同一文件,否则哈希不匹配、自更新会拒绝。
