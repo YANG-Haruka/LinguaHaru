@@ -642,6 +642,9 @@ class TranslatePage(QStackedWidget):
             thread_count=getattr(self, "_thread_count", 0),
             failed=self._failed_count(),
             total_tokens=self._tokens,
+            prompt_tokens=self._prompt_tokens,
+            completion_tokens=self._completion_tokens,
+            model=self._run_model or self._active()[1],
         )
 
     def on_progress(self, worker, value, desc):

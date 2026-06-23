@@ -14,6 +14,7 @@ from qfluentwidgets import TitleLabel, PushButton, FluentIcon, CaptionLabel
 
 from qt_app.i18n import tr
 from qt_app.widgets import MetricCard, RingMetricCard
+from core import sysmon
 
 
 def _fmt_dur(seconds):
@@ -87,35 +88,39 @@ class ProgressDashboard(QWidget):
         grid.setVerticalSpacing(16)
 
         self.ring_card = RingMetricCard(tr("Task Progress", lang))
-        grid.addWidget(self.ring_card, 0, 0, 2, 1)
+        grid.addWidget(self.ring_card, 0, 0, 3, 1)   # spans all 3 rows on the left
 
-        # Common 8 metric cards (identical set on Web): Files, Elapsed, Speed,
-        # Tokens, Remaining, Threads, Failed, Stability (+ the ring).
+        # 9 metric cards in a 3x3 grid beside the ring. Progress/throughput on top,
+        # then the cumulative + thread info, then live system status + which device
+        # (GPU/CPU) the heavy work runs on. (Dropped the old Failed/Stability cards.)
         self.lines_card = MetricCard(tr("Files", lang), "0", "",
                                      FluentIcon.ALIGNMENT, "#0d83d6")
         self.elapsed_card = MetricCard(tr("Elapsed Time", lang), "00:00", "",
                                        FluentIcon.HISTORY, "#7a5af5")
         self.eta_card = MetricCard(tr("Remaining Time", lang), "--:--", "",
                                    FluentIcon.STOP_WATCH, "#f59e0b")
-        self.tokens_card = MetricCard(tr("Token Usage", lang), "0", "",
-                                      FluentIcon.MARKET, "#16a34a")
+        self.speed_card = MetricCard(tr("Average Speed", lang), "—",
+                                     tr("lines/min", lang), FluentIcon.SPEED_MEDIUM, "#ec4899")
         self.threads_card = MetricCard(tr("Thread Count", lang), "0", "",
                                        FluentIcon.SPEED_HIGH, "#0ea5e9")
-        self.speed_card = MetricCard(tr("Average Speed", lang), "0",
-                                     tr("lines/min", lang), FluentIcon.SPEED_MEDIUM, "#ec4899")
-        self.failed_card = MetricCard(tr("Failed Requests", lang), "0", "",
-                                      FluentIcon.CLOSE, "#ef4444")
-        self.stability_card = MetricCard(tr("Task Stability", lang), "100%", "",
-                                         FluentIcon.HEART, "#10b981")
+        self.tokens_card = MetricCard(tr("Token Usage", lang), "0", "",
+                                      FluentIcon.MARKET, "#16a34a")
+        self.cpu_card = MetricCard(tr("CPU Usage", lang), "—", "",
+                                   FluentIcon.IOT, "#0ea5e9")
+        self.gpu_card = MetricCard(tr("GPU Usage", lang), "—", "",
+                                   FluentIcon.GAME, "#a855f7")
+        self.hw_card = MetricCard(tr("Compute Device", lang), "—", "",
+                                  FluentIcon.DEVELOPER_TOOLS, "#10b981")
 
         grid.addWidget(self.lines_card, 0, 1)
         grid.addWidget(self.elapsed_card, 0, 2)
         grid.addWidget(self.eta_card, 0, 3)
-        grid.addWidget(self.tokens_card, 1, 1)
+        grid.addWidget(self.speed_card, 1, 1)
         grid.addWidget(self.threads_card, 1, 2)
-        grid.addWidget(self.speed_card, 1, 3)
-        grid.addWidget(self.failed_card, 2, 1)
-        grid.addWidget(self.stability_card, 2, 2)
+        grid.addWidget(self.tokens_card, 1, 3)
+        grid.addWidget(self.cpu_card, 2, 1)
+        grid.addWidget(self.gpu_card, 2, 2)
+        grid.addWidget(self.hw_card, 2, 3)
         layout.addLayout(grid)
 
         # Live status line: the backend's per-segment desc (rate / ETA / tokens).
@@ -141,12 +146,18 @@ class ProgressDashboard(QWidget):
             "lines": (self.lines_card, "Files"),
             "elapsed": (self.elapsed_card, "Elapsed Time"),
             "eta": (self.eta_card, "Remaining Time"),
-            "tokens": (self.tokens_card, "Token Usage"),
-            "threads": (self.threads_card, "Thread Count"),
             "speed": (self.speed_card, "Average Speed"),
-            "failed": (self.failed_card, "Failed Requests"),
-            "stability": (self.stability_card, "Task Stability"),
+            "threads": (self.threads_card, "Thread Count"),
+            "tokens": (self.tokens_card, "Token Usage"),
+            "cpu": (self.cpu_card, "CPU Usage"),
+            "gpu": (self.gpu_card, "GPU Usage"),
+            "hw": (self.hw_card, "Compute Device"),
         }
+
+        # Poll live CPU/GPU usage every 2s while a task runs.
+        self._sysmon = QTimer(self)
+        self._sysmon.setInterval(2000)
+        self._sysmon.timeout.connect(self._tick_sysmon)
 
     def retranslate(self, lang):
         self._lang = lang
@@ -169,6 +180,15 @@ class ProgressDashboard(QWidget):
         self._last_percent = 0.0
         self.ring_card.set_value(0)
         self.status.setText("")
+        self.speed_card.set_value("—", tr("lines/min", self._lang))
+        # Compute device (GPU/CPU) — set once; tells the user where the heavy work
+        # (transcription/translation) actually runs. Critical for GPU users.
+        hw = sysmon.hardware_summary()
+        self.hw_card.set_value(
+            tr("GPU", self._lang) if hw.get("gpu") else tr("CPU", self._lang),
+            (hw.get("name") or hw.get("detail") or "")[:28])
+        self._tick_sysmon()        # prime CPU% + first reading
+        self._sysmon.start()
         # Running state: [暂停][停止] visible, resume/open/back hidden.
         self.pause_btn.show()
         self.resume_btn.hide()
@@ -176,6 +196,18 @@ class ProgressDashboard(QWidget):
         self.open_btn.hide()
         self.back_btn.hide()
         self._clock.start()
+
+    def _tick_sysmon(self):
+        """Refresh the live CPU/GPU usage cards (best-effort)."""
+        u = sysmon.usage()
+        self.cpu_card.set_value("—" if u.get("cpu") is None else f"{u['cpu']:.0f}%")
+        if u.get("gpu") is None:
+            self.gpu_card.set_value("—")
+        else:
+            mem = ""
+            if u.get("gpu_mem_total"):
+                mem = f"{u['gpu_mem_used']}/{u['gpu_mem_total']} MB"
+            self.gpu_card.set_value(f"{u['gpu']:.0f}%", mem)
 
     def set_paused(self, paused):
         """Toggle the dashboard between running ([暂停][停止]) and paused
@@ -189,6 +221,7 @@ class ProgressDashboard(QWidget):
             self.back_btn.show()
             self.status.setText(tr("Paused", self._lang))
             self._clock.stop()
+            self._sysmon.stop()
         else:
             self.resume_btn.hide()
             self.back_btn.hide()
@@ -196,6 +229,7 @@ class ProgressDashboard(QWidget):
             self.stop_btn.show()
             if self._start_time:
                 self._clock.start()
+                self._sysmon.start()
 
     # QA check key -> i18n label key.
     _QA_LABELS = {
@@ -207,6 +241,7 @@ class ProgressDashboard(QWidget):
     def show_done(self, summary, can_open, coverage=None, qa=None):
         """Finished: keep all metrics on screen, swap Stop for Open/New."""
         self._clock.stop()
+        self._sysmon.stop()
         self.pause_btn.hide()
         self.resume_btn.hide()
         self.stop_btn.hide()
@@ -249,6 +284,7 @@ class ProgressDashboard(QWidget):
 
     def stop_clock(self):
         self._clock.stop()
+        self._sysmon.stop()
 
     def _tick_clock(self):
         """1 Hz refresh of Elapsed (+ ETA from the last known percent), so the
@@ -262,9 +298,11 @@ class ProgressDashboard(QWidget):
             self.eta_card.set_value(_fmt_dur(elapsed * (1 - frac) / frac))
 
     def update_metrics(self, percent, total_files, done_files, thread_count,
-                       failed, total_tokens):
-        """Refresh all cards. Speed/ETA/elapsed are derived from the start time
-        and the fraction complete (files act as the 'line' unit at this layer)."""
+                       failed, total_tokens, prompt_tokens=0, completion_tokens=0,
+                       model=None):
+        """Refresh the metric cards. (failed is accepted for backward-compat but
+        no longer shown.) Cost is estimated from the exact prompt/completion split
+        when available, else approximated from the live total."""
         self._last_percent = percent
         if percent >= 100:
             self._clock.stop()
@@ -277,17 +315,37 @@ class ProgressDashboard(QWidget):
         self.elapsed_card.set_value(_fmt_dur(elapsed))
 
         frac = percent / 100.0
-        if frac > 0.01 and elapsed > 0:
-            eta = elapsed * (1 - frac) / frac
-            self.eta_card.set_value(_fmt_dur(eta))
-            rate = (frac * total_files) / (elapsed / 60.0) if elapsed else 0
+        # ETA + speed only once there's a meaningful sample (>=5s and >2%); else
+        # show "—" instead of a wildly wrong early number (e.g. 147.8 lines/min).
+        if frac > 0.02 and elapsed >= 5:
+            self.eta_card.set_value(_fmt_dur(elapsed * (1 - frac) / frac))
+            rate = (frac * total_files) / (elapsed / 60.0)
             self.speed_card.set_value(f"{rate:.1f}", tr("lines/min", self._lang))
         else:
             self.eta_card.set_value("--:--")
+            self.speed_card.set_value("—", tr("lines/min", self._lang))
 
-        self.tokens_card.set_value(_fmt_tokens(total_tokens))
+        # 累积消耗: exact token count + estimated cost (¥/＄/￥ by UI language).
+        self.tokens_card.set_value(_fmt_tokens(total_tokens),
+                                   self._cost_sub(total_tokens, prompt_tokens,
+                                                  completion_tokens, model))
         self.threads_card.set_value(thread_count)
-        self.failed_card.set_value(failed)
-        attempted = done_files + failed
-        stability = 100 if attempted == 0 else int(100 * done_files / attempted)
-        self.stability_card.set_value(f"{stability}%")
+
+    def _cost_sub(self, total_tokens, prompt_tokens, completion_tokens, model):
+        """'12,345 tokens · ≈¥0.05' — exact tokens + estimated cost. Uses the exact
+        prompt/completion split when known, otherwise a 50/50 approximation of the
+        live total so a cost shows during the run too."""
+        sub = f"{int(total_tokens):,} tokens"
+        if not model:
+            return sub
+        p, c = int(prompt_tokens or 0), int(completion_tokens or 0)
+        if p == 0 and c == 0 and total_tokens:        # live: approximate the split
+            p = c = int(total_tokens) // 2
+        if p == 0 and c == 0:
+            return sub
+        try:
+            from core.pricing import estimate_cost
+            amt, symbol, _ccy = estimate_cost(model, p, c, self._lang)
+            return f"{sub} · ≈{symbol}{amt:.4f}"
+        except Exception:  # noqa: BLE001 — cost is best-effort
+            return sub
