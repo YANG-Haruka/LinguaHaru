@@ -421,6 +421,7 @@ class PluginsPage(ScrollArea):
         self.setObjectName("PluginsPage")
         self._lang = lang
         self._worker = None
+        self._install_queue = []   # [(card, action)] pending while a job runs
         self.setWidgetResizable(True)
         self.enableTransparentBackground()
 
@@ -645,17 +646,36 @@ class PluginsPage(ScrollArea):
         if worker in self._dl_workers:
             self._dl_workers.remove(worker)
 
+    def _drain_install_queue(self):
+        """Current job done — clear it and start the next queued plugin (one job
+        at a time, so concurrent pip/uv calls can't corrupt the shared env)."""
+        self._worker = None
+        if self._install_queue:
+            card, action = self._install_queue.pop(0)
+            self._begin_install(card, action)
+
     def _start_install(self, card, action="install"):
-        if self._worker is not None and self._worker.isRunning():
-            return
         if action == "uninstall":
-            # Confirm before removing; note shared models are kept.
+            # Confirm before removing (do it now, not when dequeued); shared
+            # models are kept.
             box = MessageBox(tr("Uninstall", self._lang),
                              tr("Uninstall Models Confirm", self._lang), self.window())
             box.yesButton.setText(tr("Confirm", self._lang))
             box.cancelButton.setText(tr("Cancel", self._lang))
             if not box.exec():
                 return
+        # Plugin jobs mutate the SAME interpreter env, so they MUST run one at a
+        # time. If one is running, queue this one and show "排队中"; it starts
+        # automatically when the current job finishes.
+        if self._worker is not None and self._worker.isRunning():
+            if not any(c is card for c, _ in self._install_queue):
+                self._install_queue.append((card, action))
+                card.set_state(card._mod["available"], busy=True)
+                card.set_install_line(tr("Status Queued", self._lang))
+            return
+        self._begin_install(card, action)
+
+    def _begin_install(self, card, action="install"):
         card.set_state(card._mod["available"], busy=True)
         verbs = {"uninstall": tr("Uninstalling", self._lang),
                  "upgrade": tr("Upgrading", self._lang),
@@ -692,7 +712,7 @@ class PluginsPage(ScrollArea):
                 # Honor the failure — don't report success when uninstall errored.
                 self._info(card._mod["name"], f"{tr('Failed', self._lang)}: {(msg or '')[-200:]}", error=True)
                 system_event(f"Plugin uninstall FAILED: {card._mod['name']}")
-                self._worker = None
+                self._drain_install_queue()
                 return
             # Cleanup report: "Cleanup done, freed N MB" (freed=0 when everything
             # was shared and kept).
@@ -703,7 +723,7 @@ class PluginsPage(ScrollArea):
             self._info(card._mod["name"], note)
             system_event(f"Plugin uninstall: {card._mod['name']}"
                          + (f" | freed {human_size(freed)}" if freed else ""))
-            self._worker = None
+            self._drain_install_queue()
             return
         if ok and mod["available"]:
             system_event(f"Plugin {action}: {card._mod['name']}")
@@ -734,7 +754,7 @@ class PluginsPage(ScrollArea):
         else:
             self._info(card._mod["name"],
                        f"{tr('Install failed', self._lang)}: {msg}", error=True)
-        self._worker = None
+        self._drain_install_queue()
 
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
