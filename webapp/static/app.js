@@ -993,6 +993,7 @@ $("run-back").onclick = async () => {
   }
   if (_progressES) { try { _progressES.close(); } catch (e) {} }
   stopElapsed();
+  stopSysmonPoll();
   currentTask = null;
   setRunState("idle");
 };
@@ -1000,9 +1001,13 @@ $("run-back").onclick = async () => {
 let _progressES = null;
 function listenProgress(taskId) {
   // Reset the dashboard so a previous run's numbers don't linger on screen.
-  ["m-files", "m-speed", "m-tokens", "m-eta", "m-threads"].forEach((id) => { $(id).textContent = "—"; });
-  if ($("m-failed")) $("m-failed").textContent = "0";
-  if ($("m-stability")) $("m-stability").textContent = "100%";
+  ["m-files", "m-speed", "m-tokens", "m-eta", "m-threads", "m-cpu", "m-gpu"].forEach((id) => { const e = $(id); if (e) e.textContent = "—"; });
+  if ($("m-cost")) $("m-cost").textContent = "";
+  // Compute device (static, from bootstrap): tells the user GPU vs CPU.
+  const _hw = BOOT.hardware || {};
+  if ($("m-device")) $("m-device").textContent =
+    (_hw.gpu ? _label("GPU", "GPU") : _label("CPU", "CPU")) + (_hw.name ? " · " + _hw.name.slice(0, 16) : "");
+  startSysmonPoll();
   $("progress-bar").style.width = "0%";
   $("prog-ring").style.setProperty("--p", "0deg");
   $("prog-pct").textContent = "0%";
@@ -1029,36 +1034,47 @@ function listenProgress(taskId) {
     $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
     $("m-eta").textContent = m(/ETA\s+([\d:]+)/i);
     $("m-threads").textContent = m(/(\d+)\s*threads/i);
-    // Failed count ("| failed N") + stability% = done/(done+failed) of the
-    // SEGMENT count ("Translating... 16/50"), mirroring Qt's success-rate card.
-    if ($("m-failed")) {
-      const failed = parseInt((desc.match(/failed\s+(\d+)/i) || [, "0"])[1], 10) || 0;
-      $("m-failed").textContent = failed;
-      const segM = desc.replace(/^\[\d+\/\d+\]/, "").match(/(\d+)\/(\d+)/);
-      const segDone = segM ? (parseInt(segM[1], 10) || 0) : 0;
-      const attempted = segDone + failed;
-      $("m-stability").textContent = (attempted === 0 ? 100 : Math.round(100 * segDone / attempted)) + "%";
-    }
     // Sync the pause UI to the server's authoritative state.
     if (d.status === "running") {
       if (d.paused && _runState !== "paused") { setRunState("paused"); setStatus(_label("Paused", "已暂停")); pauseElapsed(); }
       else if (!d.paused && _runState === "paused") { setRunState("running"); setStatus(""); resumeElapsed(); }
     }
     if (d.status === "done") {
-      es.close(); stopElapsed(); setRunState("done");
+      es.close(); stopElapsed(); stopSysmonPoll(); setRunState("done");
       $("download-link").href = "/api/download/" + taskId;
       $("result").hidden = false; setStatus("翻译完成");
+      if ($("m-cost") && d.cost) $("m-cost").textContent = "≈" + (d.cost.symbol || "") + d.cost.amount;
       renderCoverage(d.coverage);
       renderQa(d.qa);
       showThanks(d.tokens, d.cost);
     } else if (d.status === "error") {
-      es.close(); stopElapsed(); setRunState("error"); setStatus("错误: " + (d.error || "未知错误"));
+      es.close(); stopElapsed(); stopSysmonPoll(); setRunState("error"); setStatus("错误: " + (d.error || "未知错误"));
     } else if (d.status === "stopped") {
-      es.close(); stopElapsed(); setRunState("stopped"); setStatus(_label("Stopped", "已停止"));
+      es.close(); stopElapsed(); stopSysmonPoll(); setRunState("stopped"); setStatus(_label("Stopped", "已停止"));
     }
   };
   es.onerror = () => { es.close(); };
 }
+
+// Poll live CPU/GPU usage while a run is active (the compute-device card is
+// static, set from BOOT.hardware). Best-effort; "—" when unavailable.
+let _sysmonTimer = null;
+function startSysmonPoll() {
+  stopSysmonPoll();
+  const tick = async () => {
+    try {
+      const u = await api("/api/sysmon");
+      if ($("m-cpu")) $("m-cpu").textContent = (u.cpu == null) ? "—" : Math.round(u.cpu) + "%";
+      if ($("m-gpu")) {
+        const mem = (u.gpu_mem_total) ? ` (${u.gpu_mem_used}/${u.gpu_mem_total}MB)` : "";
+        $("m-gpu").textContent = (u.gpu == null) ? "—" : Math.round(u.gpu) + "%" + mem;
+      }
+    } catch (e) { /* transient */ }
+  };
+  tick();
+  _sysmonTimer = setInterval(tick, 2000);
+}
+function stopSysmonPoll() { if (_sysmonTimer) { clearInterval(_sysmonTimer); _sysmonTimer = null; } }
 
 function _label(key, fallback) {
   const lang = localStorage.getItem("lh-lang") || "zh";

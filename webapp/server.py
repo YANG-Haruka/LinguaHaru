@@ -27,6 +27,7 @@ from fastapi.responses import (
 from fastapi.staticfiles import StaticFiles
 
 from core import backend
+from core import sysmon
 from core.model_store import setup_model_env
 setup_model_env()  # unify model cache dirs before whisper/funasr/babeldoc import
 try:   # let downloaded market plugins hook into the app (best-effort)
@@ -288,6 +289,7 @@ def bootstrap():
         "language_map": LANGUAGE_MAP,
         "modules": module_status(),
         "ext_plugin": extension_plugin_map(),  # ext -> required plugin name
+        "hardware": sysmon.hardware_summary(),  # GPU/CPU compute device
         "server_mode": server_mode_on(),
         "local_live_available": realtime_voice_available(),
         # "翻译语音输入" plugin: gates the Quick-Translate mic (STT) + speaker (TTS).
@@ -342,6 +344,12 @@ def bootstrap():
         "translation_modes": _translation_modes_for_ui(),
         "labels": LABEL_TRANSLATIONS,
     }
+
+
+@app.get("/api/sysmon")
+def sysmon_usage():
+    """Live CPU/GPU usage for the task dashboard (polled while a run is active)."""
+    return sysmon.usage()
 
 
 def _translation_modes_for_ui():
