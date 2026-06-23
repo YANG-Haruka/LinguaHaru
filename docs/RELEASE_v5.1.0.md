@@ -40,3 +40,14 @@ LinguaHaru-desktop.zip  929cff8451a16e8952be57d88b64382d7a1dea7c8db8e7f2236d6cad
 > ⚠️ 上传到 GitHub Release 的 zip 必须是本次构建的同一文件,否则哈希不匹配、自更新会拒绝。
 > The zips uploaded to the GitHub Release must be these exact files, or the hash
 > won't match and self-update will (correctly) refuse.
+
+## 发布顺序 / Release order (重要)
+1. **先**把这两个 zip 传到 GitHub Release `v5.1.0`(`version.json` 里的 `url` 才不会 404)。
+2. 上传完、确认能下载后,**再**更新远程 `version.json`(发布清单)。在资产就绪前更新清单,用户会检查到更新却下载 404。
+
+## 中国大陆下载通道 / China download channels
+- **依赖(pip)**:已内置清华 PyPI 自动兜底(官方源不可达或安装失败 → 自动切镜像重试)。`torch / paddlepaddle / qwen-asr` 等大包默认装 **CPU** 版;需要 GPU/CUDA 的用户请按自己环境手动安装对应 wheel。
+- **自动更新**:更新包下载现在**多源兜底**——清单 `assets.<flavor>.urls`(可填国内 OSS/CDN,放最前)→ GitHub 直链 → GitHub 经 ghproxy 等镜像;全部用同一个 `sha256` 校验。即使只填了 GitHub `url`,大陆用户也会自动尝试 ghproxy 镜像。
+- **模型**:不建议只靠首次运行在线拉取。已用 `tools/package_models.ps1` 生成各模型 zip(含 SHA-256,见 `docs/MODELS_SHA256SUMS.txt`);建议把大模型(Qwen3-ASR ~4.7G / Whisper large ~3G 等)放到国内对象存储/网盘,用户下载后解压到 `models/`。HF 走 `hf-mirror.com` 自动兜底,但公益镜像不应作为唯一生产通道。
+- **插件市场**:`plugins-index.json` 目前为空。每个插件条目**必须带 `sha256`**(安装会执行下载的代码,无校验直接拒绝),可选 `size` / `urls`(镜像)。市场正式开放前请先给条目补齐校验。
+- **本地安装兜底**:模型支持"解压 zip 到 `models/`";内网/无外网环境优先用本地包,比在线下载可靠。

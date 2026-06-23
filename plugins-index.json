@@ -1,4 +1,4 @@
 {
-  "_comment": "Remote plugin market index. To publish a plugin: host a zip of its self-contained folder (plugin.json + requirements.txt + optional code with an `entry` register hook), then add an entry here. Users see it in the Plugins page market and can download+install without updating the main app.",
+  "_comment": "Remote plugin market index. To publish a plugin: host a zip of its self-contained folder (plugin.json + requirements.txt + optional code with an `entry` register hook), then add an entry here. Each entry: {key, name, version, detail, url(https), sha256(REQUIRED — install runs downloaded code, so it's refused without a matching checksum), size(bytes, optional), urls(optional mirror list, China OSS/CDN first then GitHub — all the SAME zip)}. Users see it in the Plugins page market and download+install without updating the main app.",
   "plugins": []
 }

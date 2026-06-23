@@ -201,6 +201,12 @@ def download_remote_plugin(key, url=None):
     url = entry.get("url", "")
     if not url.lower().startswith("https://"):
         return False, "Plugin URL must be https."
+    # A plugin install runs downloaded CODE, so REQUIRE an integrity checksum in
+    # the trusted index (mirrors the self-updater). Without it we refuse rather
+    # than execute unverified code — even a small ASCII sha256 raises the bar.
+    expected_sha = str(entry.get("sha256", "")).strip().lower()
+    if not expected_sha:
+        return False, f"Plugin '{key}' has no published checksum; refusing to install."
     dest = os.path.join(USER_PLUGINS_DIR, key)
     # Containment: dest must stay inside USER_PLUGINS_DIR (defense in depth on top
     # of the key regex).
@@ -223,6 +229,11 @@ def download_remote_plugin(key, url=None):
                 blob = None
         if blob is None:
             return False, f"Download failed: {last}"
+        import hashlib
+        got_sha = hashlib.sha256(blob).hexdigest()
+        if got_sha != expected_sha:
+            return False, (f"Plugin checksum mismatch "
+                           f"(expected {expected_sha[:12]}…, got {got_sha[:12]}…).")
         ex = os.path.join(tmp, "x")
         with zipfile.ZipFile(io.BytesIO(blob)) as z:
             _safe_extract(z, ex)

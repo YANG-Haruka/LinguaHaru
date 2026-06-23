@@ -40,16 +40,18 @@ class _SelfUpdateWorker(QThread):
     progress = Signal(float, str)
     finished_ok = Signal(bool, str)
 
-    def __init__(self, asset_url, sha256, parent=None):
+    def __init__(self, asset_url, sha256, parent=None, asset_urls=None):
         super().__init__(parent)
         self._asset = asset_url
         self._sha = sha256
+        self._asset_urls = asset_urls
 
     def run(self):
         try:
             from core.updater import download_and_apply
             ok, msg = download_and_apply(
-                self._asset, self._sha, lambda f, s="": self.progress.emit(float(f), s))
+                self._asset, self._sha, lambda f, s="": self.progress.emit(float(f), s),
+                asset_urls=self._asset_urls)
             self.finished_ok.emit(ok, msg)
         except Exception as e:  # noqa: BLE001
             self.finished_ok.emit(False, str(e))
@@ -386,16 +388,16 @@ class MainWindow(FluentWindow):
         if not box.exec():
             return
         if asset and sha:
-            self._start_self_update(asset, sha)
+            self._start_self_update(asset, sha, info.get("asset_urls"))
         else:
             QDesktopServices.openUrl(QUrl(info.get("url") or ""))
 
-    def _start_self_update(self, asset, sha256):
+    def _start_self_update(self, asset, sha256, asset_urls=None):
         from qfluentwidgets import StateToolTip, InfoBar, InfoBarPosition
         self._update_tip = StateToolTip(tr("Updating", self._lang), "0%", self)
         self._update_tip.move(self.width() - 240, 20)
         self._update_tip.show()
-        self._self_update_worker = _SelfUpdateWorker(asset, sha256, self)
+        self._self_update_worker = _SelfUpdateWorker(asset, sha256, self, asset_urls=asset_urls)
 
         def on_prog(frac, stage):
             if hasattr(self, "_update_tip") and self._update_tip:

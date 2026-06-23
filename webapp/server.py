@@ -2229,13 +2229,13 @@ _SELF_UPDATE = {"status": "idle", "progress": 0.0, "stage": "", "message": ""}
 _SELF_UPDATE_LOCK = threading.Lock()
 
 
-def _run_self_update(asset_url, sha256):
+def _run_self_update(asset_url, sha256, asset_urls=None):
     from core.updater import download_and_apply
 
     def cb(frac, stage=""):
         _SELF_UPDATE.update(progress=round(float(frac), 3), stage=stage)
     try:
-        ok, msg = download_and_apply(asset_url, sha256, cb)
+        ok, msg = download_and_apply(asset_url, sha256, cb, asset_urls=asset_urls)
         _SELF_UPDATE.update(status="done" if ok else "error", message=msg,
                             progress=1.0 if ok else _SELF_UPDATE["progress"])
     except Exception as e:  # noqa: BLE001
@@ -2254,13 +2254,14 @@ def self_update(payload: dict = None):
     asset, sha = info.get("asset_url"), info.get("asset_sha256")
     if not asset or not sha:
         raise HTTPException(400, "No verified package available for this build.")
+    asset_urls = info.get("asset_urls")
     # Atomic check-and-set so two concurrent requests can't both start an update
     # (each would delete+replace the program dir).
     with _SELF_UPDATE_LOCK:
         if _SELF_UPDATE["status"] == "running":
             raise HTTPException(409, "An update is already in progress.")
         _SELF_UPDATE.update(status="running", progress=0.0, stage="starting", message="")
-    threading.Thread(target=_run_self_update, args=(asset, sha), daemon=True).start()
+    threading.Thread(target=_run_self_update, args=(asset, sha, asset_urls), daemon=True).start()
     return {"started": True}
 
 

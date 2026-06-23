@@ -76,8 +76,13 @@ def check_for_update():
     # requires a sha256 — without a checksum we will NOT auto-apply downloaded code
     # (the user can still use the manual download link).
     asset_url = asset_sha = None
+    asset_urls = None
     if portable_root() and isinstance(a, dict) and a.get("url") and a.get("sha256"):
         asset_url, asset_sha = a["url"], a["sha256"]
+        # Optional explicit mirror list (e.g. a mainland-China OSS/CDN first, then
+        # GitHub) — all must point at the SAME zip (verified by the one sha256).
+        if isinstance(a.get("urls"), list):
+            asset_urls = [u for u in a["urls"] if isinstance(u, str) and u]
     return {
         "update": _to_tuple(latest) > _to_tuple(__version__),
         "current": __version__,
@@ -86,6 +91,7 @@ def check_for_update():
         "notes": data.get("notes", ""),
         "asset_url": asset_url,
         "asset_sha256": asset_sha,
+        "asset_urls": asset_urls,
     }
 
 
@@ -192,23 +198,46 @@ def _sha256(path):
     return h.hexdigest()
 
 
+def _asset_candidates(asset_url, asset_urls):
+    """Ordered, de-duplicated list of URLs to try for the release zip: any
+    explicit mirrors first (manifest ``urls`` — put a China OSS/CDN there), then
+    the direct URL, then the same GitHub URL via the China-friendly proxies (so a
+    GitHub Release download has the SAME fallback the manifest check already has).
+    Every candidate is the SAME file, verified by the one published sha256."""
+    cands = list(asset_urls or [])
+    if asset_url:
+        cands.append(asset_url)
+        if "github.com" in asset_url or "githubusercontent.com" in asset_url:
+            for p in _PROXIES:
+                if p:
+                    cands.append(p + asset_url)
+    seen, out = set(), []
+    for u in cands:
+        if u and u not in seen:
+            seen.add(u)
+            out.append(u)
+    return out
+
+
 # Config files the user OWNS — preserved across an update (the rest of config/,
 # e.g. prompts/locales/default template, is replaced with the new version's).
 _PRESERVE_IN_CONFIG = ["api_config", "system_config.json", "text_rules.json"]
 
 
-def download_and_apply(asset_url, sha256=None, progress_cb=None):
+def download_and_apply(asset_url, sha256=None, progress_cb=None, asset_urls=None):
     """Download the release zip and overlay the SOURCE layer onto the portable
     install — verified, transactional, and preserving user data. Preserves python/
     (installed plugins), models/, data/, AND the user's config (api_config/,
     system_config.json, text_rules.json). Verifies a SHA-256, applies via a
     backup-and-rollback so a mid-way failure can't leave a half-updated install,
     and fails (with rollback) if the post-update dependency sync fails.
-    Returns (ok, message)."""
+
+    Tries multiple download URLs (explicit mirrors + GitHub via China proxies),
+    each verified against the same sha256. Returns (ok, message)."""
     root = portable_root()
     if not root:
         return False, "Smart update is only available in the portable build."
-    if not asset_url:
+    if not asset_url and not asset_urls:
         return False, "No downloadable package URL for this build."
     if not sha256:
         # Refuse to apply downloaded code without an integrity checksum.
@@ -219,12 +248,21 @@ def download_and_apply(asset_url, sha256=None, progress_cb=None):
     applied = []   # (item, had_backup) for rollback
     try:
         zpath = os.path.join(tmp, "update.zip")
-        _download(asset_url, zpath, progress_cb, base=0.0, span=0.6)
-        if progress_cb:
-            progress_cb(0.62, "verifying")
-        got = _sha256(zpath)
-        if got.lower() != str(sha256).lower():
-            return False, f"Checksum mismatch (expected {sha256[:12]}…, got {got[:12]}…)."
+        # Try each candidate (mirrors first, then GitHub direct + via proxies)
+        # until one downloads AND matches the published checksum.
+        candidates = _asset_candidates(asset_url, asset_urls)
+        ok_dl, last_err = False, "no URL"
+        for u in candidates:
+            try:
+                _download(u, zpath, progress_cb, base=0.0, span=0.6)
+                if _sha256(zpath).lower() == str(sha256).lower():
+                    ok_dl = True
+                    break
+                last_err = "checksum mismatch"
+            except Exception as e:  # noqa: BLE001 — try the next mirror
+                last_err = f"{type(e).__name__}: {e}"
+        if not ok_dl:
+            return False, f"Could not download a valid update package ({last_err})."
         if progress_cb:
             progress_cb(0.66, "extracting")
         ex = os.path.join(tmp, "x")
