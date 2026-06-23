@@ -1605,14 +1605,18 @@ def _run_module_job(name, action):
     # corrupt the shared env; ALWAYS land on a terminal status (try/finally) so a
     # crash can't leave the job stuck "running" (which would freeze the UI button).
     with _MODULE_JOB_LOCK:
-        # Stream pip/uv output into the job so the UI shows live progress.
-        from core.module_manager import set_progress_callback
-        def _prog(line):
+        # Convert pip/uv + model-download output into a PERCENTAGE (not log lines).
+        from core.module_manager import set_progress_callback, make_progress_parser
+
+        def _set_prog(frac, stage):
             with _TASKS_LOCK:
                 j = MODULE_JOBS.get(name)
                 if j is not None:
-                    j["line"] = line[:200]
-        set_progress_callback(_prog)
+                    j["progress"] = float(frac)
+                    j["stage"] = stage
+        # Library install fills 0-70%; the (often heavier) model download 70-100%.
+        lib_span = 0.7 if action == "install" else 1.0
+        set_progress_callback(make_progress_parser(_set_prog, 0.0, lib_span).feed)
         try:
             from core.module_manager import install_module, upgrade_module
             if action == "uninstall":
@@ -1626,7 +1630,10 @@ def _run_module_job(name, action):
                 # not import until restart, so any failure here is non-fatal.
                 try:
                     from core.optional_modules import download_plugin_model
-                    model_failed = not download_plugin_model(name, progress_cb=_prog)
+                    model_cb = make_progress_parser(_set_prog, 0.7, 0.3).feed
+                    model_failed = not download_plugin_model(name, progress_cb=model_cb)
+                    if not model_failed:
+                        _set_prog(1.0, "done")
                 except Exception as me:  # noqa: BLE001
                     model_failed = True
                     app_logger.warning(f"Model download failed for {name}: {me}")
@@ -1652,16 +1659,20 @@ def _run_module_job(name, action):
 def _run_model_job(name, model_id):
     """Persist the chosen model id, then download+warm it (heavy/blocking)."""
     ok = False
-    def _prog(line):
+    from core.module_manager import make_progress_parser
+
+    def _set_prog(frac, stage):
         with _TASKS_LOCK:
             j = MODULE_JOBS.get(name)
             if j is not None:
-                j["line"] = line[:200]
+                j["progress"] = float(frac)
+                j["stage"] = stage
     with _MODULE_JOB_LOCK:
         try:
             from core.optional_modules import set_plugin_model, download_plugin_model
             set_plugin_model(name, model_id)
-            ok = download_plugin_model(name, model_id, progress_cb=_prog)
+            ok = download_plugin_model(name, model_id,
+                                       progress_cb=make_progress_parser(_set_prog, 0.0, 1.0).feed)
         except Exception as e:  # noqa: BLE001
             ok = False
             app_logger.error(f"Model download job crashed for {name}/{model_id}: {e}")

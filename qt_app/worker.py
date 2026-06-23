@@ -27,11 +27,11 @@ class InstallWorker(QThread):
     UI thread, streaming output lines and reporting success/failure.
 
     Signals:
-        line(str)        -- a line of pip output
+        progress(float, str) -- overall fraction (0..1) + a short stage word
         finished_ok(bool, str) -- (success, final message)
     """
 
-    line = Signal(str)
+    progress = Signal(float, str)
     finished_ok = Signal(bool, str)
 
     def __init__(self, module_name, action="install", parent=None):
@@ -50,9 +50,13 @@ class InstallWorker(QThread):
         if plugins_registry.get(self.module_name) is None:
             self.finished_ok.emit(False, f"Unknown module: {self.module_name}")
             return
-        # Stream pip/uv output to the card tooltip so the user sees live progress.
+        # Convert pip/uv + model output into a PERCENTAGE (not log lines): library
+        # install fills 0-70%, the model download 70-100%.
         from core import module_manager
-        module_manager.set_progress_callback(lambda ln: self.line.emit(ln[:200]))
+        emit = lambda f, s: self.progress.emit(float(f), s)
+        lib_span = 0.7 if self.action == "install" else 1.0
+        module_manager.set_progress_callback(
+            module_manager.make_progress_parser(emit, 0.0, lib_span).feed)
         model_failed = False
         try:
             if self.action == "uninstall":
@@ -68,9 +72,11 @@ class InstallWorker(QThread):
                 if ok:   # warm the default model (lib is in, but model may fail)
                     try:
                         from core.optional_modules import download_plugin_model
+                        model_cb = module_manager.make_progress_parser(emit, 0.7, 0.3).feed
                         model_failed = not download_plugin_model(
-                            self.module_name,
-                            progress_cb=lambda ln: self.line.emit(ln[:200]))
+                            self.module_name, progress_cb=model_cb)
+                        if not model_failed:
+                            emit(1.0, "done")
                     except Exception:  # noqa: BLE001
                         model_failed = True
         except Exception as e:  # noqa: BLE001
@@ -78,8 +84,6 @@ class InstallWorker(QThread):
             self.finished_ok.emit(False, f"Error: {e}")
             return
         module_manager.set_progress_callback(None)
-        if out:
-            self.line.emit(str(out)[-400:])
         if ok and model_failed:
             # Library installed but its model download failed (often network) —
             # surface it instead of a plain "完成" that hides a broken plugin.
@@ -98,11 +102,11 @@ class ModelDownloadWorker(QThread):
     right after a fresh install).
 
     Signals:
-        line(str)         -- a live tqdm download line
+        progress(float, str) -- download fraction (0..1) + stage word
         finished_ok(bool) -- True if the model is ready
     """
 
-    line = Signal(str)
+    progress = Signal(float, str)
     finished_ok = Signal(bool)
 
     def __init__(self, module_name, model_id=None, parent=None):
@@ -112,10 +116,12 @@ class ModelDownloadWorker(QThread):
 
     def run(self):
         from core.optional_modules import download_plugin_model
+        from core import module_manager
+        parser = module_manager.make_progress_parser(
+            lambda f, s: self.progress.emit(float(f), s), 0.0, 1.0)
         try:
             ok = bool(download_plugin_model(
-                self.module_name, self.model_id,
-                progress_cb=lambda ln: self.line.emit(ln[:200])))
+                self.module_name, self.model_id, progress_cb=parser.feed))
         except Exception:  # noqa: BLE001 - a failed download just reports not-ready
             ok = False
         self.finished_ok.emit(ok)

@@ -178,8 +178,8 @@ class _ModelPickerDialog(MessageBoxBase):
     def _install(self, st):
         w = ModelDownloadWorker(self._plugin, st["id"], self)
         self._workers.append(w)
-        w.line.connect(lambda text: self.titleLabel.setText(
-            tr("Downloading Model", self._lang) + ": " + text[-48:]))
+        w.progress.connect(lambda f, s: self.titleLabel.setText(
+            tr("Downloading Model", self._lang) + f" {int(max(0.0, min(1.0, f)) * 100)}%"))
         w.finished_ok.connect(lambda ok: (
             self.titleLabel.setText(tr("Select Model", self._lang) if ok
                                     else tr("Download Failed", self._lang)),
@@ -362,16 +362,19 @@ class OptionalPluginCard(CardWidget):
                 tr("Downloading Model", self._lang) if busy else "")
 
     def set_install_line(self, text):
-        """Show a live pip/uv + model-download line on the visible usage line
-        while the plugin is installing (so it's not a silent spinner)."""
+        """Show a short text status on the visible usage line (immediate feedback /
+        restart hint) — NOT raw log lines."""
         if self.status_caption is not None:
             self.status_caption.setText(text[-60:])
 
-    def set_download_line(self, text):
-        """Surface a live tqdm download line under the model row while busy."""
-        if self.status_caption is not None and self._busy_download:
-            self.status_caption.setText(
-                tr("Downloading Model", self._lang) + ": " + text[-48:])
+    def set_progress(self, frac, stage):
+        """Show a PERCENTAGE (not log lines) on the visible usage line, with a
+        verb chosen from the stage: 下载中 for the model phase, else 安装中."""
+        if self.status_caption is None:
+            return
+        verb = (tr("Downloading Model", self._lang) if stage == "downloading"
+                else tr("Installing", self._lang))
+        self.status_caption.setText(f"{verb} {int(max(0.0, min(1.0, frac)) * 100)}%")
 
     def set_model_ready(self, ok):
         if self.model_link is not None:
@@ -629,7 +632,7 @@ class PluginsPage(ScrollArea):
         card.set_download_busy(True)
         worker = ModelDownloadWorker(card._mod["name"], model_id)
         self._dl_workers.append(worker)
-        worker.line.connect(lambda text, c=card: c.set_download_line(text))
+        worker.progress.connect(lambda f, s, c=card: c.set_progress(f, s))
         worker.finished_ok.connect(
             lambda ok, c=card, w=worker: self._model_download_done(c, ok, w))
         worker.start()
@@ -662,9 +665,9 @@ class PluginsPage(ScrollArea):
         card.set_install_line(verb + "…")   # immediate visible feedback
         worker = InstallWorker(card._mod["name"], action=action)
         self._worker = worker
-        # Show the live pip/uv + model-download output on the card (visible),
-        # not just the button tooltip (hover-only) — so the user can SEE it work.
-        worker.line.connect(lambda text, c=card: c.set_install_line(text))
+        # Show a visible PERCENTAGE on the card (not log lines), so the user can
+        # see it progress instead of a wall of pip output.
+        worker.progress.connect(lambda f, s, c=card: c.set_progress(f, s))
         worker.finished_ok.connect(
             lambda ok, msg, c=card, a=action, w=worker: self._install_done(c, ok, msg, a, w))
         worker.start()

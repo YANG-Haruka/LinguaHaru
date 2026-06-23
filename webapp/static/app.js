@@ -1518,10 +1518,10 @@ async function pickerInstall(m, s, chipText) {
     try { j = await api("/api/modules/status?name=" + encodeURIComponent(m.name)); }
     catch (e) { return; }
     if (j.status === "queued" || j.status === "running") {
-      const t = j.line ? (": " + j.line.slice(0, 40)) : "";
+      const pct = (j.progress != null) ? " " + Math.round(j.progress * 100) + "%" : "";
       status.innerHTML = pill("busy", (j.status === "queued"
         ? _label("Status Queued", "排队中")
-        : _label("Downloading Model", "正在下载模型…")) + t, "");
+        : _label("Downloading Model", "正在下载模型…")) + pct, "");
       return;
     }
     clearInterval(poll);
@@ -1592,9 +1592,9 @@ async function moduleAction(name, action, btn, statTd) {
       return;
     }
     if (s.status === "running") {
-      // Live progress: show the latest pip/uv line so it's clearly working.
-      const tip = s.line ? (": " + s.line.slice(0, 48)) : "";
-      statTd.innerHTML = pill("busy", verb + "中" + tip, "");
+      // Show a PERCENTAGE, not log lines (lib install 0-70%, model 70-100%).
+      const pct = (s.progress != null) ? " " + Math.round(s.progress * 100) + "%" : "";
+      statTd.innerHTML = pill("busy", verb + "中" + pct, "");
       return;
     }
     clearInterval(poll);

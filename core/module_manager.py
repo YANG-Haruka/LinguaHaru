@@ -45,8 +45,9 @@ import shutil
 
 
 # Optional live-progress sink: a callable(str) invoked with each output line as a
-# job runs, so the UI can show "what pip/uv is doing now" instead of a dead
-# spinner. Jobs run serially (single worker), so a module global is safe.
+# job runs. The UI no longer shows raw lines; instead a _ProgressParser converts
+# them into a PERCENTAGE (see make_progress_parser). Jobs run serially (single
+# worker), so a module global is safe.
 _progress_cb = None
 
 
@@ -54,6 +55,71 @@ def set_progress_callback(cb):
     """Set (or clear with None) the per-line progress sink for the next job."""
     global _progress_cb
     _progress_cb = cb
+
+
+class _ProgressParser:
+    """Turn pip/uv install output (and tqdm model-download lines) into a MONOTONIC
+    fraction + a short stage word, so the UI shows real PROGRESS instead of a wall
+    of log lines. ``emit(frac, stage)`` is called with the overall fraction mapped
+    into [base, base+span].
+
+    Granularity is best-effort: uv resolves a package total then prints one line
+    per installed package; pip prints Collecting/Downloading/Installing lines; the
+    model phase reports a true tqdm percentage. We never go backwards."""
+
+    def __init__(self, emit, base=0.0, span=1.0):
+        self._emit = emit
+        self._base = base
+        self._span = span
+        self._total = 0
+        self._done = 0
+        self._frac = 0.0          # overall (already includes base/span)
+
+    def _push(self, local_frac, stage):
+        local_frac = max(0.0, min(1.0, local_frac))
+        overall = self._base + self._span * local_frac
+        if overall <= self._frac:
+            return                # monotonic — ignore regressions
+        self._frac = overall
+        try:
+            self._emit(round(self._frac, 3), stage)
+        except Exception:  # noqa: BLE001 — progress must never break a job
+            pass
+
+    def feed(self, line):
+        l = (line or "").strip()
+        if not l:
+            return
+        # Total package count (uv: "Resolved N packages"; pip: "Installing
+        # collected packages: a, b, c").
+        m = re.search(r"(?:Resolved|Prepared|Found)\s+(\d+)\s+package", l)
+        if m:
+            self._total = max(self._total, int(m.group(1)))
+            self._push(0.05, "resolving")
+            return
+        m = re.match(r"Installing collected packages:\s*(.+)", l)
+        if m:
+            self._total = max(self._total, len([x for x in m.group(1).split(",") if x.strip()]))
+        # tqdm model-download percentage ("... 45%|####|") — a true percentage.
+        m = re.search(r"(\d{1,3})%\|", l)
+        if m:
+            self._push(int(m.group(1)) / 100.0, "downloading")
+            return
+        # Per-package signals (uv "+ pkg==ver"; pip Collecting/Downloading/Installing).
+        if (l.startswith("+ ") or l.startswith("Collecting ") or l.startswith("Downloading ")
+                or l.startswith("Installing ") or l.startswith("Using cached ")):
+            self._done += 1
+            frac = (self._done / self._total) if self._total else min(0.9, self._done * 0.04)
+            self._push(0.1 + 0.88 * frac, "installing")
+
+    def done(self, stage="done"):
+        self._push(1.0, stage)
+
+
+def make_progress_parser(emit, base=0.0, span=1.0):
+    """Factory for a _ProgressParser whose .feed(line) is used as the
+    set_progress_callback / download_plugin_model progress_cb."""
+    return _ProgressParser(emit, base, span)
 
 
 def _emit(line):
