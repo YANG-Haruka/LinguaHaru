@@ -333,6 +333,83 @@ def _record_install_delta(key, before):
 # via config "torch_cuda_index" (e.g. cu124), or set it to "" to force the CPU
 # build even on a GPU machine.
 _PYTORCH_CUDA_INDEX = "https://download.pytorch.org/whl/cu121"
+# Mainland-China fallback for CUDA torch wheels: the Aliyun mirror of
+# download.pytorch.org/whl. It is a FLAT autoindex (one directory of .whl files),
+# NOT a PEP 503 simple index, so it can't be used with --index-url (pip would 404
+# on .../torch/) — it must be used with --find-links, and we pin the exact
+# +cuNNN version so pip can't fall back to the CPU torch on the PyPI mirror.
+_PYTORCH_OFFICIAL_HOST = "https://download.pytorch.org/whl/"
+_PYTORCH_CHINA_FINDLINKS = "https://mirrors.aliyun.com/pytorch-wheels/{cu}/"
+
+
+def _cu_tag(index):
+    """The cuNNN tag from a pytorch wheel index URL (cu121, cu124 …), or None."""
+    if not index.startswith(_PYTORCH_OFFICIAL_HOST):
+        return None
+    tail = index[len(_PYTORCH_OFFICIAL_HOST):].strip("/")
+    return tail if tail.startswith("cu") else None
+
+
+def _pytorch_host_reachable(index):
+    """HEAD-probe the wheel index host. HTTPError still means the server answered
+    (reachable); only a connection/timeout error means blocked -> use the mirror.
+    Mirrors pick_pypi_index()'s logic so China users don't stall on the slow
+    download.pytorch.org CDN."""
+    import urllib.error
+    try:
+        urllib.request.urlopen(
+            urllib.request.Request(index, method="HEAD"), timeout=4)
+        return True
+    except urllib.error.HTTPError:
+        return True
+    except Exception:  # noqa: BLE001 — unreachable/blocked
+        return False
+
+
+def _wheel_platform_tag():
+    """The current interpreter's wheel platform tag (win_amd64 / linux_x86_64).
+    None for platforms the mirror doesn't carry (skip the GPU swap there)."""
+    if os.name == "nt":
+        return "win_amd64"
+    if sys.platform.startswith("linux"):
+        return "linux_x86_64"
+    return None
+
+
+def _china_cuda_torch_pins(cu):
+    """Discover the newest torch/torchaudio +cuNNN wheels on the Aliyun mirror that
+    match THIS interpreter (cpXY) and platform, and return
+    (find_links_url, ["torch==V+cuNNN", "torchaudio==V+cuNNN"]) or None.
+
+    Pinning the exact local version is what makes --find-links safe: the PyPI
+    mirror has no +cuNNN local version, so pip can only satisfy the pin from the
+    mirror — it can't silently grab a newer CPU torch."""
+    import html
+    import re
+    import urllib.error
+    plat = _wheel_platform_tag()
+    if not plat:
+        return None
+    pytag = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    url = _PYTORCH_CHINA_FINDLINKS.format(cu=cu)
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            page = html.unescape(r.read().decode("utf-8", "replace"))
+    except (urllib.error.URLError, Exception):  # noqa: BLE001 — mirror down -> skip
+        return None
+    hrefs = re.findall(r'href="([^"]+\.whl)"', page)
+    pins = []
+    for pkg in ("torch", "torchaudio"):
+        # torch-2.5.1+cu121-cp311-cp311-win_amd64.whl
+        rx = re.compile(rf"^{pkg}-(\d+\.\d+\.\d+)\+{re.escape(cu)}-{pytag}-{pytag}-{re.escape(plat)}\.whl$")
+        vers = sorted(
+            (m.group(1) for m in (rx.match(h) for h in hrefs) if m),
+            key=lambda v: tuple(int(x) for x in v.split(".")),
+        )
+        if not vers:
+            return None  # this interpreter/platform isn't covered -> don't try
+        pins.append(f"{pkg}=={vers[-1]}+{cu}")
+    return url, pins
 
 
 def _config_get(key, default=None):
@@ -379,15 +456,53 @@ def _maybe_install_cuda_torch(name):
     idx = _config_get("torch_cuda_index", _PYTORCH_CUDA_INDEX)
     if not idx:
         return   # explicitly disabled -> keep CPU torch
+
+    uv = _uv_exe()
+
+    def _install_official(index):
+        if uv:
+            cmd = [uv, "pip", "install", "--python", sys.executable, "--index-url",
+                   index, "torch", "torchaudio"]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", "--index-url", index,
+                   "torch", "torchaudio"]
+        ok, _ = _run(cmd)
+        return ok
+
+    def _install_china(cu):
+        """Aliyun --find-links + pinned +cuNNN versions, deps off the PyPI mirror."""
+        info = _china_cuda_torch_pins(cu)
+        if not info:
+            return False
+        find_links, pins = info
+        app_logger.info("Installing CUDA torch from Aliyun mirror: %s", " ".join(pins))
+        if uv:
+            cmd = [uv, "pip", "install", "--python", sys.executable, "--index-url",
+                   _PYPI_MIRROR, "--find-links", find_links, *pins]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", "--index-url", _PYPI_MIRROR,
+                   "--find-links", find_links, *pins]
+        ok, _ = _run(cmd)
+        return ok
+
+    cu = _cu_tag(idx)
     app_logger.info("NVIDIA GPU detected + CPU torch — installing CUDA torch from %s", idx)
     _emit("检测到 NVIDIA GPU，正在安装 GPU 版 torch（较大，请耐心）… / installing CUDA torch…")
-    uv = _uv_exe()
-    if uv:
-        cmd = [uv, "pip", "install", "--python", sys.executable, "--index-url", idx,
-               "torch", "torchaudio"]
-    else:
-        cmd = [sys.executable, "-m", "pip", "install", "--index-url", idx, "torch", "torchaudio"]
-    ok, _ = _run(cmd)
+    # If the official pytorch host is reachable, prefer it (correct deps, all
+    # platforms). When it's unreachable (mainland China) or the install fails, fall
+    # back to the Aliyun mirror with pinned +cuNNN wheels so the download still
+    # succeeds. Only the official host has a known China mirror mapping (cu != None).
+    ok = False
+    if cu and not _pytorch_host_reachable(idx):
+        app_logger.info("download.pytorch.org unreachable — using Aliyun CUDA torch mirror")
+        _emit("官方源不可达，改用国内镜像下载 GPU torch… / using China mirror for CUDA torch…")
+        ok = _install_china(cu)
+    if not ok:
+        ok = _install_official(idx)
+    if not ok and cu:
+        app_logger.warning("Official CUDA torch index failed; retrying on Aliyun mirror")
+        _emit("官方源失败，切换国内镜像重试 GPU torch… / retrying CUDA torch on China mirror…")
+        ok = _install_china(cu)
     if not ok:
         app_logger.warning("CUDA torch install failed; the CPU build will be used instead.")
 

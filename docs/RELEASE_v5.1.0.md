@@ -46,7 +46,7 @@ LinguaHaru-desktop.zip  bfcf15091fd2e6ca788f31324bf413c9333cfdc9ec1e950b3480a542
 2. 上传完、确认能下载后,**再**更新远程 `version.json`(发布清单)。在资产就绪前更新清单,用户会检查到更新却下载 404。
 
 ## 中国大陆下载通道 / China download channels
-- **依赖(pip)**:已内置清华 PyPI 自动兜底(官方源不可达或安装失败 → 自动切镜像重试)。`torch / paddlepaddle / qwen-asr` 等大包默认装 **CPU** 版;需要 GPU/CUDA 的用户请按自己环境手动安装对应 wheel。
+- **依赖(pip)**:已内置清华 PyPI 自动兜底(官方源不可达或安装失败 → 自动切镜像重试)。默认装 **CPU** 版大包;若检测到 **NVIDIA GPU**,安装含 torch 的插件时会**自动装 CUDA 版 torch**——优先官方 `download.pytorch.org`,国内不可达/失败时**自动改用阿里云 `pytorch-wheels` 镜像并锁定 `+cuXXX` 版本**(用 `--find-links`,避免误装 CPU 版),全程无需手动配置。要强制 CPU 版可把配置 `torch_cuda_index` 设为 `""`。
 - **自动更新**:更新包下载现在**多源兜底**——清单 `assets.<flavor>.urls`(可填国内 OSS/CDN,放最前)→ GitHub 直链 → GitHub 经 ghproxy 等镜像;全部用同一个 `sha256` 校验。即使只填了 GitHub `url`,大陆用户也会自动尝试 ghproxy 镜像。
 - **模型**:不建议只靠首次运行在线拉取。已用 `tools/package_models.ps1` 生成各模型 zip(含 SHA-256,见 `docs/MODELS_SHA256SUMS.txt`);建议把大模型(Qwen3-ASR ~4.7G / Whisper large ~3G 等)放到国内对象存储/网盘,用户下载后解压到 `models/`。HF 走 `hf-mirror.com` 自动兜底,但公益镜像不应作为唯一生产通道。
 - **插件市场**:`plugins-index.json` 目前为空。每个插件条目**必须带 `sha256`**(安装会执行下载的代码,无校验直接拒绝),可选 `size` / `urls`(镜像)。市场正式开放前请先给条目补齐校验。
