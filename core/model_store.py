@@ -106,6 +106,11 @@ def setup_model_env(defer_network=False):
     os.environ.setdefault("MODELSCOPE_CACHE", os.path.join(md, "modelscope"))
     # PaddleOCR / PaddleX official models (PP-OCRv6 etc.) -> md/paddlex/official_models
     os.environ.setdefault("PADDLE_PDX_CACHE_HOME", os.path.join(md, "paddlex"))
+    # Skip PaddleX's "checking connectivity to the model hosters" probe — in
+    # mainland China it can stall for a long time waiting on an unreachable host
+    # (HuggingFace), making the OCR model "fail to download". With the probe off,
+    # PaddleX just downloads from the configured/first source.
+    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
     if not defer_network:
         finish_model_env_setup()
     return md
@@ -118,6 +123,12 @@ def finish_model_env_setup():
     # Pick the huggingface endpoint once (hf libs read HF_ENDPOINT at import).
     if "HF_ENDPOINT" not in os.environ:
         os.environ["HF_ENDPOINT"] = pick_hf_endpoint()
+    # China (HF mirror active): route PaddleX/PaddleOCR model downloads to Baidu
+    # BOS (China-hosted, fast) instead of HuggingFace, and point its HF fallback at
+    # the mirror — so OCR models actually download instead of timing out.
+    if "hf-mirror" in os.environ.get("HF_ENDPOINT", ""):
+        os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", "bos")
+        os.environ.setdefault("PADDLE_PDX_HUGGING_FACE_ENDPOINT", os.environ["HF_ENDPOINT"])
     # One-time pull-in of models already downloaded to the OLD default caches.
     try:
         migrate_legacy_caches()
