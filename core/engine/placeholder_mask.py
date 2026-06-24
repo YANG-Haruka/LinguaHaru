@@ -56,9 +56,13 @@ _PRINTF_RE = re.compile(
     r"[diouxXeEfFgGaAcspn])"       # conversion letter
 )
 
-# ${name} and $name (word chars only). ${...} first so it wins over $name.
-_SHELL_BRACED_RE = re.compile(r"\$\{\w+\}")
-_SHELL_BARE_RE = re.compile(r"\$\w+")
+# ${name} and $name. The NAME must start with a letter/underscore — a bare
+# "$2"/"$100" is a DOLLAR AMOUNT in prose ("$2 per GPU hour"), not a shell
+# variable, and must NOT be treated as a machine token (it was, which dropped
+# such paragraphs as "invalid" and left them untranslated). ${...} first so it
+# wins over $name.
+_SHELL_BRACED_RE = re.compile(r"\$\{[A-Za-z_]\w*\}")
+_SHELL_BARE_RE = re.compile(r"\$[A-Za-z_]\w*")
 
 
 def _find_single_brace_spans(text):
