@@ -62,15 +62,30 @@ class _CallbackTranslator(BaseTranslator):
     name = "linguaharu"  # Must be <= 20 chars for cache
 
     def __init__(self, lang_in, lang_out, translate_callback, cache_key_parts,
-                 ignore_cache=False):
+                 ignore_cache=False, record_cb=None):
         # ignore_cache=False: BabelDOC's SQLite cache dedupes repeated paragraphs
         # and makes re-runs of the same document nearly free. Proofread re-export
         # passes ignore_cache=True so BabelDOC always calls our callback (which
         # returns the user's EDITED text) instead of serving the stale cached one.
         super().__init__(lang_in, lang_out, ignore_cache=ignore_cache)
         self._translate_callback = translate_callback
+        self._record_cb = record_cb
         for key, value in cache_key_parts.items():
             self.add_cache_impact_parameters(key, value)
+
+    def translate(self, text, ignore_cache=False, rate_limit_params=None):
+        # Capture the source->translation pair for the Proofread table HERE (not in
+        # do_translate) so it's recorded even when BabelDOC serves the paragraph
+        # from its SQLite cache — otherwise re-translating a PDF you've translated
+        # before captures nothing and it can't be proofread.
+        result = super().translate(text, ignore_cache=ignore_cache,
+                                   rate_limit_params=rate_limit_params)
+        if self._record_cb:
+            try:
+                self._record_cb(text, result)
+            except Exception:  # noqa: BLE001 — recording must never break translation
+                pass
+        return result
 
     def do_translate(self, text, rate_limit_params=None):
         return self._translate_callback(text)
@@ -327,7 +342,6 @@ class PdfTranslator(DocumentTranslator):
                         app_logger.warning(f"PDF polish skipped: {e}")
                 with self.lock:
                     self._qa_pairs.append((stripped, result))
-                    self._proofread_pairs.append((stripped, result))
                 return result
             app_logger.warning(
                 f"Unparseable translation output for paragraph {paragraph_index} "
@@ -336,11 +350,18 @@ class PdfTranslator(DocumentTranslator):
 
         with self.lock:
             self._failed_paragraphs.append(paragraph_index)
-            # Keep it in the proofread table (translation = source) so the user
-            # can supply a translation for it by hand.
-            self._proofread_pairs.append((stripped, stripped))
         app_logger.warning(f"Paragraph {paragraph_index} kept untranslated: {stripped[:80]}")
         return text
+
+    def _record_pair(self, text, result):
+        """Record a source->translation pair for the Proofread table. Called from
+        _CallbackTranslator.translate() for EVERY paragraph (cache hit or fresh),
+        so the table is complete even when BabelDOC serves from its cache."""
+        s = (text or "").strip()
+        if not s:
+            return
+        with self.lock:
+            self._proofread_pairs.append((s, result if result is not None else s))
 
     def _check_stop_and_signal_cancel(self):
         try:
@@ -492,6 +513,7 @@ class PdfTranslator(DocumentTranslator):
                 "temp": str(_params.get("temperature")),
                 "top_p": str(_params.get("top_p")),
             },
+            record_cb=self._record_pair,   # capture proofread pairs (cache-proof)
         )
         config = self._create_babeldoc_config(translator)
 

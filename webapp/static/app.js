@@ -1706,7 +1706,7 @@ async function loadProofreadDocs() {
   fillSelect($("proofread-select"), data.docs.length ? data.docs : ["(无可校对文档)"]);
   if (!data.docs.length) {
     $("proofread-table").innerHTML = "<tr><td style='border:none'>" +
-      emptyState(EICON.files, "暂无可校对的文档", "完成一次翻译后会出现在这里（不支持 PDF）。") + "</td></tr>";
+      emptyState(EICON.files, "暂无可校对的文档", "完成一次翻译后会出现在这里。") + "</td></tr>";
     $("proofread-pager").replaceChildren();
     $("proofread-status").textContent = "";
     return;
