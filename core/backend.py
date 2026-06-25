@@ -454,7 +454,13 @@ def _local_batch_budget(model):
         except Exception:  # noqa: BLE001 — probe is best-effort
             ctx = None
     if ctx and ctx > 0:
-        return int(max(256, min(2048, ctx * 0.35)))
+        # ~40% of the window for the input batch; translate_offline's dynamic reply
+        # cap keeps input + reply within ctx. Capped at 4096 (the online batch size)
+        # so a local model loaded with a BIG context uses FEW large batches instead
+        # of many tiny ones — far fewer slow sequential local calls. A user who finds
+        # a big document slow on a local model should load it with a larger context
+        # window (e.g. 16384) in LM Studio; the batch then scales up automatically.
+        return int(max(256, min(4096, ctx * 0.4)))
     return 1024
 
 
