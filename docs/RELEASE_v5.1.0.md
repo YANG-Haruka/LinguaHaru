@@ -7,8 +7,8 @@ One-stop AI translation — documents, subtitles, images, real-time voice. Porta
 
 | 版本 | 说明 | 文件 |
 |---|---|---|
-| **Web 版** | 浏览器界面 (FastAPI),最小 | `LinguaHaru-web.zip` (~190 MB) |
-| **桌面版** | 原生 Qt 界面 | `LinguaHaru-desktop.zip` (~300 MB) |
+| **Web 版** | 浏览器界面 (FastAPI),最小 | `LinguaHaru-web.zip` (~80 MB) |
+| **桌面版** | 原生 Qt 界面 | `LinguaHaru-desktop.zip` (~121 MB) |
 
 > 模型不含在安装包内,按需在「插件」页下载,或从网盘获取 `models/` 文件夹放到程序根目录。
 > Models are not bundled — download them on demand from the Plugins page, or drop a `models/` folder into the app root.
@@ -33,8 +33,8 @@ One-stop AI translation — documents, subtitles, images, real-time voice. Porta
 
 ## 校验和 / Checksums (SHA-256)
 ```
-LinguaHaru-web.zip      b93d0d25ff930e1e08ed266df629eb583f6edd800c1eb8811ae1650aa468884e
-LinguaHaru-desktop.zip  bfcf15091fd2e6ca788f31324bf413c9333cfdc9ec1e950b3480a54225d00095
+LinguaHaru-web.zip      2ed84726c4079c96c5b89cbcba47603188786955aeab353290b51645f260ff37
+LinguaHaru-desktop.zip  2d83435b871650afecc34686fbd55e5ce2c1275b59b44ed29b9d90b2af59eda4
 ```
 > 这两个哈希已写入 `version.json`(assets[flavor].sha256),智能更新已启用。
 > ⚠️ 上传到 GitHub Release 的 zip 必须是本次构建的同一文件,否则哈希不匹配、自更新会拒绝。
