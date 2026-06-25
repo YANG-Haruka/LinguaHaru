@@ -414,7 +414,14 @@ def max_token_for_model(model=None):
     """Per-request input batch budget. A per-model "max_token" in the interface
     config wins (so a big-context model can batch more text per request); else the
     global config "max_token" (default 4096). Bigger batches => far fewer requests
-    for a document => less rate-limit/429 pressure + better context."""
+    for a document => less rate-limit/429 pressure + better context.
+
+    LOCAL models (Ollama / LM Studio) are the exception: they load a SMALL context
+    window (often 4096) no matter the model's theoretical max, so the online 4096
+    batch overflows it (input + reply > ctx => truncated/empty output, whole batch
+    lost). For those we size the batch from the model's actual loaded context."""
+    if model and (model.startswith("(LM Studio)") or model.startswith("(Ollama)")):
+        return _local_batch_budget(model)
     if model:
         mc = read_api_config(model) or {}
         mt = mc.get("max_token")
@@ -424,6 +431,31 @@ def max_token_for_model(model=None):
             except (TypeError, ValueError):
                 pass
     return read_config().get("max_token", 4096)
+
+
+def _local_batch_budget(model):
+    """Input batch budget for a local (Ollama / LM Studio) model: ~35% of the
+    model's loaded context window, leaving the rest for the prompt, accumulated
+    context and the reply (incl. a reasoning model's hidden tokens). Honors a
+    user-set per-model "max_token". Falls back to a conservative 1024 when the
+    window can't be detected (e.g. the model isn't loaded yet) — small enough to
+    be safe on a 4096-window model, which is the common default."""
+    try:
+        mc = read_api_config(model) or {}
+        if mc.get("max_token"):
+            return max(128, int(mc["max_token"]))
+    except (TypeError, ValueError, OSError):
+        pass
+    ctx = None
+    if model.startswith("(LM Studio)"):
+        try:
+            from core.llm.offline_translation import lm_studio_context
+            ctx = lm_studio_context(model.split(")", 1)[1].strip())
+        except Exception:  # noqa: BLE001 — probe is best-effort
+            ctx = None
+    if ctx and ctx > 0:
+        return int(max(256, min(2048, ctx * 0.35)))
+    return 1024
 
 
 # --- Model list discovery (mirrors app.py startup logic) ---------------------

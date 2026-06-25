@@ -705,7 +705,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
 
     translator = translator_class(
         file_path, model, use_online, api_key, src_code, dst_code, continue_mode,
-        max_token=backend.max_token_for_model(model if use_online else None),
+        max_token=backend.max_token_for_model(model),
         max_retries=backend.max_retries_for_model(model if use_online else None),
         thread_count=backend.thread_count_for_mode(use_online, model),
         glossary_path=gpath, temp_dir=temp_dir, result_dir=result_dir,

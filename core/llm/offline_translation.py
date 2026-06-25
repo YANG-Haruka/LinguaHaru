@@ -190,12 +190,26 @@ def translate_offline(messages, model):
                 
         elif service.lower() == "lm_studio":
             url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/v1/chat/completions"
-            
+
+            # Fit the reply budget to the model's ACTUAL loaded context so a batch
+            # never overflows it (input + reply <= ctx). Local models load a small
+            # window (often 4096) regardless of their theoretical max, and reasoning
+            # models spend hidden tokens out of this same budget — a fixed 2048 cap
+            # on a 3.7K-token input batch left no room for the reply, truncating the
+            # JSON to garbage (0 usable segments). ctx unknown -> assume 4096.
+            ctx = lm_studio_context(model_name) or 4096
+            try:
+                from core.engine.calculation_tokens import num_tokens_from_string
+                in_tok = sum(num_tokens_from_string(str(m.get("content", "")))
+                             for m in messages)
+            except Exception:  # noqa: BLE001
+                in_tok = 0
+            out_cap = max(256, min(2048, ctx - in_tok - 128))
             payload = {
                 "model": model_name,
                 "messages": messages,
                 "temperature": mode_temp,
-                "max_tokens": 2048,
+                "max_tokens": out_cap,
                 "stream": False
             }
             
@@ -432,6 +446,38 @@ def get_ollama_models():
     except Exception as e:
         app_logger.error(f"Unexpected error fetching Ollama models: {e}")
         return []
+
+_LM_CTX_CACHE = {}  # model_id -> loaded context length (int) once known
+
+
+def lm_studio_context(model_id):
+    """The ACTUAL loaded context window of an LM Studio model (its real working
+    limit, e.g. 4096) via the native /api/v0/models endpoint — NOT
+    `max_context_length`, which is the theoretical max (often 128K+) that LM Studio
+    does NOT allocate when it loads the model. Returns an int, or None if the model
+    isn't loaded yet / can't be probed (caller then uses a conservative default).
+    Cached per id once a positive value is known (the loaded window rarely changes
+    during a run)."""
+    if model_id in _LM_CTX_CACHE:
+        return _LM_CTX_CACHE[model_id]
+    _detect_lm_studio_port()
+    ctx = None
+    try:
+        url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/api/v0/models"
+        r = requests.get(url, timeout=3)
+        if r.status_code == 200:
+            for m in r.json().get("data", []):
+                if m.get("id") == model_id:
+                    lc = m.get("loaded_context_length")
+                    if lc and int(lc) > 0:        # the real, allocated window
+                        ctx = int(lc)
+                    break
+    except Exception as e:  # noqa: BLE001 — best-effort probe
+        app_logger.debug(f"LM Studio context probe failed: {e}")
+    if ctx:                  # don't cache None: the model may load on the 1st batch
+        _LM_CTX_CACHE[model_id] = ctx
+    return ctx
+
 
 def get_lm_studio_models():
     """Get list of available LM Studio models."""

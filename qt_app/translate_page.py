@@ -592,7 +592,7 @@ class TranslatePage(QStackedWidget):
             src_lang=self.src_combo.currentText(),
             dst_lang=self.dst_combo.currentText(),
             # Per-model input batch budget (interface config) -> global default.
-            max_token=backend.max_token_for_model(model if use_online else None),
+            max_token=backend.max_token_for_model(model),
             # Honor the per-model "max_retries" set in Interface Management (the
             # global default is only a fallback) — matches the web frontend.
             max_retries=backend.max_retries_for_model(model if use_online else None),
