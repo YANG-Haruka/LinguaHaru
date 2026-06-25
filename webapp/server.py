@@ -1546,14 +1546,33 @@ def pick_folder():
 # --------------------------------------------------------------------------- #
 # Proofread (scoped to the caller's session; IDOR / traversal protected)
 # --------------------------------------------------------------------------- #
+def _proofread_external():
+    """True when proofreading must stay per-browser-session: LAN or public deploy,
+    where several people share the host. Local single-user mode (loopback only)
+    shares ONE proofread view with the Qt desktop app — same as history — so a doc
+    translated in either frontend can be re-calibrated from the other."""
+    return backend.get_config("lan_mode", False) or server_mode_on()
+
+
+def _resolve_proofread(name, session_id):
+    """Resolve+authorize a proofread doc name to a folder, or None. External mode
+    confines to the caller's session (IDOR/traversal guard); local mode resolves
+    against the whole temp tree shared with Qt (still traversal-guarded)."""
+    if _proofread_external():
+        return sessions.proofread_doc_dir(name, session_id)
+    return backend._proofread_doc_dir(name)
+
+
 @app.get("/api/proofread/docs")
 def proofread_docs(request: Request):
-    return {"docs": sessions.list_proofread_docs(request.state.session_id)}
+    if _proofread_external():
+        return {"docs": sessions.list_proofread_docs(request.state.session_id)}
+    return {"docs": backend.list_proofread_docs()}
 
 
 @app.get("/api/proofread")
 def proofread_load(name: str, request: Request):
-    if sessions.proofread_doc_dir(name, request.state.session_id) is None:
+    if _resolve_proofread(name, request.state.session_id) is None:
         raise HTTPException(404, "Translation data not found")
     try:
         rows = backend.load_proofread_table(name)
@@ -1567,7 +1586,7 @@ def proofread_load(name: str, request: Request):
 @app.post("/api/proofread")
 async def proofread_save(payload: dict, request: Request):
     name = payload.get("name")
-    if sessions.proofread_doc_dir(name, request.state.session_id) is None:
+    if _resolve_proofread(name, request.state.session_id) is None:
         raise HTTPException(404, "Translation data not found")
     rows = [tuple(r) for r in payload.get("rows", [])]
     try:
@@ -1581,7 +1600,7 @@ async def proofread_save(payload: dict, request: Request):
 async def proofread_export(payload: dict, request: Request):
     name = payload.get("name")
     sid = request.state.session_id
-    if sessions.proofread_doc_dir(name, sid) is None:
+    if _resolve_proofread(name, sid) is None:
         raise HTTPException(404, "Translation data not found")
     try:
         # Offload to a thread: a PDF re-export re-renders via BabelDOC (slow), and
@@ -1607,7 +1626,7 @@ EXPORTS = {}  # (session_id, doc_name) -> exported file path
 @app.get("/api/proofread/download")
 def proofread_download(name: str, request: Request):
     sid = request.state.session_id
-    if sessions.proofread_doc_dir(name, sid) is None:
+    if _resolve_proofread(name, sid) is None:
         raise HTTPException(404, "Export not ready")
     path = EXPORTS.get((sid, name))
     if not path or not os.path.exists(path):

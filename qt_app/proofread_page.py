@@ -53,6 +53,7 @@ class ProofreadPage(QWidget):
         self._all_rows = []        # full document model: [(count, original, translated)]
         self._page = 0
         self._capturing = False    # guard so populating the table isn't seen as edits
+        self._refreshing = False   # guard so repopulating the combo doesn't auto-load
         self.PAGE = 100
 
         layout = QVBoxLayout(self)
@@ -67,13 +68,14 @@ class ProofreadPage(QWidget):
         top.addWidget(self.doc_label)
         self.combo = ComboBox()
         self.combo.setMinimumWidth(280)
+        # Selecting a doc loads it immediately (matches the web Proofread tab,
+        # which has no separate Load button) — the old manual "Load" button was
+        # mislabeled "Load Glossary" and made it look like nothing happened.
+        self.combo.currentIndexChanged.connect(self._on_doc_selected)
         top.addWidget(self.combo, 1)
         self.refresh_btn = ToolButton(FluentIcon.SYNC)
         self.refresh_btn.clicked.connect(self.refresh_docs)
         top.addWidget(self.refresh_btn)
-        self.load_btn = PushButton(FluentIcon.VIEW, tr("Load Glossary", lang))
-        self.load_btn.clicked.connect(self.on_load)
-        top.addWidget(self.load_btn)
         layout.addLayout(top)
 
         self.table = TableWidget()
@@ -121,7 +123,6 @@ class ProofreadPage(QWidget):
         self._lang = lang
         self.title.setText(tr("Proofread", lang))
         self.doc_label.setText(tr("Proofread Document", lang) + ":")
-        self.load_btn.setText(tr("Load Glossary", lang))
         self.save_btn.setText(tr("Save Edits", lang))
         self.export_btn.setText(tr("Re-export", lang))
         self.open_output_btn.setText(tr("Open Output Folder", lang))
@@ -138,14 +139,32 @@ class ProofreadPage(QWidget):
             ])
 
     def refresh_docs(self):
-        current = self.combo.currentText() if self.combo.count() else None
+        # Keep the current selection across a refresh; otherwise default to the
+        # first doc. Repopulating fires currentIndexChanged, so guard against the
+        # auto-load handler and load once explicitly at the end.
+        prev = self._doc_name or (self.combo.currentText() if self.combo.count() else None)
+        self._refreshing = True
         self.combo.clear()
         docs = backend.list_proofread_docs()
         self.combo.addItems(docs)
-        if current and current in docs:
-            self.combo.setCurrentText(current)
+        if prev and prev in docs:
+            self.combo.setCurrentText(prev)
+        self._refreshing = False
         if not docs:
             self.status_label.setText(tr("No proofread documents", self._lang))
+            self.table.setRowCount(0)
+            self._all_rows = []
+            self._doc_name = None
+            return
+        self.on_load()   # load whatever is now selected (restored or first)
+
+    def _on_doc_selected(self, _index):
+        """Load the chosen doc as soon as the combo selection changes (web parity).
+        Skipped while refresh_docs() is repopulating the combo."""
+        if self._refreshing:
+            return
+        if self.combo.currentText():
+            self.on_load()
 
     def on_load(self):
         name = self.combo.currentText()

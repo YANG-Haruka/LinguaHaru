@@ -55,6 +55,11 @@ def main():
     backend.get_custom_paths = lambda: (TEMP, RESULT, LOG)
     from webapp import server, sessions
 
+    # Per-session proofread isolation only applies in multi-user (LAN/server)
+    # mode; local single-user mode deliberately SHARES the proofread view with the
+    # Qt desktop app. Force external mode so the IDOR checks below are meaningful.
+    server.server_mode_on = lambda: True
+
     ca = TestClient(server.app)
     ca.get("/api/bootstrap")
     sid_a = ca.cookies.get(sessions.SESSION_COOKIE)
@@ -78,6 +83,20 @@ def main():
           ca.get("/api/proofread", params={"name": "../config/system_config"}).status_code == 404)
     check("foreign/unknown task download rejected",
           ca.get("/api/download/deadbeefdead").status_code == 404)
+
+    # Local single-user mode SHARES the whole temp tree (parity with Qt): a doc
+    # outside any session subdir is visible and loadable, and one session can see
+    # another's doc (it's the same person across browser tabs / the Qt app).
+    server.server_mode_on = lambda: False
+    _make_doc("desktopdoc", "")   # temp/desktopdoc/ — a Qt-style top-level doc
+    docs_local = ca.get("/api/proofread/docs").json()["docs"]
+    check("local mode lists the Qt-style shared doc", "desktopdoc" in docs_local, str(docs_local))
+    check("local mode loads a shared doc",
+          ca.get("/api/proofread", params={"name": "desktopdoc"}).status_code == 200)
+    check("local mode shares across sessions (no IDOR walls)",
+          ca.get("/api/proofread", params={"name": f"{sid_b}/docB"}).status_code == 200)
+    check("traversal still rejected in local mode",
+          ca.get("/api/proofread", params={"name": "../config/system_config"}).status_code == 404)
 
     shutil.rmtree(SAND, ignore_errors=True)
 

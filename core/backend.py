@@ -662,27 +662,38 @@ def _is_finished_doc(folder):
 
 
 def list_proofread_docs():
-    """List finished, proofreadable docs across the whole temp tree.
+    """List finished, proofreadable docs anywhere in the temp tree.
 
-    Scans flat legacy docs (temp/<doc>) and one level deep (temp/<sub>/<doc>),
-    requiring dst_translated.json + manifest.json and excluding PDF."""
+    Walks the whole temp tree (bounded depth) and returns every folder that holds
+    dst_translated.json + manifest.json, named by its path relative to temp (with
+    forward slashes). A bounded recursive walk — instead of the old flat + 1-level
+    scan — so BOTH frontends' layouts are found and SHARED in local single-user
+    mode: Qt writes ``temp/<run-stamp>/<doc>`` (and ``…/<iso>/<doc>`` for same-name
+    isolation) while the Web app writes ``temp/<session>/<task>/<doc>``. Without
+    the deeper walk a Qt translation was invisible to Web's proofread list and
+    vice-versa."""
     temp_dir, _, _ = get_custom_paths()
+    base = os.path.realpath(temp_dir)
     docs = []
-    try:
-        for name in sorted(os.listdir(temp_dir)):
-            folder = os.path.join(temp_dir, name)
-            if not os.path.isdir(folder):
+
+    def _walk(folder, rel, depth):
+        if depth > 4:   # safety bound; real layouts are 1-3 deep
+            return
+        try:
+            entries = sorted(os.listdir(folder))
+        except OSError:
+            return
+        for name in entries:
+            sub = os.path.join(folder, name)
+            if not os.path.isdir(sub):
                 continue
-            if _is_finished_doc(folder):
-                docs.append(name)
+            relname = f"{rel}/{name}" if rel else name
+            if _is_finished_doc(sub):
+                docs.append(relname)     # a doc's own subfolders aren't separate docs
                 continue
-            # One level deep (session-id style subdirs)
-            for sub in sorted(os.listdir(folder)):
-                subfolder = os.path.join(folder, sub)
-                if os.path.isdir(subfolder) and _is_finished_doc(subfolder):
-                    docs.append(f"{name}/{sub}")
-    except OSError:
-        pass
+            _walk(sub, relname, depth + 1)
+
+    _walk(base, "", 0)
     return docs
 
 
