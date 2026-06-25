@@ -238,38 +238,75 @@ class MainWindow(FluentWindow):
         QTimer.singleShot(0, self._build_deferred_pages)
 
     def _build_deferred_pages(self):
-        """Construct + wire the heavier pages after the window is visible. They
-        all sit AFTER the eager landing page in the nav, so appending preserves
-        the order/grouping."""
+        """Construct the heavier pages ONE PER EVENT-LOOP TICK after the window is
+        visible. Building all seven synchronously froze the UI thread ~1.2s on
+        first paint (Settings ~0.6s + Plugins ~0.3s dominate); streaming them in
+        keeps the window responsive — the eager landing page is usable immediately
+        and the nav menu fills in over ~1s. Steps run in nav order so each append
+        preserves the order/grouping."""
         if self._deferred_built:
             return
         self._deferred_built = True
         nav = self.navigationInterface
-        self.translate_page = TranslatePage(self, lang=self._lang)
-        self.live_page = LivePage(self, lang=self._lang)
-        self.glossary_page = GlossaryPage(self, lang=self._lang)
-        self.proofread_page = ProofreadPage(self, lang=self._lang)
-        self.history_page = HistoryPage(self, lang=self._lang)
-        self.plugins_page = PluginsPage(self, lang=self._lang)
-        self.settings_page = SettingsPage(self, lang=self._lang)
-        # Continue the nav order after "Translate" (quick).
-        self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
-                             tr("File Translation", self._lang))
-        self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
-                             tr("Real-Time Voice", self._lang))
-        nav.addSeparator()
-        self.addSubInterface(self.glossary_page, FluentIcon.DICTIONARY,
-                             tr("Glossary", self._lang))
-        self.addSubInterface(self.proofread_page, FluentIcon.EDIT,
-                             tr("Proofread", self._lang))
-        self.addSubInterface(self.history_page, FluentIcon.HISTORY,
-                             tr("History", self._lang))
-        nav.addSeparator()
-        self.addSubInterface(self.plugins_page, FluentIcon.APPLICATION,
-                             tr("Plugins", self._lang))
-        nav.addSeparator()
-        self.addSubInterface(self.settings_page, FluentIcon.SETTING,
-                             tr("Settings", self._lang))
+
+        def _s_translate():
+            self.translate_page = TranslatePage(self, lang=self._lang)
+            self.addSubInterface(self.translate_page, FluentIcon.LANGUAGE,
+                                 tr("File Translation", self._lang))
+
+        def _s_live():
+            self.live_page = LivePage(self, lang=self._lang)
+            self.addSubInterface(self.live_page, FluentIcon.MICROPHONE,
+                                 tr("Real-Time Voice", self._lang))
+            nav.addSeparator()
+
+        def _s_glossary():
+            self.glossary_page = GlossaryPage(self, lang=self._lang)
+            self.addSubInterface(self.glossary_page, FluentIcon.DICTIONARY,
+                                 tr("Glossary", self._lang))
+
+        def _s_proofread():
+            self.proofread_page = ProofreadPage(self, lang=self._lang)
+            self.addSubInterface(self.proofread_page, FluentIcon.EDIT,
+                                 tr("Proofread", self._lang))
+
+        def _s_history():
+            self.history_page = HistoryPage(self, lang=self._lang)
+            self.addSubInterface(self.history_page, FluentIcon.HISTORY,
+                                 tr("History", self._lang))
+            nav.addSeparator()
+
+        def _s_plugins():
+            self.plugins_page = PluginsPage(self, lang=self._lang)
+            self.addSubInterface(self.plugins_page, FluentIcon.APPLICATION,
+                                 tr("Plugins", self._lang))
+            nav.addSeparator()
+
+        def _s_settings():
+            self.settings_page = SettingsPage(self, lang=self._lang)
+            self.addSubInterface(self.settings_page, FluentIcon.SETTING,
+                                 tr("Settings", self._lang))
+            self._wire_deferred_pages()
+
+        self._build_steps = [_s_translate, _s_live, _s_glossary, _s_proofread,
+                             _s_history, _s_plugins, _s_settings]
+        self._drain_build_steps()
+
+    def _drain_build_steps(self):
+        """Run the next deferred-page build step, then yield to the event loop
+        (paint/input) before the next — so the window never freezes for the whole
+        build."""
+        from PySide6.QtCore import QTimer
+        if not getattr(self, "_build_steps", None):
+            return
+        step = self._build_steps.pop(0)
+        step()
+        if self._build_steps:
+            QTimer.singleShot(0, self._drain_build_steps)
+
+    def _wire_deferred_pages(self):
+        """Cross-page wiring + first navigation + onboarding, run once the last
+        deferred page (Settings) exists."""
         # Cross-page wiring (now that the pages exist).
         self.settings_page.on_ui_lang_changed = self.on_lang_changed
         self.interface_page.on_active_changed = self.translate_page.refresh_active_interface

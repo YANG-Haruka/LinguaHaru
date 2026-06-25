@@ -117,7 +117,10 @@ class ProofreadPage(QWidget):
         self.status_label = BodyLabel("")
         layout.addWidget(self.status_label)
 
-        self.refresh_docs()
+        # NOTE: no scan/auto-load here — the temp scan + first-doc render would run
+        # while this page is built at startup (blocking the UI thread). MainWindow
+        # calls refresh_docs() each time the user opens this page (_on_page_changed),
+        # so loading happens lazily, only when actually needed.
 
     def retranslate(self, lang):
         self._lang = lang

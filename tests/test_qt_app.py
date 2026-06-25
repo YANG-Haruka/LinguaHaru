@@ -52,7 +52,12 @@ def test_main_window():
     from qt_app.main_window import MainWindow
     w = MainWindow()
     w.show()
-    app.processEvents()
+    # Deferred pages now build one-per-event-loop-tick (so startup doesn't freeze);
+    # pump until the last one (Settings) exists instead of a single processEvents().
+    import time as _time
+    _deadline = _time.time() + 10
+    while w.settings_page is None and _time.time() < _deadline:
+        app.processEvents()
     assert w.translate_page.objectName() == "TranslatePage"
     assert w.glossary_page.objectName() == "GlossaryPage"
     assert w.settings_page.objectName() == "SettingsPage"
