@@ -324,10 +324,13 @@ def _group_text_regions(line_regions):
     return merged
 
 
-def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
-    """Run OCR on the image and save recognized text regions to src.json.
+def ocr_and_group_image(file_path, src_lang=None):
+    """OCR an image and return (content_data, regions) WITHOUT touching disk.
 
-    `src_lang` auto-selects the OCR recognition language (Japanese/Korean/etc.)."""
+    content_data = the translatable entries (count_src/type/value); regions = every
+    detected region with rect/score/needs_translation (+ erase_rects/value). In
+    manga mode the regions are bubble-grouped. Reused per-page by the manga PDF
+    translator; extract_image_content_to_json() wraps this and writes the files."""
     texts, boxes, scores = _run_ocr(file_path, src_lang)
     # Some engines/versions omit scores; zip() would then truncate to the
     # shortest list and silently drop ALL text. Pad with 1.0 (treated confident).
@@ -394,6 +397,14 @@ def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
                 "type": "text",
                 "value": region["value"],
             })
+    return content_data, regions
+
+
+def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
+    """Run OCR on the image and save recognized text regions to src.json.
+
+    `src_lang` auto-selects the OCR recognition language (Japanese/Korean/etc.)."""
+    content_data, regions = ocr_and_group_image(file_path, src_lang)
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
@@ -504,35 +515,12 @@ def _fit_text(draw, text, rect, font_path):
     return font, [text], 12
 
 
-def write_translated_content_to_image(file_path, original_json_path, translated_json_path,
-                                      temp_dir, result_dir, src_lang=None, dst_lang=None):
-    """Erase original text regions and render translations in their place.
+def render_on_image(image, regions, translations, dst_lang=None):
+    """Erase the original text (inpaint) and draw the translations onto a BGR image.
 
-    Also writes a side-by-side text file (original -> translation) for cases
-    where the re-rendered layout is not good enough."""
-    filename = os.path.splitext(os.path.basename(file_path))[0]
-    extension = os.path.splitext(file_path)[1].lower()
-    temp_folder = os.path.join(temp_dir, filename)
-
-    with open(os.path.join(temp_folder, "regions.json"), encoding="utf-8") as f:
-        regions = json.load(f)
-    with open(translated_json_path, encoding="utf-8") as f:
-        translated_data = json.load(f)
-
-    translations = {item["count_src"]: item["translated"] for item in translated_data}
-
-    image = cv2.imdecode(np.fromfile(file_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if image is None:
-        # OpenCV can't decode some formats (e.g. GIF); fall back to PIL.
-        try:
-            pil = Image.open(file_path).convert("RGB")
-            image = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
-        except Exception as e:
-            raise RuntimeError(f"Failed to read image: {file_path} ({e})")
-
-    # Erase translated regions via inpainting. Dilate the mask first so the
-    # stroke/anti-aliased edge of the original glyphs is also covered (otherwise
-    # a faint outline of the source text remains around the patch).
+    image: cv2 BGR ndarray. regions: list with rect/needs_translation/erase_rects.
+    translations: {count_src: translated}. Returns a PIL RGB image. Pure in-memory
+    (no disk) so the manga PDF translator can reuse it per page."""
     mask = np.zeros(image.shape[:2], np.uint8)
     to_render = []
     for region in regions:
@@ -583,6 +571,36 @@ def write_translated_content_to_image(file_path, original_json_path, translated_
             for i, line in enumerate(lines):
                 draw.text((x1, y1 + i * line_h), line, font=font, fill=fg,
                           stroke_width=sw, stroke_fill=stroke)
+    return pil_image
+
+
+def write_translated_content_to_image(file_path, original_json_path, translated_json_path,
+                                      temp_dir, result_dir, src_lang=None, dst_lang=None):
+    """Erase original text regions and render translations in their place.
+
+    Also writes a side-by-side text file (original -> translation) for cases
+    where the re-rendered layout is not good enough."""
+    filename = os.path.splitext(os.path.basename(file_path))[0]
+    extension = os.path.splitext(file_path)[1].lower()
+    temp_folder = os.path.join(temp_dir, filename)
+
+    with open(os.path.join(temp_folder, "regions.json"), encoding="utf-8") as f:
+        regions = json.load(f)
+    with open(translated_json_path, encoding="utf-8") as f:
+        translated_data = json.load(f)
+
+    translations = {item["count_src"]: item["translated"] for item in translated_data}
+
+    image = cv2.imdecode(np.fromfile(file_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        # OpenCV can't decode some formats (e.g. GIF); fall back to PIL.
+        try:
+            pil = Image.open(file_path).convert("RGB")
+            image = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            raise RuntimeError(f"Failed to read image: {file_path} ({e})")
+
+    pil_image = render_on_image(image, regions, translations, dst_lang)
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"

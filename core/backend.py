@@ -70,6 +70,14 @@ def get_translator_class(
 ):
     """Import and return the translator class (or a partial with the bilingual
     knobs bound) for a file extension. Copied from app.get_translator_class."""
+    # 漫画模式 (manga_mode): a PDF is treated as a manga/scanned comic — rasterize
+    # pages, bubble-group + translate as images, repack to PDF. Images already go
+    # through the image pipeline (which honors manga_mode internally), so only the
+    # PDF route needs swapping here.
+    if file_extension.lower() == ".pdf" and read_config().get("manga_mode", False):
+        from core.translators.manga_pdf_translator import MangaPdfTranslator
+        return MangaPdfTranslator
+
     module_path = TRANSLATOR_MODULES.get(file_extension.lower())
     if not module_path:
         return None
@@ -828,6 +836,26 @@ def _export_pdf_proofread(folder, manifest, doc_name, dst_json, original_copy):
     return final_path
 
 
+def _export_manga_pdf_proofread(folder, manifest, doc_name):
+    """Re-render a manga-mode PDF from EDITED translations: draw the edited text
+    onto the cached page images (manga_pages.json) and repack to a PDF. No LLM,
+    no OCR — just re-render + repack."""
+    from core.translators.manga_pdf_translator import render_manga_pages_to_pdf
+    with open(os.path.join(folder, "manga_pages.json"), encoding="utf-8") as f:
+        pages_meta = json.load(f)
+    with open(os.path.join(folder, "dst_translated.json"), encoding="utf-8") as f:
+        translations = {item["count_src"]: item["translated"] for item in json.load(f)}
+    _, result_dir, _ = get_custom_paths()
+    src = manifest.get("src_lang", "en")
+    dst = manifest.get("dst_lang", "en")
+    name = os.path.basename(doc_name.replace("/", os.sep))
+    produced = render_manga_pages_to_pdf(
+        pages_meta, translations, folder, result_dir, dst, name, src)
+    final_path = os.path.join(result_dir, f"{name}_{src}2{dst}_proofread.pdf")
+    os.replace(produced, final_path)
+    return final_path
+
+
 def export_proofread_doc(doc_name):
     """Re-export the document from the (edited) dst_translated.json using the
     original-format writer and the copied original file. Returns the absolute
@@ -845,7 +873,11 @@ def export_proofread_doc(doc_name):
 
     # PDF re-export re-renders via BabelDOC from the edited translations (it has
     # no in-place text writer like the other formats), so it takes its own path.
+    # A manga-mode PDF instead re-renders the page images (manga_pages.json) and
+    # repacks — detected by the presence of that file.
     if ext == ".pdf":
+        if os.path.exists(os.path.join(folder, "manga_pages.json")):
+            return _export_manga_pdf_proofread(folder, manifest, doc_name)
         return _export_pdf_proofread(folder, manifest, doc_name, dst_json, original_copy)
 
     for required in (src_json, dst_json, original_copy):

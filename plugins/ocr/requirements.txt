@@ -13,3 +13,5 @@ opencv-python-headless>=4.8
 Pillow>=10
 numpy
 huggingface_hub>=0.20
+# Manga mode for PDF rasterizes pages -> images and repacks the result to a PDF.
+pymupdf>=1.24
