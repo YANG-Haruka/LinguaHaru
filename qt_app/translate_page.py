@@ -195,6 +195,11 @@ class TranslatePage(QStackedWidget):
         self.pdf_card.setVisible(False)
         layout.addWidget(self.pdf_card)
 
+        # --- Manga mode (shown for PDF or image: bubble-group + vertical typeset) ---
+        self.manga_card = self._build_manga_card(lang, config)
+        self.manga_card.setVisible(False)
+        layout.addWidget(self.manga_card)
+
         # --- Action buttons ---
         action_row = QHBoxLayout()
         self.translate_btn = PrimaryPushButton(FluentIcon.SEND, tr("Translate", lang))
@@ -248,6 +253,8 @@ class TranslatePage(QStackedWidget):
             caption.setText(tr(hint_key, lang))
         self.pdf_pages_label.setText(tr("Page Range", lang))
         self.pdf_pages_caption.setText(tr("Page Range Hint", lang))
+        self.manga_label.setText(tr("Manga Mode", lang))
+        self.manga_caption.setText(tr("Manga Mode Hint", lang))
         self.translate_btn.setText(tr("Translate", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.dashboard.retranslate(lang)
@@ -257,6 +264,32 @@ class TranslatePage(QStackedWidget):
         drop-zone background marquee. Kept so page-change / theme / retranslate
         callers don't need to special-case it."""
         pass
+
+    def _build_manga_card(self, lang, config):
+        """漫画模式 toggle — shown when a PDF or image is selected. Bubble-groups
+        OCR lines, translates each bubble as a sentence, typesets vertical CJK, and
+        (for PDF) repacks PDF->PDF. Needs the Image OCR plugin."""
+        card = CardWidget()
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 14, 20, 14)
+        v.setSpacing(2)
+        row = QHBoxLayout()
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        self.manga_label = BodyLabel(tr("Manga Mode", lang))
+        self.manga_caption = CaptionLabel(tr("Manga Mode Hint", lang))
+        self.manga_caption.setTextColor("#606060", "#a0a0a0")
+        self.manga_caption.setWordWrap(True)
+        col.addWidget(self.manga_label)
+        col.addWidget(self.manga_caption)
+        row.addLayout(col, 1)
+        self.manga_switch = SwitchButton()
+        self.manga_switch.setChecked(config.get("manga_mode", False))
+        self.manga_switch.checkedChanged.connect(
+            lambda val: backend.set_config("manga_mode", val))
+        row.addWidget(self.manga_switch)
+        v.addLayout(row)
+        return card
 
     def _build_pdf_card(self, lang, config):
         """PDF-specific options, surfaced only when a PDF is in the selection.
@@ -398,6 +431,10 @@ class TranslatePage(QStackedWidget):
         # Show PDF options only when the selection includes a PDF.
         has_pdf = any(os.path.splitext(p)[1].lower() == ".pdf" for p in paths)
         self.pdf_card.setVisible(has_pdf)
+        # 漫画模式 applies to PDFs and images (bubble-group + vertical typeset).
+        _img_exts = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
+        has_image = any(os.path.splitext(p)[1].lower() in _img_exts for p in paths)
+        self.manga_card.setVisible(has_pdf or has_image)
 
     # --- drag & drop ---
     def dragEnterEvent(self, event):
@@ -981,10 +1018,16 @@ class TranslatePage(QStackedWidget):
         from core.optional_modules import extension_plugin_map, module_status
         ext_map = extension_plugin_map()
         avail = {m["name"]: m["available"] for m in module_status()}
+        manga_on = bool(backend.read_config().get("manga_mode", False))
+        _img_exts = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
         needed = []
         for p in self._files:
             ext = os.path.splitext(p)[1].lower()
             plugin = ext_map.get(ext)
+            # 漫画模式: a PDF/image goes through the image pipeline (OCR), so it needs
+            # the Image OCR plugin regardless of its normal plugin (PDF -> BabelDOC).
+            if manga_on and (ext == ".pdf" or ext in _img_exts):
+                plugin = "Image OCR"
             if plugin and avail.get(plugin) is False and plugin not in needed:
                 needed.append(plugin)
         if not needed:

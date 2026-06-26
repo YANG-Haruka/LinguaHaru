@@ -41,6 +41,7 @@ let BOOT = null;
 let currentFiles = [];
 let currentTask = null;
 const MEDIA_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".m4a", ".flac"];
+const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"];
 const VIDEO_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm"];  // extract audio client-side
 
 // ---- ffmpeg.wasm: extract the audio track in the browser so we upload a few
@@ -606,6 +607,7 @@ async function boot() {
   if ($("pdf-dual-alternating")) $("pdf-dual-alternating").checked = !!c.pdf_dual_alternating;
   if ($("pdf-pages")) $("pdf-pages").value = c.pdf_pages || "";
   if ($("pdf-only-translated")) $("pdf-only-translated").checked = !!c.pdf_only_translated_pages;
+  if ($("manga-mode")) $("manga-mode").checked = !!c.manga_mode;
   fillSelect($("glossary-edit-select"), BOOT.glossaries, c.default_glossary);
   initQuick();
   renderModules();
@@ -879,6 +881,9 @@ function setFiles(list) {
   if (anyMedia) { refreshSttPicker().then(applySenseVoiceRestriction); }
   const anyPdf = list.some((f) => f.name.split(".").pop().toLowerCase() === "pdf");
   $("pdf-options").hidden = !anyPdf;
+  // 漫画模式 applies to PDFs and images (bubble-group + vertical typeset).
+  const anyImage = list.some((f) => IMAGE_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
+  if ($("manga-options")) $("manga-options").hidden = !(anyPdf || anyImage);
 }
 
 // ----- translate -----
@@ -888,10 +893,14 @@ function requiredPluginsReady(files) {
   const extMap = (BOOT && BOOT.ext_plugin) || {};
   const avail = {};
   for (const m of (BOOT.modules || [])) avail[m.name] = m.available;
+  const mangaOn = !!(BOOT.config && BOOT.config.manga_mode);
   const needed = new Set();
   for (const f of files) {
     const ext = "." + (f.name.split(".").pop() || "").toLowerCase();
-    const plugin = extMap[ext];
+    // 漫画模式: a PDF/image is translated via the image pipeline (OCR), so it needs
+    // the Image OCR plugin regardless of its normal plugin (PDF -> BabelDOC).
+    let plugin = extMap[ext];
+    if (mangaOn && (ext === ".pdf" || IMAGE_EXTS.includes(ext))) plugin = "Image OCR";
     if (plugin && avail[plugin] === false) needed.add(plugin);
   }
   if (!needed.size) return true;
@@ -1324,6 +1333,11 @@ if ($("set-hist-clear-files")) $("set-hist-clear-files").onclick = async () => {
 if ($("pdf-translate-table")) $("pdf-translate-table").onchange = () => saveConfig({ pdf_translate_table: $("pdf-translate-table").checked });
 if ($("pdf-ocr-scanned")) $("pdf-ocr-scanned").onchange = () => saveConfig({ pdf_ocr_scanned: $("pdf-ocr-scanned").checked });
 if ($("pdf-dual-alternating")) $("pdf-dual-alternating").onchange = () => saveConfig({ pdf_dual_alternating: $("pdf-dual-alternating").checked });
+if ($("manga-mode")) $("manga-mode").onchange = () => {
+  const on = $("manga-mode").checked;
+  if (BOOT.config) BOOT.config.manga_mode = on;   // keep gating in sync without reload
+  saveConfig({ manga_mode: on });
+};
 if ($("pdf-pages")) $("pdf-pages").onchange = () => saveConfig({ pdf_pages: $("pdf-pages").value.trim() });
 if ($("pdf-only-translated")) $("pdf-only-translated").onchange = () => saveConfig({ pdf_only_translated_pages: $("pdf-only-translated").checked });
 // Per-model key/RPM/thread/retries moved to Interface Management; their old

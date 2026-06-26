@@ -188,7 +188,6 @@
   "Plugin": "Plugin",
   "Actions": "Actions",
   "Try Again Later": "Please try again later",
-  "Download": "Download",
   "Downloading": "Downloading…",
   "Available": "Available",
   "Downloaded Install Below": "Downloaded — install its dependencies above",
@@ -504,7 +503,6 @@
   "Tag Experimental": "Experimental",
   "Tag CJKStrong": "Strong on CJK",
   "In Use": "In use",
-  "Downloading": "Downloading…",
   "Deleting": "Deleting…",
   "Model Installed": "Model installed",
   "Model Deleted": "Model deleted",
@@ -532,5 +530,7 @@
   "Blue": "Blue",
   "Green": "Green",
   "Orange": "Orange",
-  "Stream Translation": "Stream translation (live)"
+  "Stream Translation": "Stream translation (live)",
+  "Manga Mode": "Manga mode",
+  "Manga Mode Hint": "For scanned/manga PDFs & images: group speech-bubble text, translate each bubble as one sentence, and typeset vertically. Needs the Image OCR plugin. PDF in -> PDF out."
 }

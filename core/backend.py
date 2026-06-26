@@ -187,6 +187,10 @@ _DEFAULT_CONFIG = {
     "md_bilingual_mode": False,
     "epub_bilingual_mode": False,
     "html_bilingual_mode": False,
+    # 漫画模式: treat a PDF/image as a manga/scanned comic — bubble-group OCR lines,
+    # translate each bubble as a sentence, render vertical CJK back, repack PDF->PDF.
+    # Needs the Image OCR plugin. Off => normal document/image translation.
+    "manga_mode": False,
     "default_thread_count_online": 2,
     "default_thread_count_offline": 4,
     "default_src_lang": "English",

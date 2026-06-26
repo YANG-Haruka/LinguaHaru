@@ -188,8 +188,7 @@
   "Plugin": "模块",
   "Actions": "操作",
   "Try Again Later": "请稍后重试",
-  "Download": "下载",
-  "Downloading": "正在下载…",
+  "Downloading": "下载中…",
   "Available": "可下载",
   "Downloaded Install Below": "已下载，请在上方安装其依赖",
   "Plugin Market": "插件市场",
@@ -515,7 +514,6 @@
   "Tag Experimental": "实验",
   "Tag CJKStrong": "中文强",
   "In Use": "使用中",
-  "Downloading": "下载中…",
   "Deleting": "删除中…",
   "Model Installed": "模型已安装",
   "Model Deleted": "模型已删除",
@@ -543,5 +541,7 @@
   "Blue": "蓝",
   "Green": "绿",
   "Orange": "橙",
-  "Stream Translation": "实时语音：流式译文"
+  "Stream Translation": "实时语音：流式译文",
+  "Manga Mode": "漫画模式",
+  "Manga Mode Hint": "用于扫描版/漫画 PDF 和图片：合并气泡文字、整句翻译、竖排排版。需要「图像 OCR」插件。PDF 进 → PDF 出。"
 }

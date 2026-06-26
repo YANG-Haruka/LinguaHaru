@@ -327,6 +327,7 @@ def bootstrap():
             "pdf_dual_alternating": config.get("pdf_dual_alternating", False),
             "pdf_pages": config.get("pdf_pages", ""),
             "pdf_only_translated_pages": config.get("pdf_only_translated_pages", False),
+            "manga_mode": config.get("manga_mode", False),
             "lan_mode": config.get("lan_mode", False),
             "has_lan_admin": bool(config.get("lan_admin_password_hash")),  # never expose the value
             "result_dir": config.get("result_dir", "data/result"),
@@ -447,7 +448,7 @@ async def update_config(payload: dict):
                "default_thread_count_online", "default_thread_count_offline",
                "max_api_concurrency",
                "pdf_translate_table", "pdf_ocr_scanned", "pdf_dual_alternating",
-               "pdf_pages", "pdf_only_translated_pages"}
+               "pdf_pages", "pdf_only_translated_pages", "manga_mode"}
     config = backend.read_config()
     for k, v in payload.items():
         # The LAN admin password is stored ONLY as a hash (system_config.json is
