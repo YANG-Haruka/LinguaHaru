@@ -45,13 +45,21 @@
 - **校对**：每页产出 proofread 表（原文/译文/合并框）+ manifest（标记 manga + 页图路径）；`backend` 增加 manga PDF 的 `reexport`：读编辑后的译文 → 重渲染各页 → 重打包 PDF。
 - **两端 UI（Web+Qt 对齐）**：选中 PDF/图片时显示「漫画模式」开关；逻辑/后端共用 `core/`。
 
-**验收清单**：
-- [ ] 图像漫画模式：气泡整句、竖排、消字、无溢出。
-- [ ] PDF 漫画模式：PDF 进 → PDF 出，全页 OK。
-- [ ] 校对：能编辑译文 + 重新导出 PDF。
-- [ ] 未装 Image OCR 插件 → 正确提示。
-- [ ] Web/Qt 两端一致。
-- [ ] 全量测试 142+ 绿。
+**验收清单（已完成 2026-06-27，提交 3c6428a / 79ff0c2 / c6d264e）**：
+- [x] 图像漫画模式：气泡整句、竖排、消字、无溢出（实测测试页 15行→6气泡，人名"不死川"完整）。
+- [x] PDF 漫画模式：PDF 进 → PDF 出，全 10 页 OK（`core/translators/manga_pdf_translator.py`；页内 JPEG q88，10页~10MB）。
+- [x] 校对：列出漫画 PDF、可编辑译文、重新导出 PDF（`_export_manga_pdf_proofread` + 共享 `render_manga_pages_to_pdf`；实测改字→重导出 10.4MB）。
+- [x] 未装 Image OCR 插件 → 正确提示（两端 gating：manga 开 + pdf/图 → 需 Image OCR 插件）。
+- [x] Web/Qt 两端一致（`#manga-options` / `_build_manga_card`，config `manga_mode` 共用）。
+- [x] 全量测试 142 绿。
+
+**实现要点回顾**：
+- 图像管线拆出可复用核心 `ocr_and_group_image()`（OCR+分组，不落盘）+ `render_on_image()`（消字+渲染，返回 PIL）。
+- `_group_text_regions()`：union-find 近邻+同方向+字号相近+对齐合并；组内竖排右→左拼接。
+- `_render_vertical()` 重写：网格按高×宽双向自适应+居中，修复"字超出气泡"。
+- PDF：`MangaPdfTranslator` 逐页栅格化→合并 src.json（全局 count_src，复用 base 批处理/历史/覆盖率）→逐页渲染→fitz 重打包(JPEG)。
+- 依赖：`pymupdf` 加入 Image OCR 插件（manga PDF 需要；manga 模式由该既有插件门控，不新增插件）。
+- 路由：`backend.get_translator_class` 在 `manga_mode` 开时把 `.pdf` 换成 MangaPdfTranslator；图像本就走图像管线（内部读 manga_mode）。
 
 ## 5. 被否决的方案 + 原因（备查）
 
