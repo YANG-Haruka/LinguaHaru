@@ -227,6 +227,103 @@ def _reading_order(items, rtl):
     return out
 
 
+def _manga_mode():
+    """Config flag `manga_mode` (default off): merge OCR lines per speech bubble +
+    translate each bubble as one sentence. Set per-run by the frontends."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("manga_mode", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _group_text_regions(line_regions):
+    """Merge OCR text-lines that belong to the same speech bubble into one region.
+
+    Ported from manga-image-translator's textline_merge idea, reduced to plain
+    geometry (union-find, no networkx): two lines merge when they are close
+    (polygon gap <= ~1 char), share a writing direction (both vertical columns or
+    both horizontal rows), have similar font size, and are aligned on the shared
+    axis. Within a merged bubble the lines are concatenated in reading order
+    (vertical = right->left columns; horizontal = top->bottom rows), giving the LLM
+    a whole sentence instead of fragments. Returns merged regions, each with the
+    concatenated `value`, the union `rect` (for rendering) and `erase_rects` (the
+    member line boxes, for precise text removal)."""
+    def dims(r):
+        return r[2] - r[0], r[3] - r[1]
+
+    def direction(r):
+        w, h = dims(r)
+        return "v" if h > 1.3 * max(w, 1) else "h"
+
+    def char_size(r):
+        return min(dims(r))
+
+    def gap(a, b):
+        dx = max(0, max(a[0], b[0]) - min(a[2], b[2]))
+        dy = max(0, max(a[1], b[1]) - min(a[3], b[3]))
+        return (dx * dx + dy * dy) ** 0.5
+
+    def can_merge(a, b):
+        csa, csb = char_size(a), char_size(b)
+        cs = max(min(csa, csb), 1)
+        if direction(a) != direction(b):
+            return False
+        if max(csa, csb) / cs > 1.6:          # font sizes must be similar
+            return False
+        if gap(a, b) > 1.0 * cs:              # within ~1 character
+            return False
+        if direction(a) == "v":               # vertical: columns share x-extent
+            return min(a[2], b[2]) - max(a[0], b[0]) > -0.6 * cs
+        return min(a[3], b[3]) - max(a[1], b[1]) > -0.6 * cs   # horizontal: rows share y
+
+    n = len(line_regions)
+    parent = list(range(n))
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    rects = [r["rect"] for r in line_regions]
+    for i in range(n):
+        for j in range(i + 1, n):
+            # Only merge lines we'd actually translate (don't pull OCR noise in).
+            if line_regions[i]["needs_translation"] and line_regions[j]["needs_translation"] \
+                    and can_merge(rects[i], rects[j]):
+                parent[find(i)] = find(j)
+
+    from collections import defaultdict
+    comps = defaultdict(list)
+    for i in range(n):
+        comps[find(i)].append(i)
+
+    merged = []
+    for idxs in comps.values():
+        d = direction(rects[idxs[0]])
+        if d == "v":   # right->left columns, top->bottom within a column
+            idxs.sort(key=lambda i: (-(rects[i][0] + rects[i][2]) / 2, rects[i][1]))
+        else:          # top->bottom rows, left->right within a row
+            idxs.sort(key=lambda i: ((rects[i][1] + rects[i][3]) / 2, rects[i][0]))
+        members = [line_regions[i] for i in idxs]
+        mrects = [m["rect"] for m in members]
+        union = [min(r[0] for r in mrects), min(r[1] for r in mrects),
+                 max(r[2] for r in mrects), max(r[3] for r in mrects)]
+        merged.append({
+            "value": "".join(m["value"] for m in members),
+            "rect": union,
+            "erase_rects": mrects,
+            "score": min(m["score"] for m in members),
+            "needs_translation": any(m["needs_translation"] for m in members),
+        })
+    # Reading order across bubbles: top->bottom, right->left (manga) for coherent
+    # LLM context and a sensible companion text file.
+    merged.sort(key=lambda m: (m["rect"][1], -m["rect"][2]))
+    return merged
+
+
 def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
     """Run OCR on the image and save recognized text regions to src.json.
 
@@ -251,10 +348,9 @@ def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
     if items:
         texts, boxes, scores = (list(t) for t in zip(*items))
 
-    content_data = []
-    regions = []
-    count = 0
-
+    # Build one entry per OCR text-line first (count_src assigned after optional
+    # manga grouping, so the ids stay sequential whichever path we take).
+    line_regions = []
     for text, box, score in zip(texts, boxes, scores):
         text = (text or "").strip()
         if not text:
@@ -269,24 +365,34 @@ def extract_image_content_to_json(file_path, temp_dir, src_lang=None):
         rect = [int(x_min), int(y_min), int(x_max), int(y_max)]
 
         score_val = float(score) if score is not None else 0.0
-        count += 1
         # Low-confidence regions are likely OCR noise: keep them in regions.json
         # (so the companion text file still lists them) but do not translate or
         # erase them, leaving the original pixels intact.
         confident = score_val >= _MIN_OCR_CONFIDENCE
-        region = {
-            "count_src": count,
+        line_regions.append({
             "value": text,
             "rect": rect,
             "score": score_val,
             "needs_translation": should_translate(text) and confident,
-        }
+        })
+
+    # MANGA MODE: merge OCR text-lines belonging to the same speech bubble into ONE
+    # region, so the bubble is translated as a whole sentence (a name/clause split
+    # across lines stays intact) instead of fragment-by-fragment. No model needed —
+    # pure geometry (see _group_text_regions). Off => one region per line (default).
+    if _manga_mode():
+        line_regions = _group_text_regions(line_regions)
+
+    content_data = []
+    regions = []
+    for i, region in enumerate(line_regions, 1):
+        region["count_src"] = i
         regions.append(region)
         if region["needs_translation"]:
             content_data.append({
-                "count_src": count,
+                "count_src": i,
                 "type": "text",
-                "value": text,
+                "value": region["value"],
             })
 
     filename = os.path.splitext(os.path.basename(file_path))[0]
@@ -334,27 +440,41 @@ def _text_colors(rgb, rect):
 
 def _render_vertical(draw, text, rect, font_path, fg, stroke):
     """Stack characters top->bottom in columns laid out right->left (CJK vertical
-    writing). Font size picked to fit the box height/width. PIL-only (no HarfBuzz
-    vertical glyph substitution, but acceptable for caption-style overlays)."""
+    writing). The font size is chosen so the whole block fits the box in BOTH axes
+    (the column count * column width <= box width, and chars-per-column * line
+    height <= box height), then the block is centered. PIL-only (no HarfBuzz
+    vertical glyph substitution, but fine for caption-style overlays)."""
     x1, y1, x2, y2 = rect
     box_w, box_h = max(x2 - x1, 8), max(y2 - y1, 8)
     chars = [c for c in text if c.strip()]
     if not chars:
         return
-    for size in range(box_h, 7, -1):
-        font = (ImageFont.truetype(font_path, size) if font_path
-                else ImageFont.load_default())
-        per_col = max(1, box_h // max(size, 1))
+    line_gap = 1.06
+    size = 8
+    # A single column can't be wider than the box; shrink until the whole grid fits
+    # the box height AND width (this is what prevents the old vertical overflow).
+    for s in range(min(box_h, box_w), 7, -1):
+        step = s * line_gap
+        per_col = max(1, int(box_h // step))
         ncols = (len(chars) + per_col - 1) // per_col
-        if ncols * size <= box_w or size == 8:
+        if ncols * step <= box_w:
+            size = s
             break
+    step = size * line_gap
+    per_col = max(1, int(box_h // step))
+    ncols = (len(chars) + per_col - 1) // per_col
+    font = (ImageFont.truetype(font_path, size) if font_path else ImageFont.load_default())
     sw = max(1, size // 12)
-    col_w = size * 1.05
+    # Center the grid in the box; lay columns out right -> left.
+    grid_w = ncols * step
+    rows_in_first = min(per_col, len(chars))
+    grid_h = rows_in_first * step
+    x_right = x2 - max(0, (box_w - grid_w)) / 2.0
+    y_top = y1 + max(0, (box_h - grid_h)) / 2.0
     for idx, ch in enumerate(chars):
-        col = idx // per_col
-        row = idx % per_col
-        cx = x2 - (col + 1) * col_w          # right-to-left columns
-        cy = y1 + row * size * 1.05
+        col, row = divmod(idx, per_col)
+        cx = x_right - (col + 1) * step + (step - size) / 2.0
+        cy = y_top + row * step
         draw.text((cx, cy), ch, font=font, fill=fg, stroke_width=sw, stroke_fill=stroke)
 
 
@@ -419,8 +539,10 @@ def write_translated_content_to_image(file_path, original_json_path, translated_
         translated = translations.get(region["count_src"])
         if not region.get("needs_translation") or not translated:
             continue
-        x1, y1, x2, y2 = region["rect"]
-        cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
+        # Manga-grouped regions erase each member text-line box (precise); plain
+        # regions erase their single rect. Text is rendered into the union rect.
+        for er in region.get("erase_rects", [region["rect"]]):
+            cv2.rectangle(mask, (er[0], er[1]), (er[2], er[3]), 255, -1)
         to_render.append((region["rect"], translated))
 
     if to_render:
