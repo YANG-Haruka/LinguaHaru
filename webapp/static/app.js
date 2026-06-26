@@ -914,7 +914,7 @@ $("translate-btn").onclick = async () => {
       setStatus(_label("Please select a model first", "请先选择一个模型（接口管理）。")); return;
     }
     const st = await api("/api/apikey?model=" + encodeURIComponent($("model").value));
-    if (!st.has_key) { setStatus("尚未设置 API 密钥，请在设置中填写。"); return; }
+    if (!st.has_key) { setStatus(_apiKeyMissingMsg($("model").value)); return; }
   }
   setRunState("running");   // hide the form, show the dashboard (Qt-style takeover)
   $("result").hidden = true; setStatus("");
@@ -1096,6 +1096,19 @@ function _label(key, fallback) {
   const L = (BOOT.labels && BOOT.labels[lang]) || {};
   const EN = (BOOT.labels && BOOT.labels.en) || {};
   return L[key] || EN[key] || fallback;
+}
+
+// Specific "this model has no key" message: names the SELECTED model and points to
+// 接口管理 (where keys live now — NOT 设置), so a user who set one provider's key
+// but has a DIFFERENT, keyless model selected (e.g. a local interface) understands
+// it's the selected model that needs a key, not a global setting.
+function _apiKeyMissingMsg(model) {
+  const lang = localStorage.getItem("lh-lang") || "zh";
+  const m = model || "";
+  if (lang.startsWith("zh")) {
+    return `当前模型「${m}」尚未配置 API 密钥。请到「接口管理」双击该接口填写密钥，或改用已配置密钥的接口。`;
+  }
+  return `The selected model "${m}" has no API key. Open Interface Management, double-click it to set its key, or switch to an interface that already has one.`;
 }
 
 // Compact coverage panel: "正文 80 · 表格 20 · 批注 10 · 0 未翻译".
@@ -2986,7 +2999,7 @@ async function quickTranslate() {
     try {
       const st = await api("/api/apikey?model=" + encodeURIComponent(m));
       if (!st.has_key) {
-        $("quick-status").textContent = _label("Api Key Required", "尚未设置 API 密钥，请在设置中填写。");
+        $("quick-status").textContent = _apiKeyMissingMsg(m);
         return;
       }
     } catch (e) { /* if the check itself fails, let the translate attempt surface it */ }
