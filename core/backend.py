@@ -835,9 +835,18 @@ def _export_pdf_proofread(folder, manifest, doc_name, dst_json, original_copy):
     dst_lang_code = manifest.get("dst_lang", "en")
     doc_leaf = os.path.basename(doc_name.replace("/", os.sep))
     final_path = os.path.join(
-        result_dir, f"{doc_leaf}_{src_lang_code}2{dst_lang_code}_proofread.pdf")
+        result_dir, f"{doc_leaf}_{src_lang_code}2{dst_lang_code}{_proofread_suffix()}.pdf")
     os.replace(produced, final_path)
     return final_path
+
+
+def _proofread_suffix():
+    """Unique output suffix for a proofread re-export. A FIXED name (…_proofread.x)
+    can't be overwritten while the user has the previous export open (Windows file
+    lock) — which made re-export "work only once". A timestamp makes every click
+    write a fresh file, so re-export always succeeds and prior versions are kept."""
+    from datetime import datetime
+    return f"_proofread_{datetime.now().strftime('%H%M%S_%f')[:-3]}"
 
 
 def _export_manga_pdf_proofread(folder, manifest, doc_name):
@@ -853,10 +862,11 @@ def _export_manga_pdf_proofread(folder, manifest, doc_name):
     src = manifest.get("src_lang", "en")
     dst = manifest.get("dst_lang", "en")
     name = os.path.basename(doc_name.replace("/", os.sep))
-    # out_suffix keeps this separate from the original translated PDF (don't clobber).
+    # Unique suffix: separate from the original translated PDF AND re-exportable
+    # repeatedly even if a previous export is open (no fixed-name file lock).
     return render_manga_pages_to_pdf(
         pages_meta, translations, folder, result_dir, dst, name, src,
-        out_suffix="_proofread")
+        out_suffix=_proofread_suffix())
 
 
 def export_proofread_doc(doc_name):
@@ -920,7 +930,7 @@ def export_proofread_doc(doc_name):
         raise RuntimeError(f"Export produced no file ({produced})")
     doc_leaf = os.path.basename(doc_name.replace("/", os.sep))
     final_path = os.path.join(
-        result_dir, f"{doc_leaf}_{src_lang_code}2{dst_lang_code}_proofread{ext}")
+        result_dir, f"{doc_leaf}_{src_lang_code}2{dst_lang_code}{_proofread_suffix()}{ext}")
     os.replace(produced, final_path)
     return final_path
 
