@@ -853,11 +853,10 @@ def _export_manga_pdf_proofread(folder, manifest, doc_name):
     src = manifest.get("src_lang", "en")
     dst = manifest.get("dst_lang", "en")
     name = os.path.basename(doc_name.replace("/", os.sep))
-    produced = render_manga_pages_to_pdf(
-        pages_meta, translations, folder, result_dir, dst, name, src)
-    final_path = os.path.join(result_dir, f"{name}_{src}2{dst}_proofread.pdf")
-    os.replace(produced, final_path)
-    return final_path
+    # out_suffix keeps this separate from the original translated PDF (don't clobber).
+    return render_manga_pages_to_pdf(
+        pages_meta, translations, folder, result_dir, dst, name, src,
+        out_suffix="_proofread")
 
 
 def export_proofread_doc(doc_name):

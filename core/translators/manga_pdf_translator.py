@@ -99,10 +99,12 @@ class MangaPdfTranslator(DocumentTranslator):
 
 
 def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
-                              dst_lang, name, src_lang):
+                              dst_lang, name, src_lang, out_suffix=""):
     """Render translations onto each page image and repack into a PDF. Shared by the
     initial run and proofread re-export. Page-image paths in pages_meta are relative
-    to file_dir. Returns the output PDF path (result_dir/<name>_<src2dst>.pdf)."""
+    to file_dir. Returns the output PDF path
+    (result_dir/<name>_<src2dst>[out_suffix].pdf). Proofread re-export passes
+    out_suffix="_proofread" so it never clobbers the original translated PDF."""
     fitz = _fitz()
     out = fitz.open()
     try:
@@ -126,7 +128,7 @@ def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
 
         os.makedirs(result_dir, exist_ok=True)
         suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
-        result_path = os.path.join(result_dir, f"{name}_{suffix}.pdf")
+        result_path = os.path.join(result_dir, f"{name}_{suffix}{out_suffix}.pdf")
         out.save(result_path)
         return result_path
     finally:
