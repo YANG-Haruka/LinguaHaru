@@ -442,6 +442,13 @@ def max_token_for_model(model=None):
                 return max(128, int(mt))
             except (TypeError, ValueError):
                 pass
+        # A custom interface pointed at a LOCAL server (Ollama / LM Studio at
+        # localhost, e.g. Hunyuan-MT) is a small-context local model too — the
+        # online 4096 batch overflows its window (Ollama's default num_ctx is
+        # 4096). Use a conservative batch unless the user set an explicit max_token.
+        base_url = str(mc.get("base_url", "")).lower()
+        if any(h in base_url for h in ("localhost", "127.0.0.1", "0.0.0.0")):
+            return 1024
     return read_config().get("max_token", 4096)
 
 

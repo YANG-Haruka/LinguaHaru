@@ -79,6 +79,13 @@ def resolve_sampling(model_config, cfg_temp, cfg_top_p, params=None):
     concurrent/LAN tasks."""
     if not _sampling_supported(model_config):
         return None, None
+    # A LOCAL model (Ollama/LM Studio served at localhost) is usually a specialized
+    # model with its OWN recommended sampling (e.g. Hunyuan-MT wants temp 0.7 /
+    # top_p 0.6 — the document modes' 1.3 ruins it). Honor the per-model config and
+    # do NOT let the translation mode override it.
+    base_url = str(model_config.get("base_url", "")).lower()
+    if any(h in base_url for h in ("localhost", "127.0.0.1", "0.0.0.0")):
+        return cfg_temp, cfg_top_p
     p = params if params is not None else active_params()
     temp = p.get("temperature", cfg_temp)
     top_p = p.get("top_p", cfg_top_p)
