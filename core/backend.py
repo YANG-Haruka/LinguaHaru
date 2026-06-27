@@ -191,6 +191,10 @@ _DEFAULT_CONFIG = {
     # translate each bubble as a sentence, render vertical CJK back, repack PDF->PDF.
     # Needs the Image OCR plugin. Off => normal document/image translation.
     "manga_mode": False,
+    # Run OCR (PaddleOCR/RapidOCR) in a child process. It's CPU-bound and holds the
+    # Python GIL, which would freeze the desktop UI thread if run in-process on a
+    # QThread. Default on; set False to run in-process (debugging).
+    "ocr_subprocess": True,
     "default_thread_count_online": 2,
     "default_thread_count_offline": 4,
     "default_src_lang": "English",

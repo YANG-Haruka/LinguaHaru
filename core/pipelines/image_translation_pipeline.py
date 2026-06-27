@@ -160,7 +160,7 @@ def _load_ocr_engine(key, lang, size):
     return engine
 
 
-def _run_ocr(file_path, src_lang=None):
+def _run_ocr_inproc(file_path, src_lang=None):
     """Run OCR and normalize results to a list of (text, quad_points, score).
     Inference is serialized via GPU_LOCK so concurrent image tasks (or a video
     transcription) don't thrash one GPU/CPU."""
@@ -178,7 +178,77 @@ def _run_ocr(file_path, src_lang=None):
             texts = list(result.txts or [])
             boxes = list(result.boxes if result.boxes is not None else [])
             scores = list(result.scores or [])
+    # numpy boxes -> plain lists so the result pickles cleanly back from the OCR
+    # subprocess (and is JSON-safe downstream).
+    boxes = [b.tolist() if isinstance(b, np.ndarray) else b for b in boxes]
+    scores = [float(s) for s in scores]
     return texts, boxes, scores
+
+
+# --- OCR process isolation -------------------------------------------------- #
+# PaddleOCR/RapidOCR is CPU-bound C++/Python that HOLDS the Python GIL during
+# model build + inference. On a QThread that starves the Qt main thread (timer +
+# repaints can't run) and the desktop UI freezes. Running OCR in a persistent
+# child process lets the worker thread block on the result (releasing the GIL),
+# so the UI stays responsive. The model loads once in the child and is reused.
+_ocr_pool = None
+_ocr_pool_lock = threading.Lock()
+
+
+def _ocr_subprocess_enabled():
+    """Config `ocr_subprocess` (default True): isolate OCR in a child process so it
+    can't freeze the desktop UI. Set False to run in-process (e.g. debugging)."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("ocr_subprocess", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _get_ocr_pool():
+    global _ocr_pool
+    if _ocr_pool is None:
+        with _ocr_pool_lock:
+            if _ocr_pool is None:
+                import concurrent.futures
+                # 1 worker = the engine is built once and reused; concurrent OCR
+                # calls queue (same as the old GPU_LOCK serialization).
+                _ocr_pool = concurrent.futures.ProcessPoolExecutor(max_workers=1)
+    return _ocr_pool
+
+
+def _ocr_worker_entry(file_path, src_lang):
+    """Runs in the OCR child process. The child didn't run the app's startup, so it
+    must set up the model env (cache dirs / HF endpoint) before building the OCR
+    engine. The engine is cached in the child across calls (max_workers=1)."""
+    try:
+        from core import model_store
+        model_store.setup_model_env()
+        model_store.finish_model_env_setup()
+    except Exception:  # noqa: BLE001 — best-effort; engine build may still find caches
+        pass
+    return _run_ocr_inproc(file_path, src_lang)
+
+
+def _run_ocr(file_path, src_lang=None):
+    """OCR an image, isolated in a child process so it can't freeze the UI (GIL).
+    Falls back to in-process if the subprocess is unavailable / crashes."""
+    if not _ocr_subprocess_enabled():
+        return _run_ocr_inproc(file_path, src_lang)
+    try:
+        return _get_ocr_pool().submit(_ocr_worker_entry, file_path, src_lang).result()
+    except Exception as e:  # noqa: BLE001 — broken pool / child crash / pickling
+        app_logger.warning(f"OCR subprocess failed ({e}); running in-process.")
+        global _ocr_pool
+        with _ocr_pool_lock:
+            try:
+                if _ocr_pool is not None:
+                    _ocr_pool.shutdown(wait=False, cancel_futures=True)
+            except Exception:  # noqa: BLE001
+                pass
+            _ocr_pool = None
+        return _run_ocr_inproc(file_path, src_lang)
 
 
 def _find_font_path():
