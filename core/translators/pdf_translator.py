@@ -556,6 +556,16 @@ class PdfTranslator(DocumentTranslator):
             # A stop request may surface as a BabelDOC cancellation error
             self.check_for_stop()
             app_logger.error(f"PDF translation failed: {e}")
+            # A scanned / image-only PDF has no text layer, so BabelDOC finds no
+            # paragraphs. Don't surface its cryptic message — tell the user to use
+            # 漫画模式 (OCR-based, PDF in -> PDF out), which is built for this.
+            msg = str(e).lower()
+            if "no paragraph" in msg or "contains no" in msg:
+                raise RuntimeError(
+                    "This PDF is scanned / image-only (no extractable text), so the "
+                    "normal PDF translator found nothing. Turn on 「漫画模式 / Manga "
+                    "mode」 to translate it via OCR (PDF in → PDF out)."
+                ) from e
             raise
         finally:
             if got_fallback:
