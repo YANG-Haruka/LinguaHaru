@@ -24,7 +24,7 @@ from fastapi import (
     FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
     Request)
 from fastapi.responses import (
-    FileResponse, StreamingResponse, HTMLResponse)
+    FileResponse, StreamingResponse, HTMLResponse, JSONResponse)
 from fastapi.staticfiles import StaticFiles
 
 from core import backend
@@ -170,6 +170,21 @@ def _is_loopback(host):
         host or "").startswith("127.")
 
 
+def _origin_allowed(origin, host):
+    """True if `origin` is same-origin with the request's Host (tolerating
+    localhost<->127.0.0.1 on the same port). An absent Origin = allowed: a
+    cross-site CSRF POST from a browser ALWAYS carries Origin, while non-browser
+    callers (curl/scripts) can't mount CSRF anyway."""
+    if not origin:
+        return True
+    port = host.split(":", 1)[1] if ":" in host else ""
+    allowed = {f"http://{host}", f"https://{host}"}
+    for h in ("localhost", "127.0.0.1"):
+        allowed.add(f"http://{h}:{port}" if port else f"http://{h}")
+        allowed.add(f"https://{h}:{port}" if port else f"https://{h}")
+    return origin in allowed
+
+
 # Password hashing lives in core.backend so the Qt LAN toggle shares it.
 _hash_pw = backend.hash_lan_password
 _verify_pw = backend.verify_lan_password
@@ -220,6 +235,13 @@ async def _session_and_isolation(request, call_next):
     if issue:
         sid = sessions.new_session_id()
     request.state.session_id = sid
+    # CSRF: a page you visit can fire a cross-site "simple" POST at our
+    # (localhost) admin endpoints — the browser still attaches Origin, so reject
+    # cross-origin state-changing requests. Same-origin and non-browser callers
+    # (no Origin) pass; GETs are never blocked.
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and not _origin_allowed(
+            request.headers.get("origin"), request.headers.get("host", "")):
+        return JSONResponse({"detail": "Cross-origin request blocked"}, status_code=403)
     _admin_token.set(request.headers.get("X-Admin-Token", ""))
     # "Local" = the request really came from this machine -> the owner, auto-trusted
     # for admin. Behind a reverse proxy the client IP is the proxy's loopback addr,
@@ -1944,16 +1966,7 @@ async def live_translate(ws: WebSocket):
     # Reject cross-origin browser connections (CSWSH): this endpoint spends the
     # server-side Google key, so only same-origin pages may open it. Non-browser
     # clients send no Origin and aren't subject to CSRF.
-    origin = ws.headers.get("origin")
-    host = ws.headers.get("host", "")          # includes the port, e.g. 127.0.0.1:8080
-    port = host.split(":", 1)[1] if ":" in host else ""
-    allowed = {f"http://{host}", f"https://{host}"}
-    # Loopback aliases on the SAME port (the Host header may differ from how the
-    # browser addressed it, e.g. localhost vs 127.0.0.1).
-    for h in ("localhost", "127.0.0.1"):
-        allowed.add(f"http://{h}:{port}" if port else f"http://{h}")
-        allowed.add(f"https://{h}:{port}" if port else f"https://{h}")
-    if origin is not None and origin not in allowed:
+    if not _origin_allowed(ws.headers.get("origin"), ws.headers.get("host", "")):
         await ws.close(code=1008)
         return
     await ws.accept()
