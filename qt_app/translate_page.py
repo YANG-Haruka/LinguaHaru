@@ -255,6 +255,7 @@ class TranslatePage(QStackedWidget):
         self.pdf_pages_caption.setText(tr("Page Range Hint", lang))
         self.manga_label.setText(tr("Manga Mode", lang))
         self.manga_caption.setText(tr("Manga Mode Hint", lang))
+        self.manga_pdf_caption.setText(tr("Manga Mode PDF Hint", lang))
         self.translate_btn.setText(tr("Translate", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.dashboard.retranslate(lang)
@@ -280,8 +281,15 @@ class TranslatePage(QStackedWidget):
         self.manga_caption = CaptionLabel(tr("Manga Mode Hint", lang))
         self.manga_caption.setTextColor("#606060", "#a0a0a0")
         self.manga_caption.setWordWrap(True)
+        # PDF-only guidance (shown when a PDF is selected): full scans -> manga mode;
+        # the PDF-Options OCR toggle is only for mostly-digital PDFs.
+        self.manga_pdf_caption = CaptionLabel(tr("Manga Mode PDF Hint", lang))
+        self.manga_pdf_caption.setTextColor("#606060", "#a0a0a0")
+        self.manga_pdf_caption.setWordWrap(True)
+        self.manga_pdf_caption.setVisible(False)
         col.addWidget(self.manga_label)
         col.addWidget(self.manga_caption)
+        col.addWidget(self.manga_pdf_caption)
         row.addLayout(col, 1)
         self.manga_switch = SwitchButton()
         self.manga_switch.setChecked(config.get("manga_mode", False))
@@ -435,6 +443,8 @@ class TranslatePage(QStackedWidget):
         _img_exts = (".png", ".jpg", ".jpeg", ".bmp", ".webp")
         has_image = any(os.path.splitext(p)[1].lower() in _img_exts for p in paths)
         self.manga_card.setVisible(has_pdf or has_image)
+        # The PDF-specific guidance only makes sense for PDFs.
+        self.manga_pdf_caption.setVisible(has_pdf)
 
     # --- drag & drop ---
     def dragEnterEvent(self, event):

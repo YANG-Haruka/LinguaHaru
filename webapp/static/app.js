@@ -884,6 +884,9 @@ function setFiles(list) {
   // 漫画模式 applies to PDFs and images (bubble-group + vertical typeset).
   const anyImage = list.some((f) => IMAGE_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
   if ($("manga-options")) $("manga-options").hidden = !(anyPdf || anyImage);
+  // PDF-specific guidance (full scans -> manga mode; PDF-Options OCR is only for
+  // mostly-digital PDFs) only makes sense when a PDF is selected.
+  if ($("manga-pdf-hint")) $("manga-pdf-hint").hidden = !anyPdf;
 }
 
 // ----- translate -----
