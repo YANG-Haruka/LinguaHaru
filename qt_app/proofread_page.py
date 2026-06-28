@@ -54,6 +54,8 @@ class ProofreadPage(QWidget):
         self._page = 0
         self._capturing = False    # guard so populating the table isn't seen as edits
         self._refreshing = False   # guard so repopulating the combo doesn't auto-load
+        self._sort_by = "time"     # "time" | "name"; document-list sort
+        self._sort_desc = True     # time: newest first; name: A->Z is desc=False
         self.PAGE = 100
 
         layout = QVBoxLayout(self)
@@ -73,10 +75,20 @@ class ProofreadPage(QWidget):
         # mislabeled "Load Glossary" and made it look like nothing happened.
         self.combo.currentIndexChanged.connect(self._on_doc_selected)
         top.addWidget(self.combo, 1)
+        # Document-list sort toggles (left of refresh): time (newest<->oldest) and
+        # name (A->Z <-> Z->A). Clicking the active one flips its direction;
+        # clicking the other switches sort mode to its default direction.
+        self.time_sort_btn = ToolButton(FluentIcon.DATE_TIME)
+        self.time_sort_btn.clicked.connect(lambda: self._toggle_sort("time"))
+        top.addWidget(self.time_sort_btn)
+        self.name_sort_btn = ToolButton(FluentIcon.FONT)
+        self.name_sort_btn.clicked.connect(lambda: self._toggle_sort("name"))
+        top.addWidget(self.name_sort_btn)
         self.refresh_btn = ToolButton(FluentIcon.SYNC)
         self.refresh_btn.clicked.connect(self.refresh_docs)
         top.addWidget(self.refresh_btn)
         layout.addLayout(top)
+        self._update_sort_buttons()
 
         self.table = TableWidget()
         self.table.setBorderVisible(True)
@@ -131,6 +143,7 @@ class ProofreadPage(QWidget):
         self.open_output_btn.setText(tr("Open Output Folder", lang))
         self.prev_btn.setText(tr("Previous", lang))
         self.next_btn.setText(tr("Next", lang))
+        self._update_sort_buttons()
         self._relabel_table_headers()
 
     def _relabel_table_headers(self):
@@ -141,6 +154,26 @@ class ProofreadPage(QWidget):
                 tr("Translated Text", self._lang),
             ])
 
+    def _toggle_sort(self, mode):
+        """Clicking the active sort flips its direction; clicking the other switches
+        mode to its natural default (time = newest first, name = A->Z)."""
+        if self._sort_by == mode:
+            self._sort_desc = not self._sort_desc
+        else:
+            self._sort_by = mode
+            self._sort_desc = (mode == "time")   # time->newest first; name->A->Z
+        self._update_sort_buttons()
+        self.refresh_docs()
+
+    def _update_sort_buttons(self):
+        arrow = "  ↓" if self._sort_desc else "  ↑"   # ↓ = desc (newest / Z->A)
+        self.time_sort_btn.setToolTip(
+            tr("Sort by Time", self._lang) + (arrow if self._sort_by == "time" else ""))
+        self.name_sort_btn.setToolTip(
+            tr("Sort by Name", self._lang) + (arrow if self._sort_by == "name" else ""))
+        for btn, mode in ((self.time_sort_btn, "time"), (self.name_sort_btn, "name")):
+            btn.setProperty("active", self._sort_by == mode)
+
     def refresh_docs(self):
         # Keep the current selection across a refresh; otherwise default to the
         # first doc. Repopulating fires currentIndexChanged, so guard against the
@@ -148,7 +181,7 @@ class ProofreadPage(QWidget):
         prev = self._doc_name or (self.combo.currentText() if self.combo.count() else None)
         self._refreshing = True
         self.combo.clear()
-        docs = backend.list_proofread_docs()
+        docs = backend.list_proofread_docs(sort_by=self._sort_by, descending=self._sort_desc)
         self.combo.addItems(docs)
         if prev and prev in docs:
             self.combo.setCurrentText(prev)

@@ -1731,8 +1731,28 @@ $("glossary-save").onclick = async () => {
 
 // ----- proofread -----
 let proofreadCols = [];
+// Document-list sort: time (newest<->oldest) / name (A->Z <-> Z->A). Clicking
+// the active sort flips its direction; clicking the other switches mode to its
+// natural default. Mirrors the Qt proofread page.
+let pfSortBy = "time", pfSortDesc = true;
+function updateProofreadSortUI() {
+  const arrow = pfSortDesc ? "↓" : "↑";
+  const t = $("pf-time-arrow"), n = $("pf-name-arrow");
+  if (t) t.textContent = pfSortBy === "time" ? " " + arrow : "";
+  if (n) n.textContent = pfSortBy === "name" ? " " + arrow : "";
+  const tb = $("proofread-sort-time"), nb = $("proofread-sort-name");
+  if (tb) tb.classList.toggle("active", pfSortBy === "time");
+  if (nb) nb.classList.toggle("active", pfSortBy === "name");
+}
+function toggleProofreadSort(mode) {
+  if (pfSortBy === mode) pfSortDesc = !pfSortDesc;
+  else { pfSortBy = mode; pfSortDesc = (mode === "time"); }  // time->newest; name->A-Z
+  updateProofreadSortUI();
+  loadProofreadDocs();
+}
 async function loadProofreadDocs() {
-  const data = await api("/api/proofread/docs");
+  const data = await api(`/api/proofread/docs?sort_by=${pfSortBy}&desc=${pfSortDesc}`);
+  updateProofreadSortUI();
   fillSelect($("proofread-select"), data.docs.length ? data.docs : ["(无可校对文档)"]);
   if (!data.docs.length) {
     $("proofread-table").innerHTML = "<tr><td style='border:none'>" +
@@ -1749,6 +1769,8 @@ async function loadProofreadDocs() {
 }
 $("proofread-select").onchange = () => { if ($("proofread-select").value !== "(无可校对文档)") loadProofreadTable($("proofread-select").value); };
 $("proofread-refresh").onclick = loadProofreadDocs;
+if ($("proofread-sort-time")) $("proofread-sort-time").onclick = () => toggleProofreadSort("time");
+if ($("proofread-sort-name")) $("proofread-sort-name").onclick = () => toggleProofreadSort("name");
 
 // Paginated: only render PAGE rows at a time (a doc can have thousands of
 // segments — rendering all at once froze the tab). Edits are written back into

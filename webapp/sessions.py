@@ -122,14 +122,15 @@ def proofread_doc_dir(doc_name, session_id):
     return candidate
 
 
-def list_proofread_docs(session_id):
+def list_proofread_docs(session_id, sort_by="time", descending=True):
     """Finished, proofreadable docs the caller may see: only their own session
     subtree (``temp/<sid>/<task>/<doc>``). Each translation runs in a per-task
     subdir, so we scan two levels deep. Proofreadability (incl. PDF now) is
-    decided by ``backend._is_finished_doc``."""
-    docs = []
+    decided by ``backend._is_finished_doc``. Sorted via backend.sort_proofread_docs
+    (completion time, newest first, by default)."""
+    docs = []   # (relname, folder_abspath)
     if not valid_session_id(session_id):
-        return docs
+        return []
     temp_dir, _, _ = backend.get_custom_paths()
     sess_dir = os.path.join(temp_dir, session_id)
     try:
@@ -140,13 +141,13 @@ def list_proofread_docs(session_id):
                     continue
                 # Legacy 1-level layout: temp/<sid>/<doc>
                 if backend._is_finished_doc(edir):
-                    docs.append(f"{session_id}/{entry}")
+                    docs.append((f"{session_id}/{entry}", edir))
                     continue
                 # Task-isolated layout: temp/<sid>/<task>/<doc>
                 for sub in sorted(os.listdir(edir)):
                     folder = os.path.join(edir, sub)
                     if os.path.isdir(folder) and backend._is_finished_doc(folder):
-                        docs.append(f"{session_id}/{entry}/{sub}")
+                        docs.append((f"{session_id}/{entry}/{sub}", folder))
     except OSError:
         pass
-    return docs
+    return backend.sort_proofread_docs(docs, sort_by, descending)

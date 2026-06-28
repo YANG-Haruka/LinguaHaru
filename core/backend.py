@@ -753,7 +753,30 @@ def _is_finished_doc(folder):
     return os.path.exists(os.path.join(folder, "manifest.json"))
 
 
-def list_proofread_docs():
+def _proofread_doc_mtime(folder):
+    """A doc's completion time = mtime of its dst_translated.json (falls back to
+    the folder mtime). Used to sort the proofread list by 'time'."""
+    try:
+        p = os.path.join(folder, "dst_translated.json")
+        return os.path.getmtime(p if os.path.exists(p) else folder)
+    except OSError:
+        return 0.0
+
+
+def sort_proofread_docs(items, sort_by="time", descending=True):
+    """Sort proofread docs. ``items`` is a list of (relname, folder_abspath).
+    sort_by 'time' = completion time (default, newest first); 'name' = the doc's
+    own name (last path component), A->Z by default. Returns the sorted relnames."""
+    if sort_by == "name":
+        keyed = sorted(items, key=lambda t: os.path.basename(t[0]).casefold(),
+                       reverse=descending)
+    else:
+        keyed = sorted(items, key=lambda t: _proofread_doc_mtime(t[1]),
+                       reverse=descending)
+    return [name for name, _ in keyed]
+
+
+def list_proofread_docs(sort_by="time", descending=True):
     """List finished, proofreadable docs anywhere in the temp tree.
 
     Walks the whole temp tree (bounded depth) and returns every folder that holds
@@ -766,7 +789,7 @@ def list_proofread_docs():
     vice-versa."""
     temp_dir, _, _ = get_custom_paths()
     base = os.path.realpath(temp_dir)
-    docs = []
+    docs = []   # (relname, folder_abspath) — folder kept for time-sorting
 
     def _walk(folder, rel, depth):
         if depth > 4:   # safety bound; real layouts are 1-3 deep
@@ -781,12 +804,12 @@ def list_proofread_docs():
                 continue
             relname = f"{rel}/{name}" if rel else name
             if _is_finished_doc(sub):
-                docs.append(relname)     # a doc's own subfolders aren't separate docs
+                docs.append((relname, sub))   # a doc's own subfolders aren't separate docs
                 continue
             _walk(sub, relname, depth + 1)
 
     _walk(base, "", 0)
-    return docs
+    return sort_proofread_docs(docs, sort_by, descending)
 
 
 def load_proofread_table(doc_name):

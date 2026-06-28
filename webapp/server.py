@@ -1565,10 +1565,12 @@ def _resolve_proofread(name, session_id):
 
 
 @app.get("/api/proofread/docs")
-def proofread_docs(request: Request):
+def proofread_docs(request: Request, sort_by: str = "time", desc: bool = True):
+    sort_by = sort_by if sort_by in ("time", "name") else "time"
     if _proofread_external():
-        return {"docs": sessions.list_proofread_docs(request.state.session_id)}
-    return {"docs": backend.list_proofread_docs()}
+        return {"docs": sessions.list_proofread_docs(
+            request.state.session_id, sort_by=sort_by, descending=desc)}
+    return {"docs": backend.list_proofread_docs(sort_by=sort_by, descending=desc)}
 
 
 @app.get("/api/proofread")
