@@ -153,7 +153,7 @@ def history_log_dir(session_id):
     (data/history), so both frontends show the same records. LAN / server / deploy
     mode keeps history per browser session (data/history/<session>), so users on a
     shared host can't see each other's translations."""
-    external = backend.get_config("lan_mode", False) or server_mode_on()
+    external = _bound_externally()
     return backend.history_dir(session_id if external else None)
 
 
@@ -221,7 +221,16 @@ async def _session_and_isolation(request, call_next):
         sid = sessions.new_session_id()
     request.state.session_id = sid
     _admin_token.set(request.headers.get("X-Admin-Token", ""))
-    _client_is_local.set(_is_loopback(request.client.host if request.client else ""))
+    # "Local" = the request really came from this machine -> the owner, auto-trusted
+    # for admin. Behind a reverse proxy the client IP is the proxy's loopback addr,
+    # which would falsely auto-trust EVERY remote request. So when bound externally,
+    # a request carrying proxy-forwarding headers is treated as NON-local (it must
+    # supply the admin password). Direct loopback (no proxy) stays trusted.
+    _local = _is_loopback(request.client.host if request.client else "")
+    if _local and _bound_externally() and (
+            request.headers.get("x-forwarded-for") or request.headers.get("forwarded")):
+        _local = False
+    _client_is_local.set(_local)
     resp = await call_next(request)
     if issue:
         resp.set_cookie(sessions.SESSION_COOKIE, sid, httponly=True,
@@ -257,7 +266,7 @@ def _max_upload_mb():
         audio extraction (ffmpeg.wasm) can't run — capping it just blocks you."""
     if server_mode_on():
         return 500
-    if not backend.get_config("lan_mode", False):
+    if not _bound_externally():
         return 0   # localhost only -> no cap
     mb = backend.get_config("max_upload_mb", 2048)
     try:
@@ -942,7 +951,7 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
     # Concurrency: a LOCAL single user runs up to MAX_CONCURRENT_TASKS files at
     # once (matches Qt; GPU work is still serialized by GPU_LOCK). Server/LAN
     # deploys stay sequential so concurrent users don't multiply API/memory load.
-    external = backend.get_config("lan_mode", False) or server_mode_on()
+    external = _bound_externally()
     pool = 1 if external else max(1, min(total, backend.MAX_CONCURRENT_TASKS))
 
     out_slot = [None] * total           # per-index so order is preserved
@@ -1581,7 +1590,7 @@ def _proofread_external():
     where several people share the host. Local single-user mode (loopback only)
     shares ONE proofread view with the Qt desktop app — same as history — so a doc
     translated in either frontend can be re-calibrated from the other."""
-    return backend.get_config("lan_mode", False) or server_mode_on()
+    return _bound_externally()
 
 
 def _resolve_proofread(name, session_id):
@@ -2264,7 +2273,7 @@ def _quick_store_dir(request):
     on a shared/LAN deploy so users never see each other's history. Lives under
     data/history (not data/log)."""
     try:
-        external = backend.get_config("lan_mode", False) or server_mode_on()
+        external = _bound_externally()
         return backend.history_dir(request.state.session_id if external else None)
     except Exception:  # noqa: BLE001
         return None
@@ -2451,7 +2460,7 @@ def server_host():
     h = _host_override()
     if h:
         return h
-    external = backend.get_config("lan_mode", False) or server_mode_on()
+    external = _bound_externally()
     return "0.0.0.0" if external else "127.0.0.1"
 
 
@@ -2506,6 +2515,11 @@ def _open_browser_when_ready(url, host, port):
 
 
 if __name__ == "__main__":
+    # The OCR isolation pool spawns a child process; in a PyInstaller-frozen build
+    # the child re-launches this exe, so without freeze_support() it would re-run
+    # the server instead of the worker bootstrap and _run_ocr would hang forever.
+    import multiprocessing
+    multiprocessing.freeze_support()
     import uvicorn
     host = server_host()
     port = server_port(host)

@@ -80,7 +80,9 @@ def _pdf_is_scanned(path, sample=6):
             return True
         finally:
             doc.close()
-    except Exception:  # noqa: BLE001 — can't inspect -> assume not scanned
+    except Exception as e:  # noqa: BLE001 — can't inspect -> assume not scanned
+        from core.log_config import app_logger
+        app_logger.debug(f"_pdf_is_scanned: could not inspect {path} ({e}); assuming digital")
         return False
 
 

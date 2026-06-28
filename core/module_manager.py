@@ -558,14 +558,24 @@ def _maybe_install_cuda_onnxruntime(name):
         return _run([sys.executable, "-m", "pip", "install", *args])[0]
 
     # CPU onnxruntime and onnxruntime-gpu provide the same import name and can't
-    # coexist — remove the CPU build first.
+    # coexist, so we must uninstall the CPU build to install the GPU one. The risk:
+    # if the GPU install then fails (mirror down / no matching wheel), the env is
+    # left with NO onnxruntime at all — and on a RapidOCR-only install (no paddle)
+    # that kills OCR completely. So: try the swap, VERIFY the CUDA EP actually
+    # loads, and if it doesn't, restore a working CPU onnxruntime. Never leave OCR
+    # worse than CPU, and report the state truthfully.
     _run([sys.executable, "-m", "pip", "uninstall", "-y",
           "onnxruntime", "onnxruntime-directml"])
     ok = _pip("--index-url", pypi, _ORT_GPU_CUDA12_SPEC)
     ok = _pip("--index-url", pypi, *_ORT_CUDA12_NVIDIA) and ok
-    if not ok:
-        app_logger.warning("CUDA onnxruntime install failed; OCR will run on CPU.")
-        _emit("GPU OCR 运行时安装失败，OCR 将用 CPU。/ CUDA onnxruntime install failed; OCR falls back to CPU.")
+    if ok and _onnxruntime_is_gpu():
+        return   # GPU OCR ready
+    # Failed, or installed but the CUDA EP won't load -> restore CPU onnxruntime so
+    # OCR keeps working (RapidOCR/PaddleOCR on CPU) instead of being dead.
+    app_logger.warning("CUDA onnxruntime unavailable; restoring CPU onnxruntime for OCR.")
+    _emit("GPU OCR 运行时不可用，已恢复 CPU onnxruntime。/ CUDA onnxruntime unavailable; restored CPU onnxruntime.")
+    _run([sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime-gpu"])
+    _pip("--index-url", pypi, "onnxruntime")
 
 
 def install_module(name):

@@ -318,8 +318,12 @@ def _ocr_worker_entry(file_path, src_lang, manga=False):
         from core import model_store
         model_store.setup_model_env()
         model_store.finish_model_env_setup()
-    except Exception:  # noqa: BLE001 — best-effort; engine build may still find caches
-        pass
+    except Exception as e:  # noqa: BLE001 — best-effort; engine build may still find caches
+        # Don't fail silently: this is the OCR child's ONLY chance to set the model
+        # cache dirs / HF endpoint, so if it throws the engine build may download
+        # against the wrong endpoint (or hang). Log it so slow/failing OCR is
+        # diagnosable instead of a mystery.
+        app_logger.warning(f"OCR child model-env setup failed: {e}")
     # Preload CUDA/cuDNN DLLs (from the nvidia-*-cu12 wheels) so onnxruntime-gpu's
     # CUDA provider can initialize in this torch-free child -> RapidOCR runs on the
     # GPU. No-op / harmless on CPU-only installs (onnxruntime without CUDA).
