@@ -1085,6 +1085,11 @@ class DocumentTranslator:
         # extraction is instant for plain docs, translation keeps the full bar).
         _orig_cb = progress_callback
         _share = getattr(self, "EXTRACTION_PROGRESS_SHARE", 0.0) or 0.0
+        # WRITE_PROGRESS_SHARE reserves the tail of the bar for the output/render
+        # step (manga PDF re-renders + repacks page images, which is slow enough to
+        # need its own progress). Translation then maps into [share, 1-write].
+        _write = getattr(self, "WRITE_PROGRESS_SHARE", 0.0) or 0.0
+        _trans_end = 1.0 - _write
 
         def _extract_cb(value, desc=None):
             if _orig_cb:
@@ -1092,7 +1097,11 @@ class DocumentTranslator:
 
         def _trans_cb(value, desc=None):
             if _orig_cb:
-                _orig_cb(_share + float(value) * (1.0 - _share), desc=desc)
+                _orig_cb(_share + float(value) * (_trans_end - _share), desc=desc)
+
+        def _write_cb(value, desc=None):
+            if _orig_cb:
+                _orig_cb(_trans_end + float(value) * (1.0 - _trans_end), desc=desc)
 
         # The rest of process() is the translation phase; extraction uses _extract_cb.
         progress_callback = _trans_cb
@@ -1151,7 +1160,12 @@ class DocumentTranslator:
             self._clear_temp_folder()
 
             app_logger.info("Extracting content...")
-            self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Extracting text')}...")
+            # Use _extract_cb (maps to [0, share]) for the extraction status, NOT
+            # progress_callback (=_trans_cb, which would emit `share` i.e. 40% before
+            # extraction even starts, then extraction re-climbs from 0 -> the bar
+            # jumps to 40% then "restarts from zero"). Only visible when share>0
+            # (manga/video). See _extract_cb/_trans_cb above.
+            self.update_ui_safely(_extract_cb, 0, f"{self._get_status_message('Extracting text')}...")
             self.extract_content_to_json(_extract_cb)
 
             app_logger.info("Deduplicating content...")
@@ -1221,11 +1235,14 @@ class DocumentTranslator:
             raise RuntimeError(
                 "Failed to persist final translation results to disk "
                 f"({self.result_split_json_path}); aborting to avoid shipping stale output.")
-        self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Checking results')}...")
+        # Finalize/output phase (checking, restoring, writing) -> _write_cb so the
+        # bar sits at the write band (e.g. 80% for manga) instead of dropping back
+        # to the translation-phase start; non-phased translators map this to 100%.
+        self.update_ui_safely(_write_cb, 0, f"{self._get_status_message('Checking results')}...")
         missing_counts = check_and_sort_translations(self.src_split_json_path, self.result_split_json_path)
 
         # Restore to original structure
-        self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Restoring structure')}...")
+        self.update_ui_safely(_write_cb, 0, f"{self._get_status_message('Restoring structure')}...")
         app_logger.info("Restoring translations...")
         restore_translations_from_deduped(
             self.result_split_json_path,
@@ -1238,8 +1255,8 @@ class DocumentTranslator:
 
         # Write output
         app_logger.info("Writing output...")
-        self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Generating output')}...")
-        self.write_translated_json_to_file(self.src_json_path, self.result_json_path, progress_callback)
+        self.update_ui_safely(_write_cb, 0, f"{self._get_status_message('Generating output')}...")
+        self.write_translated_json_to_file(self.src_json_path, self.result_json_path, _write_cb)
 
         # Final stats (segments, speed, tokens) for the completion status message
         try:

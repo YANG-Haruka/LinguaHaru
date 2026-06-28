@@ -34,7 +34,11 @@ class MangaPdfTranslator(DocumentTranslator):
     repacked into a PDF. Proofread/re-export is handled by the backend reading
     manga_pages.json (see reexport_manga_pdf)."""
 
-    EXTRACTION_PROGRESS_SHARE = 0.4   # OCR/raster up front -> 0-40%, translate -> 40-100%
+    # Three phases on the bar: raster+OCR up front (GPU OCR is fast now), then LLM
+    # translation (the longest), then re-render+repack the pages (slow on the first
+    # run — per-bubble inpaint). Each gets its own band so the bar always moves.
+    EXTRACTION_PROGRESS_SHARE = 0.3   # raster + OCR  -> 0-30%
+    WRITE_PROGRESS_SHARE = 0.2        # render + repack -> 80-100% (translate = 30-80%)
 
     def extract_content_to_json(self, progress_callback=None):
         """Rasterize every page, OCR+group each, and write ONE combined src.json
@@ -94,13 +98,14 @@ class MangaPdfTranslator(DocumentTranslator):
         result_path = render_manga_pages_to_pdf(
             pages_meta, translations, self.file_dir, self.result_dir, self.dst_lang,
             os.path.splitext(os.path.basename(self.input_file_path))[0],
-            self.src_lang)
+            self.src_lang, progress_callback=progress_callback)
         app_logger.info(f"Manga PDF saved: {result_path}")
         return result_path
 
 
 def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
-                              dst_lang, name, src_lang, out_suffix=""):
+                              dst_lang, name, src_lang, out_suffix="",
+                              progress_callback=None):
     """Render translations onto each page image and repack into a PDF. Shared by the
     initial run and proofread re-export. Page-image paths in pages_meta are relative
     to file_dir. Returns the output PDF path
@@ -108,8 +113,13 @@ def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
     out_suffix="_proofread" so it never clobbers the original translated PDF."""
     fitz = _fitz()
     out = fitz.open()
+    n = max(len(pages_meta), 1)
     try:
-        for pm in pages_meta:
+        for idx, pm in enumerate(pages_meta):
+            # Per-page progress so the long "generating output" step (re-render +
+            # repack each page) shows movement instead of a frozen status line.
+            if progress_callback:
+                progress_callback(idx / n, f"Rendering {idx + 1}/{n}")
             img_path = os.path.join(file_dir, pm["image"])
             # Cache the inpainted (text-erased) clean page next to the raster, keyed
             # by the page-image name. The first run (initial translation) computes +
