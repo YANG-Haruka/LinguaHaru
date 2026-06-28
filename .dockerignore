@@ -1,0 +1,30 @@
+# Keep the build context (and image) small + reproducible.
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# Mutable runtime state — recreated in the container (mounted as a volume).
+data/
+dist/
+dist_portable/
+build/
+*.spec
+
+# Desktop-only frontend (the image serves the Web app).
+qt_app/
+app_qt.py
+requirements/qt.txt
+
+# Local scratch / artifacts
+*.pdf
+mock_data/
+tests/
+docs/
+HANDOFF.md
+test.py
