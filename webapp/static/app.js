@@ -14,6 +14,7 @@ const ICON = {
 const PLUGIN_ICON = {
   "PDF":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h7l4 4v14a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 16h6"/></svg>',
   "Image OCR":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.8"/><path d="M21 16l-5-5L5 20"/></svg>',
+  "漫画翻译":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 7h5M8 11h8M8 15h6"/></svg>',
   "Video/Audio":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg>',
   "Real-Time Voice":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>',
   "翻译语音输入":'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11v2M7 8v8M11 5v14M15 8v8M19 11v2"/></svg>',
@@ -1407,18 +1408,27 @@ function renderModules() {
     usageEl.dataset.plugin = m.name;
     card.appendChild(usageEl);
 
-    // Footer: action button(s).
+    // Footer: action button(s). A reuses card (漫画翻译) shares another plugin's
+    // deps: once available there's nothing to uninstall separately (show a note);
+    // when missing, the install button installs the reused plugin.
     const foot = document.createElement("div"); foot.className = "plugin-card-foot";
-    const btn = document.createElement("button");
-    btn.className = m.available ? "" : "primary";
-    btn.innerHTML = (m.available ? "" : ICON.download) +
-      `<span>${m.available ? _label("Uninstall", "卸载") : _label("Install", "安装")}</span>`;
-    btn.onclick = () => moduleAction(m.name, m.available ? "uninstall" : "install", btn, statEl);
-    foot.appendChild(btn);
+    if (m.reuses && m.available) {
+      const note = document.createElement("span");
+      note.className = "plugin-sub";
+      note.textContent = _label("Provided by the Image OCR plugin", "随「图像 OCR」插件提供");
+      foot.appendChild(note);
+    } else {
+      const btn = document.createElement("button");
+      btn.className = m.available ? "" : "primary";
+      btn.innerHTML = (m.available ? "" : ICON.download) +
+        `<span>${m.available ? _label("Uninstall", "卸载") : _label("Install", "安装")}</span>`;
+      btn.onclick = () => moduleAction(m.reuses || m.name, m.available ? "uninstall" : "install", btn, statEl);
+      foot.appendChild(btn);
+    }
     card.appendChild(foot);
 
     grid.appendChild(card);
-    if (m.available) checkModuleUpdate(m.name, foot, statEl);
+    if (m.available && !m.reuses) checkModuleUpdate(m.name, foot, statEl);
   }
   loadModuleUsage();
   renderMarket();

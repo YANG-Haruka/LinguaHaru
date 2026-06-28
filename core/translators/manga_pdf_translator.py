@@ -59,7 +59,7 @@ class MangaPdfTranslator(DocumentTranslator):
                 rel = os.path.join("manga_pages", f"page_{i + 1:03d}.png")
                 img_path = os.path.join(self.file_dir, rel)
                 pix.save(img_path)
-                content, regions = ocr_and_group_image(img_path, self.src_lang)
+                content, regions = ocr_and_group_image(img_path, self.src_lang, manga=True)
                 # Make count_src globally unique across pages.
                 id_map = {}
                 for r in regions:

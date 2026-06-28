@@ -72,6 +72,7 @@ _BUILTIN_FORMATS = [
 _OPTIONAL_ICONS = {
     "PDF": FluentIcon.DOCUMENT,
     "Image OCR": FluentIcon.PHOTO,
+    "漫画翻译": FluentIcon.ALBUM,
     "Video/Audio": FluentIcon.MOVIE,
     "Real-Time Voice": FluentIcon.MICROPHONE,
 }
@@ -283,7 +284,12 @@ class OptionalPluginCard(CardWidget):
 
     def _clicked(self):
         if callable(self._on_install):
-            action = "uninstall" if self._mod["available"] else "install"
+            # A reuses card (漫画翻译) only ever installs its shared plugin; its
+            # uninstall button is hidden when available, so never uninstall here.
+            if self._mod.get("reuses"):
+                action = "install"
+            else:
+                action = "uninstall" if self._mod["available"] else "install"
             self._on_install(self, action)
 
     def _clicked_upgrade(self):
@@ -404,13 +410,18 @@ class OptionalPluginCard(CardWidget):
             self.upgrade_btn.setEnabled(False)
             return
         self.upgrade_btn.setEnabled(True)
+        reuses = self._mod.get("reuses")
         if available:
             self.badge = InfoBadge.success(tr("Installed", self._lang), self)
             self.layout().itemAt(0).layout().addWidget(self.badge)
+            # A reuses card (漫画翻译) shares another plugin's deps — there's nothing
+            # to uninstall separately, so hide the button once it's available.
+            self.install_btn.setVisible(not reuses)
             self.install_btn.setEnabled(True)
             self.install_btn.setText(tr("Uninstall", self._lang))
         else:
             self.hide_upgrade()  # nothing to upgrade once removed
+            self.install_btn.setVisible(True)
             self.install_btn.setEnabled(True)
             self.install_btn.setText(tr("Install", self._lang))
 
@@ -683,7 +694,9 @@ class PluginsPage(ScrollArea):
         verb = verbs.get(action, verbs["install"])
         self._info(card._mod["name"], verb + " " + card._mod["name"])
         card.set_install_line(verb + "…")   # immediate visible feedback
-        worker = InstallWorker(card._mod["name"], action=action)
+        # reuses cards (漫画翻译) install/uninstall their shared plugin (Image OCR).
+        target = card._mod.get("reuses") or card._mod["name"]
+        worker = InstallWorker(target, action=action)
         self._worker = worker
         # Show a visible PERCENTAGE on the card (not log lines), so the user can
         # see it progress instead of a wall of pip output.

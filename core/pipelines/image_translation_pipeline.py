@@ -58,15 +58,23 @@ def _normalize_ocr_lang(src_lang):
     return _OCR_LANG.get(code.split("-")[0].lower())
 
 
-def _ocr_model_size():
+def _ocr_model_size(manga=False):
+    """The selected PP-OCRv6 size. Manga translation has its OWN model setting
+    (config `manga_ocr_model_size`, default medium for accuracy) separate from
+    plain image OCR (`ocr_model_size`, default small) — exposed as the 漫画翻译
+    plugin card. Falls back to the image-OCR size if manga's isn't set."""
     try:
         import json as _json
         from core.paths import SYSTEM_CONFIG
         with open(SYSTEM_CONFIG, encoding="utf-8") as f:
-            size = _json.load(f).get("ocr_model_size", "small")
-        return size if size in _OCR_SIZES else "small"
+            cfg = _json.load(f)
+        if manga:
+            size = cfg.get("manga_ocr_model_size") or cfg.get("ocr_model_size", "medium")
+        else:
+            size = cfg.get("ocr_model_size", "small")
+        return size if size in _OCR_SIZES else ("medium" if manga else "small")
     except Exception:  # noqa: BLE001
-        return "small"
+        return "medium" if manga else "small"
 
 
 _USE_CUDA = None
@@ -155,17 +163,16 @@ _FONT_CANDIDATES = [
 ]
 
 
-def _get_ocr_engine(src_lang=None):
+def _get_ocr_engine(src_lang=None, manga=False):
     """Best available OCR engine, recognition-language aware.
 
     `src_lang` (the translation source language) auto-selects the recognition
     model: Japanese/Korean/Cyrillic/Latin get their matching model, everything
-    else uses the default Chinese+English model. Engines are cached per
-    (size, language). If the heavy optional paddleocr package is installed, use
-    PP-OCRv6 (paddlepaddle); otherwise the lightweight RapidOCR (PP-OCRv5 ONNX).
-    Returns (kind, engine) with kind in {"paddle", "rapid"}."""
+    else uses the default Chinese+English model. `manga` picks the manga-specific
+    model size (config manga_ocr_model_size). Engines are cached per
+    (size, language). Returns (kind, engine) with kind in {"paddle", "rapid"}."""
     lang = _normalize_ocr_lang(src_lang)            # (rapid_rec, paddle_lang) or None
-    size = _ocr_model_size()
+    size = _ocr_model_size(manga)
     v6_lang = _rapidocr_v6_lang(src_lang)           # PP-OCRv6 lang_type, or None
     key = (size, v6_lang, lang[0] if lang else None)
     if key in _ocr_engines:
@@ -245,12 +252,12 @@ def _load_ocr_engine(key, v6_lang, lang, size):
     return engine
 
 
-def _run_ocr_inproc(file_path, src_lang=None):
+def _run_ocr_inproc(file_path, src_lang=None, manga=False):
     """Run OCR and normalize results to a list of (text, quad_points, score).
     Inference is serialized via GPU_LOCK so concurrent image tasks (or a video
     transcription) don't thrash one GPU/CPU."""
     from core.compute_lock import GPU_LOCK
-    kind, engine = _get_ocr_engine(src_lang)
+    kind, engine = _get_ocr_engine(src_lang, manga)
     with GPU_LOCK:
         if kind == "paddle":
             result = engine.predict(file_path)[0]
@@ -303,7 +310,7 @@ def _get_ocr_pool():
     return _ocr_pool
 
 
-def _ocr_worker_entry(file_path, src_lang):
+def _ocr_worker_entry(file_path, src_lang, manga=False):
     """Runs in the OCR child process. The child didn't run the app's startup, so it
     must set up the model env (cache dirs / HF endpoint) before building the OCR
     engine. The engine is cached in the child across calls (max_workers=1)."""
@@ -321,16 +328,16 @@ def _ocr_worker_entry(file_path, src_lang):
         ort.preload_dlls()
     except Exception:  # noqa: BLE001 — older onnxruntime (no preload_dlls) / CPU build
         pass
-    return _run_ocr_inproc(file_path, src_lang)
+    return _run_ocr_inproc(file_path, src_lang, manga)
 
 
-def _run_ocr(file_path, src_lang=None):
+def _run_ocr(file_path, src_lang=None, manga=False):
     """OCR an image, isolated in a child process so it can't freeze the UI (GIL).
     Falls back to in-process if the subprocess is unavailable / crashes."""
     if not _ocr_subprocess_enabled():
-        return _run_ocr_inproc(file_path, src_lang)
+        return _run_ocr_inproc(file_path, src_lang, manga)
     try:
-        return _get_ocr_pool().submit(_ocr_worker_entry, file_path, src_lang).result()
+        return _get_ocr_pool().submit(_ocr_worker_entry, file_path, src_lang, manga).result()
     except Exception as e:  # noqa: BLE001 — broken pool / child crash / pickling
         app_logger.warning(f"OCR subprocess failed ({e}); running in-process.")
         global _ocr_pool
@@ -341,7 +348,7 @@ def _run_ocr(file_path, src_lang=None):
             except Exception:  # noqa: BLE001
                 pass
             _ocr_pool = None
-        return _run_ocr_inproc(file_path, src_lang)
+        return _run_ocr_inproc(file_path, src_lang, manga)
 
 
 def _find_font_path():
@@ -487,14 +494,19 @@ def _group_text_regions(line_regions):
     return merged
 
 
-def ocr_and_group_image(file_path, src_lang=None):
+def ocr_and_group_image(file_path, src_lang=None, manga=None):
     """OCR an image and return (content_data, regions) WITHOUT touching disk.
 
     content_data = the translatable entries (count_src/type/value); regions = every
     detected region with rect/score/needs_translation (+ erase_rects/value). In
-    manga mode the regions are bubble-grouped. Reused per-page by the manga PDF
-    translator; extract_image_content_to_json() wraps this and writes the files."""
-    texts, boxes, scores = _run_ocr(file_path, src_lang)
+    manga mode the regions are bubble-grouped AND the manga-specific OCR model is
+    used. `manga` defaults to the 漫画模式 config flag; the manga PDF translator
+    passes manga=True explicitly (it's always manga, even for auto-detected scans).
+    Reused per-page by the manga PDF translator; extract_image_content_to_json()
+    wraps this and writes the files."""
+    if manga is None:
+        manga = _manga_mode()
+    texts, boxes, scores = _run_ocr(file_path, src_lang, manga)
     # Some engines/versions omit scores; zip() would then truncate to the
     # shortest list and silently drop ALL text. Pad with 1.0 (treated confident).
     if len(scores) < len(texts):
@@ -546,7 +558,7 @@ def ocr_and_group_image(file_path, src_lang=None):
     # region, so the bubble is translated as a whole sentence (a name/clause split
     # across lines stays intact) instead of fragment-by-fragment. No model needed —
     # pure geometry (see _group_text_regions). Off => one region per line (default).
-    if _manga_mode():
+    if manga:
         line_regions = _group_text_regions(line_regions)
 
     content_data = []

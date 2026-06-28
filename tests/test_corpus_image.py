@@ -35,7 +35,7 @@ def test_image_confidence_filter():
     _make_image(src)
 
     # high score region + a low score (noise) region
-    def fake_ocr(_file_path, _src_lang=None):
+    def fake_ocr(_file_path, _src_lang=None, _manga=False):
         return (["Real heading text", "g4rb4ge"],
                 [_box(10, 10, 200, 50), _box(10, 120, 200, 160)],
                 [0.97, 0.21])
@@ -74,7 +74,7 @@ def test_image_missing_scores_not_dropped():
     src = os.path.join(WORK_DIR, "noscore.png")
     _make_image(src)
 
-    def fake_ocr(_file_path, _src_lang=None):
+    def fake_ocr(_file_path, _src_lang=None, _manga=False):
         # engine returned NO scores at all (empty list)
         return (["Alpha text", "Beta text"],
                 [_box(10, 10, 200, 50), _box(10, 80, 200, 120)],
@@ -100,7 +100,7 @@ def test_image_gif_pil_fallback():
     src = os.path.join(WORK_DIR, "img.gif")
     _make_image(src, fmt="GIF")
 
-    def fake_ocr(_file_path, _src_lang=None):
+    def fake_ocr(_file_path, _src_lang=None, _manga=False):
         return (["Caption text"], [_box(10, 10, 200, 50)], [0.95])
 
     orig = ip._run_ocr

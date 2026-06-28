@@ -194,6 +194,11 @@ def _plugin_model_specs():
     return {
         "Image OCR":       {"config_key": "ocr_model_size", "default": "small",
                             "models": list(_OCR_MODELS)},
+        # 漫画翻译 reuses the Image-OCR engine/models but keeps its OWN size choice
+        # (manga benefits from the higher-accuracy model; quick image OCR can stay
+        # light). Same PP-OCRv6 catalog; default medium.
+        "漫画翻译":         {"config_key": "manga_ocr_model_size", "default": "medium",
+                            "models": list(_OCR_MODELS)},
         "Video/Audio":     {"config_key": "stt_model",      "default": _stt_default(),
                             "models": _stt_catalog()},
         "Real-Time Voice": {"config_key": "live_stt_model", "default": _stt_default(),
@@ -301,11 +306,12 @@ def download_plugin_model(name, model_id=None, progress_cb=None):
         set_plugin_model(name, model_id)
     try:
       with _capture_progress(progress_cb):
-        if name == "Image OCR":
+        if name in ("Image OCR", "漫画翻译"):
             import core.pipelines.image_translation_pipeline as ip
             ip._ocr_engines.clear()        # drop cached engines -> re-create with new size
             import gc; gc.collect()
-            ip._get_ocr_engine()           # constructs PaddleOCR -> downloads models
+            # Build with the right size (manga has its own model setting) -> downloads it.
+            ip._get_ocr_engine(manga=(name == "漫画翻译"))
             return True
         if name in ("Video/Audio", "Real-Time Voice", "翻译语音输入"):
             # Download the default STT model so voice input is ready (TTS/edge-tts
@@ -364,7 +370,7 @@ def delete_plugin_model(name, model_id):
     if not subs:
         return False
     try:
-        if name == "Image OCR":
+        if name in ("Image OCR", "漫画翻译"):
             import core.pipelines.image_translation_pipeline as ip
             ip._ocr_engines.clear()        # release the cached engine (Windows file lock)
             import gc; gc.collect()
@@ -538,23 +544,29 @@ def module_status():
                   else "PP-OCRv5 (RapidOCR)")
     specs = _plugin_model_specs()
 
-    def _entry(name, key, available, detail, fixed_model=None):
+    def _entry(name, key, available, detail, fixed_model=None, reuses=None):
         spec = specs.get(name)
         return {
             "name": name, "key": key, "available": available, "detail": detail,
             # Install hint comes from the plugin manifest (plugins/<key>/).
-            "install": plugins_registry.install_hint(name) or "",
+            "install": plugins_registry.install_hint(reuses or name) or "",
             "models": spec["models"] if spec else None,
             "current_model": plugin_current_model(name) if spec else None,
             # For plugins with a FIXED (non-selectable) model — shown read-only so
             # every plugin displays the model it uses.
             "fixed_model": fixed_model,
+            # A "virtual" plugin that has no own deps: it shares another plugin's
+            # install (here 漫画翻译 reuses Image OCR). The UI installs the reused
+            # plugin and hides a separate uninstall.
+            "reuses": reuses,
         }
 
     entries = [
         _entry("PDF", "pdf", pdf_translation_available(),
                "BabelDOC", fixed_model="DocLayout (BabelDOC)"),
         _entry("Image OCR", "ocr", image_translation_available(), ocr_engine),
+        _entry("漫画翻译", "manga", image_translation_available(),
+               "PP-OCRv6 + 气泡分组 · 竖排 · PDF→PDF · 复用图像 OCR", reuses="Image OCR"),
         _entry("Video/Audio", "video", video_translation_available(),
                "faster-whisper / SenseVoice · ffmpeg 已内置 · 视频字幕"),
         _entry("Real-Time Voice", "live", realtime_voice_available(),

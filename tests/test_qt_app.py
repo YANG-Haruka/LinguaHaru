@@ -93,8 +93,8 @@ def test_new_pages_standalone():
     assert ip.objectName() == "InterfacePage"
     pp = PluginsPage(lang="zh")
     assert pp.objectName() == "PluginsPage"
-    # optional-plugin cards: PDF, Image OCR, Video/Audio, Real-Time Voice, 翻译语音输入
-    assert len(pp._opt_cards) == 5, len(pp._opt_cards)
+    # optional-plugin cards: PDF, Image OCR, 漫画翻译, Video/Audio, Real-Time Voice, 翻译语音输入
+    assert len(pp._opt_cards) == 6, len(pp._opt_cards)
     dash = ProgressDashboard(lang="zh")
     dash.start()
     dash.update_metrics(percent=50, total_files=4, done_files=2,
