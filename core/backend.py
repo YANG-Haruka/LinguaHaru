@@ -62,8 +62,30 @@ def accepted_extensions():
     return sorted(TRANSLATOR_MODULES.keys())
 
 
+def _pdf_is_scanned(path, sample=6):
+    """True if the PDF looks like scanned images (little/no extractable text
+    layer across the sampled pages). Such PDFs translate far better via manga/
+    GPU-OCR mode than via BabelDOC, whose scanned-OCR path is weak and often
+    yields 'no paragraphs'."""
+    try:
+        import fitz
+        doc = fitz.open(path)
+        try:
+            n = min(sample, doc.page_count)
+            if n == 0:
+                return False
+            for i in range(n):
+                if len(doc[i].get_text("text").strip()) >= 20:
+                    return False     # a real text layer exists -> not scanned
+            return True
+        finally:
+            doc.close()
+    except Exception:  # noqa: BLE001 — can't inspect -> assume not scanned
+        return False
+
+
 def get_translator_class(
-    file_extension,
+    file_extension, file_path=None,
     excel_mode_2=False, word_bilingual_mode=False, excel_bilingual_mode=False,
     pdf_bilingual_mode=False, subtitle_bilingual_mode=False, txt_bilingual_mode=False,
     md_bilingual_mode=False, epub_bilingual_mode=False, html_bilingual_mode=False,
@@ -73,10 +95,19 @@ def get_translator_class(
     # 漫画模式 (manga_mode): a PDF is treated as a manga/scanned comic — rasterize
     # pages, bubble-group + translate as images, repack to PDF. Images already go
     # through the image pipeline (which honors manga_mode internally), so only the
-    # PDF route needs swapping here.
-    if file_extension.lower() == ".pdf" and read_config().get("manga_mode", False):
-        from core.translators.manga_pdf_translator import MangaPdfTranslator
-        return MangaPdfTranslator
+    # PDF route needs swapping here. Besides the explicit toggle, a PDF with no
+    # text layer (scanned images) is auto-routed here — BabelDOC can't translate
+    # scans, but manga/GPU-OCR mode can (config auto_manga_scanned, default on).
+    if file_extension.lower() == ".pdf":
+        cfg = read_config()
+        scanned = bool(file_path) and cfg.get("auto_manga_scanned", True) \
+            and _pdf_is_scanned(file_path)
+        if cfg.get("manga_mode", False) or scanned:
+            from core.translators.manga_pdf_translator import MangaPdfTranslator
+            if scanned and not cfg.get("manga_mode", False):
+                from core.log_config import app_logger
+                app_logger.info("Scanned PDF detected (no text layer) -> manga/GPU-OCR mode")
+            return MangaPdfTranslator
 
     module_path = TRANSLATOR_MODULES.get(file_extension.lower())
     if not module_path:

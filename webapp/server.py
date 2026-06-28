@@ -672,7 +672,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
     the run reuses that interrupted task's exact dirs in continue_mode."""
     ext = os.path.splitext(file_path)[1]
     stem = os.path.splitext(file_path)[0]
-    translator_class = backend.get_translator_class(ext, **bilingual_flags)
+    translator_class = backend.get_translator_class(ext, file_path=file_path, **bilingual_flags)
     if translator_class is None:
         raise ValueError(f"Unsupported file type '{ext}'.")
 

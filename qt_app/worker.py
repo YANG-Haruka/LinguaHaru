@@ -343,7 +343,7 @@ class TranslationWorker(QThread):
         file_stem = os.path.splitext(self.file_path)[0]
 
         translator_class = backend.get_translator_class(
-            file_extension,
+            file_extension, file_path=self.file_path,
             excel_mode_2=self.bilingual_flags.get("excel_bilingual_mode", False),
             word_bilingual_mode=self.bilingual_flags.get("word_bilingual_mode", False),
             excel_bilingual_mode=self.bilingual_flags.get("excel_bilingual_mode", False),
