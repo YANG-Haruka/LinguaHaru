@@ -11,6 +11,7 @@ Run:  uvicorn webapp.server:app  (or python -m webapp.server)
 import os
 import sys
 import json
+import hmac
 import shutil
 import threading
 import uuid
@@ -196,7 +197,10 @@ def _block_in_server_mode():
     # `LINGUAHARU_ADMIN_PASSWORD` lets them authenticate from the start.
     env_pw = (os.environ.get("LINGUAHARU_ADMIN_PASSWORD") or "").strip()
     token = _admin_token.get()
-    if env_pw and token == env_pw:
+    # Constant-time compare so a remote attacker can't recover the env password
+    # byte-by-byte from response timing (the LAN-hash path is already constant-time
+    # via _verify_pw).
+    if env_pw and token and hmac.compare_digest(str(token), env_pw):
         return
     pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
     if not pw_hash and not env_pw:
