@@ -11,7 +11,7 @@ import numpy as np
 
 from core.engine.base_translator import DocumentTranslator
 from core.pipelines.image_translation_pipeline import (
-    ocr_and_group_image, render_on_image)
+    ocr_and_group_image, render_on_image, inpaint_page)
 from core.log_config import app_logger
 
 _RENDER_DPI = 150   # page raster resolution for OCR + output (good legibility/size)
@@ -111,10 +111,24 @@ def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
     try:
         for pm in pages_meta:
             img_path = os.path.join(file_dir, pm["image"])
-            img = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-            if img is None:
-                continue
-            pil = render_on_image(img, pm["regions"], translations, dst_lang)
+            # Cache the inpainted (text-erased) clean page next to the raster, keyed
+            # by the page-image name. The first run (initial translation) computes +
+            # saves it; proofread re-export loads it and only redraws edited text, so
+            # re-export skips the slow per-bubble inpaint (~70s -> ~seconds).
+            clean_path = os.path.splitext(img_path)[0] + "_clean.png"
+            clean = None
+            if os.path.exists(clean_path):
+                clean = cv2.imdecode(np.fromfile(clean_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if clean is None:
+                img = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+                if img is None:
+                    continue
+                clean = inpaint_page(img, pm["regions"])
+                try:
+                    cv2.imencode(".png", clean)[1].tofile(clean_path)
+                except Exception:  # noqa: BLE001 — caching is best-effort
+                    pass
+            pil = render_on_image(clean, pm["regions"], translations, dst_lang, clean_bgr=clean)
             # Embed pages as JPEG (q88): a lossless PNG of a 150-dpi manga page is
             # ~20MB, ballooning a 10-page PDF to >200MB; JPEG keeps line art crisp
             # at a fraction of the size.

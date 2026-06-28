@@ -678,12 +678,49 @@ def _fit_text(draw, text, rect, font_path):
     return font, [text], 12
 
 
-def render_on_image(image, regions, translations, dst_lang=None):
+def _apply_inpaint(image, mask):
+    """Inpaint the masked text regions out of a BGR image (LaMa when enabled +
+    installed, else OpenCV Telea). Returns the cleaned BGR image. This is the slow
+    step; manga proofread caches its result (see inpaint_page)."""
+    k = max(3, int(round(0.005 * max(image.shape[:2]))))   # dilation ~ image scale
+    mask = cv2.dilate(mask, np.ones((k, k), np.uint8), iterations=1)
+    if _lama_enabled():
+        try:
+            from core.pipelines.lama_inpaint import inpaint as _lama_inpaint
+            out = _lama_inpaint(image, mask)
+            if out is not None:
+                app_logger.info("Inpaint: LaMa")
+                return out
+        except Exception:  # noqa: BLE001
+            pass
+    app_logger.info("Inpaint: cv2 Telea")
+    return cv2.inpaint(image, mask, max(5, k), cv2.INPAINT_TELEA)
+
+
+def inpaint_page(image, regions):
+    """Return a clean (text-erased) BGR copy with EVERY translatable region removed,
+    independent of the current translations. Cacheable: manga proofread re-export
+    redraws edited text on this clean page instead of re-running the slow inpaint
+    (~70s -> near-instant for a 10-page book)."""
+    mask = np.zeros(image.shape[:2], np.uint8)
+    erased = False
+    for region in regions:
+        if not region.get("needs_translation"):
+            continue
+        for er in region.get("erase_rects", [region["rect"]]):
+            cv2.rectangle(mask, (er[0], er[1]), (er[2], er[3]), 255, -1)
+            erased = True
+    return _apply_inpaint(image, mask) if erased else image.copy()
+
+
+def render_on_image(image, regions, translations, dst_lang=None, clean_bgr=None):
     """Erase the original text (inpaint) and draw the translations onto a BGR image.
 
     image: cv2 BGR ndarray. regions: list with rect/needs_translation/erase_rects.
-    translations: {count_src: translated}. Returns a PIL RGB image. Pure in-memory
-    (no disk) so the manga PDF translator can reuse it per page."""
+    translations: {count_src: translated}. clean_bgr: an already-inpainted BGR base
+    (e.g. a cached clean page) — when given, the slow inpaint step is skipped and
+    text is drawn straight onto it. Returns a PIL RGB image. Pure in-memory (no
+    disk) so the manga PDF translator can reuse it per page."""
     mask = np.zeros(image.shape[:2], np.uint8)
     to_render = []
     for region in regions:
@@ -696,20 +733,10 @@ def render_on_image(image, regions, translations, dst_lang=None):
             cv2.rectangle(mask, (er[0], er[1]), (er[2], er[3]), 255, -1)
         to_render.append((region["rect"], translated))
 
-    if to_render:
-        k = max(3, int(round(0.005 * max(image.shape[:2]))))   # dilation ~ image scale
-        mask = cv2.dilate(mask, np.ones((k, k), np.uint8), iterations=1)
-        # Prefer LaMa (clean fill on complex backgrounds) when enabled + its model
-        # is installed; otherwise OpenCV Telea (always available).
-        lama_out = None
-        if _lama_enabled():
-            try:
-                from core.pipelines.lama_inpaint import inpaint as _lama_inpaint
-                lama_out = _lama_inpaint(image, mask)
-            except Exception:  # noqa: BLE001
-                lama_out = None
-        image = lama_out if lama_out is not None else cv2.inpaint(image, mask, max(5, k), cv2.INPAINT_TELEA)
-        app_logger.info(f"Inpaint: {'LaMa' if lama_out is not None else 'cv2 Telea'}")
+    if clean_bgr is not None:
+        image = clean_bgr            # pre-inpainted clean page -> skip the slow step
+    elif to_render:
+        image = _apply_inpaint(image, mask)
 
     # Render translations with PIL (proper CJK shaping)
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
