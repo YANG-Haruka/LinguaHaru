@@ -46,11 +46,15 @@ _SENTINEL_RE = re.compile(re.escape(_SENT_OPEN) + r"(\d+)" + re.escape(_SENT_CLO
 #   %.2f %05d        flags / width / precision
 #   %1$s             positional argument
 # We require the spec to end in a known conversion letter so a bare '%' in
-# prose ("50% off") is NOT matched.
+# prose ("50% off") is NOT matched. The space flag is deliberately EXCLUDED from
+# the flags: real "% d" printf (space-pad positives) is vanishingly rare in
+# translatable text, whereas "<pct>% <word>" is everywhere ("95% of", "50% off",
+# "100% sure") — with a space flag those falsely match "% o"/"% s"/… and the
+# whole paragraph's translation gets dropped as a structural break.
 _PRINTF_RE = re.compile(
     r"%(?:%|"                       # %% literal
     r"(?:\d+\$)?"                   # optional positional: 1$
-    r"[-+ 0#]*"                     # flags
+    r"[-+0#]*"                      # flags (NO space flag — see note above)
     r"\d*"                          # width
     r"(?:\.\d+)?"                   # precision
     r"[diouxXeEfFgGaAcspn])"       # conversion letter
