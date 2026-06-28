@@ -122,6 +122,25 @@ _ENGINE_COLLECTS = [rapidocr_collect, faster_whisper_collect, ctranslate2_collec
                     qwen_asr_collect, transformers_collect,
                     ten_vad_collect, soundcard_collect]
 
+# GPU OCR: bundle the nvidia CUDA-12 runtime DLLs (cudart/cublas/cudnn/cufft/
+# curand/cusparse/nvjitlink) so onnxruntime-gpu's CUDA provider can load in the
+# frozen OCR subprocess (no site-packages/nvidia/ exists then). They go to
+# nvidia_cuda/ at the bundle root; the OCR child adds it to the DLL search path
+# (image_translation_pipeline._bundled_nvidia_dir). Empty list if the installed
+# onnxruntime is the CPU build (no nvidia package) -> CPU OCR, smaller bundle.
+def _collect_nvidia_cuda_dlls():
+    bins = []
+    try:
+        import nvidia
+        nv_root = os.path.dirname(nvidia.__file__)
+        for dll in glob.glob(os.path.join(nv_root, "*", "bin", "*.dll")):
+            bins.append((dll, "nvidia_cuda"))
+    except Exception:
+        pass
+    return bins
+nvidia_cuda_binaries = _collect_nvidia_cuda_dlls()
+print(f"[spec] bundling {len(nvidia_cuda_binaries)} nvidia CUDA-12 DLLs for GPU OCR")
+
 # Translators are loaded dynamically (importlib) by extension -> class string, so
 # PyInstaller can't see them. Derive the module list straight from the source of
 # truth (backend.TRANSLATOR_MODULES) so EVERY format (epub/csv/html/odt/json/vtt/
@@ -198,7 +217,7 @@ all_binaries = filter_binaries(
     + imageio_ffmpeg_collect[2]
     + sum((c[2] for c in _ENGINE_COLLECTS), [])
     + chardet_collect[2] + rich_collect[2]
-) + chardet_pyds + conda_dll_binaries
+) + chardet_pyds + conda_dll_binaries + nvidia_cuda_binaries
 
 all_datas = filter_datas(
     fastapi_collect[0]

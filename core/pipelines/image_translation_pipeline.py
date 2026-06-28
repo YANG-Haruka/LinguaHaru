@@ -6,6 +6,7 @@
 # Optional module - requires: rapidocr, onnxruntime, opencv-python-headless
 import json
 import os
+import sys
 import threading
 
 import cv2
@@ -287,6 +288,18 @@ _ocr_pool = None
 _ocr_pool_lock = threading.Lock()
 
 
+def _bundled_nvidia_dir():
+    """In a frozen build the nvidia CUDA-12 runtime DLLs are bundled under
+    <bundle>/nvidia_cuda (see lingua-haru*.spec) because there is no
+    site-packages/nvidia/ to preload from. Returns that dir if it exists, else
+    None (source runs / CPU-only builds use onnxruntime's normal DLL search)."""
+    base = getattr(sys, "_MEIPASS", None)
+    if not base:
+        return None
+    nv = os.path.join(base, "nvidia_cuda")
+    return nv if os.path.isdir(nv) else None
+
+
 def _ocr_subprocess_enabled():
     """Config `ocr_subprocess` (default True): isolate OCR in a child process so it
     can't freeze the desktop UI. Set False to run in-process (e.g. debugging)."""
@@ -324,12 +337,22 @@ def _ocr_worker_entry(file_path, src_lang, manga=False):
         # against the wrong endpoint (or hang). Log it so slow/failing OCR is
         # diagnosable instead of a mystery.
         app_logger.warning(f"OCR child model-env setup failed: {e}")
-    # Preload CUDA/cuDNN DLLs (from the nvidia-*-cu12 wheels) so onnxruntime-gpu's
-    # CUDA provider can initialize in this torch-free child -> RapidOCR runs on the
-    # GPU. No-op / harmless on CPU-only installs (onnxruntime without CUDA).
+    # Preload CUDA/cuDNN DLLs so onnxruntime-gpu's CUDA provider can initialize in
+    # this torch-free child -> RapidOCR runs on the GPU. Source runs load them from
+    # the nvidia-*-cu12 wheels; a FROZEN build has no site-packages, so the nvidia
+    # DLLs are bundled under <bundle>/nvidia_cuda (see lingua-haru*.spec) and we add
+    # that dir to the DLL search path + preload from it. No-op on CPU-only installs.
     try:
         import onnxruntime as ort
-        ort.preload_dlls()
+        nv = _bundled_nvidia_dir()
+        if nv:
+            try:
+                os.add_dll_directory(nv)
+            except Exception:  # noqa: BLE001
+                pass
+            ort.preload_dlls(directory=nv)
+        else:
+            ort.preload_dlls()
     except Exception:  # noqa: BLE001 — older onnxruntime (no preload_dlls) / CPU build
         pass
     return _run_ocr_inproc(file_path, src_lang, manga)
