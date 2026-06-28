@@ -1,12 +1,15 @@
 # Optional: image translation module (OCR + render back onto the image)
 #   pip install -r requirements/ocr.txt
-# Primary engine: PaddleOCR with PP-OCRv6 (Baidu PaddlePaddle, best accuracy).
-# RapidOCR (PP-OCRv5 on onnxruntime) is the lightweight fallback used
-# automatically if paddlepaddle is not installed.
+# Primary engine: RapidOCR with PP-OCRv6 ONNX models (same models as PaddleOCR's
+# PP-OCRv6, but on onnxruntime -> uses the GPU when onnxruntime-gpu is installed,
+# ~60x faster than CPU PaddleOCR with identical accuracy; no paddle/torch cuDNN
+# clash on Windows). GPU machines get CUDA-12 onnxruntime-gpu swapped in
+# automatically (module_manager._maybe_install_cuda_onnxruntime).
+# PaddleOCR is the CPU fallback and covers Korean/Cyrillic (no PP-OCRv6 model).
+rapidocr>=3.9
+onnxruntime>=1.17
 paddleocr>=3.7
 paddlepaddle>=3.3
-rapidocr>=3.0
-onnxruntime>=1.17
 opencv-python-headless>=4.8
 # Used directly by the image pipeline (top-level imports) + optional LaMa inpaint.
 # numpy intentionally UNPINNED (do not cap <2 — that breaks the CUDA torch env).

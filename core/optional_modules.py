@@ -117,10 +117,14 @@ def _cfg_write(key, value):
         json.dump(cfg, f, indent=4, ensure_ascii=False)
 
 
-# OCR runs on CPU here: paddlepaddle-gpu's CUDA DLLs conflict with torch's
-# (cudnn WinError 127 once torch is imported first), so a GPU paddle would break
-# PP-OCRv6 and degrade OCR to RapidOCR. The code (_paddle_device) is GPU-ready
-# if that conflict is ever resolved, but we show disk only (no misleading VRAM).
+# OCR uses the GPU via RapidOCR's PP-OCRv6 ONNX models on onnxruntime-gpu (the
+# same v6 models as PaddleOCR, ~60x faster on GPU, identical accuracy), running in
+# the torch-free OCR subprocess. PaddleOCR-GPU is impossible on Windows
+# (paddlepaddle-gpu's cuDNN clashes with torch's -> WinError 127), which is why
+# the engine is onnxruntime, not paddle. GPU machines get CUDA-12 onnxruntime-gpu
+# installed automatically (module_manager._maybe_install_cuda_onnxruntime); CPU
+# installs (or Korean/Cyrillic, which PP-OCRv6 lacks) fall back to PaddleOCR. Both
+# engines share the same det+rec on-disk size, so we show disk only.
 _OCR_MODELS = [
     {"id": "small",  "label": "PP-OCRv6 Small", "tags": ["Tag Lightweight", "Tag Recommended"],
      "size": "≈ 100 MB", "info": "det+rec ≈ 100MB"},

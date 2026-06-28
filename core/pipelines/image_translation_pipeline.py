@@ -68,6 +68,78 @@ def _ocr_model_size():
     except Exception:  # noqa: BLE001
         return "small"
 
+
+_USE_CUDA = None
+
+
+def _ocr_use_cuda():
+    """True when onnxruntime's CUDA execution provider is available, so RapidOCR
+    runs PP-OCRv6 on the GPU. Safe to request even if the provider later fails to
+    initialize — RapidOCR transparently falls back to CPU. Only the torch-free OCR
+    subprocess actually gets CUDA (the main process has torch, whose cuDNN clashes
+    with onnxruntime-gpu's, so there RapidOCR auto-degrades to CPU)."""
+    global _USE_CUDA
+    if _USE_CUDA is None:
+        try:
+            import onnxruntime as ort
+            _USE_CUDA = "CUDAExecutionProvider" in ort.get_available_providers()
+        except Exception:  # noqa: BLE001
+            _USE_CUDA = False
+    return _USE_CUDA
+
+
+def _lang_code(src_lang):
+    """Translation source language (display name or code) -> short code, e.g.
+    'ja', 'zh', 'fr'."""
+    if not src_lang:
+        return ""
+    code = src_lang
+    try:
+        from core.languages_config import LANGUAGE_MAP
+        if src_lang in LANGUAGE_MAP:
+            code = LANGUAGE_MAP[src_lang]
+    except Exception:  # noqa: BLE001
+        pass
+    return code.split("-")[0].lower()
+
+
+def _rapidocr_v6_lang(src_lang):
+    """Map the source language to a PP-OCRv6 lang_type, or None when PP-OCRv6
+    doesn't cover it (Korean/Cyrillic -> None -> PaddleOCR, which has those
+    models). zh/en/auto/unknown -> 'ch' (PP-OCRv6's multilingual default)."""
+    code = _lang_code(src_lang)
+    if not code or code == "auto":
+        return "ch"
+    if code in ("ko", "ru"):
+        return None     # PP-OCRv6 has no Korean/Cyrillic model; use PaddleOCR
+    try:
+        from rapidocr.utils.model_resolver import PP_OCRV6_LANGS, COMMON_LANG_ALIASES
+    except Exception:  # noqa: BLE001 — older RapidOCR without PP-OCRv6
+        return None
+    lang = COMMON_LANG_ALIASES.get(code, code)
+    return lang if lang in PP_OCRV6_LANGS else "ch"
+
+
+def _build_rapidocr_v6(v6_lang, size):
+    """Build a PP-OCRv6 RapidOCR engine (GPU when available). Same v6 models as
+    PaddleOCR, run via onnxruntime so the GPU is usable on Windows without the
+    paddle/torch cuDNN conflict."""
+    from rapidocr.utils.typings import OCRVersion, ModelType
+    mt = {"tiny": ModelType.TINY, "small": ModelType.SMALL,
+          "medium": ModelType.MEDIUM}.get(size, ModelType.MEDIUM)
+    if v6_lang == "japan" and mt == ModelType.TINY:
+        mt = ModelType.SMALL    # PP-OCRv6 tiny has no Japanese model
+    use_cuda = _ocr_use_cuda()
+    app_logger.info(
+        f"Loading RapidOCR PP-OCRv6 ({v6_lang}, {mt.value}, "
+        f"{'GPU' if use_cuda else 'CPU'})...")
+    params = {
+        "EngineConfig.onnxruntime.use_cuda": use_cuda,
+        "Det.ocr_version": OCRVersion.PPOCRV6, "Det.lang_type": v6_lang, "Det.model_type": mt,
+        "Rec.ocr_version": OCRVersion.PPOCRV6, "Rec.lang_type": v6_lang, "Rec.model_type": mt,
+    }
+    return ("rapid", RapidOCR(params=params))
+
 # OCR recognition confidence below this is treated as noise: not translated and
 # left untouched on the image, rather than rendering a garbled translation.
 _MIN_OCR_CONFIDENCE = 0.6
@@ -94,13 +166,14 @@ def _get_ocr_engine(src_lang=None):
     Returns (kind, engine) with kind in {"paddle", "rapid"}."""
     lang = _normalize_ocr_lang(src_lang)            # (rapid_rec, paddle_lang) or None
     size = _ocr_model_size()
-    key = (size, lang[0] if lang else None)
+    v6_lang = _rapidocr_v6_lang(src_lang)           # PP-OCRv6 lang_type, or None
+    key = (size, v6_lang, lang[0] if lang else None)
     if key in _ocr_engines:
         return _ocr_engines[key]
     with _OCR_LOAD_LOCK:
         if key in _ocr_engines:      # double-check inside the lock
             return _ocr_engines[key]
-        return _load_ocr_engine(key, lang, size)
+        return _load_ocr_engine(key, v6_lang, lang, size)
 
 
 def _paddle_device():
@@ -116,7 +189,19 @@ def _paddle_device():
     return "cpu"
 
 
-def _load_ocr_engine(key, lang, size):
+def _load_ocr_engine(key, v6_lang, lang, size):
+    # PRIMARY: RapidOCR PP-OCRv6 (ONNX). Same v6 models as PaddleOCR but runs on
+    # onnxruntime, so it uses the GPU (~60x faster, identical accuracy) inside the
+    # torch-free OCR subprocess without the paddle/torch cuDNN conflict that makes
+    # PaddleOCR GPU impossible on Windows. PP-OCRv6 lacks Korean/Cyrillic, so
+    # v6_lang is None for those -> PaddleOCR fallback below.
+    if v6_lang is not None:
+        try:
+            engine = _build_rapidocr_v6(v6_lang, size)
+            _ocr_engines[key] = engine
+            return engine
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"RapidOCR PP-OCRv6 unavailable ({e}); trying PaddleOCR.")
     try:
         # DLL load-order fix: paddle's oneDNN/MKL DLLs break ctranslate2
         # (faster-whisper) if paddle loads first; the reverse order works.
@@ -227,6 +312,14 @@ def _ocr_worker_entry(file_path, src_lang):
         model_store.setup_model_env()
         model_store.finish_model_env_setup()
     except Exception:  # noqa: BLE001 — best-effort; engine build may still find caches
+        pass
+    # Preload CUDA/cuDNN DLLs (from the nvidia-*-cu12 wheels) so onnxruntime-gpu's
+    # CUDA provider can initialize in this torch-free child -> RapidOCR runs on the
+    # GPU. No-op / harmless on CPU-only installs (onnxruntime without CUDA).
+    try:
+        import onnxruntime as ort
+        ort.preload_dlls()
+    except Exception:  # noqa: BLE001 — older onnxruntime (no preload_dlls) / CPU build
         pass
     return _run_ocr_inproc(file_path, src_lang)
 

@@ -507,6 +507,67 @@ def _maybe_install_cuda_torch(name):
         app_logger.warning("CUDA torch install failed; the CPU build will be used instead.")
 
 
+# onnxruntime-gpu on PyPI is built for CUDA 12 through 1.26.x (1.27 switched to
+# CUDA 13). We pin <1.27 so the wheel matches the CUDA-12 torch/nvidia stack, and
+# install from the PyPI mirror (China-friendly) rather than the Azure cu12 feed.
+_ORT_GPU_CUDA12_SPEC = "onnxruntime-gpu<1.27"
+# CUDA-12 runtime libs onnxruntime's CUDA EP loads (via ort.preload_dlls()) in the
+# torch-free OCR child. torch bundles its own copies, but the OCR subprocess never
+# imports torch (that would reintroduce the cuDNN conflict), so these standalone
+# wheels are what make GPU OCR work there.
+_ORT_CUDA12_NVIDIA = ["nvidia-cudnn-cu12", "nvidia-cublas-cu12",
+                      "nvidia-cuda-runtime-cu12", "nvidia-cufft-cu12",
+                      "nvidia-curand-cu12", "nvidia-cusparse-cu12"]
+
+
+def _onnxruntime_is_gpu():
+    """True if the installed onnxruntime exposes the CUDA execution provider."""
+    try:
+        import onnxruntime as ort
+        return "CUDAExecutionProvider" in ort.get_available_providers()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _maybe_install_cuda_onnxruntime(name):
+    """If this plugin uses onnxruntime (the Image-OCR plugin) and an NVIDIA GPU is
+    present but the installed onnxruntime is CPU-only, swap in the CUDA-12
+    onnxruntime-gpu + nvidia CUDA-12 runtime wheels so RapidOCR's PP-OCRv6 runs on
+    the GPU (~60x faster than CPU PaddleOCR, same accuracy). Runs AFTER the plugin
+    reqs (which pull CPU onnxruntime) so it can replace it. Best-effort; opt out
+    with config 'ocr_gpu' = false."""
+    m = plugins_registry.get(name)
+    pkgs = (set(m.get("packages", [])) | set(m.get("shared_packages", []))) if m else set()
+    if not ({"onnxruntime", "onnxruntime-gpu", "rapidocr"} & pkgs):
+        return
+    if not _nvidia_gpu_present() or _onnxruntime_is_gpu():
+        return
+    if not _config_get("ocr_gpu", True):
+        return   # explicitly disabled -> keep CPU onnxruntime
+    if _wheel_platform_tag() is None:
+        return   # platform the cu12 wheels don't cover
+
+    pypi = pick_pypi_index()
+    uv = _uv_exe()
+    app_logger.info("NVIDIA GPU detected — installing CUDA-12 onnxruntime-gpu for GPU OCR")
+    _emit("检测到 NVIDIA GPU，正在安装 GPU 版 OCR 运行时（较大，请耐心）… / installing CUDA onnxruntime for OCR…")
+
+    def _pip(*args):
+        if uv:
+            return _run([uv, "pip", "install", "--python", sys.executable, *args])[0]
+        return _run([sys.executable, "-m", "pip", "install", *args])[0]
+
+    # CPU onnxruntime and onnxruntime-gpu provide the same import name and can't
+    # coexist — remove the CPU build first.
+    _run([sys.executable, "-m", "pip", "uninstall", "-y",
+          "onnxruntime", "onnxruntime-directml"])
+    ok = _pip("--index-url", pypi, _ORT_GPU_CUDA12_SPEC)
+    ok = _pip("--index-url", pypi, *_ORT_CUDA12_NVIDIA) and ok
+    if not ok:
+        app_logger.warning("CUDA onnxruntime install failed; OCR will run on CPU.")
+        _emit("GPU OCR 运行时安装失败，OCR 将用 CPU。/ CUDA onnxruntime install failed; OCR falls back to CPU.")
+
+
 def install_module(name):
     req = plugins_registry.requirements_path(name)
     if not req:
@@ -515,6 +576,9 @@ def install_module(name):
     before = _freeze_names()
     _maybe_install_cuda_torch(name)   # GPU machines get CUDA torch before the rest
     ok, out = _run_install(req)
+    if ok:
+        # AFTER the reqs (which pull CPU onnxruntime): swap in CUDA onnxruntime for GPU OCR.
+        _maybe_install_cuda_onnxruntime(name)
     if ok and m:
         _record_install_delta(m["key"], before)   # for full cleanup on uninstall
         _refresh_after_change()
