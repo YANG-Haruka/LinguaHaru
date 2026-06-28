@@ -127,6 +127,24 @@ def server_mode_on():
     return bool(backend.get_config("server_mode", False)) or bool(os.environ.get("RENDER"))
 
 
+def _host_override():
+    """Explicit bind address from the environment (``HOST`` or ``LINGUAHARU_HOST``),
+    or None. Lets a container bind 0.0.0.0 WITHOUT enabling lan_mode/server_mode —
+    `docker run -e HOST=0.0.0.0 -p 8080:8080 ...` now serves out of the box."""
+    return (os.environ.get("LINGUAHARU_HOST") or os.environ.get("HOST") or "").strip() or None
+
+
+def _bound_externally():
+    """True when the server is reachable off-box: lan_mode, server/deploy mode, OR
+    an explicit non-loopback HOST env (e.g. Docker's 0.0.0.0). Drives the
+    remote-admin auth guard so the bind address and the guard can never disagree —
+    a 0.0.0.0 bind WITHOUT the guard would leave admin endpoints wide open."""
+    if backend.get_config("lan_mode", False) or server_mode_on():
+        return True
+    h = _host_override()
+    return bool(h) and not _is_loopback(h)
+
+
 def history_log_dir(session_id):
     """Where the translation-history DB lives for this request.
 
@@ -168,15 +186,22 @@ def _block_in_server_mode():
     caller is local and unrestricted."""
     if server_mode_on():
         raise HTTPException(403, "Disabled in server mode")
-    if not backend.get_config("lan_mode", False):
+    if not _bound_externally():
         return  # bound to localhost; only the local user can reach this
     if _client_is_local.get():
         return  # the host machine's owner may always administer
-    pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
-    if not pw_hash:
-        raise HTTPException(403, "Remote administration disabled (no admin password set)")
+    # An env-provided admin password bootstraps remote administration in headless
+    # deploys (Docker): the owner connects from a non-loopback IP, so they can't be
+    # auto-trusted and can't set a password through the (guarded) config endpoint.
+    # `LINGUAHARU_ADMIN_PASSWORD` lets them authenticate from the start.
+    env_pw = (os.environ.get("LINGUAHARU_ADMIN_PASSWORD") or "").strip()
     token = _admin_token.get()
-    if not (token and _verify_pw(token, pw_hash)):
+    if env_pw and token == env_pw:
+        return
+    pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
+    if not pw_hash and not env_pw:
+        raise HTTPException(403, "Remote administration disabled (set LINGUAHARU_ADMIN_PASSWORD or a LAN admin password)")
+    if not (token and pw_hash and _verify_pw(token, pw_hash)):
         raise HTTPException(401, "Admin password required")
 
 
@@ -1786,23 +1811,6 @@ def _run_model_job(name, model_id):
                 MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": ""}
 
 
-@app.post("/api/modules/{action}")
-async def module_action(action: str, payload: dict):
-    _block_in_server_mode()
-    if action not in ("install", "uninstall", "upgrade"):
-        raise HTTPException(400, "action must be install|uninstall|upgrade")
-    name = payload.get("name")
-    # Query the registry LIVE (not the import-time MODULE_SPECS snapshot) so a
-    # plugin downloaded from the market this session is recognized.
-    from core import plugins_registry
-    if plugins_registry.get(name) is None:
-        raise HTTPException(404, f"Unknown module: {name}")
-    pos = _enqueue_module_job(name, lambda: _run_module_job(name, action))
-    if pos is None:
-        raise HTTPException(409, f"'{name}' already has a pending operation.")
-    return {"started": True, "queue_position": pos}
-
-
 @app.post("/api/modules/model")
 async def module_set_model(payload: dict):
     """Persist a plugin's model choice and download+warm it in the background.
@@ -1884,6 +1892,28 @@ def modules_download(payload: dict):
     if not ok:
         raise HTTPException(400, msg)
     return {"ok": True, "message": msg}
+
+
+# MUST be declared LAST among the /api/modules POST routes: the {action} path
+# param is a catch-all that would otherwise shadow the static /model and
+# /download routes (a POST to /api/modules/model matched here with action="model"
+# -> "action must be install|uninstall|upgrade"). FastAPI matches in declaration
+# order, so static paths must come first.
+@app.post("/api/modules/{action}")
+async def module_action(action: str, payload: dict):
+    _block_in_server_mode()
+    if action not in ("install", "uninstall", "upgrade"):
+        raise HTTPException(400, "action must be install|uninstall|upgrade")
+    name = payload.get("name")
+    # Query the registry LIVE (not the import-time MODULE_SPECS snapshot) so a
+    # plugin downloaded from the market this session is recognized.
+    from core import plugins_registry
+    if plugins_registry.get(name) is None:
+        raise HTTPException(404, f"Unknown module: {name}")
+    pos = _enqueue_module_job(name, lambda: _run_module_job(name, action))
+    if pos is None:
+        raise HTTPException(409, f"'{name}' already has a pending operation.")
+    return {"started": True, "queue_position": pos}
 
 
 # --------------------------------------------------------------------------- #
@@ -2412,8 +2442,11 @@ if os.path.isdir(_ASSETS_DIR):
 
 
 def server_host():
-    """Bind address: 0.0.0.0 (reachable from other devices) in LAN mode or
-    server/deploy mode, otherwise loopback-only."""
+    """Bind address. An explicit HOST env wins (Docker: HOST=0.0.0.0); otherwise
+    0.0.0.0 in LAN mode or server/deploy mode, else loopback-only."""
+    h = _host_override()
+    if h:
+        return h
     external = backend.get_config("lan_mode", False) or server_mode_on()
     return "0.0.0.0" if external else "127.0.0.1"
 
