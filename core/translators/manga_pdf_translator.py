@@ -69,9 +69,10 @@ class MangaPdfTranslator(DocumentTranslator):
                     "width": pix.width, "height": pix.height, "regions": regions,
                 })
                 if progress_callback:
+                    # progress_callback is base's _extract_cb, which already maps
+                    # into [0, EXTRACTION_PROGRESS_SHARE]; pass the raw 0..1 fraction.
                     self.update_ui_safely(
-                        progress_callback, (i + 1) / max(n, 1) * self.EXTRACTION_PROGRESS_SHARE,
-                        f"OCR {i + 1}/{n}")
+                        progress_callback, (i + 1) / max(n, 1), f"OCR {i + 1}/{n}")
         finally:
             doc.close()
 
