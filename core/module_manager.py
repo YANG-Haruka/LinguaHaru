@@ -515,16 +515,33 @@ _ORT_GPU_CUDA12_SPEC = "onnxruntime-gpu<1.27"
 # torch-free OCR child. torch bundles its own copies, but the OCR subprocess never
 # imports torch (that would reintroduce the cuDNN conflict), so these standalone
 # wheels are what make GPU OCR work there.
-_ORT_CUDA12_NVIDIA = ["nvidia-cudnn-cu12", "nvidia-cublas-cu12",
-                      "nvidia-cuda-runtime-cu12", "nvidia-cufft-cu12",
-                      "nvidia-curand-cu12", "nvidia-cusparse-cu12"]
+# ⚠️ PINNED to the CUDA-12.6-era versions onnxruntime-gpu 1.26 was built against.
+# Unpinned, pip grabs the LATEST (e.g. cuDNN 9.23 / cuBLAS 12.9), which onnxruntime
+# 1.26 can't use -> the CUDA EP loads but inference dies with
+# "CUDNN_BACKEND_API_FAILED" and silently falls back to CPU. This exact set is the
+# one verified working (cudnn 9.5.1.17 + cublas 12.6.4.1).
+_ORT_CUDA12_NVIDIA = ["nvidia-cudnn-cu12==9.5.1.17", "nvidia-cublas-cu12==12.6.4.1",
+                      "nvidia-cuda-runtime-cu12==12.6.77", "nvidia-cufft-cu12==11.3.0.4",
+                      "nvidia-curand-cu12==10.3.7.77", "nvidia-cusparse-cu12==12.5.4.2"]
 
 
 def _onnxruntime_is_gpu():
-    """True if the installed onnxruntime exposes the CUDA execution provider."""
+    """True if the INSTALLED onnxruntime exposes the CUDA execution provider.
+
+    Checks in a FRESH subprocess, not in-process: the running app likely already
+    imported onnxruntime at startup (the CPU build), and Python caches imports, so
+    an in-process check would report the STALE pre-swap state — which made the GPU
+    swap's own verification think it failed and roll back to CPU. A subprocess
+    imports the on-disk package as it is right now."""
     try:
-        import onnxruntime as ort
-        return "CUDAExecutionProvider" in ort.get_available_providers()
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "import onnxruntime,sys;"
+             "sys.exit(0 if 'CUDAExecutionProvider' in onnxruntime.get_available_providers() else 1)"],
+            cwd=REPO_ROOT, timeout=120,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+        return r.returncode == 0
     except Exception:  # noqa: BLE001
         return False
 
