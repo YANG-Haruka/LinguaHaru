@@ -695,6 +695,10 @@ def _fit_text(draw, text, rect, font_path):
     """Pick a font size and line wrapping so the text fits inside rect."""
     x1, y1, x2, y2 = rect
     box_w, box_h = max(x2 - x1, 8), max(y2 - y1, 8)
+    # A translation may come back with explicit line breaks; honor them as hard
+    # breaks. Pillow's textlength() raises "can't measure length of multiline text"
+    # on ANY string containing a newline, so a '\n' must never reach it below.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
 
     for size in range(box_h, 7, -1):
         font = (ImageFont.truetype(font_path, size) if font_path
@@ -702,6 +706,10 @@ def _fit_text(draw, text, rect, font_path):
         # Greedy character wrap (works for CJK and degrades fine for Latin)
         lines, line = [], ""
         for ch in text:
+            if ch == "\n":            # hard break — flush, never measure a newline
+                lines.append(line)
+                line = ""
+                continue
             candidate = line + ch
             if draw.textlength(candidate, font=font) <= box_w or not line:
                 line = candidate
@@ -714,7 +722,7 @@ def _fit_text(draw, text, rect, font_path):
         if line_h * len(lines) <= box_h or size == 8:
             return font, lines, line_h
     font = ImageFont.load_default()
-    return font, [text], 12
+    return font, text.split("\n"), 12
 
 
 def _apply_inpaint(image, mask):
