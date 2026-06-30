@@ -692,6 +692,57 @@ async def save_glossary(payload: dict):
     return {"ok": True, "count": len(clean)}
 
 
+@app.post("/api/glossary/new")
+async def new_glossary(payload: dict):
+    """Create a new, empty glossary. Returns the refreshed glossary list."""
+    _block_in_server_mode()
+    try:
+        name = backend.create_glossary(payload.get("name"))
+    except FileExistsError as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "name": name, "glossaries": backend.get_glossary_files()}
+
+
+@app.post("/api/glossary/delete")
+async def delete_glossary(payload: dict):
+    """Delete a glossary (Default is protected). Returns the refreshed list."""
+    _block_in_server_mode()
+    try:
+        backend.delete_glossary(payload.get("name"))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"ok": True, "glossaries": backend.get_glossary_files()}
+
+
+@app.post("/api/glossary/import")
+async def import_glossary(name: str = Form(...), file: UploadFile = None):
+    """Create a new glossary from an uploaded CSV. Returns the refreshed list."""
+    _block_in_server_mode()
+    if file is None:
+        raise HTTPException(400, "No file uploaded.")
+    import tempfile
+    suffix = os.path.splitext(file.filename or "")[1] or ".csv"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    try:
+        tmp.write(await file.read())
+        tmp.close()
+        saved = backend.import_glossary(name, tmp.name)
+    except FileExistsError as e:
+        raise HTTPException(409, str(e))
+    except (ValueError, UnicodeDecodeError) as e:
+        raise HTTPException(400, str(e))
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+    return {"ok": True, "name": saved, "glossaries": backend.get_glossary_files()}
+
+
 # --------------------------------------------------------------------------- #
 # Translation
 # --------------------------------------------------------------------------- #

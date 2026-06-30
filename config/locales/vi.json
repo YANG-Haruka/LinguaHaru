@@ -219,5 +219,9 @@
   "Word Bilingual": "Bật so sánh song ngữ",
   "Working": "Working",
   "lines/min": "lines/min",
-  "threads": "threads"
+  "threads": "threads",
+  "Import Glossary": "Nhập bảng thuật ngữ",
+  "New Glossary Prompt": "Tên bảng thuật ngữ mới:",
+  "Delete Glossary Confirm": "Xóa bảng thuật ngữ \"{name}\"? Hành động này không thể hoàn tác.",
+  "New Glossary": "Bảng thuật ngữ mới"
 }

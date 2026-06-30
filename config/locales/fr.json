@@ -219,5 +219,9 @@
   "Word Bilingual": "Activer la comparaison bilingue",
   "Working": "Working",
   "lines/min": "lines/min",
-  "threads": "threads"
+  "threads": "threads",
+  "Import Glossary": "Importer le glossaire",
+  "New Glossary Prompt": "Nom du nouveau glossaire :",
+  "Delete Glossary Confirm": "Supprimer le glossaire « {name} » ? Cette action est irréversible.",
+  "New Glossary": "Nouveau glossaire"
 }

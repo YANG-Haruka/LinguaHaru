@@ -280,5 +280,9 @@
   "Word Bilingual": "啟用雙語對照",
   "Working": "處理中",
   "lines/min": "行/分",
-  "threads": "執行緒"
+  "threads": "執行緒",
+  "Import Glossary": "匯入詞彙表",
+  "New Glossary Prompt": "新詞彙表名稱：",
+  "Delete Glossary Confirm": "刪除詞彙表「{name}」？此操作無法復原。",
+  "New Glossary": "新增詞彙表"
 }

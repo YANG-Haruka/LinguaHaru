@@ -661,11 +661,30 @@ def install_command_for(module_name):
 # data/, so it's easy to find and edit.
 GLOSSARY_DIR = os.path.join(RUNTIME_ROOT, "glossary")
 _GLOSSARY_ENCODINGS = ("utf-8-sig", "utf-8", "gbk", "shift-jis")
+# A glossary's header row is LANGUAGE CODES (text_separator.load_glossary matches
+# the source/target columns by code/name) — NOT "source,target". A new glossary
+# must therefore start with language columns or it would silently never apply.
+_DEFAULT_GLOSSARY_HEADER = ["en", "zh", "zh-Hant", "ja", "es", "fr",
+                            "de", "it", "pt", "ru", "ko", "th", "vi"]
+
+
+def _ensure_default_glossary():
+    """Guarantee at least a 'Default' glossary exists. A fresh install (incl. the
+    portable, which used to ship no glossary/ at all) would otherwise have an empty
+    picker and nothing to load/edit."""
+    os.makedirs(GLOSSARY_DIR, exist_ok=True)
+    try:
+        if any(f.endswith(".csv") for f in os.listdir(GLOSSARY_DIR)):
+            return
+    except OSError:
+        return
+    _write_glossary_csv(os.path.join(GLOSSARY_DIR, "Default.csv"),
+                        _DEFAULT_GLOSSARY_HEADER, [])
 
 
 def get_glossary_files():
     """Glossary names (no .csv), Default first."""
-    os.makedirs(GLOSSARY_DIR, exist_ok=True)
+    _ensure_default_glossary()
     try:
         files = [f for f in os.listdir(GLOSSARY_DIR) if f.endswith(".csv")]
     except OSError:
@@ -708,6 +727,18 @@ def load_glossary(glossary_name):
                              f"could not decode {path}: {last_error}")
 
 
+def _write_glossary_csv(path, header, rows):
+    """Write header+rows as utf-8-sig CSV, dropping fully-empty rows. Returns the
+    number of data rows written."""
+    cleaned = [r for r in rows if "".join(str(c) for c in r).strip()]
+    with open(path, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.writer(f)
+        if header:
+            writer.writerow(header)
+        writer.writerows(cleaned)
+    return len(cleaned)
+
+
 def save_glossary(glossary_name, header, rows):
     """Write header+rows back as utf-8-sig CSV. Drops fully-empty rows and
     refuses to overwrite a non-empty file with an empty table (web guard)."""
@@ -717,12 +748,67 @@ def save_glossary(glossary_name, header, rows):
     cleaned = [r for r in rows if "".join(str(c) for c in r).strip()]
     if not cleaned and os.path.getsize(path) > 0:
         raise ValueError("Refused: table is empty but the glossary file is not. Load it first.")
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.writer(f)
-        if header:
-            writer.writerow(header)
-        writer.writerows(cleaned)
-    return len(cleaned)
+    return _write_glossary_csv(path, header, rows)
+
+
+# Characters that are illegal in a Windows filename (the name becomes <name>.csv).
+_GLOSSARY_BAD_CHARS = set('\\/:*?"<>|')
+
+
+def _validate_new_glossary(glossary_name):
+    """Resolve+validate a name for a NEW glossary. Returns the path. Raises
+    ValueError for an invalid name and FileExistsError if it already exists."""
+    name = (glossary_name or "").strip()
+    if not name or _GLOSSARY_BAD_CHARS & set(name):
+        raise ValueError(f"Invalid glossary name: {glossary_name!r}")
+    path = glossary_path(name)
+    if not path:
+        raise ValueError(f"Invalid glossary name: {glossary_name!r}")
+    if os.path.exists(path):
+        raise FileExistsError(f"Glossary already exists: {name}")
+    return path
+
+
+def create_glossary(glossary_name, header=None):
+    """Create a new, empty glossary (language-code header row only). Raises if the
+    name is invalid or already taken."""
+    path = _validate_new_glossary(glossary_name)
+    os.makedirs(GLOSSARY_DIR, exist_ok=True)
+    _write_glossary_csv(path, header or list(_DEFAULT_GLOSSARY_HEADER), [])
+    return glossary_name.strip()
+
+
+def import_glossary(glossary_name, src_path):
+    """Create a new glossary from an existing CSV file: read it (encoding-detected)
+    and re-write it normalized as utf-8-sig under ``glossary_name``."""
+    path = _validate_new_glossary(glossary_name)
+    rows = None
+    for enc in _GLOSSARY_ENCODINGS:
+        try:
+            with open(src_path, "r", encoding=enc, newline="") as f:
+                rows = list(csv.reader(f))
+            break
+        except UnicodeDecodeError:
+            continue
+    if rows is None:
+        raise UnicodeDecodeError("glossary", b"", 0, 1,
+                                 f"could not decode import file: {src_path}")
+    os.makedirs(GLOSSARY_DIR, exist_ok=True)
+    header = rows[0] if rows else list(_DEFAULT_GLOSSARY_HEADER)
+    _write_glossary_csv(path, header, rows[1:] if len(rows) > 1 else [])
+    return glossary_name.strip()
+
+
+def delete_glossary(glossary_name):
+    """Delete a glossary file. The built-in 'Default' is protected (it backs the
+    default_glossary config). Raises FileNotFoundError if missing."""
+    if glossary_name == "Default":
+        raise ValueError("The Default glossary cannot be deleted.")
+    path = glossary_path(glossary_name)
+    if not path or not os.path.exists(path):
+        raise FileNotFoundError(f"Glossary not found: {glossary_name}")
+    os.remove(path)
+    return glossary_name
 
 
 # --- Proofread (post-translation editing) -----------------------------------

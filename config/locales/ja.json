@@ -240,5 +240,9 @@
   "Word Bilingual": "二言語対照を有効にする",
   "Working": "処理中",
   "lines/min": "行/分",
-  "threads": "スレッド"
+  "threads": "スレッド",
+  "Import Glossary": "用語集をインポート",
+  "New Glossary Prompt": "新しい用語集の名前：",
+  "Delete Glossary Confirm": "用語集「{name}」を削除しますか？この操作は元に戻せません。",
+  "New Glossary": "新規用語集"
 }

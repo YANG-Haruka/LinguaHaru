@@ -219,5 +219,9 @@
   "Word Bilingual": "이중 언어 비교 활성화",
   "Working": "Working",
   "lines/min": "lines/min",
-  "threads": "threads"
+  "threads": "threads",
+  "Import Glossary": "용어집 가져오기",
+  "New Glossary Prompt": "새 용어집 이름:",
+  "Delete Glossary Confirm": "용어집 \"{name}\"을(를) 삭제하시겠습니까? 이 작업은 취소할 수 없습니다.",
+  "New Glossary": "새 용어집"
 }

@@ -483,6 +483,8 @@ class MainWindow(FluentWindow):
             self.translate_page.refresh_active_interface()
             # Reflect plugins that may have been installed since last view.
             self.translate_page._refresh_format_availability()
+            # Reflect glossaries created/deleted on the Glossary page.
+            self.translate_page.refresh_glossaries()
         elif current is self.quick_page:
             self.quick_page.reload_history()
 

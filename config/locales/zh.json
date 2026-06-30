@@ -548,5 +548,9 @@
   "Stream Translation": "实时语音：流式译文",
   "Manga Mode": "漫画模式",
   "Manga Mode Hint": "用于扫描版/漫画 PDF 和图片：合并气泡文字、整句翻译、竖排排版。需要「图像 OCR」插件。PDF 进 → PDF 出。",
-  "Manga Mode PDF Hint": "整本扫描（无文字层）的 PDF 建议开启漫画模式；「PDF 选项」里的 OCR 仅适用于含少量图片或扫描页的 PDF。"
+  "Manga Mode PDF Hint": "整本扫描（无文字层）的 PDF 建议开启漫画模式；「PDF 选项」里的 OCR 仅适用于含少量图片或扫描页的 PDF。",
+  "Import Glossary": "导入词汇表",
+  "New Glossary Prompt": "新词汇表名称：",
+  "Delete Glossary Confirm": "删除词汇表“{name}”？此操作不可撤销。",
+  "New Glossary": "新建词汇表"
 }

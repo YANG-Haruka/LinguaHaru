@@ -4,18 +4,40 @@ Save refuses to overwrite a non-empty file with an empty table (web guard,
 enforced in backend.save_glossary)."""
 
 
+import os
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView,
+    QWidget, QVBoxLayout, QHBoxLayout, QTableWidgetItem, QHeaderView, QFileDialog,
 )
 
 from qfluentwidgets import (
     ComboBox, PushButton, PrimaryPushButton, TableWidget, BodyLabel,
     StrongBodyLabel, InfoBar, InfoBarPosition, FluentIcon,
+    MessageBoxBase, MessageBox, SubtitleLabel, LineEdit,
 )
 
 from core import backend
 from qt_app.i18n import tr
+
+
+class _NameDialog(MessageBoxBase):
+    """Small dialog to enter a name for a new / imported glossary."""
+
+    def __init__(self, parent=None, lang="en", default="", title_key="New Glossary"):
+        super().__init__(parent)
+        self.titleLabel = SubtitleLabel(tr(title_key, lang), self)
+        self.name_edit = LineEdit(self)
+        self.name_edit.setText(default)
+        self.name_edit.setPlaceholderText("my-glossary")
+        self.viewLayout.addWidget(self.titleLabel)
+        self.viewLayout.addWidget(self.name_edit)
+        self.yesButton.setText(tr("Save", lang))
+        self.cancelButton.setText(tr("Cancel", lang))
+        self.widget.setMinimumWidth(360)
+
+    def name(self):
+        return self.name_edit.text().strip()
 
 
 class GlossaryPage(QWidget):
@@ -34,9 +56,18 @@ class GlossaryPage(QWidget):
         self.glossary_label = BodyLabel(tr("Glossary", lang) + ":")
         top.addWidget(self.glossary_label)
         self.combo = ComboBox()
-        self.combo.setMinimumWidth(220)
+        self.combo.setFixedWidth(160)
         self.refresh_combo()
         top.addWidget(self.combo)
+        self.new_btn = PushButton(FluentIcon.ADD, tr("New Glossary", lang))
+        self.new_btn.clicked.connect(self.on_new)
+        self.import_btn = PushButton(FluentIcon.FOLDER, tr("Import Glossary", lang))
+        self.import_btn.clicked.connect(self.on_import)
+        self.delete_btn = PushButton(FluentIcon.DELETE, tr("Delete", lang))
+        self.delete_btn.clicked.connect(self.on_delete)
+        top.addWidget(self.new_btn)
+        top.addWidget(self.import_btn)
+        top.addWidget(self.delete_btn)
         top.addStretch(1)
         self.load_btn = PushButton(FluentIcon.SYNC, tr("Load Glossary", lang))
         self.load_btn.clicked.connect(self.on_load)
@@ -63,6 +94,9 @@ class GlossaryPage(QWidget):
         self._lang = lang
         self.title.setText(tr("Edit Glossary", lang))
         self.glossary_label.setText(tr("Glossary", lang) + ":")
+        self.new_btn.setText(tr("New Glossary", lang))
+        self.import_btn.setText(tr("Import Glossary", lang))
+        self.delete_btn.setText(tr("Delete", lang))
         self.load_btn.setText(tr("Load Glossary", lang))
         self.save_btn.setText(tr("Save Glossary", lang))
 
@@ -119,6 +153,77 @@ class GlossaryPage(QWidget):
             self._info(str(e), error=True)
             return
         self._info(f"Saved {count} entries to {name}.csv")
+
+    def on_new(self):
+        dlg = _NameDialog(self, self._lang)
+        if not dlg.exec():
+            return
+        name = dlg.name()
+        if not name:
+            return
+        try:
+            backend.create_glossary(name)
+        except Exception as e:  # noqa: BLE001
+            self._info(str(e), error=True)
+            return
+        self._select_and_load(name)
+
+    def on_import(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, tr("Import Glossary", self._lang), "",
+            "CSV (*.csv);;All files (*.*)")
+        if not path:
+            return
+        default = os.path.splitext(os.path.basename(path))[0]
+        dlg = _NameDialog(self, self._lang, default=default, title_key="Import Glossary")
+        if not dlg.exec():
+            return
+        name = dlg.name()
+        if not name:
+            return
+        try:
+            backend.import_glossary(name, path)
+        except Exception as e:  # noqa: BLE001
+            self._info(str(e), error=True)
+            return
+        self._select_and_load(name)
+
+    def on_delete(self):
+        name = self.combo.currentText()
+        if not name:
+            return
+        msg = tr("Delete Glossary Confirm", self._lang).replace("{name}", name)
+        if not MessageBox(tr("Delete", self._lang), msg, self).exec():
+            return
+        try:
+            backend.delete_glossary(name)
+        except Exception as e:  # noqa: BLE001
+            self._info(str(e), error=True)
+            return
+        self.refresh_combo()
+        if self.combo.count():
+            self.on_load()
+        else:
+            self.table.setRowCount(0)
+            self.table.setColumnCount(0)
+        self._notify_translate()
+        self._info(f"Deleted {name}.csv")
+
+    def _select_and_load(self, name):
+        """After create/import: refresh the picker, select the new glossary, load
+        it, and keep the Translate page's glossary dropdown in sync."""
+        self.refresh_combo()
+        self.combo.setCurrentText(name)
+        self.on_load()
+        self._notify_translate()
+
+    def _notify_translate(self):
+        """Refresh the Translate page's glossary dropdown so a newly created /
+        deleted glossary shows up there immediately."""
+        mw = self.window()
+        tp = getattr(mw, "translate_page", None)
+        if tp is not None and hasattr(tp, "refresh_glossaries"):
+            tp.refresh_glossaries()
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success

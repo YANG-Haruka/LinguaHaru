@@ -537,5 +537,9 @@
   "Stream Translation": "Stream translation (live)",
   "Manga Mode": "Manga mode",
   "Manga Mode Hint": "For scanned/manga PDFs & images: group speech-bubble text, translate each bubble as one sentence, and typeset vertically. Needs the Image OCR plugin. PDF in -> PDF out.",
-  "Manga Mode PDF Hint": "Fully scanned PDF (no text layer)? Turn on Manga mode. The OCR option under PDF Options is only for PDFs that contain just a few images or scanned pages."
+  "Manga Mode PDF Hint": "Fully scanned PDF (no text layer)? Turn on Manga mode. The OCR option under PDF Options is only for PDFs that contain just a few images or scanned pages.",
+  "Import Glossary": "Import Glossary",
+  "New Glossary Prompt": "New glossary name:",
+  "Delete Glossary Confirm": "Delete glossary \"{name}\"? This cannot be undone.",
+  "New Glossary": "New Glossary"
 }

@@ -219,5 +219,9 @@
   "Word Bilingual": "เปิดใช้งานการเปรียบเทียบสองภาษา",
   "Working": "Working",
   "lines/min": "lines/min",
-  "threads": "threads"
+  "threads": "threads",
+  "Import Glossary": "นำเข้าอภิธานศัพท์",
+  "New Glossary Prompt": "ชื่ออภิธานศัพท์ใหม่:",
+  "Delete Glossary Confirm": "ลบอภิธานศัพท์ \"{name}\" หรือไม่? การดำเนินการนี้ไม่สามารถยกเลิกได้",
+  "New Glossary": "อภิธานศัพท์ใหม่"
 }

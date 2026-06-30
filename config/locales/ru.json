@@ -219,5 +219,9 @@
   "Word Bilingual": "Включить двуязычное сравнение",
   "Working": "Working",
   "lines/min": "lines/min",
-  "threads": "threads"
+  "threads": "threads",
+  "Import Glossary": "Импорт глоссария",
+  "New Glossary Prompt": "Имя нового глоссария:",
+  "Delete Glossary Confirm": "Удалить глоссарий «{name}»? Это действие нельзя отменить.",
+  "New Glossary": "Новый глоссарий"
 }

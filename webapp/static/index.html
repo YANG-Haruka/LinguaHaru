@@ -503,6 +503,12 @@
       </div>
       <div class="card">
         <div class="field"><label data-i18n="Glossary">词汇表</label><select id="glossary-edit-select"></select></div>
+        <div class="actions">
+          <button id="glossary-new" data-i18n="New Glossary">新建词汇表</button>
+          <button id="glossary-import" data-i18n="Import Glossary">导入词汇表</button>
+          <button id="glossary-delete" data-i18n="Delete">删除</button>
+          <input type="file" id="glossary-import-file" accept=".csv,text/csv" hidden>
+        </div>
       </div>
       <div class="card">
         <div class="table-scroll"><table id="glossary-table"></table></div>
@@ -745,6 +751,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260628C"></script>
+  <script src="/static/app.js?v=20260630B"></script>
 </body>
 </html>

@@ -1739,6 +1739,67 @@ $("glossary-save").onclick = async () => {
   $("glossary-status").textContent = `已保存 ${res.count} 条`;
 };
 
+// Refresh BOTH glossary dropdowns (editor + translate page) from a fresh list,
+// keeping each one's selection where possible, and select `pick` in the editor.
+function refreshGlossarySelects(list, pick) {
+  if (list) BOOT.glossaries = list;
+  const editSel = $("glossary-edit-select");
+  const transSel = $("glossary");
+  const target = (pick && BOOT.glossaries.includes(pick)) ? pick
+    : (BOOT.glossaries.includes(editSel.value) ? editSel.value : BOOT.glossaries[0]);
+  fillSelect(editSel, BOOT.glossaries, target);
+  if (transSel) {
+    const t = BOOT.glossaries.includes(transSel.value) ? transSel.value : BOOT.glossaries[0];
+    fillSelect(transSel, BOOT.glossaries, t);
+  }
+}
+
+$("glossary-new").onclick = async () => {
+  const name = (prompt(_label("New Glossary Prompt", "新词汇表名称：")) || "").trim();
+  if (!name) return;
+  try {
+    const res = await api("/api/glossary/new", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    refreshGlossarySelects(res.glossaries, res.name);
+    await loadGlossaryTable(res.name);
+    toast(_label("Save", "保存") + ": " + res.name, "ok");
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+};
+
+$("glossary-import").onclick = () => $("glossary-import-file").click();
+$("glossary-import-file").onchange = async (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = "";                     // allow re-importing the same file
+  if (!f) return;
+  const stem = f.name.replace(/\.[^.]*$/, "");
+  const name = (prompt(_label("New Glossary Prompt", "新词汇表名称："), stem) || "").trim();
+  if (!name) return;
+  try {
+    const fd = new FormData();
+    fd.append("name", name);
+    fd.append("file", f);
+    const res = await api("/api/glossary/import", { method: "POST", body: fd });
+    refreshGlossarySelects(res.glossaries, res.name);
+    await loadGlossaryTable(res.name);
+    toast(_label("Import Glossary", "导入词汇表") + ": " + res.name, "ok");
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+};
+
+$("glossary-delete").onclick = async () => {
+  const name = $("glossary-edit-select").value;
+  if (!name) return;
+  const msg = _label("Delete Glossary Confirm", '删除词汇表“{name}”？此操作不可撤销。').replace("{name}", name);
+  if (!confirm(msg)) return;
+  try {
+    const res = await api("/api/glossary/delete", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    refreshGlossarySelects(res.glossaries, null);
+    if (BOOT.glossaries.length) await loadGlossaryTable($("glossary-edit-select").value);
+    else { $("glossary-table").innerHTML = ""; $("glossary-status").textContent = ""; }
+    toast(_label("Delete", "删除") + ": " + name, "ok");
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+};
+
 // ----- proofread -----
 let proofreadCols = [];
 // Document-list sort: time (newest<->oldest) / name (A->Z <-> Z->A). Clicking
