@@ -27,7 +27,7 @@ OUT_ROOT = os.path.join(ROOT, "dist_lite")
 
 # App payload copied into every portable (the backend + static config/assets +
 # the plugin manifests, but NOT plugin deps).
-APP_DIRS = ["core", "config", "assets", "plugins", "requirements"]
+APP_DIRS = ["core", "config", "assets", "plugins", "requirements", "glossary"]
 APP_FILES = ["version.json"]
 VARIANTS = {
     "web": {"name": "LinguaHaru-web", "dirs": ["webapp"],
@@ -36,8 +36,55 @@ VARIANTS = {
     "qt":  {"name": "LinguaHaru-desktop", "dirs": ["qt_app"],
             "files": ["app_qt.py"],
             "reqs": ["requirements/base.txt", "requirements/qt.txt"],
-            "entry": "app_qt.py", "launcher": "Start-Desktop.bat"},
+            "entry": "app_qt.py", "launcher": "Start-Desktop.bat",
+            "prune": "pyside6"},
 }
+
+
+# The full PySide6 wheel (~642 MB) ships an entire embedded Chromium (WebEngine),
+# the QML/Quick stack, and 3D/Charts/Pdf/Designer modules. The desktop app uses
+# ONLY QtCore/Gui/Widgets/Svg/Multimedia/Network (verified: nothing in qt_app/ or
+# qfluentwidgets imports any of the below). We can't swap to PySide6-Essentials
+# because PySide6-Fluent-Widgets hard-requires full PySide6, so we prune the
+# unused pieces post-install. Cuts ~420 MB. KEEP opengl32sw.dll (software GL for
+# GPU-less machines) and the av*.dll ffmpeg codecs (QtMultimedia TTS playback).
+_PYSIDE6_PRUNE_DIRS = ["resources", "qml", "metatypes",
+                       os.path.join("translations", "qtwebengine_locales")]
+_PYSIDE6_PRUNE_GLOBS = [
+    "Qt6WebEngine*.dll", "QtWebEngine*.pyd", "QtWebEngineProcess.exe",
+    "Qt6Quick*.dll", "QtQuick*.pyd", "Qt6Qml*.dll", "QtQml*.pyd",
+    "Qt63D*.dll", "Qt3D*.pyd",
+    "Qt6Charts*.dll", "QtCharts*.pyd",
+    "Qt6DataVisualization*.dll", "QtDataVisualization*.pyd",
+    "Qt6Pdf*.dll", "QtPdf*.pyd",
+    "Qt6Designer*.dll", "QtDesigner*.pyd",
+]
+
+
+def _prune_pyside6(dest):
+    import glob as _glob
+    qt = os.path.join(dest, "python", "Lib", "site-packages", "PySide6")
+    if not os.path.isdir(qt):
+        print("  [prune] PySide6 not found; skipping")
+        return
+    freed = 0
+
+    def _size(p):
+        if os.path.isdir(p):
+            return sum(os.path.getsize(os.path.join(dp, fn))
+                       for dp, _, fns in os.walk(p) for fn in fns)
+        return os.path.getsize(p)
+
+    for rel in _PYSIDE6_PRUNE_DIRS:
+        p = os.path.join(qt, rel)
+        if os.path.isdir(p):
+            freed += _size(p)
+            shutil.rmtree(p)
+    for pat in _PYSIDE6_PRUNE_GLOBS:
+        for p in _glob.glob(os.path.join(qt, pat)):
+            freed += _size(p)
+            os.remove(p)
+    print(f"  [prune] removed {freed/1024/1024:.0f} MB of unused Qt modules")
 
 
 # Isolate the embeddable Python from the BUILDER's per-user site-packages
@@ -87,6 +134,16 @@ def build(variant):
     with open(getpip, "wb") as f:
         f.write(_download(GETPIP_URL))
     subprocess.run([py_exe, getpip, "--no-warn-script-location"], check=True, env=_ISOLATED_ENV)
+    # setuptools + wheel: modern get-pip installs ONLY pip, but plugin deps that
+    # ship as sdists need a build backend at install time, else they fail with
+    # "Cannot import 'setuptools.build_meta'". Bundle them so runtime plugin
+    # installs (OCR/STT/…) can build any sdist deps.
+    # uv: a MUCH faster (parallel) installer. module_manager._uv_exe() auto-detects
+    # it at python/Scripts/uv.exe and prefers it over pip for plugin installs, so
+    # the heavy plugins (torch/paddle, dozens of packages) download far faster. It
+    # honors the same --index-url, so the China-mirror fallback still applies.
+    subprocess.run([py_exe, "-m", "pip", "install", "--no-warn-script-location",
+                    "setuptools", "wheel", "uv"], check=True, env=_ISOLATED_ENV)
 
     # 3) base deps (NO engines)
     print("[3/6] base deps")
@@ -94,6 +151,11 @@ def build(variant):
     for req in v["reqs"]:
         cmd += ["-r", os.path.join(ROOT, req)]
     subprocess.run(cmd, check=True, env=_ISOLATED_ENV)
+
+    # 3b) prune unused heavy framework pieces (Qt only)
+    if v.get("prune") == "pyside6":
+        print("[3b] prune PySide6")
+        _prune_pyside6(dest)
 
     # 4) app payload
     print("[4/6] app payload")
