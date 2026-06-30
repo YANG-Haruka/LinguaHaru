@@ -715,6 +715,30 @@ def _loaded_blockers(pkgs):
     return loaded
 
 
+def _drop_still_required(pkgs):
+    """Final safety gate: remove from the uninstall set any package still REQUIRED
+    by a distribution that will SURVIVE (one we are NOT removing). A plugin may
+    declare a package that a BASE dependency also needs — e.g. Image OCR lists
+    ``Pillow`` in its manifest, but ``python-pptx`` (base) depends on Pillow too, so
+    uninstalling OCR must NOT delete it or PPT translation breaks. packages_to_uninstall()
+    only subtracts other PLUGINS' packages, so this graph-level check is what protects
+    base/undeclared deps from the manifest-declared removals as well."""
+    if not pkgs:
+        return pkgs
+    removing = {_norm(p) for p in pkgs}
+    required_by_survivors = set()
+    for d in importlib.metadata.distributions():
+        nm = _norm(d.metadata["Name"]) if d.metadata and d.metadata.get("Name") else None
+        if not nm or nm in removing:
+            continue   # a dist we're removing doesn't get to protect its deps
+        for req in (d.requires or []):
+            if "; extra" in req and "extra ==" in req:
+                continue   # optional extra -> not a hard runtime dep
+            dep = _norm(re.split(r"[<>=!~;\[\(\s]", req.strip())[0])
+            required_by_survivors.add(dep)
+    return [p for p in pkgs if _norm(p) not in required_by_survivors]
+
+
 def uninstall_module(name):
     m = plugins_registry.get(name)
     if not m:
@@ -722,7 +746,9 @@ def uninstall_module(name):
     # This plugin's own top-level packages (shared-aware) + the transitive deps its
     # install pulled in (freeze-delta, gated so siblings/base are never touched).
     pkgs = set(packages_to_uninstall(name)) | set(_transitive_to_remove(name))
-    pkgs = sorted(pkgs)
+    # Never remove a package a SURVIVING distribution still requires (e.g. Pillow,
+    # which OCR declares but base python-pptx needs).
+    pkgs = sorted(_drop_still_required(sorted(pkgs)))
     blockers = _loaded_blockers(pkgs)
     if blockers:
         # Loaded in-process -> deleting now would fail on Windows and corrupt the
