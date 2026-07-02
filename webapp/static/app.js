@@ -1941,7 +1941,7 @@ let pipWin = null, pipMode = "both", pipFont = 24;
 // Rolling buffer of recent utterances {src, dst}. The caption window shows as
 // many as fit (newest pinned to the bottom), so a big window shows more lines.
 let pipEntries = [];
-const PIP_MAX = 60;
+const PIP_MAX = 12;   // buffer for FIFO pairing; only the newest 3 are rendered
 let pipInterim = "";   // live, not-yet-finalized source text (streaming)
 let liveAnalyser = null, liveLevelRAF = null;
 
@@ -2490,6 +2490,28 @@ function commonPrefix(a, b) {
   while (i < n && a[i] === b[i]) i++;
   return a.slice(0, i);
 }
+// The part of a hypothesis NOT covered by the already-committed text. The STT
+// re-decodes the whole window each pass and may REWRITE the utterance HEAD
+// ("就比如说…" -> "大哥就比如说…"); the old prefix-rollback then re-committed
+// (duplicated) the entire utterance. Align by: exact prefix -> content probe
+// (last ~10 committed chars, punctuation-stripped: re-decodes love flipping
+// 。<->， at the seam) -> length skip. Twin of Qt live_page._uncommitted_tail.
+const SEAM_PUNCT = /^[。！？!?.，、,；;\s]+/;
+function uncommittedTail(text, committed) {
+  if (!committed) return text;
+  let tail;
+  if (text.startsWith(committed)) {
+    tail = text.slice(committed.length);
+  } else {
+    const probe = committed.slice(-10).replace(/[。！？!?.，、,；;\s]+$/, "");
+    const i = probe ? text.indexOf(probe) : -1;
+    tail = i >= 0 ? text.slice(i + probe.length) : text.slice(committed.length);
+  }
+  return tail.replace(SEAM_PUNCT, "");   // alignment seams leave stray punct
+}
+// A committable unit needs at least one WORD char (latin/digit, kana, CJK,
+// hangul, cyrillic, thai) — SenseVoice emits bare "。"/"?" for noise.
+const WORDLIKE = /[0-9A-Za-z぀-ヿ㐀-鿿가-힯Ѐ-ӿ฀-๿]/;
 async function recognizeInt16(int16, final) {
   const body = { audio_b64: int16ToB64(int16), final: !!final };
   return await api("/api/live-recognize", {
@@ -2504,16 +2526,17 @@ async function streamPartial(int16) {
     if (r.busy) return;   // server dropped this partial under load — keep state, retry next
     liveLastDetected = r.detected || liveLastDetected;
     const text = r.source || "";
-    // LocalAgreement-2: only the prefix two consecutive partials agree on is stable.
-    const stable = commonPrefix(text, liveLastText);
+    // LocalAgreement-2 on the UNCOMMITTED TAIL: only tail text two consecutive
+    // partials agree on is committed. Committed text is NEVER re-emitted, even
+    // when the STT rewrites the utterance head (no more duplicated captions).
+    const tail = uncommittedTail(text, liveCommittedText);
+    const lastTail = liveLastText ? uncommittedTail(liveLastText, liveCommittedText) : "";
     liveLastText = text;
-    // If STT revised the already-committed region, resync length without re-emitting.
-    if (!stable.startsWith(liveCommittedText)) liveCommittedText = stable.slice(0, liveCommittedText.length);
-    const pending = stable.slice(liveCommittedText.length);
-    const { units, consumed } = splitScored(pending, false);
+    const stable = commonPrefix(tail, lastTail);
+    const { units, consumed } = splitScored(stable, false);
     for (const u of units) commitLiveSentence(u);
-    liveCommittedText += pending.slice(0, consumed);
-    pipInterim = text.slice(liveCommittedText.length);      // live, not-yet-committed tail
+    liveCommittedText += stable.slice(0, consumed);
+    pipInterim = tail.slice(consumed);      // live, not-yet-committed tail
     updatePipCaption();
     if (liveRunning && pipInterim) setLiveStatus("识别中：" + pipInterim);
   } catch (e) { /* transient; next partial retries */ }
@@ -2528,12 +2551,9 @@ async function finalizeUtterance(int16) {
     const r = await recognizeInt16(int16, true);
     liveLastDetected = r.detected || liveLastDetected;
     const text = r.source || "";
-    // Translate only what hasn't been committed yet (committed text is a prefix).
-    // Only translate the genuinely-new tail. If the final pass CONTRACTED/revised
-    // below the committed prefix, add nothing (the streamed commits already
-    // covered it) — re-translating the whole text would duplicate shown lines.
-    const rest = text.startsWith(liveCommittedText) ? text.slice(liveCommittedText.length) : "";
-    const { units } = splitScored(rest, true);
+    // Flush only the not-yet-committed tail (aligned even across head rewrites
+    // — never re-emits committed text, never drops the tail).
+    const { units } = splitScored(uncommittedTail(text, liveCommittedText), true);
     for (const u of units) commitLiveSentence(u);
   } catch (e) { /* drop */ }
   liveCommittedText = ""; liveLastText = ""; pipInterim = ""; updatePipCaption();
@@ -2545,7 +2565,7 @@ async function finalizeUtterance(int16) {
 let liveCommitChain = Promise.resolve();
 function commitLiveSentence(source) {
   source = (source || "").trim();
-  if (!source) return;
+  if (!source || !WORDLIKE.test(source)) return;   // drop bare-punct noise units
   liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source));
   return liveCommitChain;
 }
@@ -2653,8 +2673,11 @@ function appendLive(id, text) {
   if (id === "live-input") {
     pipEntries.push({ src: last, dst: "" });
   } else if (id === "live-output") {
-    const tail = pipEntries[pipEntries.length - 1];
-    if (tail && !tail.dst) tail.dst = last;     // pair with the source line
+    // Pair with the OLDEST source still waiting (FIFO): translations run one
+    // request per sentence, so with fast speech 2+ sources are pending at once
+    // — pairing with the newest attached sentence N's translation to N+1.
+    const open = pipEntries.find((e) => e.src && !e.dst);
+    if (open) open.dst = last;
     else pipEntries.push({ src: "", dst: last });
   }
   if (pipEntries.length > PIP_MAX) pipEntries.splice(0, pipEntries.length - PIP_MAX);
@@ -2688,7 +2711,12 @@ function updatePipCaption() {
   if (!cap) return;
   const d = pipWin.document;
   cap.textContent = "";
-  for (const e of pipEntries) {
+  // Google-Meet / 讯飞 style: only the newest few pairs (current speech + a
+  // little context); the newest translation bright, older ones dimmed. The full
+  // transcript stays in the main page's panels.
+  const shown = pipEntries.slice(-3);
+  shown.forEach((e, idx) => {
+    const newest = idx === shown.length - 1;
     const block = d.createElement("div"); block.className = "blk";
     if (pipMode !== "dst" && e.src) {
       const s = d.createElement("div"); s.className = "c-src";
@@ -2698,10 +2726,11 @@ function updatePipCaption() {
     if (pipMode !== "src" && e.dst) {
       const t = d.createElement("div"); t.className = "c-dst";
       t.style.fontSize = pipFont + "px";
+      if (!newest) t.style.opacity = "0.72";
       t.textContent = e.dst; block.appendChild(t);
     }
     if (block.childNodes.length) cap.appendChild(block);
-  }
+  });
   // Live interim (still being spoken) — dim, shown when source is visible.
   if (pipInterim && pipMode !== "dst") {
     const it = d.createElement("div"); it.className = "c-src";

@@ -194,14 +194,17 @@ class _CaptionBar(QWidget):
         self.setMinimumWidth(320)
         self.setMaximumWidth(1600)
         self.setMinimumHeight(90)
-        self.resize(560, 200)       # roomy default so several lines are visible
+        self.resize(560, 150)       # ~1-2 pairs visible; resize taller for more
         self._drag_pos = None
         self._mode = "bilingual"
         # Base translated font size; the source line is kept smaller/emphasis-low.
         self._font_size = 20
-        # Rolling buffer of recent utterances; a bigger window shows more lines.
+        # Rolling buffer of recent utterances. Only the newest few are RENDERED
+        # (Google-Meet / 讯飞 style: current line + a little context, old lines
+        # scroll away) — the full transcript lives in the main window's panels.
         self._entries = []          # list of {"src": str, "dst": str}
-        self._CAP_MAX = 60
+        self._CAP_MAX = 12          # kept for FIFO translation pairing
+        self._RENDER_LAST = 3       # pairs shown at once
         self._interim = ""          # live, not-yet-finalized source line
 
         root = QVBoxLayout(self)
@@ -302,20 +305,26 @@ class _CaptionBar(QWidget):
         self._render()
 
     def _render(self):
-        """Rebuild the caption HTML from the rolling buffer and pin to bottom."""
+        """Rebuild the caption HTML from the newest few entries and pin to
+        bottom. Only _RENDER_LAST pairs are shown (current speech + a little
+        context); the newest translation is bright, older ones dimmed — like
+        Google Meet / 讯飞 captions, instead of a scrolling wall of history."""
         src_px = max(self._FONT_MIN - 4, int(self._font_size * 0.65))
         show_src = self._mode in ("bilingual", "source")
         show_dst = self._mode in ("bilingual", "translation")
+        shown = self._entries[-self._RENDER_LAST:]
         parts = []
-        for e in self._entries:
+        for idx, e in enumerate(shown):
+            newest = idx == len(shown) - 1
             if show_src and e.get("src"):
                 parts.append(
                     "<div style='color:#9aa6b2;font-size:%dpx;margin-top:8px;'>%s</div>"
                     % (src_px, _html.escape(e["src"])))
             if show_dst and e.get("dst"):
+                color, weight = ("#f1f5f9", 700) if newest else ("#b9c4cf", 600)
                 parts.append(
-                    "<div style='color:#f1f5f9;font-size:%dpx;font-weight:700;'>%s</div>"
-                    % (self._font_size, _html.escape(e["dst"])))
+                    "<div style='color:%s;font-size:%dpx;font-weight:%d;'>%s</div>"
+                    % (color, self._font_size, weight, _html.escape(e["dst"])))
         if self._interim and show_src:        # live, still-being-spoken text (dim)
             parts.append(
                 "<div style='color:#9aa6b2;font-size:%dpx;margin-top:8px;'>%s …</div>"
@@ -337,8 +346,14 @@ class _CaptionBar(QWidget):
         text = (text or "").strip()
         if not text:
             return
-        if self._entries and not self._entries[-1].get("dst"):
-            self._entries[-1]["dst"] = text     # pair with the source line
+        # Pair with the OLDEST source still waiting for its translation (FIFO).
+        # Translations run one worker per sentence, so when the speaker is fast
+        # two+ sources are pending at once — pairing with the newest (the old
+        # behavior) attached sentence N's translation to sentence N+1.
+        for e in self._entries:
+            if e.get("src") and not e.get("dst"):
+                e["dst"] = text
+                break
         else:
             self._entries.append({"src": "", "dst": text})
         self._trim()
@@ -1299,11 +1314,40 @@ class LivePage(ScrollArea):
             i += 1
         return a[:i]
 
+    def _uncommitted_tail(self, text):
+        """The part of a hypothesis that is NOT covered by what we already
+        committed. Committed text must NEVER be re-emitted, even when the STT
+        (which re-decodes the whole window each pass) REWRITES the beginning of
+        the utterance — e.g. \"就比如说…\" becoming \"大哥就比如说…\". The old
+        prefix-rollback approach re-committed (= duplicated on screen) the whole
+        utterance in that case. Alignment order:
+          1) exact: hypothesis starts with the committed text;
+          2) content: locate the last ~10 committed chars inside the hypothesis
+             (survives head rewrites);
+          3) length: skip len(committed) chars (same audio ≈ same length)."""
+        c = self._stream_committed
+        if not c:
+            return text
+        if text.startswith(c):
+            return text[len(c):]
+        # Content probe: the committed tail MINUS trailing punctuation — the
+        # re-decode loves to flip 。<->， at the seam, which would break an
+        # exact match.
+        probe = c[-10:].rstrip("。！？!?.，、,；; ")
+        i = text.find(probe) if probe else -1
+        if i >= 0:
+            tail = text[i + len(probe):]
+        else:
+            tail = text[len(c):]
+        # An alignment seam can leave stray leading punctuation (never real
+        # sentence starts) — drop it.
+        return tail.lstrip("。！？!?.，、,；; ")
+
     def _on_recognized_stream(self, text, detected, is_final):
-        """LocalAgreement-2 prefix commit: only text two consecutive partials
-        agree on is committed (& translated), broken at the most natural point.
-        Robust to STT revising/re-segmenting its tail, so sentences aren't
-        duplicated or dropped while you keep speaking."""
+        """LocalAgreement-2 commit on the UNCOMMITTED TAIL: only tail text two
+        consecutive partials agree on is committed (& translated), broken at the
+        most natural point. Robust to the STT revising its tail AND its head, so
+        sentences are neither duplicated nor dropped while you keep speaking."""
         self._recog_busy = False
         if not self._is_listening():
             return   # a late STT result after stop — ignore (don't re-dispatch/write)
@@ -1311,12 +1355,8 @@ class LivePage(ScrollArea):
             self._stream_detected = detected
         text = text or ""
         if is_final:
-            # Only the genuinely-new tail. If the final pass contracted/revised
-            # below the committed prefix, add nothing (streamed commits covered
-            # it) — re-translating the whole text would duplicate shown lines.
-            rest = text[len(self._stream_committed):] \
-                if text.startswith(self._stream_committed) else ""
-            units, _ = self._split_scored(rest, True)
+            # Flush only the not-yet-committed tail (aligned, never re-emitted).
+            units, _ = self._split_scored(self._uncommitted_tail(text), True)
             for s in units:
                 self._commit_stream_sentence(s)
             self._stream_committed = ""
@@ -1325,16 +1365,16 @@ class LivePage(ScrollArea):
             if self._is_listening():
                 self.status_label.setText(tr("Listening", self._lang))
         else:
-            stable = self._common_prefix(text, self._stream_last)
+            tail = self._uncommitted_tail(text)
+            last_tail = self._uncommitted_tail(self._stream_last) \
+                if self._stream_last else ""
             self._stream_last = text
-            if not stable.startswith(self._stream_committed):
-                self._stream_committed = stable[:len(self._stream_committed)]
-            pending = stable[len(self._stream_committed):]
-            units, consumed = self._split_scored(pending, False)
+            stable = self._common_prefix(tail, last_tail)
+            units, consumed = self._split_scored(stable, False)
             for s in units:
                 self._commit_stream_sentence(s)
-            self._stream_committed += pending[:consumed]
-            self._set_caption_interim(text[len(self._stream_committed):])
+            self._stream_committed += stable[:consumed]
+            self._set_caption_interim(tail[consumed:])
         if self._recog_pending is not None:        # process the freshest queued audio
             pcm, fin = self._recog_pending
             self._recog_pending = None
@@ -1349,9 +1389,16 @@ class LivePage(ScrollArea):
         ctx = " ".join(self._ctx_history[-3:])
         return ctx[-200:]
 
+    # A committable unit must contain at least one WORD character (latin/digit,
+    # kana, CJK, hangul, cyrillic, thai). SenseVoice happily emits bare
+    # punctuation ("。", "?") for noise/short tails — showing and "translating"
+    # those is pure clutter.
+    _WORDLIKE = re.compile(r"[0-9A-Za-z぀-ヿ㐀-鿿"
+                           r"가-힯Ѐ-ӿ฀-๿]")
+
     def _commit_stream_sentence(self, source):
         source = (source or "").strip()
-        if not source:
+        if not source or not self._WORDLIKE.search(source):
             return
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")
