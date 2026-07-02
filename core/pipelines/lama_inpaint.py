@@ -76,14 +76,39 @@ def _get_session():
             return None
         _session_tried = True
         try:
-            import onnxruntime as ort
-            _session = ort.InferenceSession(
-                _model_path(), providers=["CPUExecutionProvider"])
-            app_logger.info("LaMa ONNX inpainter loaded")
+            _session = _load_session()
         except Exception as e:  # noqa: BLE001
             app_logger.warning(f"LaMa load failed, will use cv2 inpaint: {e}")
             _session = None
     return _session
+
+
+def _load_session():
+    """Create the ONNX session, GPU-first when the CUDA EP is present (the OCR
+    plugin installs onnxruntime-gpu on NVIDIA machines). LaMa runs in the MAIN
+    process, where torch (STT) may already have loaded a DIFFERENT cuDNN — then
+    the CUDA EP builds fine but dies at inference time. So DRY-RUN one inference
+    on the GPU session and fall back to CPU if it throws: inpainting must never
+    end up slower/broken than plain CPU."""
+    import numpy as np
+    import onnxruntime as ort
+    if "CUDAExecutionProvider" in ort.get_available_providers():
+        try:
+            sess = ort.InferenceSession(
+                _model_path(),
+                providers=["CUDAExecutionProvider", "CPUExecutionProvider"])
+            ins = sess.get_inputs()
+            s = next((i.shape[2] for i in ins
+                      if len(i.shape) == 4 and isinstance(i.shape[2], int)), 512)
+            sess.run(None, {ins[0].name: np.zeros((1, 3, s, s), np.float32),
+                            ins[1].name: np.zeros((1, 1, s, s), np.float32)})
+            app_logger.info("LaMa ONNX inpainter loaded (GPU)")
+            return sess
+        except Exception as e:  # noqa: BLE001 — cuDNN clash / bad EP -> CPU
+            app_logger.warning(f"LaMa GPU session unusable ({e}); using CPU")
+    sess = ort.InferenceSession(_model_path(), providers=["CPUExecutionProvider"])
+    app_logger.info("LaMa ONNX inpainter loaded (CPU)")
+    return sess
 
 
 def inpaint(image_bgr, mask):
