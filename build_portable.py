@@ -159,9 +159,13 @@ def build(variant):
 
     # 4) app payload
     print("[4/6] app payload")
+    # system_config.json is the BUILDER's local (gitignored) config — personal
+    # defaults, onboarding_seen, etc. It must NEVER ship: core/paths.py seeds a
+    # fresh one from system_config.default.json on the user's first run.
     for d in APP_DIRS + v["dirs"]:
         shutil.copytree(os.path.join(ROOT, d), os.path.join(dest, d),
-                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc",
+                                                      "system_config.json"))
     for fn in APP_FILES + v.get("files", []):
         shutil.copy2(os.path.join(ROOT, fn), os.path.join(dest, fn))
 
