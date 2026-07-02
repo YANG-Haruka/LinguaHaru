@@ -237,18 +237,29 @@ class _ProgressTee:
     """Wrap a text stream: pass writes through unchanged, AND forward the most
     recent complete progress segment to ``cb``. Model downloads (huggingface_hub /
     modelscope / paddle / babeldoc) paint tqdm bars to stderr with carriage
-    returns — splitting on \\r and \\n surfaces each repaint as a status line."""
+    returns — splitting on \\r and \\n surfaces each repaint as a status line.
 
-    def __init__(self, raw, cb):
+    ``only_thread`` (the downloading thread's ident): sys.stderr/stdout are
+    PROCESS-global, so while the tee is installed a concurrent translation's
+    output would otherwise leak into the plugin progress parser and show up as
+    bogus download progress. Only the download thread's own writes are forwarded;
+    everything else just passes through."""
+
+    def __init__(self, raw, cb, only_thread=None):
         self._raw = raw
         self._cb = cb
         self._buf = ""
+        self._only_thread = only_thread
 
     def write(self, s):
         try:
             self._raw.write(s)
         except Exception:  # noqa: BLE001
             pass
+        if self._only_thread is not None:
+            import threading
+            if threading.get_ident() != self._only_thread:
+                return len(s)
         self._buf += s
         if "\r" in self._buf or "\n" in self._buf:
             parts = self._buf.replace("\r", "\n").split("\n")
@@ -282,12 +293,16 @@ class _capture_progress:
 
     def __enter__(self):
         import sys
+        import threading
         if self._cb is None:
             self._saved = None
             return self
+        # Forward only THIS (download) thread's writes — a concurrent translation
+        # must not pollute the plugin card's progress (see _ProgressTee).
+        me = threading.get_ident()
         self._saved = (sys.stderr, sys.stdout)
-        sys.stderr = _ProgressTee(sys.stderr, self._cb)
-        sys.stdout = _ProgressTee(sys.stdout, self._cb)
+        sys.stderr = _ProgressTee(sys.stderr, self._cb, only_thread=me)
+        sys.stdout = _ProgressTee(sys.stdout, self._cb, only_thread=me)
         return self
 
     def __exit__(self, *exc):

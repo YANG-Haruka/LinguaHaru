@@ -634,9 +634,30 @@ class PluginsPage(ScrollArea):
         if info.get("update"):
             card.show_upgrade(info.get("current", "?"), info.get("latest", "?"))
 
+    def _job_busy(self):
+        """True while ANY plugin job (pip install/uninstall OR model download) is
+        running. Jobs share process-global progress sinks (module_manager's
+        progress callback + the stderr capture in optional_modules) and mutate the
+        same env/config, so they must run strictly one at a time — same rule the
+        web server enforces with its serial job queue."""
+        if self._worker is not None and self._worker.isRunning():
+            return True
+        return any(w.isRunning() for w in self._dl_workers)
+
     def _start_model_download(self, card, model_id=None):
-        """Download a plugin model off the UI thread. model_id=None downloads the
-        plugin's current/default model (used right after a fresh install)."""
+        """Queue a plugin-model download (model_id=None -> the plugin's
+        current/default model, used right after a fresh install). Runs through the
+        same one-job-at-a-time queue as installs."""
+        job = ("model", model_id)
+        if self._job_busy():
+            if not any(c is card and a == job for c, a in self._install_queue):
+                self._install_queue.append((card, job))
+                card.set_download_busy(True)
+                card.set_install_line(tr("Status Queued", self._lang))
+            return
+        self._begin_model_download(card, model_id)
+
+    def _begin_model_download(self, card, model_id=None):
         if model_id:
             # ModelDownloadWorker persists the id; reflect it locally so the
             # model line shows the new selection once the download finishes.
@@ -656,11 +677,15 @@ class PluginsPage(ScrollArea):
                        tr("Model Download Failed Hint", self._lang), error=True)
         if worker in self._dl_workers:
             self._dl_workers.remove(worker)
+        self._drain_install_queue()
 
     def _drain_install_queue(self):
-        """Current job done — clear it and start the next queued plugin (one job
-        at a time, so concurrent pip/uv calls can't corrupt the shared env)."""
+        """Current job done — clear it and start the next queued job (one at a
+        time, so concurrent pip/uv/model-download calls can't corrupt the shared
+        env or cross their progress lines)."""
         self._worker = None
+        if self._job_busy():
+            return   # a model download is still running; it drains on completion
         if self._install_queue:
             card, action = self._install_queue.pop(0)
             self._begin_install(card, action)
@@ -676,9 +701,10 @@ class PluginsPage(ScrollArea):
             if not box.exec():
                 return
         # Plugin jobs mutate the SAME interpreter env, so they MUST run one at a
-        # time. If one is running, queue this one and show "排队中"; it starts
-        # automatically when the current job finishes.
-        if self._worker is not None and self._worker.isRunning():
+        # time (this includes model downloads — see _job_busy). If one is running,
+        # queue this one and show "排队中"; it starts automatically when the
+        # current job finishes.
+        if self._job_busy():
             if not any(c is card for c, _ in self._install_queue):
                 self._install_queue.append((card, action))
                 card.set_state(card._mod["available"], busy=True)
@@ -687,6 +713,10 @@ class PluginsPage(ScrollArea):
         self._begin_install(card, action)
 
     def _begin_install(self, card, action="install"):
+        # Dequeued model-download jobs route to their own runner.
+        if isinstance(action, tuple) and action[0] == "model":
+            self._begin_model_download(card, action[1])
+            return
         card.set_state(card._mod["available"], busy=True)
         verbs = {"uninstall": tr("Uninstalling", self._lang),
                  "upgrade": tr("Upgrading", self._lang),
