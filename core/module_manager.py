@@ -434,10 +434,21 @@ def _nvidia_gpu_present():
 
 
 def _torch_is_cuda():
-    """True if the installed torch is a CUDA build (torch.version.cuda set)."""
+    """True if the installed torch is a CUDA build (torch.version.cuda set).
+
+    Checked in a FRESH subprocess, not in-process: (a) the running app may have a
+    stale import view of a just-swapped torch, and (b) importing torch HERE would
+    load its native DLLs into this process — after which _loaded_blockers refuses
+    any uninstall of torch ('in use this session') merely because installing some
+    other plugin probed it."""
     try:
-        import torch
-        return bool(getattr(torch.version, "cuda", None))
+        r = subprocess.run(
+            [sys.executable, "-c",
+             "import torch,sys;sys.exit(0 if getattr(torch.version,'cuda',None) else 1)"],
+            cwd=REPO_ROOT, timeout=120,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+        return r.returncode == 0
     except Exception:  # noqa: BLE001
         return False
 
@@ -599,6 +610,13 @@ def install_module(name):
     req = plugins_registry.requirements_path(name)
     if not req:
         return False, f"Unknown module: {name}"
+    # Frozen guard FIRST: _maybe_install_cuda_torch runs pip via sys.executable,
+    # which in a PyInstaller build is the app exe itself — it would relaunch the
+    # app instead of installing. _run_install has its own guard, but the CUDA
+    # pre-step must never run frozen either.
+    blocked = _frozen_block()
+    if blocked:
+        return blocked
     m = plugins_registry.get(name)
     before = _freeze_names()
     _maybe_install_cuda_torch(name)   # GPU machines get CUDA torch before the rest
@@ -613,16 +631,18 @@ def install_module(name):
 
 
 def packages_to_uninstall(name):
-    """Packages safe to remove when uninstalling ``name``: this plugin's OWN
-    packages (manifest ``packages`` minus its ``shared_packages``) MINUS any
-    package still listed by ANOTHER plugin (its packages OR shared_packages), so a
-    shared dependency — the STT stack used by Video/Audio + Real-Time Voice +
-    翻译语音输入, and torch/torchaudio — is kept while any sibling still needs it.
-    Empty list = everything is shared, remove nothing."""
+    """Packages safe to remove when uninstalling ``name``: this plugin's manifest
+    packages INCLUDING its ``shared_packages`` MINUS any package still listed by
+    another INSTALLED plugin (its packages OR shared_packages). So the shared STT
+    stack (torch/torchaudio + engines used by Video/Audio + Real-Time Voice +
+    翻译语音输入) is kept while any installed sibling still needs it — but when the
+    LAST user of a shared package is uninstalled, the package IS removed (otherwise
+    the ~2.5GB CUDA torch would be orphaned forever after all voice plugins are
+    gone). Empty list = everything is still shared, remove nothing."""
     m = plugins_registry.get(name)
     if not m:
         return []
-    mine = set(plugins_registry.removable_packages(name))
+    mine = set(m.get("packages", [])) | set(m.get("shared_packages", []))
     others = set()
     for other in plugins_registry.all_plugins().values():
         # Only an INSTALLED sibling reserves shared packages — a sibling that's
@@ -739,6 +759,55 @@ def _drop_still_required(pkgs):
     return [p for p in pkgs if _norm(p) not in required_by_survivors]
 
 
+def _rehome_leftover_delta(name, removed):
+    """After uninstalling ``name``, any package its install pulled in that was KEPT
+    (protected by an installed sibling) would become an untracked orphan once this
+    plugin's delta file is deleted — no later uninstall could ever remove it. Merge
+    those leftover names into every INSTALLED sibling's delta, so when the LAST
+    plugin using the shared stack is uninstalled, it can reclaim the whole stack
+    (e.g. the ~2.5GB CUDA torch + its transitive deps)."""
+    m = plugins_registry.get(name)
+    if not m:
+        return
+    try:
+        with open(_delta_path(m["key"]), encoding="utf-8") as f:
+            mine = {_norm(p) for p in json.load(f)}
+    except Exception:  # noqa: BLE001 — no delta recorded -> nothing to re-home
+        return
+    leftover = mine - {_norm(p) for p in removed}
+    if not leftover:
+        return
+    for other in plugins_registry.all_plugins().values():
+        if other["name"] == name or not _plugin_installed(other.get("key", "")):
+            continue
+        path = _delta_path(other["key"])
+        try:
+            with open(path, encoding="utf-8") as f:
+                cur = {_norm(p) for p in json.load(f)}
+        except Exception:  # noqa: BLE001
+            cur = set()
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(sorted(cur | leftover), f, ensure_ascii=False, indent=2)
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"Could not re-home delta into {other['name']}: {e}")
+
+
+def _forget_plugin(name, removed):
+    """Post-uninstall bookkeeping: re-home kept transitive deps to surviving
+    siblings, delete this plugin's delta (it no longer counts as installed), and
+    refresh the in-process view."""
+    m = plugins_registry.get(name)
+    if not m:
+        return
+    _rehome_leftover_delta(name, removed)
+    try:
+        os.remove(_delta_path(m["key"]))
+    except OSError:
+        pass
+    _refresh_after_change()
+
+
 def uninstall_module(name):
     m = plugins_registry.get(name)
     if not m:
@@ -757,16 +826,15 @@ def uninstall_module(name):
                        f"({', '.join(sorted(blockers)[:3])}…). Please restart the app, "
                        "then uninstall without translating first.")
     if not pkgs:
-        # All of this plugin's packages are shared with another plugin -> removing
-        # them would break the sibling. Nothing to uninstall at the pip level.
+        # All of this plugin's packages are shared with an installed sibling ->
+        # removing them would break the sibling. Nothing to uninstall at the pip
+        # level, but the plugin itself must STOP counting as installed (delete its
+        # delta), else it would protect the shared stack forever.
+        _forget_plugin(name, removed=[])
         return True, "All dependencies are shared with another plugin; kept."
     ok, out = _run_uninstall(pkgs)
-    if ok and m:   # forget the recorded delta so a reinstall re-records fresh
-        try:
-            os.remove(_delta_path(m["key"]))
-        except OSError:
-            pass
-        _refresh_after_change()
+    if ok:
+        _forget_plugin(name, removed=pkgs)
     return ok, out
 
 

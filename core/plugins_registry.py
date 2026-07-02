@@ -6,7 +6,8 @@ Each plugin is a self-contained folder under ``plugins/<key>/`` with:
                            to reuse a shared stack, e.g. live/speechio reuse video)
 
 ``shared_packages`` (e.g. torch/torchaudio) are libraries used by MORE than one
-plugin; they are listed for documentation and are never auto-removed on uninstall.
+plugin; an uninstall keeps them while another INSTALLED plugin lists them, and
+removes them once their last user is uninstalled (module_manager.packages_to_uninstall).
 
 This replaces the old hard-coded MODULE_SPECS / OPTIONAL_REQUIREMENTS dicts so a
 plugin can be added/changed by dropping a folder in plugins/ — no code edits.
@@ -112,15 +113,6 @@ def install_hint(name):
     if not m:
         return None
     return f"pip install -r plugins/{m['key']}/requirements.txt"
-
-
-def removable_packages(name):
-    """This plugin's OWN packages (safe to uninstall), excluding shared_packages."""
-    m = get(name)
-    if not m:
-        return []
-    shared = set(m.get("shared_packages", []))
-    return [p for p in m.get("packages", []) if p not in shared]
 
 
 def _invalidate():
