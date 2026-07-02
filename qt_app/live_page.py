@@ -501,6 +501,7 @@ class LivePage(ScrollArea):
         self._recog_busy = False        # one STT worker in flight at a time
         self._recog_pending = None      # (pcm, is_final) — latest-wins while busy
         self._stream_detected = "auto"
+        self._det_hist = []             # recent detections (majority-vote lock)
         self._stream_text = {}          # ts -> cumulative streamed translation
 
         self.setWidgetResizable(True)
@@ -1159,6 +1160,9 @@ class LivePage(ScrollArea):
                     self._stream_committed = ""     # new utterance
                     self._stream_last = ""
                     self._stream_detected = "auto"
+                    self._det_hist = []   # vote within ONE utterance: a bilingual
+                    # conversation may switch language at every turn, so the lock
+                    # must not persist across utterances.
                     self._vad_buf = bytearray(self._vad_preroll)
             else:
                 self._vad_voice_ms = 0.0
@@ -1352,7 +1356,7 @@ class LivePage(ScrollArea):
         if not self._is_listening():
             return   # a late STT result after stop — ignore (don't re-dispatch/write)
         if detected:
-            self._stream_detected = detected
+            self._note_detected(detected)
         text = text or ""
         if is_final:
             # Flush only the not-yet-committed tail (aligned, never re-emitted).
@@ -1379,6 +1383,19 @@ class LivePage(ScrollArea):
             pcm, fin = self._recog_pending
             self._recog_pending = None
             self._dispatch_recognize(pcm, fin)
+
+    def _note_detected(self, detected):
+        """Majority-vote the per-window language detections instead of trusting
+        each one: SenseVoice re-detects on every ~360ms partial, and a single
+        noisy window mis-detecting (zh<->ja on short audio) would flip the
+        translation's source-language hint mid-sentence. The vote over the last
+        5 windows keeps the hint stable; ties go to the most recent."""
+        self._det_hist.append(detected)
+        del self._det_hist[:-5]
+        best = max(set(self._det_hist),
+                   key=lambda d: (self._det_hist.count(d),
+                                  len(self._det_hist) - 1 - self._det_hist[::-1].index(d)))
+        self._stream_detected = best
 
     def _live_context(self):
         """Recent committed source lines as disambiguation context for the live

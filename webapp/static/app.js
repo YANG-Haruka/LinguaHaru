@@ -2354,7 +2354,7 @@ async function startSileroVad() {
   liveSilero = await window.vad.AudioNodeVAD.new(liveCtx, {
     baseAssetPath: "/static/vad/", onnxWASMBasePath: "/static/vad/", model: "legacy",
     onSpeechStart() {
-      liveSileroSpeaking = true; liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = "";
+      liveSileroSpeaking = true; liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = ""; liveDetHist = []; liveDetHist = [];
       liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus("识别中…");
     },
     onFrameProcessed(_probs, frame) {
@@ -2401,6 +2401,24 @@ function liveContext() {
 }
 let livePartialBusy = false, livePendingPcm = null;
 let liveLastDetected = "auto";
+// Majority-vote the per-window language detections WITHIN one utterance: a
+// single noisy ~360ms window mis-detecting (zh<->ja) must not flip the
+// translation's source hint mid-sentence — but a bilingual conversation may
+// switch language every turn, so the history resets per utterance.
+let liveDetHist = [];
+function noteDetected(d) {
+  if (!d) return;
+  liveDetHist.push(d);
+  if (liveDetHist.length > 5) liveDetHist.splice(0, liveDetHist.length - 5);
+  let best = d, bestScore = -1;
+  for (const cand of new Set(liveDetHist)) {
+    const count = liveDetHist.filter((x) => x === cand).length;
+    const recency = liveDetHist.lastIndexOf(cand);
+    const score = count * 100 + recency;   // ties -> most recent
+    if (score > bestScore) { bestScore = score; best = cand; }
+  }
+  liveLastDetected = best;
+}
 
 function onVadMessage(e) {
   const m = e.data || {};
@@ -2524,7 +2542,7 @@ async function streamPartial(int16) {
   try {
     const r = await recognizeInt16(int16, false);
     if (r.busy) return;   // server dropped this partial under load — keep state, retry next
-    liveLastDetected = r.detected || liveLastDetected;
+    noteDetected(r.detected);
     const text = r.source || "";
     // LocalAgreement-2 on the UNCOMMITTED TAIL: only tail text two consecutive
     // partials agree on is committed. Committed text is NEVER re-emitted, even
@@ -2549,7 +2567,7 @@ async function finalizeUtterance(int16) {
   livePendingPcm = null;
   try {
     const r = await recognizeInt16(int16, true);
-    liveLastDetected = r.detected || liveLastDetected;
+    noteDetected(r.detected);
     const text = r.source || "";
     // Flush only the not-yet-committed tail (aligned even across head rewrites
     // — never re-emits committed text, never drops the tail).

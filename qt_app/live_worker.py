@@ -76,10 +76,15 @@ class LiveTranslateWorker(QThread):
 
     def run(self):
         try:
+            from core import backend
             from core.llm.llm_wrapper import translate_text_simple
+            # Glossary terms present in this sentence ride along as context, so
+            # proper nouns stay consistent (same terms as document translation).
+            hint = backend.live_glossary_hint(self._source, self._src, self._dst)
+            ctx = f"{self._context} {hint}".strip() if hint else self._context
             translated, ok, usage = translate_text_simple(
                 self._source, self._src or "auto", self._dst, self._model,
-                self._online, self._key, context=self._context)
+                self._online, self._key, context=ctx)
             tokens = int((usage or {}).get("total_tokens", 0) or 0)
             self.done.emit(self._ts, translated if ok else "", tokens)
         except Exception:  # noqa: BLE001
@@ -108,10 +113,13 @@ class LiveTranslateStreamWorker(QThread):
     def run(self):
         sink = {}
         try:
+            from core import backend
             from core.llm.llm_wrapper import translate_text_simple_stream
+            hint = backend.live_glossary_hint(self._source, self._src, self._dst)
+            ctx = f"{self._context} {hint}".strip() if hint else self._context
             for partial in translate_text_simple_stream(
                     self._source, self._src or "auto", self._dst, self._model,
-                    self._online, self._key, usage_sink=sink, context=self._context):
+                    self._online, self._key, usage_sink=sink, context=ctx):
                 self.chunk.emit(self._ts, partial or "")
         except Exception:  # noqa: BLE001
             pass

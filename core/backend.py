@@ -808,6 +808,46 @@ def delete_glossary(glossary_name):
     return glossary_name
 
 
+# Live-caption glossary hint cache: (path, mtime, src, dst) -> parsed entries.
+_live_gloss_cache = {"key": None, "entries": []}
+
+
+def live_glossary_hint(source, src_lang, dst_lang, max_terms=8):
+    """Terminology directive for LIVE translation: entries of the user's default
+    glossary whose source term occurs in ``source``, rendered as a short hint for
+    translate_text_simple's ``context`` parameter — so proper nouns stay as
+    consistent in live captions as they are in document translation. Returns ""
+    when nothing matches (the common case; costs one cached lookup + substring
+    scan). Entries are cached per (glossary mtime, language pair)."""
+    if not source:
+        return ""
+    try:
+        path = glossary_path(get_config("default_glossary", "Default"))
+        if not path or not os.path.exists(path):
+            return ""
+        key = (path, os.path.getmtime(path), src_lang or "auto", dst_lang)
+        if _live_gloss_cache["key"] != key:
+            from core.engine.text_separator import load_glossary as _load
+            _live_gloss_cache["key"] = key
+            _live_gloss_cache["entries"] = _load(path, src_lang or "auto", dst_lang) or []
+        low = source.lower()
+        hits = []
+        for s, t in _live_gloss_cache["entries"]:
+            if not s or not t:
+                continue
+            # ASCII terms match case-insensitively ("alice" spoken -> "Alice").
+            if (s.lower() in low) if s.isascii() else (s in source):
+                hits.append((s, t))
+                if len(hits) >= max_terms:
+                    break
+        if not hits:
+            return ""
+        pairs = "; ".join(f"{s} => {t}" for s, t in hits)
+        return f"Fixed terminology (use EXACTLY these translations): {pairs}"
+    except Exception:  # noqa: BLE001 — a hint must never break live translation
+        return ""
+
+
 # --- Proofread (post-translation editing) -----------------------------------
 # Pure reimplementation of app.py's proofread helpers (no Gradio). For the
 # desktop single-user app the WHOLE temp tree (flat + one level deep) is the

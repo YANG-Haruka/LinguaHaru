@@ -2193,6 +2193,11 @@ async def live_translate_text(payload: dict):
     api_key = (load_api_key_for_model(model)
                or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
     from core.llm.llm_wrapper import translate_text_simple
+    # Glossary terms present in this sentence ride along as context, so proper
+    # nouns stay consistent (same terms as document translation).
+    hint = backend.live_glossary_hint(source, src_code, dst_lang)
+    if hint:
+        context = f"{context} {hint}".strip()
     loop = asyncio.get_event_loop()
 
     def _translate():
@@ -2272,6 +2277,9 @@ def live_translate_stream(payload: dict):
     dst_lang = payload.get("dst_lang", "en")
     src_code = payload.get("src_lang") or "auto"
     context = _capped_text(payload, "context")
+    hint = backend.live_glossary_hint(source, src_code, dst_lang)
+    if hint:
+        context = f"{context} {hint}".strip()
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)

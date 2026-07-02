@@ -1428,6 +1428,15 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=
     else:
         text, detected = _recognize_whisper(audio, src_lang, size)
         app_logger.info(f"STT(whisper:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+    # Same whole-segment hallucination guard the offline subtitle pipeline runs:
+    # background music / noise that slips past the client VAD makes every ASR
+    # emit its training-data outro ("谢谢观看" / "ご視聴ありがとうございました" /
+    # "thanks for watching") — for LIVE captions that junk would go straight on
+    # screen. Whole-utterance match only, so a real sentence merely CONTAINING
+    # the words is never touched.
+    if text and _is_hallucination_phrase(text, detected or src_lang):
+        app_logger.info(f"Live STT dropped hallucination phrase: {text!r}")
+        return "", detected
     return text, detected
 
 
