@@ -1,13 +1,10 @@
-"""Backend glue for the Qt desktop app. NO Qt imports here.
+"""Backend service layer shared by BOTH frontends (webapp/ and qt_app/). NO UI
+imports here.
 
-Everything the UI needs that touches the LinguaHaru translation backend or its
-config lives here: extension -> translator-class resolution (with the same
-bilingual partial() logic as app.py), system_config read/write helpers, model
-list discovery, glossary list/load/save, and language helpers.
-
-This module deliberately does NOT import app.py (that builds the whole Gradio
-web UI). The extension->class map and the per-extension bilingual partial()
-logic below are copied faithfully from app.get_translator_class.
+Everything a UI needs that touches the LinguaHaru translation backend or its
+config lives here: extension -> translator-class resolution (with per-extension
+bilingual partial() logic), system_config read/write helpers, model list
+discovery, glossary CRUD, proofread helpers, and language helpers.
 """
 
 import os
@@ -27,10 +24,10 @@ from core.paths import RUNTIME_ROOT, DATA_DIR, SYSTEM_CONFIG, API_CONFIG_DIR
 # here; from source it's the repo root, in a frozen build it's the bundle dir.
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# Cap on concurrent file translations (mirrors app.MAX_CONCURRENT_TASKS).
+# Cap on concurrent file translations (both frontends honor it).
 MAX_CONCURRENT_TASKS = 3
 
-# --- Extension -> translator module (mirrors app.TRANSLATOR_MODULES) ---------
+# --- Extension -> translator module (single source of truth) -----------------
 TRANSLATOR_MODULES = {
     ".docx": "core.translators.word_translator.WordTranslator",
     ".pptx": "core.translators.ppt_translator.PptTranslator",
