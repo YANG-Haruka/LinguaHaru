@@ -1625,13 +1625,18 @@ async function checkModuleUpdate(name, actTd, statTd) {
   } catch { return; }
   if (!info || !info.update) return;
   const up = document.createElement("button");
-  up.textContent = `升级 (${info.current} → ${info.latest})`;
+  up.textContent = `${_label("Upgrade", "升级")} (${info.current} → ${info.latest})`;
   up.style.marginLeft = "8px";
   up.onclick = () => moduleAction(name, "upgrade", up, statTd);
   actTd.appendChild(up);
 }
 
-const _MODULE_VERBS = { install: "安装", uninstall: "卸载", upgrade: "升级" };
+// Localized in-progress verbs (same keys the Qt plugin page uses).
+function _moduleVerb(action) {
+  return { install: _label("Installing", "安装中…"),
+           uninstall: _label("Uninstalling", "卸载中…"),
+           upgrade: _label("Upgrading", "升级中…") }[action] || action;
+}
 
 async function moduleAction(name, action, btn, statTd) {
   if (action === "uninstall" &&
@@ -1640,8 +1645,7 @@ async function moduleAction(name, action, btn, statTd) {
     return;
   }
   btn.disabled = true;
-  const verb = _MODULE_VERBS[action] || action;
-  statTd.innerHTML = pill("busy", verb + "中", "");
+  statTd.innerHTML = pill("busy", _moduleVerb(action), "");
   try {
     await api("/api/modules/" + action, { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }) });
@@ -1649,7 +1653,7 @@ async function moduleAction(name, action, btn, statTd) {
     // e.g. 409 (another op in progress) or network error — re-enable the button so
     // it never gets stuck disabled, and surface the reason.
     btn.disabled = false;
-    statTd.innerHTML = pill("bad", "失败", ICON.cross);
+    statTd.innerHTML = pill("bad", _label("Failed", "失败"), ICON.cross);
     $("modules-status").textContent = `${name}: ` + ((e && e.message) || _label("Try Again Later", "请稍后重试"));
     return;
   }
@@ -1665,20 +1669,21 @@ async function moduleAction(name, action, btn, statTd) {
     if (s.status === "running") {
       // Show a PERCENTAGE, not log lines (lib install 0-70%, model 70-100%).
       const pct = (s.progress != null) ? " " + Math.round(s.progress * 100) + "%" : "";
-      statTd.innerHTML = pill("busy", verb + "中" + pct, "");
+      statTd.innerHTML = pill("busy", _moduleVerb(action) + pct, "");
       return;
     }
     clearInterval(poll);
     btn.disabled = false;
     if (s.status === "done") {
-      statTd.innerHTML = pill("on", "完成", ICON.check);
+      statTd.innerHTML = pill("on", _label("Install finished", "完成"), ICON.check);
       let msg;
       if (action === "uninstall") {
         msg = `${name} ${_label("Cleanup Done", "清理完成")}`;
         if (s.freed_bytes > 0) msg += ` · ${_label("Freed", "已释放")} ${humanSize(s.freed_bytes)}`;
-        msg += " —— 请重启程序以生效。";
+        msg += " · " + _label("Restart to apply", "已保存——重启后生效");
       } else {
-        msg = `${name} ${verb}完成 —— 请重启程序以生效。`;
+        msg = `${name}: ` + _label(action === "upgrade" ? "Upgrade finished" : "Restart To Activate",
+                                   "完成——请重启程序以生效。");
         if (action === "install" && s.model_failed) {
           statTd.innerHTML = pill("bad", _label("Model Download Failed", "模型下载失败"), ICON.cross);
           msg += " ⚠ " + _label("Model Download Failed Hint",
@@ -1692,8 +1697,8 @@ async function moduleAction(name, action, btn, statTd) {
       try { BOOT = await api("/api/bootstrap"); } catch (e) {}
       renderModules();
     } else {
-      statTd.innerHTML = pill("bad", "失败", ICON.cross);
-      $("modules-status").textContent = `${name} 操作失败：` + (s.output || "").slice(-300);
+      statTd.innerHTML = pill("bad", _label("Failed", "失败"), ICON.cross);
+      $("modules-status").textContent = `${name} ${_label("Failed", "操作失败")}: ` + (s.output || "").slice(-300);
     }
   }, 1500);
 }
@@ -1702,11 +1707,13 @@ async function moduleAction(name, action, btn, statTd) {
 $("support-contact").onclick = () => { $("support-modal").hidden = false; };
 $("support-close").onclick = () => { $("support-modal").hidden = true; };
 $("support-modal").onclick = (e) => { if (e.target.id === "support-modal") $("support-modal").hidden = true; };
-$("support-copy-qq").onclick = async () => {
-  try { await navigator.clipboard.writeText("HarukaQnQ"); }
+async function copyContact(id) {
+  try { await navigator.clipboard.writeText(id); }
   catch (e) { /* clipboard blocked (http) — the id is visible to copy manually */ }
-  toast(_label("Copied", "已复制") + ": HarukaQnQ", "ok");
-};
+  toast(_label("Copied", "已复制") + ": " + id, "ok");
+}
+$("support-copy-qq").onclick = () => copyContact("3234306205");
+$("support-copy-wechat").onclick = () => copyContact("HarukaQnQ");
 
 // ----- glossary editor -----
 $("glossary-edit-select").onchange = () => loadGlossaryTable($("glossary-edit-select").value);

@@ -35,10 +35,13 @@ def test_assets_exist_and_are_valid():
     assert a.getpixel((0, 0)) == 0, "top-left corner must be transparent"
     assert a.getpixel((img.width // 2, img.height // 2)) == 255
     ok("support_qr.png exists, RGBA, transparent corners")
-    svg = open(os.path.join(REPO_ROOT, "assets", "icons", "linkedin.svg"),
-               encoding="utf-8").read()
-    assert "<svg" in svg and "0A66C2" in svg
-    ok("linkedin.svg exists")
+    for name, brand_color in [("linkedin.svg", "0A66C2"),
+                              ("qq.svg", "12B7F5"),
+                              ("wechat.svg", "07C160")]:
+        svg = open(os.path.join(REPO_ROOT, "assets", "icons", name),
+                   encoding="utf-8").read()
+        assert "<svg" in svg and brand_color in svg, name
+    ok("linkedin/qq/wechat brand SVGs exist")
 
 
 def test_web_page_has_all_support_elements():
@@ -46,16 +49,19 @@ def test_web_page_has_all_support_elements():
     from webapp.server import app
     c = TestClient(app)
     assert c.get("/assets/img/support_qr.png").status_code == 200
-    assert c.get("/assets/icons/linkedin.svg").status_code == 200
+    for icon in ["linkedin.svg", "qq.svg", "wechat.svg"]:
+        assert c.get(f"/assets/icons/{icon}").status_code == 200, icon
     ok("assets served over /assets")
     html = c.get("/").text
-    for probe in ["support-contact", "support-modal", "support-copy-qq",
-                  "support_qr.png", "linkedin.svg", "HarukaQnQ",
+    for probe in ["support-contact", "support-modal",
+                  "support-copy-qq", "support-copy-wechat",
+                  "support_qr.png", "linkedin.svg", "qq.svg", "wechat.svg",
+                  "QQ：3234306205", "微信：HarukaQnQ",
                   "https://www.harukayang.com/",
                   "https://www.harukayang.com/combined-pay.html",
                   "https://www.linkedin.com/in/yang-haruka/"]:
         assert probe in html, f"missing in index.html: {probe}"
-    ok("index.html contains entry, modal, links, contact id")
+    ok("index.html contains entry, modal, links, separate QQ/WeChat ids")
 
 
 def test_i18n_keys_complete():
@@ -77,9 +83,10 @@ def test_qt_nav_item_and_urls():
     assert w._HOMEPAGE_URL == "https://www.harukayang.com/"
     assert w._PAY_GUIDE_URL == "https://www.harukayang.com/combined-pay.html"
     assert w._LINKEDIN_URL == "https://www.linkedin.com/in/yang-haruka/"
-    assert w._CONTACT_ID == "HarukaQnQ"
+    assert w._QQ_ID == "3234306205"
+    assert w._WECHAT_ID == "HarukaQnQ"
     assert callable(w._show_support_menu) and callable(w._show_support_dialog)
-    ok("Qt nav item registered with correct urls/id")
+    ok("Qt nav item registered with correct urls + separate QQ/WeChat ids")
 
 
 if __name__ == "__main__":

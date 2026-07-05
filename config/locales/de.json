@@ -228,5 +228,9 @@
   "Support Me": "Unterstütze mich",
   "My Homepage": "Meine Homepage",
   "Contact Me": "Kontakt",
-  "Support Pay Tip": "Denselben kombinierten WeChat+Alipay-QR erstellen? Anleitung auf meiner Homepage:"
+  "Support Pay Tip": "Denselben kombinierten WeChat+Alipay-QR erstellen? Anleitung auf meiner Homepage:",
+  "Provided by the Image OCR plugin": "Im Bild-OCR-Plugin enthalten",
+  "System / Tab Audio (share)": "System-/Tab-Audio (teilen)",
+  "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "Browser können Systemaudio nur über Bildschirmfreigabe erfassen. 'Gesamter Bildschirm' wählen und 'Systemaudio teilen' aktivieren (oder einen Tab teilen und 'Tab-Audio teilen' aktivieren).",
+  "🎙 Live captions will appear here once you start speaking.": "🎙 Live-Untertitel erscheinen hier, sobald du sprichst."
 }

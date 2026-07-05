@@ -249,5 +249,9 @@
   "Support Me": "応援する",
   "My Homepage": "マイページ",
   "Contact Me": "お問い合わせ",
-  "Support Pay Tip": "同じ WeChat+Alipay 統合QRを作りたい方は、ホームページのガイドをご覧ください："
+  "Support Pay Tip": "同じ WeChat+Alipay 統合QRを作りたい方は、ホームページのガイドをご覧ください：",
+  "Provided by the Image OCR plugin": "「画像 OCR」プラグインに含まれます",
+  "System / Tab Audio (share)": "システム/タブ音声（共有）",
+  "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "ブラウザは画面共有経由でのみシステム音声を取得できます。「画面全体」を選び「システムの音声を共有」にチェック（またはタブを共有し「タブの音声を共有」にチェック）してください。",
+  "🎙 Live captions will appear here once you start speaking.": "🎙 話し始めると、ここにライブ字幕が表示されます。"
 }

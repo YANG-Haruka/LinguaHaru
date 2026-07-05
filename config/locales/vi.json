@@ -228,5 +228,9 @@
   "Support Me": "Ủng hộ tôi",
   "My Homepage": "Trang chủ của tôi",
   "Contact Me": "Liên hệ tôi",
-  "Support Pay Tip": "Muốn tạo mã QR gộp WeChat+Alipay giống vậy? Xem hướng dẫn trên trang chủ của tôi:"
+  "Support Pay Tip": "Muốn tạo mã QR gộp WeChat+Alipay giống vậy? Xem hướng dẫn trên trang chủ của tôi:",
+  "Provided by the Image OCR plugin": "Đi kèm plugin OCR hình ảnh",
+  "System / Tab Audio (share)": "Âm thanh hệ thống/thẻ (chia sẻ)",
+  "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "Trình duyệt chỉ thu được âm thanh hệ thống qua chia sẻ màn hình. Chọn 'Toàn màn hình' và tick 'Chia sẻ âm thanh hệ thống' (hoặc chia sẻ thẻ và tick 'Chia sẻ âm thanh thẻ').",
+  "🎙 Live captions will appear here once you start speaking.": "🎙 Phụ đề trực tiếp sẽ hiện ở đây khi bạn bắt đầu nói."
 }

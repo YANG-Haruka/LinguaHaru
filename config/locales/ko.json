@@ -228,5 +228,9 @@
   "Support Me": "후원하기",
   "My Homepage": "내 홈페이지",
   "Contact Me": "문의하기",
-  "Support Pay Tip": "동일한 WeChat+Alipay 통합 QR을 만들고 싶다면 홈페이지 가이드를 참조하세요:"
+  "Support Pay Tip": "동일한 WeChat+Alipay 통합 QR을 만들고 싶다면 홈페이지 가이드를 참조하세요:",
+  "Provided by the Image OCR plugin": "「이미지 OCR」 플러그인에 포함",
+  "System / Tab Audio (share)": "시스템/탭 오디오(공유)",
+  "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "브라우저는 화면 공유로만 시스템 오디오를 캡처할 수 있습니다. '전체 화면'을 선택하고 '시스템 오디오 공유'를 체크하세요(또는 탭을 공유하고 '탭 오디오 공유' 체크).",
+  "🎙 Live captions will appear here once you start speaking.": "🎙 말하기 시작하면 여기에 실시간 자막이 표시됩니다."
 }

@@ -478,10 +478,11 @@ class MainWindow(FluentWindow):
     _HOMEPAGE_URL = "https://www.harukayang.com/"
     _PAY_GUIDE_URL = "https://www.harukayang.com/combined-pay.html"
     _LINKEDIN_URL = "https://www.linkedin.com/in/yang-haruka/"
-    _CONTACT_ID = "HarukaQnQ"
+    _QQ_ID = "3234306205"
+    _WECHAT_ID = "HarukaQnQ"
 
     def _show_support_menu(self):
-        """支持我 / 我的主页 / 联系我(QQ·微信 + 领英), opened from the bottom nav."""
+        """支持我 / 我的主页 / 联系我(QQ + 微信 + 领英), opened from the bottom nav."""
         menu = RoundMenu(parent=self)
         a_support = Action(FluentIcon.HEART, tr("Support Me", self._lang))
         a_support.triggered.connect(self._show_support_dialog)
@@ -493,22 +494,27 @@ class MainWindow(FluentWindow):
 
         contact = RoundMenu(tr("Contact Me", self._lang), parent=menu)
         contact.setIcon(FluentIcon.CHAT)
-        a_qq = Action(FluentIcon.PEOPLE, f"QQ / 微信：{self._CONTACT_ID}")
-        a_qq.triggered.connect(self._copy_contact_id)
+        icon_dir = os.path.join(backend.REPO_ROOT, "assets", "icons")
+        a_qq = Action(QIcon(os.path.join(icon_dir, "qq.svg")),
+                      f"QQ：{self._QQ_ID}")
+        a_qq.triggered.connect(lambda: self._copy_contact_id(self._QQ_ID))
         contact.addAction(a_qq)
-        li_icon = QIcon(os.path.join(backend.REPO_ROOT, "assets", "icons", "linkedin.svg"))
-        a_li = Action(li_icon, "LinkedIn")
+        a_wx = Action(QIcon(os.path.join(icon_dir, "wechat.svg")),
+                      f"微信：{self._WECHAT_ID}")
+        a_wx.triggered.connect(lambda: self._copy_contact_id(self._WECHAT_ID))
+        contact.addAction(a_wx)
+        a_li = Action(QIcon(os.path.join(icon_dir, "linkedin.svg")), "LinkedIn")
         a_li.triggered.connect(
             lambda: QDesktopServices.openUrl(QUrl(self._LINKEDIN_URL)))
         contact.addAction(a_li)
         menu.addMenu(contact)
         menu.exec(QCursor.pos())
 
-    def _copy_contact_id(self):
+    def _copy_contact_id(self, contact_id):
         from PySide6.QtWidgets import QApplication
         from qfluentwidgets import InfoBar
-        QApplication.clipboard().setText(self._CONTACT_ID)
-        InfoBar.success(tr("Copied", self._lang), self._CONTACT_ID,
+        QApplication.clipboard().setText(contact_id)
+        InfoBar.success(tr("Copied", self._lang), contact_id,
                         orient=1, isClosable=True, duration=2500, parent=self)
 
     def _show_support_dialog(self):

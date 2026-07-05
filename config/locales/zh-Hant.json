@@ -289,5 +289,9 @@
   "Support Me": "支持我",
   "My Homepage": "我的主頁",
   "Contact Me": "聯絡我",
-  "Support Pay Tip": "想建立相同的「微信+支付寶」聚合收款碼？請參考我的主頁教學："
+  "Support Pay Tip": "想建立相同的「微信+支付寶」聚合收款碼？請參考我的主頁教學：",
+  "Provided by the Image OCR plugin": "隨「圖像 OCR」外掛提供",
+  "System / Tab Audio (share)": "系統/分頁聲音（需共享）",
+  "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "瀏覽器只能透過「分享螢幕」擷取系統聲音：請選「整個螢幕」並勾選「分享系統音訊」（或分享某分頁並勾選「分享分頁音訊」）。",
+  "🎙 Live captions will appear here once you start speaking.": "🎙 開始說話後，即時字幕會顯示在這裡。"
 }
