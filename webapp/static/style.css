@@ -1209,3 +1209,20 @@ html[data-theme="dark"] .seg.active { background: var(--surface-3); border-color
 .thanks-card button{margin-top:18px;padding:8px 28px;border:none;border-radius:10px;cursor:pointer;
   background:var(--accent);color:#fff;font-size:0.95rem;font-weight:600}
 .thanks-card button:hover{filter:brightness(1.06)}
+
+/* --- Support / contact (sidebar bottom entry + modal) --- */
+.support-link{display:flex;align-items:center;gap:8px;width:100%;padding:6px 8px;border:none;
+  border-radius:8px;background:transparent;color:var(--text-2);cursor:pointer;font-size:0.85rem}
+.support-link:hover{background:var(--hover);color:var(--text)}
+.support-link svg{width:16px;height:16px;flex:none}
+.support-modal{max-width:400px}
+.support-qr{text-align:center;margin-top:10px}
+.support-qr img{max-width:280px;width:100%;border-radius:14px}
+.support-qr p{margin:10px 0 0;font-size:0.82rem;line-height:1.55}
+.support-qr a{color:var(--accent);word-break:break-all}
+.support-links{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.support-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:10px;
+  border:1px solid var(--border);background:transparent;color:var(--text);cursor:pointer;
+  font-size:0.9rem;text-decoration:none}
+.support-row:hover{background:var(--hover);border-color:var(--border-strong)}
+.support-row svg,.support-row img{width:18px;height:18px;flex:none}

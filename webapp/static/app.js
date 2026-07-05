@@ -1698,6 +1698,16 @@ async function moduleAction(name, action, btn, statTd) {
   }, 1500);
 }
 
+// ----- support / contact -----
+$("support-contact").onclick = () => { $("support-modal").hidden = false; };
+$("support-close").onclick = () => { $("support-modal").hidden = true; };
+$("support-modal").onclick = (e) => { if (e.target.id === "support-modal") $("support-modal").hidden = true; };
+$("support-copy-qq").onclick = async () => {
+  try { await navigator.clipboard.writeText("HarukaQnQ"); }
+  catch (e) { /* clipboard blocked (http) — the id is visible to copy manually */ }
+  toast(_label("Copied", "已复制") + ": HarukaQnQ", "ok");
+};
+
 // ----- glossary editor -----
 $("glossary-edit-select").onchange = () => loadGlossaryTable($("glossary-edit-select").value);
 let glossaryCols = [];

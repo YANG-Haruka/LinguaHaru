@@ -171,8 +171,16 @@ class MainWindow(FluentWindow):
         # Proofread, History, Plugins, Settings) are added in _build_deferred_pages
         # after the window is shown.
 
-        # Interface-language picker + theme toggle pinned at the bottom of the
-        # navigation rail (language above theme).
+        # Support/contact entry + interface-language picker + theme toggle pinned
+        # at the bottom of the navigation rail (support above language above theme).
+        nav.addItem(
+            routeKey="support-contact",
+            icon=FluentIcon.HEART,
+            text=tr("Support / Contact", self._lang),
+            onClick=self._show_support_menu,
+            selectable=False,
+            position=NavigationItemPosition.BOTTOM,
+        )
         nav.addItem(
             routeKey="ui-lang",
             icon=FluentIcon.GLOBE,
@@ -466,6 +474,68 @@ class MainWindow(FluentWindow):
             menu.addAction(act)
         menu.exec(QCursor.pos())
 
+    # --- Support / contact (bottom nav) ------------------------------------
+    _HOMEPAGE_URL = "https://www.harukayang.com/"
+    _PAY_GUIDE_URL = "https://www.harukayang.com/combined-pay.html"
+    _LINKEDIN_URL = "https://www.linkedin.com/in/yang-haruka/"
+    _CONTACT_ID = "HarukaQnQ"
+
+    def _show_support_menu(self):
+        """支持我 / 我的主页 / 联系我(QQ·微信 + 领英), opened from the bottom nav."""
+        menu = RoundMenu(parent=self)
+        a_support = Action(FluentIcon.HEART, tr("Support Me", self._lang))
+        a_support.triggered.connect(self._show_support_dialog)
+        menu.addAction(a_support)
+        a_home = Action(FluentIcon.HOME, tr("My Homepage", self._lang))
+        a_home.triggered.connect(
+            lambda: QDesktopServices.openUrl(QUrl(self._HOMEPAGE_URL)))
+        menu.addAction(a_home)
+
+        contact = RoundMenu(tr("Contact Me", self._lang), parent=menu)
+        contact.setIcon(FluentIcon.CHAT)
+        a_qq = Action(FluentIcon.PEOPLE, f"QQ / 微信：{self._CONTACT_ID}")
+        a_qq.triggered.connect(self._copy_contact_id)
+        contact.addAction(a_qq)
+        li_icon = QIcon(os.path.join(backend.REPO_ROOT, "assets", "icons", "linkedin.svg"))
+        a_li = Action(li_icon, "LinkedIn")
+        a_li.triggered.connect(
+            lambda: QDesktopServices.openUrl(QUrl(self._LINKEDIN_URL)))
+        contact.addAction(a_li)
+        menu.addMenu(contact)
+        menu.exec(QCursor.pos())
+
+    def _copy_contact_id(self):
+        from PySide6.QtWidgets import QApplication
+        from qfluentwidgets import InfoBar
+        QApplication.clipboard().setText(self._CONTACT_ID)
+        InfoBar.success(tr("Copied", self._lang), self._CONTACT_ID,
+                        orient=1, isClosable=True, duration=2500, parent=self)
+
+    def _show_support_dialog(self):
+        """The donation QR (transparent corners) + a tip linking the guide for
+        building the same combined WeChat+Alipay QR."""
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QPixmap
+        from PySide6.QtWidgets import QLabel
+        from qfluentwidgets import MessageBoxBase, BodyLabel
+
+        dlg = MessageBoxBase(self)
+        qr = QPixmap(os.path.join(backend.REPO_ROOT, "assets", "img", "support_qr.png"))
+        img = QLabel(dlg)
+        img.setPixmap(qr.scaledToWidth(300, Qt.SmoothTransformation))
+        img.setAlignment(Qt.AlignCenter)
+        dlg.viewLayout.addWidget(img, 0, Qt.AlignCenter)
+        tip = BodyLabel(
+            f"{tr('Support Pay Tip', self._lang)}<br>"
+            f"<a href='{self._PAY_GUIDE_URL}'>{self._PAY_GUIDE_URL}</a>", dlg)
+        tip.setOpenExternalLinks(True)
+        tip.setWordWrap(True)
+        dlg.viewLayout.addWidget(tip)
+        dlg.yesButton.setText(tr("Confirm", self._lang))
+        dlg.cancelButton.hide()
+        dlg.widget.setMinimumWidth(380)
+        dlg.exec()
+
     def _add_header(self, route_key, label_key):
         """Add a gray, non-clickable section header to the nav rail."""
         self.navigationInterface.addItemHeader(tr(label_key, self._lang))
@@ -510,6 +580,9 @@ class MainWindow(FluentWindow):
         lang_item = self.navigationInterface.widget("ui-lang")
         if lang_item is not None and hasattr(lang_item, "setText"):
             lang_item.setText(tr("Interface Language", lang))
+        support_item = self.navigationInterface.widget("support-contact")
+        if support_item is not None and hasattr(support_item, "setText"):
+            support_item.setText(tr("Support / Contact", lang))
 
     def _apply_custom_bg(self):
         """Paint a deep-blue (dark) / sky-tinted (light) window surface so the
