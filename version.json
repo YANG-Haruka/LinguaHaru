@@ -1,10 +1,15 @@
 {
     "version": "5.1.0",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "",
-    "_assets_note": "Fill sha256 at release time (sha256 of each zip). Self-update REFUSES to apply without a matching checksum; until then users use the manual download link.",
+    "notes": "5.1.0: lightweight portable (plugins install on demand, GPU-first), glossary manager, manga mode, live captions overhaul, support/contact widget.",
     "assets": {
-        "web": {"url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-web.zip", "sha256": "2ed84726c4079c96c5b89cbcba47603188786955aeab353290b51645f260ff37"},
-        "desktop": {"url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-desktop.zip", "sha256": "2d83435b871650afecc34686fbd55e5ce2c1275b59b44ed29b9d90b2af59eda4"}
+        "web": {
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-5.1.0-web-portable.zip",
+            "sha256": "bc3c57d7c89d1519337516f35a15aa66f560d123f5213749700407193ea1ad0d"
+        },
+        "desktop": {
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v5.1.0/LinguaHaru-5.1.0-desktop-portable.zip",
+            "sha256": "1e435438032cee6da7b7a1aa6f1c36c1d1e8ab9cd9c338bee74c389607b23876"
+        }
     }
 }
