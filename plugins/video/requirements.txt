@@ -1,0 +1,30 @@
+# Optional: video/audio subtitle translation module
+#   pip install -r requirements/video.txt
+# ffmpeg is bundled via imageio-ffmpeg below — NO separate PATH install needed.
+# STT model is selectable in the UI (Settings). faster-whisper covers all
+# languages; SenseVoice (funasr) is faster/accurate for zh/en/ja/ko/yue only.
+faster-whisper>=1.1.0
+# Bundled ffmpeg binary (no system/PATH install required).
+imageio-ffmpeg>=0.5.1
+# SenseVoice STT engine (optional). NOTE: funasr does NOT declare torch as a
+# dependency, so it must be listed explicitly or SenseVoice fails at runtime
+# (ModuleNotFoundError: torch). The CPU build is fine; for GPU install the CUDA
+# build of torch separately (https://pytorch.org/get-started/locally/).
+torch>=2.0
+torchaudio>=2.0
+funasr>=1.1.0
+# funasr -> umap-learn -> numba: on a FRESH Python 3.12 env the resolver can
+# backtrack to ancient numba 0.53.1 (supports only py<3.10) and the install
+# fails to build. Pin a 3.12-compatible numba so it never picks the old one.
+numba>=0.59
+# Optional: capture system audio (speaker loopback) as a live input source.
+# If absent, the Real-Time Voice page silently falls back to microphones only.
+soundcard>=0.4.2
+# Neural VAD for real-time voice (noise-robust, ~0.1ms/frame, fast endpointing).
+# If absent, the live page falls back to a simple energy VAD.
+ten-vad>=1.0.0
+# Qwen3-ASR STT engine (optional, highest accuracy — esp. the 1.7B for offline
+# video subtitle extraction; 30 languages incl. zh/en/ja/ko). If absent, those
+# models gracefully fall back to SenseVoice/Whisper. Pins transformers==4.57.6,
+# which is compatible with the rest of the stack (paddlex needs transformers<5).
+qwen-asr>=0.0.6

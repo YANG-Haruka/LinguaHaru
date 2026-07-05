@@ -1,0 +1,562 @@
+import os
+import re
+import requests
+from core.log_config import app_logger
+import subprocess
+import json
+import socket
+
+def _get_host():
+    # Get OLLAMA_HOST from environment variables or use default
+    ollama_host = os.environ.get("OLLAMA_HOST", "localhost:11434")
+    
+    # Parse host and port from OLLAMA_HOST
+    if ":" in ollama_host:
+        host_part, port_part = ollama_host.rsplit(":", 1)
+    else:
+        host_part = ollama_host
+        port_part = "11434"  # Default port
+    
+    # If the host is 0.0.0.0, replace it with localhost for client connections
+    if host_part == "0.0.0.0":
+        host_part = "localhost"
+    
+    return host_part, port_part
+
+# Global variables for hosts and ports
+OLLAMA_HOST, OLLAMA_PORT = _get_host()
+
+# LM Studio default settings
+LM_STUDIO_HOST = os.environ.get("LM_STUDIO_HOST", "localhost")
+LM_STUDIO_PORT = os.environ.get("LM_STUDIO_PORT", "1234")  # Initial port from env
+_LM_STUDIO_PORT_DETECTED = False  # Flag to track if port detection has been done
+
+# Ollama status tracking
+_OLLAMA_STATUS_LOGGED = False  # Flag to track if Ollama status has been logged
+
+# Model cache for subprocess reimport protection
+_CACHED_MODELS = None
+_MODELS_CACHE_POPULATED = False
+
+def _detect_lm_studio_port():
+    """
+    Detect the actual LM Studio port by running the 'lms server status' command
+    and parsing its output. Falls back to socket detection if command fails.
+    Returns the detected port or the default port if detection fails.
+    Only runs once per process (lazy initialization).
+    """
+    global LM_STUDIO_PORT, _LM_STUDIO_PORT_DETECTED
+
+    # Skip if already detected
+    if _LM_STUDIO_PORT_DETECTED:
+        return
+
+    _LM_STUDIO_PORT_DETECTED = True
+    
+    # First try to get the port from lms server status command
+    try:
+        result = subprocess.run(
+            ['lms', 'server', 'status'],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,   # the `lms` CLI can hang; never block startup on it
+        )
+        
+        if result.returncode == 0:
+            # Parse the output to find the port
+            output = result.stderr
+            
+            server_running_pattern = r"The server is running on port (\d+)"
+            match = re.search(server_running_pattern, output)
+            if match:
+                detected_port = match.group(1)
+                app_logger.info(f"LM Studio running in: {LM_STUDIO_HOST}:{detected_port}")
+                LM_STUDIO_PORT = detected_port
+                return LM_STUDIO_HOST, detected_port
+                
+        app_logger.debug("Could not detect LM Studio port from command, trying socket detection")
+    except Exception as e:
+        app_logger.debug(f"Error running lms server status command: {e}")
+    
+    # Try the configured port first
+    configured_port = LM_STUDIO_PORT
+    common_ports = ["1234"]
+    
+    # Make sure the configured port is checked first if it's not already in the list
+    if configured_port not in common_ports:
+        common_ports.insert(0, configured_port)
+    
+    lm_studio_running = False
+    
+    for port in common_ports:
+        try:
+            # Try to connect to the port
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(0.6)
+            result = sock.connect_ex((LM_STUDIO_HOST, int(port)))
+            sock.close()
+            
+            if result == 0:
+                # Now verify it's actually LM Studio by making an API call
+                try:
+                    url = f"http://{LM_STUDIO_HOST}:{port}/v1/models"
+                    response = requests.get(url, timeout=2)
+                    if response.status_code == 200:
+                        app_logger.info(f"LM Studio detected on port {port}")
+                        LM_STUDIO_PORT = port
+                        lm_studio_running = True
+                        return
+                except:
+                    pass  # If API call fails, it's probably not LM Studio
+        except:
+            continue
+    
+    # If no port detected, log that LM Studio doesn't seem to be running
+    if not lm_studio_running:
+        app_logger.info("LM Studio does not appear to be running")
+
+
+def translate_offline(messages, model):
+    """
+    Send messages to a local LLM service for translation.
+
+    Returns:
+        tuple: (translation_result, success_status, token_usage)
+            - translation_result: Translated text or error message
+            - success_status: True if API call successful, False if service unavailable
+            - token_usage: dict with 'prompt_tokens', 'completion_tokens', 'total_tokens' or None
+    """
+    try:
+        # Check if model is None or empty
+        if not model:
+            return "Error: No model specified", False, None
+            
+        # Strip the prefix from the model name if present
+        if model.startswith("(Ollama)") or model.startswith("(LM Studio)"):
+            # Extract service type and model name
+            if "(Ollama)" in model:
+                service = "ollama"
+                model_name = model.split(")", 1)[1].strip()
+            else:  # Must be LM Studio
+                service = "lm_studio"
+                model_name = model.split(")", 1)[1].strip()
+        else:
+            # Default to Ollama if no prefix is present
+            service = "ollama"
+            model_name = model
+            
+        app_logger.debug(f"Using {service} model: {model_name}")
+        
+        # Special handling for qwen3 models. Copy first — never mutate the
+        # caller-owned messages list (would corrupt retries if it were reused).
+        is_qwen3 = "qwen3" in model_name.lower()
+        if is_qwen3 and messages and messages[-1].get("role") == "user" \
+                and isinstance(messages[-1].get("content"), str):
+            messages = list(messages)
+            messages[-1] = dict(messages[-1])
+            messages[-1]["content"] += (
+                " /no_think IMPORTANT: Return a single valid JSON object "
+                "containing all translations. Wrap everything in {}")
+        
+        # Sampling temperature from the active translation mode (was a fixed
+        # 0.7 for LM Studio, which is high for document translation). Default
+        # mode "precise" -> ~0.1 for stable, consistent output.
+        try:
+            from core.translation_modes import offline_temperature
+            mode_temp = offline_temperature()
+        except Exception:  # noqa: BLE001
+            mode_temp = 0.3
+
+        # Configure URL and payload based on service
+        if service.lower() == "ollama":
+            url = f"http://{OLLAMA_HOST}:{OLLAMA_PORT}/api/chat"
+
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "options": {
+                    "num_ctx": 8192,
+                    "num_predict": -1,
+                    "temperature": mode_temp
+                },
+                "stream": False
+            }
+            
+            # Check if Ollama is running
+            if not is_ollama_running():
+                app_logger.error("Ollama service is not running")
+                return "Ollama service is not available", False, None
+                
+        elif service.lower() == "lm_studio":
+            url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/v1/chat/completions"
+
+            # Fit the reply budget to the model's ACTUAL loaded context so a batch
+            # never overflows it (input + reply <= ctx). Local models load a small
+            # window (often 4096) regardless of their theoretical max, and reasoning
+            # models spend hidden tokens out of this same budget — a fixed 2048 cap
+            # on a 3.7K-token input batch left no room for the reply, truncating the
+            # JSON to garbage (0 usable segments). ctx unknown -> assume 4096.
+            ctx = lm_studio_context(model_name) or 4096
+            try:
+                from core.engine.calculation_tokens import num_tokens_from_string
+                in_tok = sum(num_tokens_from_string(str(m.get("content", "")))
+                             for m in messages)
+            except Exception:  # noqa: BLE001
+                in_tok = 0
+            out_cap = max(256, min(2048, ctx - in_tok - 128))
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": mode_temp,
+                "max_tokens": out_cap,
+                "stream": False
+            }
+            
+            # Check if LM Studio is running
+            if not is_lm_studio_running():
+                app_logger.error("LM Studio service is not running")
+                return "LM Studio service is not available", False, None
+        else:
+            app_logger.error(f"Unknown service: {service}")
+            return f"Unknown service: {service}", False, None
+            
+        from core.llm.online_translation import debug_llm_io
+        # Full payload only when debugging LLM I/O (contains source text).
+        if debug_llm_io():
+            app_logger.info(f"Offline LLM request to {url}: {payload}")
+
+        # Make the request
+        response = requests.post(url, json=payload, timeout=600)
+        response.raise_for_status()  # Raise exception for HTTP errors
+        response_text = response.text
+        
+        # Extract the translated content based on service
+        if not response_text:
+            app_logger.warning(f"Empty response from {service}")
+            return f"Empty response from {service}", True, None
+
+        try:
+            if debug_llm_io():
+                app_logger.info(f"Offline LLM response: {response_text}")
+            response_json = json.loads(response_text)
+
+            # Extract token usage based on service
+            token_usage = None
+            if service.lower() == "ollama":
+                # Ollama uses prompt_eval_count and eval_count
+                prompt_tokens = response_json.get("prompt_eval_count", 0) or 0
+                completion_tokens = response_json.get("eval_count", 0) or 0
+                token_usage = {
+                    'prompt_tokens': prompt_tokens,
+                    'completion_tokens': completion_tokens,
+                    'total_tokens': prompt_tokens + completion_tokens
+                }
+                if "message" not in response_json or "content" not in response_json["message"]:
+                    return "Invalid Ollama response format", True, token_usage
+                translated_text = response_json["message"]["content"]
+            elif service.lower() == "lm_studio":
+                # LM Studio uses OpenAI-compatible format
+                usage = response_json.get("usage", {})
+                if usage:
+                    token_usage = {
+                        'prompt_tokens': usage.get('prompt_tokens', 0) or 0,
+                        'completion_tokens': usage.get('completion_tokens', 0) or 0,
+                        'total_tokens': usage.get('total_tokens', 0) or 0
+                    }
+                if "choices" not in response_json or not response_json["choices"]:
+                    return "Invalid LM Studio response format", True, token_usage
+                translated_text = response_json["choices"][0]["message"]["content"]
+
+            if token_usage:
+                app_logger.debug(f"Token usage: {token_usage}")
+
+            if not translated_text:
+                return f"Empty content from {service}", True, token_usage
+
+            clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+
+            # Process the text to ensure it's valid JSON
+            fixed_json = fix_json_format(clean_translated_text)
+
+            if fixed_json is None:
+                # Return raw text if JSON fixing failed
+                return clean_translated_text, True, token_usage
+
+            return fixed_json, True, token_usage
+
+        except json.JSONDecodeError as e:
+            app_logger.error(f"Failed to parse JSON response: {e}")
+            return f"Invalid JSON response from {service}", True, None
+        except KeyError as e:
+            app_logger.error(f"Missing key in response: {e}")
+            return f"Invalid response structure from {service}", True, None
+        except Exception as e:
+            app_logger.error(f"Response parsing failed: {e}")
+            return f"Error parsing response: {str(e)}", True, None
+
+    except requests.exceptions.ConnectionError as e:
+        app_logger.error(f"Connection error: {e}")
+        return f"{service} service is not reachable", False, None
+    except requests.exceptions.Timeout as e:
+        app_logger.error(f"Request timeout: {e}")
+        return f"Request to {service} timed out", False, None
+    except requests.exceptions.HTTPError as e:
+        app_logger.error(f"HTTP error: {e}")
+        status_code = e.response.status_code if e.response else "Unknown"
+        return f"HTTP {status_code} error from {service}", False, None
+    except requests.exceptions.RequestException as e:
+        app_logger.error(f"Request error: {e}")
+        return f"Request to {service} failed: {str(e)}", False, None
+    except Exception as e:
+        app_logger.error(f"Unexpected error: {e}")
+        return f"Unexpected error: {str(e)}", False, None
+
+def fix_json_format(text):
+    """
+    Fix the JSON format of the response text.
+    Handles various cases of non-standard JSON from LLM responses.
+    
+    Args:
+        text: The text to fix
+        
+    Returns:
+        A properly formatted JSON string
+    """
+    # Remove any markdown code block indicators
+    text = re.sub(r'```json|```', '', text).strip()
+    
+    # Case 1: Multiple JSON objects concatenated - the most common issue
+    try:
+        # Try to parse as a complete JSON object first
+        json.loads(text)
+        return text  # Already valid JSON
+    except json.JSONDecodeError:
+        # Not valid JSON, try to fix
+        pass
+        
+    # Try to parse multiple JSON objects on separate lines
+    try:
+        # Extract all balanced top-level objects (string/nesting aware), so a
+        # value containing braces isn't truncated/merged into corruption.
+        from core.llm.online_translation import _balanced_json_objects
+        objects = _balanced_json_objects(text)
+
+        if not objects:
+            # Plain-text reply -> wrap it as a single value (NOT "{"+text+"}",
+            # which produces invalid JSON for arbitrary text).
+            app_logger.debug("No JSON objects found in response, wrapping text")
+            return json.dumps({"translated_text": text}, ensure_ascii=False)
+            
+        # Parse each object and merge them
+        merged_data = {}
+        for obj_str in objects:
+            try:
+                obj = json.loads(obj_str)
+                merged_data.update(obj)
+            except json.JSONDecodeError:
+                app_logger.warning(f"Couldn't parse object: {obj_str}")
+                
+        if merged_data:
+            return json.dumps(merged_data, ensure_ascii=False)
+        else:
+            # If all parsing failed, wrap the text in a JSON object with a default key
+            app_logger.warning("Failed to parse any objects, using fallback")
+            return json.dumps({"translated_text": text}, ensure_ascii=False)
+            
+    except Exception as e:
+        app_logger.error(f"Error fixing JSON format: {e}")
+        # Last resort: wrap everything in a JSON object
+        return json.dumps({"translated_text": text}, ensure_ascii=False)
+
+def is_ollama_running(timeout=0.6):
+    """Check if Ollama service is running by attempting to connect to its API port.
+    Short localhost timeout so a one-time startup probe doesn't stall the UI."""
+    try:
+        port_int = int(OLLAMA_PORT)
+        
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((OLLAMA_HOST, port_int))
+        sock.close()
+        return result == 0
+    except Exception as e:
+        app_logger.debug(f"Error checking Ollama service: {e}")
+        return False
+
+def is_lm_studio_running(timeout=0.6):
+    """Check if LM Studio service is running by attempting to connect to its API port."""
+    # Lazy detection of LM Studio port
+    _detect_lm_studio_port()
+
+    try:
+        port_int = int(LM_STUDIO_PORT)
+        
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(timeout)
+        result = sock.connect_ex((LM_STUDIO_HOST, port_int))
+        sock.close()
+        return result == 0
+    except Exception as e:
+        app_logger.debug(f"Error checking LM Studio service: {e}")
+        return False
+
+def get_ollama_models():
+    """Get list of available Ollama models."""
+    global _OLLAMA_STATUS_LOGGED
+
+    if not is_ollama_running():
+        if not _OLLAMA_STATUS_LOGGED:
+            app_logger.info("Ollama service does not appear to be running.")
+            _OLLAMA_STATUS_LOGGED = True
+        return []
+    else:
+        if not _OLLAMA_STATUS_LOGGED:
+            app_logger.info(f"Ollama running in: {OLLAMA_HOST}:{OLLAMA_PORT}")
+            _OLLAMA_STATUS_LOGGED = True
+    
+    try:
+        result = subprocess.run(
+            ['ollama', 'list'], 
+            capture_output=True, 
+            text=True, 
+            check=False,
+        )
+        
+        if result.returncode != 0:
+            app_logger.warning(f"Ollama command failed with return code {result.returncode}: {result.stderr}")
+            return []
+        
+        output_lines = result.stdout.strip().split('\n')
+        if len(output_lines) > 0 and 'NAME' in output_lines[0]:
+            output_lines = output_lines[1:]
+        
+        model_names = []
+        for line in output_lines:
+            if line.strip():
+                model_name = line.split()[0]
+                # Add prefix to indicate it's an Ollama model
+                model_names.append(f"(Ollama) {model_name}")
+        
+        return model_names
+    
+    except subprocess.SubprocessError as e:
+        app_logger.error(f"Error executing Ollama command: {e}")
+        return []
+    except Exception as e:
+        app_logger.error(f"Unexpected error fetching Ollama models: {e}")
+        return []
+
+_LM_CTX_CACHE = {}  # model_id -> loaded context length (int) once known
+
+
+def lm_studio_context(model_id):
+    """The ACTUAL loaded context window of an LM Studio model (its real working
+    limit, e.g. 4096) via the native /api/v0/models endpoint — NOT
+    `max_context_length`, which is the theoretical max (often 128K+) that LM Studio
+    does NOT allocate when it loads the model. Returns an int, or None if the model
+    isn't loaded yet / can't be probed (caller then uses a conservative default).
+    Cached per id once a positive value is known (the loaded window rarely changes
+    during a run)."""
+    if model_id in _LM_CTX_CACHE:
+        return _LM_CTX_CACHE[model_id]
+    _detect_lm_studio_port()
+    ctx = None
+    try:
+        url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/api/v0/models"
+        r = requests.get(url, timeout=3)
+        if r.status_code == 200:
+            for m in r.json().get("data", []):
+                if m.get("id") == model_id:
+                    lc = m.get("loaded_context_length")
+                    if lc and int(lc) > 0:        # the real, allocated window
+                        ctx = int(lc)
+                    break
+    except Exception as e:  # noqa: BLE001 — best-effort probe
+        app_logger.debug(f"LM Studio context probe failed: {e}")
+    if ctx:                  # don't cache None: the model may load on the 1st batch
+        _LM_CTX_CACHE[model_id] = ctx
+    return ctx
+
+
+def get_lm_studio_models():
+    """Get list of available LM Studio models."""
+    # Lazy detection of LM Studio port (also done in is_lm_studio_running)
+    _detect_lm_studio_port()
+
+    if not is_lm_studio_running():
+        return []
+    
+    try:
+        url = f"http://{LM_STUDIO_HOST}:{LM_STUDIO_PORT}/v1/models"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()  # Raise exception for HTTP errors
+        
+        models_data = response.json()
+        model_names = []
+        
+        for model in models_data.get("data", []):
+            model_id = model.get("id")
+            if model_id:
+                # Add prefix to indicate it's an LM Studio model
+                model_names.append(f"(LM Studio) {model_id}")
+        
+        return model_names
+    
+    except requests.exceptions.RequestException as e:
+        app_logger.error(f"Error fetching LM Studio models: {e}")
+        return []
+    except Exception as e:
+        app_logger.error(f"Unexpected error fetching LM Studio models: {e}")
+        return []
+
+def defer_local_scan():
+    """Mark the local-model cache as populated-but-empty WITHOUT probing, so the
+    Qt UI can build instantly (no Ollama/LM Studio socket+subprocess probes on
+    the main thread). A background warm-up later calls
+    populate_sum_model(force_refresh=True) to do the real scan and refresh the UI."""
+    global _CACHED_MODELS, _MODELS_CACHE_POPULATED
+    if not _MODELS_CACHE_POPULATED:
+        _CACHED_MODELS = None
+        _MODELS_CACHE_POPULATED = True
+
+
+def populate_sum_model(force_refresh=False):
+    """
+    Check local Ollama and LM Studio models and return a combined list with prefixes.
+    Uses caching to prevent repeated scanning during subprocess reimports.
+
+    Args:
+        force_refresh: If True, bypass cache and rescan models
+
+    Returns:
+        List of model names with prefixes or None if both services are unavailable
+    """
+    global _CACHED_MODELS, _MODELS_CACHE_POPULATED, _OLLAMA_STATUS_LOGGED, _LM_STUDIO_PORT_DETECTED
+
+    # Return cached result if available and not forcing refresh
+    if _MODELS_CACHE_POPULATED and not force_refresh:
+        return _CACHED_MODELS
+
+    # Reset logging flags when force refreshing so status is logged again
+    if force_refresh:
+        _OLLAMA_STATUS_LOGGED = False
+        _LM_STUDIO_PORT_DETECTED = False
+
+    ollama_models = get_ollama_models()
+    lm_studio_models = get_lm_studio_models()
+
+    # Combine both lists
+    combined_models = ollama_models + lm_studio_models
+
+    if not combined_models:
+        # Having no local models is a normal state (online mode is the default),
+        # so this is debug-level rather than a user-facing warning.
+        app_logger.debug("No local models detected. Please use online mode.")
+        _CACHED_MODELS = None
+    else:
+        app_logger.info(f"Found {len(ollama_models)} Ollama models and {len(lm_studio_models)} LM Studio models")
+        _CACHED_MODELS = combined_models
+
+    _MODELS_CACHE_POPULATED = True
+    return _CACHED_MODELS

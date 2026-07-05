@@ -1,0 +1,30 @@
+# Core (frontend-agnostic) dependencies shared by both UIs.
+# The frontend itself is installed separately:
+#   - Web  : requirements/web.txt  (FastAPI + uvicorn)
+#   - Qt   : requirements/qt.txt   (PySide6 + Fluent Widgets)
+
+# Document processing
+openpyxl>=3.0.10
+xlwings>=0.33.11
+python-docx>=1.1.0
+python-pptx>=1.0.0
+
+# PDF translation moved to the optional module: plugins/pdf/requirements.txt
+
+# LLM & API
+openai>=1.59.6
+tiktoken>=0.8.0
+requests>=2.31    # offline (ollama/lm-studio) calls, update check, FX rates
+
+# Text processing
+bs4
+lxml>=5.3.0
+chardet>=5.0
+regex>=2024.0
+
+# Utilities
+colorama>=0.4.6
+tqdm
+tenacity
+rich>=13.0    # core: translation_checker renders the per-batch results table
+psutil>=5.9   # task dashboard: live CPU usage (GPU via nvidia-smi, no dep)

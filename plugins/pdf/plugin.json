@@ -1,0 +1,11 @@
+{
+  "name": "PDF",
+  "key": "pdf",
+  "order": 1,
+  "requirements": "requirements.txt",
+  "packages": ["babeldoc"],
+  "shared_packages": [],
+  "version_package": "babeldoc",
+  "detail": "BabelDOC",
+  "fixed_model": "DocLayout (BabelDOC)"
+}

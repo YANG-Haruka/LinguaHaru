@@ -1,0 +1,30 @@
+# LinguaHaru Web — docker compose up
+#
+# Browse http://localhost:8080 (or http://<server-ip>:8080 from another device).
+# Remote admin is guarded: set LINGUAHARU_ADMIN_PASSWORD and enter it when the UI
+# asks (the host binds 0.0.0.0, so without a password remote admin is refused).
+services:
+  linguaharu:
+    build: .
+    image: linguaharu
+    container_name: linguaharu
+    ports:
+      - "8080:8080"          # host:container — change the LEFT side for a custom port
+    environment:
+      HOST: "0.0.0.0"        # bind all interfaces (so the published port works)
+      PORT: "8080"           # in-container port (match the right side of `ports`)
+      LINGUAHARU_ADMIN_PASSWORD: "change-me"   # remote-admin password — CHANGE THIS
+      # Public-deploy lockdown (hide key/model/admin UI, use a server-side key):
+      # RENDER: "1"
+      # LINGUAHARU_API_KEY: "sk-..."
+    volumes:
+      # Models, results, history, uploads — persist across recreation.
+      - linguaharu-data:/app/data
+      # Persist settings too (optional): the only mutable file in config/ is
+      # system_config.json. Uncomment to keep UI settings across recreation
+      # (create an empty ./system_config.json first, or copy the default):
+      # - ./system_config.json:/app/config/system_config.json
+    restart: unless-stopped
+
+volumes:
+  linguaharu-data:

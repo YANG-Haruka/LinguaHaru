@@ -1,0 +1,1 @@
+# LinguaHaru Web (FastAPI) package.

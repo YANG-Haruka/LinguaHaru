@@ -1,0 +1,3 @@
+# Real-Time Voice plugin — shares the full STT stack with Video/Audio.
+#   pip install -r plugins/live/requirements.txt
+-r ../video/requirements.txt

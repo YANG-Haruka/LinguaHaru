@@ -1,0 +1,9 @@
+{
+  "name": "Image OCR",
+  "key": "ocr",
+  "order": 2,
+  "requirements": "requirements.txt",
+  "packages": ["paddleocr", "paddlepaddle", "rapidocr", "opencv-python-headless", "Pillow", "pymupdf"],
+  "shared_packages": ["numpy", "onnxruntime", "huggingface_hub"],
+  "version_package": "rapidocr"
+}

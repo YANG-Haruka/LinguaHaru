@@ -1,0 +1,86 @@
+# -*- coding: utf-8 -*-
+"""
+Token calculation module using tiktoken.
+Uses local encoding file for PyInstaller compatibility.
+"""
+import sys
+import base64
+import threading
+from pathlib import Path
+import tiktoken
+from typing import Optional
+
+def get_application_path() -> Path:
+    """Get the application root directory path for both script and PyInstaller executable."""
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        return Path(sys._MEIPASS)
+    else:
+        current_dir = Path(__file__).parent.resolve()
+        while current_dir != current_dir.parent:
+            if (current_dir / "assets" / "models" / "tiktoken").exists():
+                return current_dir
+            current_dir = current_dir.parent
+        raise RuntimeError("Could not find project root directory containing assets/models/tiktoken")
+
+# Global cached encoder (lock so concurrent first-calls don't double-parse the BPE)
+_cached_encoder: Optional[tiktoken.Encoding] = None
+_encoder_lock = threading.Lock()
+
+def get_encoder(encoding_name: str = "cl100k_base") -> tiktoken.Encoding:
+    """Get encoder with caching and manual loading for PyInstaller compatibility."""
+    global _cached_encoder
+
+    if _cached_encoder is not None:
+        return _cached_encoder
+    with _encoder_lock:
+        if _cached_encoder is not None:   # double-check inside the lock
+            return _cached_encoder
+        return _build_encoder(encoding_name)
+
+
+def _build_encoder(encoding_name: str) -> tiktoken.Encoding:
+    global _cached_encoder
+
+    # Load encoder file manually
+    encoder_file = get_application_path() / "assets" / "models" / "tiktoken" / f"{encoding_name}.tiktoken"
+
+    if not encoder_file.is_file():
+        raise FileNotFoundError(f"Tiktoken encoder file not found: {encoder_file}")
+
+    # Read and parse BPE ranks manually
+    with open(encoder_file, "r", encoding="utf-8") as f:
+        contents = f.read()
+
+    mergeable_ranks = {
+        base64.b64decode(token): int(rank)
+        for token, rank in (line.split() for line in contents.splitlines() if line)
+    }
+
+    # Define encoder parameters for cl100k_base
+    special_tokens = {
+        "<|endoftext|>": 100257,
+        "<|fim_prefix|>": 100258,
+        "<|fim_middle|>": 100259,
+        "<|fim_suffix|>": 100260,
+        "<|endofprompt|>": 100276
+    }
+
+    pat_str = r"""(?i:'s|'t|'re|'ve|'m|'ll|'d)|[^\r\n\p{L}\p{N}]?[\p{L}]+|[\p{N}]|[^\s\p{L}\p{N}]+[\r\n]*|\s*[\r\n]+|\s+(?!\S)|\s+"""
+
+    # Create encoder instance
+    _cached_encoder = tiktoken.Encoding(
+        name=encoding_name,
+        pat_str=pat_str,
+        mergeable_ranks=mergeable_ranks,
+        special_tokens=special_tokens
+    )
+    return _cached_encoder
+
+def num_tokens_from_string(text: str, encoding_name: str = "cl100k_base") -> int:
+    """Calculate the number of tokens in text."""
+    if not isinstance(text, str):
+        text = str(text)
+
+    encoder = get_encoder(encoding_name)
+    token_count = len(encoder.encode(text))
+    return token_count

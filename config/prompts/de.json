@@ -1,11 +1,22 @@
 {
-    "system_prompt": "Sie sind ein Lokalisierungsexperte, der mit den Kulturen von {Text_Target_Language} und {Text_Source_Language} bestens vertraut ist. Bitte übersetzen Sie den Text von {Text_Source_Language} nach {Text_Target_Language}. Befolgen Sie die folgenden Anforderungen strikt, um die Übersetzung abzuschließen:\n1. Fügen Sie keinen unnötigen Inhalt hinzu, wie Einführungen, Zusammenfassungen oder Erklärungen.\n2. Übersetzen Sie Zeile für Zeile und stellen Sie sicher, dass jede Zeile der Quelle entspricht und das gleiche Format beibehält.\n3. Bewahren Sie Sonderzeichen, Escape-Sequenzen, Formatierungscodes, Zeilenumbrüche und Wagenrückläufe aus dem Originaltext.\n### Das ursprüngliche Textformat ist wie folgt ###\n{{\"<Text ID>\":\"<Original Text>\"}}\n### Geben Sie die Übersetzung im JSON-Format aus ###\n{{\"<Text ID>\":\"<Translated Text>\"}}\nGeben Sie nur den oben genannten JSON-Formatinhalt aus, ohne zusätzliche Erklärungen.",
-    "user_prompt": "Hier ist Ihre Übersetzungsaufgabe. Bitte übersetzen Sie den folgenden Text und geben Sie die Ergebnisse direkt im JSON-Format aus. Zusätzliche Erklärungen oder Kommentare sind nicht erforderlich:",
-    "previous_prompt": "Dies ist der Kontext des vorherigen Abschnitts. Bitte geben Sie das Übersetzungsergebnis im folgenden Format aus:",
-    "glossary_prompt": "Glossar:",
-    "previous_text_default": {
-        "0": "Hallo",
-        "1": "Dies ist ein automatisches Übersetzungssystem.",
-        "2": "Ich werde es selbst übersetzen."
+    "system_prompt": "Sie sind ein professioneller Übersetzer und Lokalisierungslektor mit muttersprachlicher Beherrschung von {Text_Target_Language} und {Text_Source_Language}. Übersetzen Sie die Werte des Eingabe-JSON von {Text_Source_Language} nach {Text_Target_Language}.\n\nAusgabeformat (strikt):\n1. Geben Sie genau EIN gültiges JSON-Objekt zurück und sonst nichts — kein Text, keine Anmerkungen oder Erklärungen davor oder danach und keine Markdown-Codeblöcke.\n2. Die Ausgabe muss GENAU dieselben Schlüssel wie die Eingabe enthalten. Fügen Sie keine Schlüssel hinzu, entfernen, benennen, ordnen Sie sie nicht um, führen Sie sie nicht zusammen und teilen Sie sie nicht auf, und machen Sie aus dem Objekt niemals ein Array oder eine einfache Liste.\n3. Liefern Sie für jeden Schlüssel eine Übersetzung und belassen Sie jeden Wert als JSON-Zeichenfolge.\n\nWas zu übersetzen ist:\n4. Übersetzen Sie nur menschenlesbaren natürlichsprachlichen Text.\n5. Behalten Sie Folgendes GENAU wie in der Quelle bei — nicht übersetzen, umordnen oder ändern: Platzhalter und Variablen wie {name}, ${var}, %s, {0}, {{token}}; HTML- / XML- / Markdown-Tags; Escape-Sequenzen; Zeilenumbrüche und Wagenrückläufe; URLs, E-Mail-Adressen, Dateipfade, Befehle und Codefragmente; Zahlen, Einheiten, Geldbeträge und Versionsnummern.\n6. Enthält ein Wert keinen übersetzbaren natürlichsprachlichen Inhalt, übernehmen Sie ihn unverändert.\n\nBedeutung und Konsistenz:\n7. Wenden Sie das Glossar überall dort genau an, wo seine Quellbegriffe vorkommen.\n8. Verwenden Sie den bereitgestellten Kontext nur, um die richtige Bedeutung, Terminologie, den Stil und die grammatische Form zu wählen — übersetzen Sie den Kontext niemals und nehmen Sie ihn nicht in die Ausgabe auf.\n\nEingabeform: {\"<id>\":\"<Quelltext>\"}  ->  Ausgabeform: {\"<id>\":\"<Übersetzung>\"}",
+    "user_prompt": "Übersetzen Sie jetzt dieses JSON-Objekt. Geben Sie nur das JSON-Ergebnis mit denselben Schlüsseln aus:",
+    "previous_prompt": "Das Folgende ist nur Kontext zur Begriffsklärung. Übersetzen Sie es nicht und nehmen Sie es nicht in Ihre Ausgabe auf:",
+    "glossary_prompt": "Terminologievorgaben — wenn ein Quellbegriff unten im Text vorkommt, verwenden Sie den angegebenen Zielbegriff, soweit grammatikalisch möglich. Wenden Sie einen Begriff nicht an, wenn seine Quellform fehlt:",
+    "auto_source_label": "die automatisch erkannte Ausgangssprache",
+    "mode_hints": {
+        "precise": "Übersetzungsmodus: PRÄZISE. Übersetzen Sie originalgetreu, bewahren Sie Struktur und Ton, wenden Sie das Glossar strikt an und paraphrasieren Sie nicht.",
+        "natural": "Übersetzungsmodus: NATÜRLICH. Lesbar natürlich und flüssig in der Zielsprache, unter vollständiger Wahrung der Bedeutung.",
+        "polish": "Übersetzungsmodus: STILSICHER. Erzeugen Sie idiomatische, gepflegte zielsprachliche Prosa unter Wahrung der Bedeutung; verbessern Sie Fluss und Wortwahl.",
+        "subtitle": "Übersetzungsmodus: UNTERTITEL. Knapp und gesprochen; halten Sie jeden Wert kurz genug, um ihn auf einen Blick zu lesen, ohne Bedeutung zu verlieren."
+    },
+    "tone_hints": {
+        "formal": "Verwenden Sie einen formellen, professionellen Ton.",
+        "casual": "Verwenden Sie einen lockeren, umgangssprachlichen Ton."
+    },
+    "length_hints": {
+        "keep": "Halten Sie jede Übersetzung in der Länge nahe an der Quelle.",
+        "expand": "Sie dürfen die Übersetzung verlängern, wenn das Klarheit und Fluss verbessert.",
+        "short": "Fassen Sie jede Übersetzung so knapp wie möglich."
     }
 }

@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="zh" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LinguaHaru</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css?v=20260706A" />
+</head>
+<body>
+ <canvas id="bg-canvas" aria-hidden="true"></canvas>
+ <!-- Mobile top bar (hidden on desktop) -->
+ <header class="mobile-bar">
+   <button id="nav-toggle" class="icon-btn" title="菜单" aria-label="菜单">
+     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+   </button>
+   <span class="mobile-brand">LinguaHaru</span>
+   <button id="theme-toggle-m" class="icon-btn" title="切换主题" aria-label="切换主题"></button>
+ </header>
+ <div class="scrim" id="scrim"></div>
+
+ <div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="logomark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M3 12h18" />
+          <path d="M12 3c2.6 2.7 2.6 15.3 0 18" />
+          <path d="M12 3c-2.6 2.7-2.6 15.3 0 18" />
+          <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+        </svg>
+      </span>
+      <span class="word"><b>LinguaHaru</b><span>Translation Console</span></span>
+    </div>
+
+    <nav class="nav" id="tabs">
+      <div class="nav-group">
+        <button class="tab" data-tab="interface" title="接口管理">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H7A5 5 0 0 1 7 7h2"/><path d="M15 7h2a5 5 0 0 1 0 10h-2"/><path d="M8 12h8"/></svg></span>
+          <span data-i18n="Interface Management">接口管理</span>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <button class="tab active" data-tab="quick" title="翻译">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18"/><path d="M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg></span>
+          <span data-i18n="Translate">翻译</span>
+        </button>
+        <button class="tab" data-tab="translate" title="文件翻译">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l2-2h5l2 2h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg></span>
+          <span data-i18n="File Translation">文件翻译</span>
+        </button>
+        <button class="tab" data-tab="live" title="实时语音">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></span>
+          <span data-i18n="Real-Time Voice">实时语音</span>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <button class="tab" data-tab="glossary" title="词汇表">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.5C10.4 5 7.9 4.5 4.5 4.9V18c3.4-.4 5.9.1 7.5 1.6"/><path d="M12 6.5C13.6 5 16.1 4.5 19.5 4.9V18c-3.4-.4-5.9.1-7.5 1.6"/><path d="M12 6.5v13"/></svg></span>
+          <span data-i18n="Glossary">词汇表</span>
+        </button>
+        <button class="tab" data-tab="proofread" title="校对">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h8"/><path d="M16.5 4.5a2 2 0 0 1 2.9 2.8L8 19l-4 1 1-4z"/></svg></span>
+          <span data-i18n="Proofread">校对</span>
+        </button>
+        <button class="tab" data-tab="history" title="历史记录">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/></svg></span>
+          <span data-i18n="History">历史记录</span>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <button class="tab" data-tab="modules" title="插件">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></span>
+          <span data-i18n="Plugins">插件</span>
+        </button>
+      </div>
+
+      <div class="nav-group">
+        <button class="tab" data-tab="settings" title="设置">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9"/><path d="M18 7h2"/><circle cx="15.5" cy="7" r="2.2"/><path d="M4 17h2"/><path d="M11 17h9"/><circle cx="8.5" cy="17" r="2.2"/></svg></span>
+          <span data-i18n="Settings">设置</span>
+        </button>
+      </div>
+    </nav>
+
+    <div class="sidebar-bottom">
+      <div class="bottom-row">
+        <button id="support-contact" class="support-link">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+          <span data-i18n="Support / Contact">支持或联系我</span>
+        </button>
+      </div>
+      <div class="bottom-row">
+        <span class="bottom-label mono" data-i18n="Interface Language">界面语言</span>
+        <select id="ui-lang" class="ui-lang-select" title="界面语言"></select>
+      </div>
+      <div class="bottom-row">
+        <span class="bottom-label mono">主题 / Theme</span>
+        <button id="theme-toggle" class="icon-btn" title="切换主题"></button>
+      </div>
+    </div>
+  </aside>
+
+  <main class="content">
+    <div id="update-banner" class="update-banner" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+      <span id="update-text"></span>
+      <button id="update-now" class="primary" hidden data-i18n="Update Now">立即更新</button>
+      <a id="update-link" target="_blank" rel="noopener noreferrer" data-i18n="Go to Download">前往下载</a>
+      <button id="update-dismiss" title="关闭" aria-label="关闭">×</button>
+    </div>
+    <!-- Interface management: provider cards, click to activate, double-click to configure -->
+    <section class="panel" data-panel="interface">
+      <div class="page-head">
+        <div class="kicker mono">Interfaces</div>
+        <h2 data-i18n="Interface Management">接口管理</h2>
+        <p data-i18n="Interface hint">单击卡片设为活动接口，双击配置参数（密钥、温度等）。</p>
+      </div>
+      <div class="actions" style="margin-bottom:14px">
+        <button id="add-interface" class="primary">+ <span data-i18n="Add Interface">添加接口</span></button>
+        <span id="iface-active" class="muted"></span>
+      </div>
+      <div class="iface-group"><h3 data-i18n="Local Interfaces">本地接口</h3><div class="iface-cards" id="iface-local"></div></div>
+      <div class="iface-group"><h3 data-i18n="Official Interfaces">官方接口</h3><div class="iface-cards" id="iface-official"></div></div>
+      <div class="iface-group"><h3 data-i18n="Custom Interfaces">自定义接口</h3><div class="iface-cards" id="iface-custom"></div></div>
+      <div class="iface-group">
+        <h3 data-i18n="Realtime Voice">实时语音</h3>
+        <div class="card" style="max-width:520px">
+          <div class="if-name" style="font-weight:600">Google Gemini · <span data-i18n="Realtime Voice">实时语音</span></div>
+          <div class="if-sub mono" style="color:var(--muted);margin:2px 0 12px">gemini-live-translate</div>
+          <div class="field"><label data-i18n="Google API Key">Google API 密钥</label><input type="password" id="iface-google-key" placeholder="AQ... / AIza..." /></div>
+          <div class="muted" style="margin-top:8px" data-i18n="Google API Key Hint">用于「实时语音」的 Gemini Live Translate。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Support / contact dialog -->
+    <div id="support-modal" class="modal-overlay" hidden>
+      <div class="modal support-modal">
+        <h3 data-i18n="Support / Contact">支持或联系我</h3>
+        <div class="support-qr">
+          <img src="/assets/img/support_qr.png" alt="Support QR" />
+          <p class="muted">
+            <span data-i18n="Support Pay Tip">想创建相同的「微信+支付宝」聚合收款码？请参考我的主页教程：</span><br>
+            <a href="https://www.harukayang.com/combined-pay.html" target="_blank" rel="noopener">harukayang.com/combined-pay.html</a>
+          </p>
+        </div>
+        <div class="support-links">
+          <a class="support-row" href="https://www.harukayang.com/" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
+            <span data-i18n="My Homepage">我的主页</span>
+          </a>
+          <button class="support-row" id="support-copy-qq" title="点击复制">
+            <img src="/assets/icons/qq.svg" alt="QQ" width="18" height="18" />
+            <span>QQ：3234306205</span>
+          </button>
+          <button class="support-row" id="support-copy-wechat" title="点击复制">
+            <img src="/assets/icons/wechat.svg" alt="WeChat" width="18" height="18" />
+            <span>微信：HarukaQnQ</span>
+          </button>
+          <a class="support-row" href="https://www.linkedin.com/in/yang-haruka/" target="_blank" rel="noopener">
+            <img src="/assets/icons/linkedin.svg" alt="LinkedIn" width="18" height="18" />
+            <span>LinkedIn</span>
+          </a>
+        </div>
+        <div class="modal-actions">
+          <button id="support-close" data-i18n="Confirm">确认</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Interface config dialog -->
+    <div id="iface-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <h3 id="iface-modal-title" data-i18n="Add Interface">添加接口</h3>
+        <div class="field"><label data-i18n="Interface Name">接口名称</label><input id="if-name" placeholder="My Provider" /></div>
+        <div class="field"><label data-i18n="Base URL" data-i18n-title="Base URL Tip">Base URL</label><input id="if-base" placeholder="https://api.example.com/v1" /></div>
+        <div class="field"><label data-i18n="Model ID" data-i18n-title="Model ID Tip">模型 ID</label><input id="if-model" placeholder="gpt-4o" /></div>
+        <div class="field"><label data-i18n="API Key">API 密钥</label><input id="if-key" type="password" placeholder="留空则不修改" /></div>
+        <div class="row-2">
+          <div class="field"><label data-i18n="Temperature" data-i18n-title="Temperature Tip">Temperature</label><input id="if-temp" type="text" placeholder="1.3" /></div>
+          <div class="field"><label data-i18n="Top P" data-i18n-title="Top P Tip">Top P</label><input id="if-topp" type="text" placeholder="0.95" /></div>
+        </div>
+        <div class="row-2">
+          <div class="field"><label data-i18n="RPM Limit" data-i18n-title="RPM Limit Tip">RPM 限制</label><input id="if-rpm" type="number" min="0" max="100000" placeholder="0 = 不限制" /></div>
+          <div class="field"><label data-i18n="Thread Count" data-i18n-title="Thread Count Tip">线程数</label><input id="if-thread" type="number" min="1" max="64" placeholder="留空用默认" /></div>
+        </div>
+        <div class="row-2">
+          <div class="field"><label data-i18n="Max Retries" data-i18n-title="Max Retries Tip">最大重试次数</label><input id="if-retries" type="number" min="1" max="10" placeholder="4" /></div>
+          <div class="field"></div>
+        </div>
+        <div class="modal-actions">
+          <button id="if-delete" class="danger" hidden data-i18n="Delete">删除</button>
+          <span style="flex:1"></span>
+          <button id="if-cancel" data-i18n="Cancel">取消</button>
+          <button id="if-save" class="primary" data-i18n="Save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Plugin model picker dialog (opened from a plugin's current-model chip) -->
+    <div id="plugin-model-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <h3 id="plugin-model-title" data-i18n="Select Model">模型</h3>
+        <div id="plugin-model-list" class="model-radio-list"></div>
+        <div id="plugin-model-status" class="muted" style="margin-top:10px"></div>
+        <div class="modal-actions">
+          <span style="flex:1"></span>
+          <button id="plugin-model-cancel" data-i18n="Cancel">取消</button>
+          <button id="plugin-model-switch" class="primary" data-i18n="Switch Model">切换</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- LAN admin password prompt (shown on 401 from an admin endpoint) -->
+    <div id="admin-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <h3>需要管理密码</h3>
+        <div class="field"><label>局域网管理密码</label><input id="admin-pw" type="password" autocomplete="current-password" /></div>
+        <div class="modal-actions"><span style="flex:1"></span><button id="admin-cancel">取消</button><button id="admin-ok" class="primary">确定</button></div>
+      </div>
+    </div>
+
+    <!-- First-run onboarding: interactive spotlight tour -->
+    <div id="tour" hidden>
+      <div id="tour-backdrop"></div>
+      <div id="tour-hole"></div>
+      <div id="tour-pop">
+        <div id="tour-pop-title" class="tour-title"></div>
+        <div id="tour-pop-body" class="tour-body"></div>
+        <div class="tour-foot">
+          <span id="tour-dots" class="tour-dots"></span>
+          <span style="flex:1"></span>
+          <button id="tour-skip" class="tour-btn"></button>
+          <button id="tour-back" class="tour-btn" hidden></button>
+          <button id="tour-next" class="tour-btn primary"></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Translate (document; live voice is its own nav item) -->
+    <section class="panel" data-panel="translate">
+      <div class="page-head">
+        <div class="kicker mono">Translate</div>
+        <h2 data-i18n="File Translation">文件翻译</h2>
+        <p data-i18n="Translate Page Subtitle">上传文档、字幕、表格或媒体一键翻译，或对着麦克风实时口译 —— 都在这一页。</p>
+      </div>
+
+      <div class="segmented" id="translate-mode" role="tablist">
+        <button class="seg active" data-sub="doc" role="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7l2-2h5l2 2h7a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>
+          <span data-i18n="File Translation">文件翻译</span>
+        </button>
+        <button class="seg" data-sub="live" role="tab">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+          <span data-i18n="Real-Time Voice">实时语音</span>
+        </button>
+      </div>
+
+      <!-- Sub-pane: document -->
+      <div class="subpane active" data-sub="doc">
+        <!-- The whole input form. Hidden during a run so the dashboard takes
+             over the panel (mirrors the Qt desktop's form->dashboard switch). -->
+        <div id="translate-form">
+        <div class="card lang-card">
+          <div class="field">
+            <label data-i18n="Source Language">源语言</label>
+            <select id="src-lang"></select>
+          </div>
+          <button id="swap" class="swap" title="交换语言">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h12l-3-3"/><path d="M17 16H5l3 3"/></svg>
+          </button>
+          <div class="field">
+            <label data-i18n="Target Language">目标语言</label>
+            <select id="dst-lang"></select>
+          </div>
+        </div>
+
+        <div class="card row-2">
+          <div class="field"><label data-i18n="Model">模型</label><select id="model"></select></div>
+          <div class="field"><label data-i18n="Glossary">词汇表</label><select id="glossary"></select></div>
+        </div>
+
+        <div class="card">
+          <label class="check"><input type="checkbox" id="translate-bilingual" /> 双语对照（译文与原文并排/上下保留，适用于 Word/Excel/PDF/字幕/TXT/MD/EPUB/HTML）</label>
+        </div>
+
+        <div id="apikey-warning" class="warn" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 4l-8 14a1.5 1.5 0 0 0 1.3 2.2h16.8a1.5 1.5 0 0 0 1.3-2.2l-8-14a1.5 1.5 0 0 0-2.6 0z"/></svg>
+          <span>尚未设置 API 密钥 —— 请在「设置」中填写。</span>
+        </div>
+
+        <div class="card drop" id="dropzone">
+          <input type="file" id="file-input" multiple hidden />
+          <!-- File-type icons drift across the background (filled by JS), the
+               same icon set as the Qt app. -->
+          <div class="drop-bg" id="drop-bg" aria-hidden="true"></div>
+          <div class="drop-inner">
+            <div class="drop-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+            </div>
+            <div id="drop-text">将文件拖放到此处，或点击上传</div>
+          </div>
+        </div>
+
+        <!-- Media (video/audio) STT options -->
+        <div class="card row-2" id="media-options" hidden>
+          <div class="field">
+            <label data-i18n="Speech-to-Text Model">语音转文字模型</label>
+            <select id="stt-model"></select>
+          </div>
+          <label class="check"><input type="checkbox" id="translate-subs" checked /> 翻译字幕（不勾选则仅转写）</label>
+          <div class="muted" id="media-note"></div>
+        </div>
+
+        <!-- PDF options (shown only when a PDF is selected) -->
+        <div class="card pdf-options" id="pdf-options" hidden>
+          <div class="pdf-options-head" data-i18n="PDF Options">PDF 选项</div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-translate-table" /> <span data-i18n="Translate Tables">Translate table text</span></label>
+            <div class="muted" data-i18n="Translate Tables Hint">Translate Tables Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-ocr-scanned" /> <span data-i18n="Scanned PDF OCR">Scanned PDF OCR</span></label>
+            <div class="muted" data-i18n="Scanned PDF OCR Hint">Scanned PDF OCR Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-dual-alternating" /> <span data-i18n="Dual Alternating Pages">Dual Alternating Pages</span></label>
+            <div class="muted" data-i18n="Dual Alternating Hint">Dual Alternating Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="check"><input type="checkbox" id="pdf-only-translated" /> <span data-i18n="Only Translated Pages">Only Translated Pages</span></label>
+            <div class="muted" data-i18n="Only Translated Pages Hint">Only Translated Pages Hint</div>
+          </div>
+          <div class="pdf-opt">
+            <label class="field-label" data-i18n="Page Range" for="pdf-pages">Page Range</label>
+            <input type="text" id="pdf-pages" placeholder="1-3,5" />
+            <div class="muted" data-i18n="Page Range Hint">Page Range Hint</div>
+          </div>
+        </div>
+
+        <div class="card" id="manga-options" hidden>
+          <label class="check"><input type="checkbox" id="manga-mode" /> <span data-i18n="Manga Mode">漫画模式</span></label>
+          <div class="muted" data-i18n="Manga Mode Hint">Manga Mode Hint</div>
+          <div class="muted" id="manga-pdf-hint" data-i18n="Manga Mode PDF Hint" hidden>Manga Mode PDF Hint</div>
+        </div>
+
+        <div class="actions">
+          <button id="translate-btn" class="primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>
+            <span data-i18n="Start Translation">开始翻译</span>
+          </button>
+        </div>
+        </div><!-- /translate-form -->
+
+        <!-- Run view: replaces the form during/after a translation. -->
+        <div id="translate-run" hidden>
+        <div class="progress-wrap" id="progress-wrap">
+          <div class="dash">
+            <div class="dash-ring">
+              <div class="ring" id="prog-ring" style="--p:0deg"><span id="prog-pct">0%</span></div>
+              <div class="dash-label" data-i18n="Task Progress">翻译进度</div>
+            </div>
+            <div class="dash-metrics">
+              <div class="metric"><div class="m-label" data-i18n="Files">文件</div><div class="m-val mono" id="m-files">—</div></div>
+              <div class="metric"><div class="m-label" data-i18n="Elapsed Time">累计时间</div><div class="m-val mono" id="m-elapsed">00:00</div></div>
+              <div class="metric"><div class="m-label" data-i18n="Average Speed">平均速度</div><div class="m-val mono"><span id="m-speed">—</span> <small data-i18n="lines/min">行/分</small></div></div>
+              <div class="metric"><div class="m-label" data-i18n="Token Usage">Token 用量</div><div class="m-val mono"><span id="m-tokens">—</span> <small id="m-cost" class="muted"></small></div></div>
+              <div class="metric"><div class="m-label" data-i18n="Remaining Time">剩余时间</div><div class="m-val mono" id="m-eta">—</div></div>
+              <div class="metric"><div class="m-label" data-i18n="Thread Count">线程数</div><div class="m-val mono" id="m-threads">—</div></div>
+              <div class="metric"><div class="m-label" data-i18n="CPU Usage">CPU 占用</div><div class="m-val mono" id="m-cpu">—</div></div>
+              <div class="metric"><div class="m-label" data-i18n="GPU Usage">GPU 占用</div><div class="m-val mono" id="m-gpu">—</div></div>
+              <div class="metric"><div class="m-label" data-i18n="Compute Device">计算设备</div><div class="m-val mono" id="m-device">—</div></div>
+            </div>
+          </div>
+          <div class="progress" style="margin-top:14px"><div class="bar" id="progress-bar"></div></div>
+          <div class="muted" id="progress-desc" style="margin-top:8px"></div>
+        </div>
+
+        <!-- Run controls: button set changes with state (running / paused / done). -->
+        <div class="actions run-actions">
+          <button id="run-pause">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="5" width="3.5" height="14" rx="1"/><rect x="13.5" y="5" width="3.5" height="14" rx="1"/></svg>
+            <span data-i18n="Pause">暂停</span>
+          </button>
+          <button id="run-resume" class="primary" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5l12 7-12 7z"/></svg>
+            <span data-i18n="Resume">继续</span>
+          </button>
+          <button id="run-stop" class="danger">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>
+            <span data-i18n="Stop">停止</span>
+          </button>
+          <button id="run-back" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H6"/><path d="M11 6l-6 6 6 6"/></svg>
+            <span data-i18n="New Translation">返回</span>
+          </button>
+        </div>
+
+        <div id="result" class="result" hidden>
+          <a id="download-link" class="primary" download>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+            下载译文
+          </a>
+          <div id="coverage" class="coverage" hidden>
+            <span class="cov-label" data-i18n="Translation Coverage">翻译覆盖</span>
+            <span id="coverage-body" class="cov-body"></span>
+          </div>
+          <details id="qa-panel" class="qa-panel" hidden>
+            <summary id="qa-head"></summary>
+            <div id="qa-body" class="qa-body"></div>
+          </details>
+        </div>
+        </div><!-- /translate-run -->
+        <div id="status" class="muted"></div>
+      </div>
+
+      <!-- Sub-pane: live voice -->
+      <div class="subpane" data-sub="live">
+        <div class="segmented" id="live-mode" role="tablist" style="margin-bottom:14px">
+          <button class="seg active" data-mode="local" role="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg>
+            本地模型 · SenseVoice + LLM
+          </button>
+          <button class="seg" data-mode="google" role="tab">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg>
+            Google 实时翻译 · Gemini Live
+          </button>
+        </div>
+        <div id="live-hint" class="warn" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 4l-8 14a1.5 1.5 0 0 0 1.3 2.2h16.8a1.5 1.5 0 0 0 1.3-2.2l-8-14a1.5 1.5 0 0 0-2.6 0z"/></svg>
+          <span id="live-hint-text"></span>
+        </div>
+        <div class="live-bar">
+          <label class="live-target-pill">
+            <span class="mono" data-i18n="Translate To">翻译到</span>
+            <select id="live-target"></select>
+          </label>
+          <label class="live-target-pill">
+            <span class="mono" data-i18n="Input">输入</span>
+            <select id="live-input-dev"></select>
+          </label>
+          <div class="mic-pill">
+            <svg class="mic-icon" id="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+            <canvas id="mic-wave" class="mic-wave" width="220" height="34"></canvas>
+          </div>
+          <div class="live-spacer"></div>
+          <button id="live-pip" class="live-pip" data-i18n-title="Floating Captions" title="悬浮字幕" aria-label="悬浮字幕">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="5" rx="1"/></svg>
+          </button>
+          <button id="live-go" class="live-go" title="开始 / 停止" aria-label="开始 / 停止">
+            <svg class="ico-play" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M8 5v14l11-7z"/></svg>
+            <svg class="ico-stop" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6.5" y="6.5" width="11" height="11" rx="2"/></svg>
+          </button>
+        </div>
+        <div class="live-meter" id="live-status"></div>
+        <div class="live-split">
+          <div class="card live-pane">
+            <h3>识别原文<span class="tag">Source</span></h3>
+            <div class="live-pane-sub mono" data-i18n="Auto Detect">自动识别语言</div>
+            <div id="live-input" class="live-text"></div>
+          </div>
+          <div class="card live-pane">
+            <h3>翻译结果<span class="tag">Target</span></h3>
+            <div class="live-pane-sub mono">当前模型: <span id="live-model">—</span></div>
+            <div id="live-output" class="live-text"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Translate (Google-Translate-style text box) -->
+    <section class="panel active" data-panel="quick">
+      <div class="page-head">
+        <div class="kicker mono">Quick</div>
+        <h2 data-i18n="Translate">翻译</h2>
+        <p data-i18n="Quick Translate Subtitle">输入文字即时翻译，按回车翻译，Shift+回车换行。</p>
+      </div>
+
+      <div class="card lang-card">
+        <div class="field">
+          <label data-i18n="Source Language">源语言</label>
+          <select id="quick-src"></select>
+        </div>
+        <button id="quick-swap" class="swap" title="交换语言">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 8h12l-3-3"/><path d="M17 16H5l3 3"/></svg>
+        </button>
+        <div class="field">
+          <label data-i18n="Target Language">目标语言</label>
+          <select id="quick-dst"></select>
+        </div>
+      </div>
+
+      <div class="live-split quick-split">
+        <div class="card live-pane quick-pane">
+          <input id="quick-context" type="text" class="quick-context" placeholder="上下文（可选，仅辅助消歧，不翻译）例如：按钮文字 / 菜单项" />
+          <textarea id="quick-input" class="quick-area" data-i18n-ph="Enter Text" placeholder="输入文本"></textarea>
+          <div class="quick-foot">
+            <span class="muted" data-i18n="Enter To Translate">按回车翻译，Shift+回车换行</span>
+            <button id="quick-mic" class="quick-mic" data-i18n-title="Voice Input" title="语音输入">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="card live-pane quick-pane">
+          <div id="quick-output" class="quick-area quick-output"></div>
+          <div class="quick-foot">
+            <span class="muted" id="quick-status"></span>
+            <button id="quick-speak" class="quick-mic" data-i18n-title="Read Aloud" title="朗读">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/></svg>
+            </button>
+            <button id="quick-copy" class="quick-mic" data-i18n="Copy">复制</button>
+          </div>
+        </div>
+      </div>
+
+      <details id="quick-history" class="quick-history-box">
+        <summary class="quick-history-head">
+          <svg class="qh-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+          <span class="qh-head-label" data-i18n="History">历史记录</span>
+          <div id="quick-history-recent" class="quick-history-recent"></div>
+        </summary>
+        <div class="quick-history-body">
+          <div class="actions" style="margin-bottom:10px;justify-content:flex-end">
+            <button id="quick-clear" data-i18n="Clear History">清除历史</button>
+          </div>
+          <div id="quick-history-list" class="quick-history"></div>
+        </div>
+      </details>
+    </section>
+
+    <!-- Glossary -->
+    <section class="panel" data-panel="glossary">
+      <div class="page-head">
+        <div class="kicker mono">Library · Glossary</div>
+        <h2 data-i18n="Glossary">词汇表</h2>
+        <p data-i18n="Glossary Subtitle">维护术语对照表，翻译时自动套用，保证专有名词一致。</p>
+      </div>
+      <div class="card">
+        <div class="field"><label data-i18n="Glossary">词汇表</label><select id="glossary-edit-select"></select></div>
+        <div class="actions">
+          <button id="glossary-new" data-i18n="New Glossary">新建词汇表</button>
+          <button id="glossary-import" data-i18n="Import Glossary">导入词汇表</button>
+          <button id="glossary-delete" data-i18n="Delete">删除</button>
+          <input type="file" id="glossary-import-file" accept=".csv,text/csv" hidden>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-scroll"><table id="glossary-table"></table></div>
+        <div class="actions">
+          <button id="glossary-add-row">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+            添加行
+          </button>
+          <button id="glossary-save" class="primary" data-i18n="Save Glossary">保存词汇表</button>
+        </div>
+        <div id="glossary-status" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- Proofread -->
+    <section class="panel" data-panel="proofread">
+      <div class="page-head">
+        <div class="kicker mono">Library · Proofread</div>
+        <h2 data-i18n="Proofread">校对</h2>
+        <p data-i18n="Proofread Subtitle">逐段查看原文与译文，手动修正后可重新导出。</p>
+      </div>
+      <div class="card row-2">
+        <div class="field"><label data-i18n="Proofread Document">校对文档</label><select id="proofread-select"></select></div>
+        <div class="actions" style="align-items:end">
+          <button id="proofread-sort-time" data-i18n-title="Sort by Time" title="按完成时间排序"><span data-i18n="Sort Time">时间</span><span class="pf-sort-arrow" id="pf-time-arrow"></span></button>
+          <button id="proofread-sort-name" data-i18n-title="Sort by Name" title="按名称排序"><span data-i18n="Sort Name">名称</span><span class="pf-sort-arrow" id="pf-name-arrow"></span></button>
+          <button id="proofread-refresh">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-1.6 5.6"/><path d="M20 4v5h-5"/></svg>
+            刷新
+          </button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="table-scroll"><table id="proofread-table"></table></div>
+        <div id="proofread-pager" class="pager"></div>
+        <div class="actions">
+          <button id="proofread-save" class="primary" data-i18n="Save Edits">保存修改</button>
+          <button id="proofread-export" data-i18n="Re-export">重新导出</button>
+          <a id="proofread-download" class="primary" download hidden>下载</a>
+        </div>
+        <div id="proofread-status" class="muted"></div>
+      </div>
+    </section>
+
+    <!-- History -->
+    <section class="panel" data-panel="history">
+      <div class="page-head">
+        <div class="kicker mono">Library · History</div>
+        <h2 data-i18n="History">历史记录</h2>
+        <p data-i18n="History Subtitle">查看过往翻译任务的文件、语言、模型与用量。</p>
+      </div>
+      <div class="card">
+        <div class="actions" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
+          <div class="field" style="min-width:140px"><label data-i18n="File Type">文件类型</label><select id="history-type"><option value="" data-i18n="All Types">全部类型</option></select></div>
+          <div class="field" style="min-width:130px"><label data-i18n="Status">状态</label>
+            <select id="history-status">
+              <option value="" data-i18n="All Statuses">全部状态</option>
+              <option value="success" data-i18n="Status Success">成功</option>
+              <option value="failed" data-i18n="Status Failed">失败</option>
+              <option value="stopped" data-i18n="Status Stopped">已停止</option>
+              <option value="interrupted" data-i18n="Status Interrupted">已中断</option>
+              <option value="running" data-i18n="Status Running">进行中</option>
+              <option value="paused" data-i18n="Status Paused">已暂停</option>
+            </select>
+          </div>
+          <div class="field" style="min-width:140px"><label data-i18n="Sort">排序</label>
+            <select id="history-sort">
+              <option value="start_time|1" data-i18n="Newest">时间（新→旧）</option>
+              <option value="start_time|0" data-i18n="Oldest">时间（旧→新）</option>
+              <option value="file_type|0" data-i18n="By Type">文件类型</option>
+              <option value="input_file|0" data-i18n="By Name">文件名</option>
+              <option value="total_tokens|1" data-i18n="By Tokens">Token（多→少）</option>
+            </select>
+          </div>
+          <button id="history-refresh" style="align-self:end">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-1.6 5.6"/><path d="M20 4v5h-5"/></svg>
+            刷新
+          </button>
+        </div>
+        <div class="table-scroll"><table id="history-table"></table></div>
+      </div>
+    </section>
+
+    <!-- Plugins / optional modules -->
+    <section class="panel" data-panel="modules">
+      <div class="page-head">
+        <div class="kicker mono">System · Plugins</div>
+        <h2 data-i18n="Plugins">插件</h2>
+        <p data-i18n="Plugins Subtitle">按需安装可选能力模块。安装后重启程序即可扩展支持的文件类型。</p>
+      </div>
+      <div id="modules-grid" class="plugin-grid"></div>
+      <div id="modules-status" class="muted" style="margin-top:14px"></div>
+    </section>
+
+    <!-- Settings -->
+    <section class="panel" data-panel="settings">
+      <div class="page-head">
+        <div class="kicker mono">System · Settings</div>
+        <h2 data-i18n="Settings">设置</h2>
+        <p data-i18n="Settings Subtitle">模型密钥、网络与重试。可选能力模块请前往「插件」。</p>
+      </div>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Run Mode">运行模式</span><span class="set-card-sub" data-i18n="Run Mode Sub">局域网模式 · 管理密码</span></summary>
+        <div class="set-card-body">
+          <label class="check"><input type="checkbox" id="set-lan" /> <span data-i18n="LAN Mode Label">局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</span></label>
+          <div class="field" style="margin-top:10px"><label data-i18n="LAN Admin Label">局域网管理密码（不设密码时，只有本机可修改配置 / 密钥 / 插件，其他设备无法管理；设置后其他设备需输入此密码才能管理）</label><input type="password" id="set-lan-admin" data-i18n-ph="LAN Admin Placeholder" placeholder="留空 = 仅本机可管理" /></div>
+        </div>
+      </details>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Translation Options">翻译选项</span><span class="set-card-sub" data-i18n="Translation Options Sub">AI 术语提取 · 占位符保护 · 上下文区分去重</span></summary>
+        <div class="set-card-body">
+          <!-- COMMON: mode, placeholder protection, bilingual style. Each option's
+               explanation is a hover tooltip (data-i18n-title) — short labels keep
+               the panel clean; see the UI hint rule. -->
+          <label style="display:flex; align-items:center; gap:8px; margin-bottom:12px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Mode" data-i18n-title="Translation Mode Tip">翻译模式</span>
+            <select id="set-translation-mode" style="width:auto"></select>
+          </label>
+          <label class="check"><input type="checkbox" id="set-mask-ph" /> <span data-i18n="Placeholder Protection" data-i18n-title="Placeholder Protection Tip">占位符保护</span></label>
+          <div style="margin-top:12px; display:flex; gap:18px; align-items:center; flex-wrap:wrap">
+            <label class="check" style="margin:0"><input type="checkbox" id="set-bi-bold" /> <span data-i18n="Bilingual Bold" data-i18n-title="Bilingual Bold Tip">双语对照：译文加粗</span></label>
+            <label style="display:flex; align-items:center; gap:8px; margin:0; color:var(--text-2); font-size:0.9rem"><span data-i18n="Translation Color" data-i18n-title="Translation Color Tip">译文颜色</span>
+              <select id="set-bi-color" style="width:auto">
+                <option value="" data-i18n="None">无</option><option value="C00000" data-i18n="Red">红</option><option value="1F4E79" data-i18n="Blue">蓝</option><option value="2E7D32" data-i18n="Green">绿</option><option value="B36B00" data-i18n="Orange">橙</option>
+              </select>
+            </label>
+          </div>
+
+          <!-- ADVANCED: tone / length / style + glossary / dedup / type-context. -->
+          <details style="margin-top:14px">
+            <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem" data-i18n="Advanced Options">高级</summary>
+            <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px">
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Tone" data-i18n-title="Tone Tip">语气</span>
+                <select id="set-tone" style="width:auto"><option value="" data-i18n="Default">默认</option><option value="formal" data-i18n="Formal">正式</option><option value="casual" data-i18n="Casual">口语</option></select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Length" data-i18n-title="Length Tip">长度</span>
+                <select id="set-length" style="width:auto"><option value="" data-i18n="Default">默认</option><option value="keep" data-i18n="Keep Length">贴近原文长度</option><option value="expand" data-i18n="Allow Longer">允许变长</option><option value="short" data-i18n="Concise">尽量简短</option></select>
+              </label>
+              <label style="display:flex; flex-direction:column; gap:4px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Style Guide Label">风格指南（自由填写，会附加到翻译指令）</span>
+                <textarea id="set-style" rows="2" data-i18n-ph="Style Guide Placeholder" placeholder="例如：使用台湾用语；保持品牌名英文不译" style="resize:vertical"></textarea>
+              </label>
+              <label class="check"><input type="checkbox" id="set-auto-glossary" /> <span data-i18n="AI Glossary Extraction" data-i18n-title="AI Glossary Extraction Tip">AI 术语提取</span></label>
+              <label class="check"><input type="checkbox" id="set-dedup-context" /> <span data-i18n="Context-aware Dedup" data-i18n-title="Context-aware Dedup Tip">上下文区分去重</span></label>
+              <label class="check"><input type="checkbox" id="set-with-context" /> <span data-i18n="Type Context" data-i18n-title="Type Context Tip">附带类型上下文（实验）</span></label>
+              <label class="check"><input type="checkbox" id="set-image-lama" /> <span data-i18n="LaMa Inpaint" data-i18n-title="LaMa Inpaint Tip">图片高质量抹字 (LaMa，需下载~208MB)</span></label>
+              <label class="check"><input type="checkbox" id="set-translation-cache" /> <span data-i18n="Translation Cache" data-i18n-title="Translation Cache Tip">翻译缓存/记忆（重复内容免重译）</span></label>
+              <div class="cache-row" style="display:flex;gap:10px;align-items:center;font-size:0.82rem"><span id="cache-stats" class="muted"></span> <button id="cache-clear" class="mini" type="button" data-i18n="Clear Cache">清空缓存</button></div>
+            </div>
+          </details>
+
+          <!-- REAL-TIME VOICE: its own group (not really a translation option). -->
+          <details style="margin-top:12px">
+            <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem" data-i18n="Real-Time Voice">实时语音</summary>
+            <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px">
+              <label class="check"><input type="checkbox" id="set-live-stream" /> <span data-i18n="Stream Translation" data-i18n-title="Stream Translation Tip">实时语音：流式译文</span></label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Web Realtime VAD" data-i18n-title="Web VAD Note">Web 实时语音 VAD</span>
+                <select id="set-web-vad" style="width:auto">
+                  <option value="energy" data-i18n="VAD Energy">能量（默认·延迟最低·抗噪一般）</option>
+                  <option value="silero" data-i18n="VAD Silero">Silero 神经（抗噪更强·首次需联网加载）</option>
+                </select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Segmentation Pause" data-i18n-title="Segmentation Pause Tip">实时语音断句停顿</span>
+                <select id="set-vad-hang" style="width:auto">
+                  <option value="600" data-i18n="Hang Sensitive">灵敏（停顿短就断句·延迟最低）</option>
+                  <option value="900" data-i18n="Hang Standard">标准（推荐）</option>
+                  <option value="1200" data-i18n="Hang Relaxed">宽松（说话慢·不易被切断）</option>
+                  <option value="1600" data-i18n="Hang Very Relaxed">很宽松（停顿很久才断句）</option>
+                </select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Mic Sensitivity" data-i18n-title="Mic Sensitivity Tip">麦克风灵敏度</span>
+                <select id="set-vad-sens" style="width:auto">
+                  <option value="high" data-i18n="Sens High">高（拾取轻声·安静环境）</option>
+                  <option value="standard" data-i18n="Sens Standard">标准（推荐）</option>
+                  <option value="low" data-i18n="Sens Low">低（只收大声·嘈杂环境）</option>
+                </select>
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="Force Cut" data-i18n-title="Force Cut Tip">强制断句上限</span>
+                <select id="set-vad-maxseg" style="width:auto">
+                  <option value="15000" data-i18n="MaxSeg 15s">15 秒</option>
+                  <option value="30000" data-i18n="MaxSeg 30s">30 秒（推荐）</option>
+                  <option value="60000" data-i18n="MaxSeg 60s">60 秒</option>
+                </select>
+              </label>
+            </div>
+          </details>
+        </div>
+      </details>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Data &amp; Storage">数据保存</span><span class="set-card-sub" data-i18n="Data Storage Sub">保存位置 · 自动删除 · 清空</span></summary>
+        <div class="set-card-body">
+          <div class="field"><label data-i18n="Result Dir Label">结果保存位置（输出文件 / 实时语音字幕的保存目录）</label>
+            <div class="dir-row"><input type="text" id="set-result-dir" placeholder="data/result" /><button id="set-result-browse" type="button" data-i18n="Browse">浏览</button></div>
+          </div>
+          <!-- Left column = results, right column = logs; each in order count / MB / days. -->
+          <div class="row-2" style="margin-top:10px">
+            <div class="field"><label data-i18n="Result Max Count">结果超过多少条自动删除（0 = 不限）</label><input type="number" id="set-hist-max" min="0" placeholder="1000" /></div>
+            <div class="field"><label data-i18n="Log Max Files">日志超过多少条自动删除（0 = 不限）</label><input type="number" id="set-log-max" min="0" placeholder="500" /></div>
+          </div>
+          <div class="row-2" style="margin-top:10px">
+            <div class="field"><label data-i18n="Result Max Size">结果超过多少 MB 自动删除（0 = 不限）</label><input type="number" id="set-result-size" min="0" placeholder="5000" /></div>
+            <div class="field"><label data-i18n="Log Max Size">日志超过多少 MB 自动删除（0 = 不限）</label><input type="number" id="set-log-size" min="0" placeholder="500" /></div>
+          </div>
+          <div class="row-2" style="margin-top:10px">
+            <div class="field"><label data-i18n="Result Max Days">结果超过多少天自动删除（0 = 不限）</label><input type="number" id="set-hist-age" min="0" placeholder="0" /></div>
+            <div class="field"><label data-i18n="Log Max Days">日志超过多少天自动删除（0 = 不限）</label><input type="number" id="set-log-age" min="0" placeholder="30" /></div>
+          </div>
+          <div class="set-actions">
+            <button id="set-hist-clear" data-i18n="Clear History">清空历史记录</button>
+            <button id="set-hist-clear-files" class="danger" data-i18n="Clear History And Files">清空历史及相关文件</button>
+          </div>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="Clear History Note">「清空历史记录」仅删除列表；「清空历史及相关文件」会同时删除这些记录生成的译文/日志文件（不会删除你的原始文件）。</div>
+        </div>
+      </details>
+      <details class="card set-card">
+        <summary><span class="set-card-title" data-i18n="Model Management">模型管理</span><span class="set-card-sub" data-i18n="Model Management Sub">模型位置 · 已下载列表 · 视频/音频字幕 STT</span></summary>
+        <div class="set-card-body">
+          <div class="field"><label data-i18n="Model Location" data-i18n-title="Model Location Tip">模型位置</label><input type="text" id="models-dir" readonly /></div>
+          <details class="model-group" style="margin-top:14px">
+            <summary><span data-i18n="Image OCR Model" data-i18n-title="Image OCR Model Tip">图片识别模型</span></summary>
+            <div id="models-ocr" class="model-rows"></div>
+          </details>
+          <details class="model-group" style="margin-top:10px">
+            <summary><span data-i18n="Speech-to-Text Model" data-i18n-title="Speech-to-Text Model Tip">语音转文字模型</span></summary>
+            <div id="models-stt" class="model-rows"></div>
+          </details>
+          <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="STT Scope Hint">此处仅设置「视频/音频字幕」的 STT；实时语音、速译语音输入的 STT 模型在「插件」对应卡片中分别设置。</div>
+          <div class="muted" style="margin-top:6px" data-i18n="Whisper Hint">默认 SenseVoice（中/英/日/韩/粤）。Faster-Whisper 支持的语言更多，但模型更大、更慢；所选模型首次使用时下载。</div>
+        </div>
+      </details>
+      <div id="settings-status" class="muted"></div>
+    </section>
+
+    <footer class="footer">Crafted with care by Haruka-YANG · LinguaHaru Web (FastAPI)</footer>
+  </main>
+ </div>
+ <!-- Glass lock shown while a model loads (prevents mis-clicks; shows progress) -->
+ <div id="model-loading-overlay" hidden>
+   <div class="mlo-box">
+     <div class="mlo-spinner" aria-hidden="true"></div>
+     <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
+   </div>
+ </div>
+  <script src="/static/background.js?v=20260617L"></script>
+  <script src="/static/app.js?v=20260706B"></script>
+</body>
+</html>
