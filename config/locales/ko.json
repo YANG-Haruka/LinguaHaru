@@ -232,5 +232,9 @@
   "Provided by the Image OCR plugin": "「이미지 OCR」 플러그인에 포함",
   "System / Tab Audio (share)": "시스템/탭 오디오(공유)",
   "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "브라우저는 화면 공유로만 시스템 오디오를 캡처할 수 있습니다. '전체 화면'을 선택하고 '시스템 오디오 공유'를 체크하세요(또는 탭을 공유하고 '탭 오디오 공유' 체크).",
-  "🎙 Live captions will appear here once you start speaking.": "🎙 말하기 시작하면 여기에 실시간 자막이 표시됩니다."
+  "🎙 Live captions will appear here once you start speaking.": "🎙 말하기 시작하면 여기에 실시간 자막이 표시됩니다.",
+  "Refresh": "새로고침",
+  "Download Result": "번역 결과 다운로드",
+  "Context Placeholder": "문맥(선택, 중의성 해소용, 번역되지 않음) 예: 버튼 텍스트 / 메뉴 항목",
+  "Files Selected": "개 파일:"
 }

@@ -21,6 +21,10 @@
   作り込まれた 2 つのフロントエンド（ネイティブデスクトップ + Web コンソール）が、実績あるひとつのエンジンを共有。解凍するだけ、インストール不要。</p>
 </div>
 
+<div align="center">
+  <img src="assets/img/sample.gif" width="92%" alt="Demo"/>
+</div>
+
 ---
 
 ## 対応フォーマット
@@ -98,11 +102,34 @@ pip install -r plugins/speechio/requirements.txt  # 音声入力 + 読み上げ
 
 ローカルモデル（Ollama / LM Studio）はオフラインやプライバシー重視の用途に対応していますが、多くの場合オンライン API の方が明らかに高速で高品質です。
 
-## プレビュー
+## スクリーンショット
 
-<div align="center">
-  <img src="assets/img/sample.gif" width="80%" alt="プレビュー"/>
-</div>
+<table>
+  <tr>
+    <td><img src="assets/img/screenshots/translate-done.png" alt="ワンクリック翻訳 + ライブダッシュボード"/></td>
+    <td><img src="assets/img/screenshots/plugins.png" alt="オンデマンドプラグイン + GPU 自動"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>ワンクリック翻訳 + ライブダッシュボード</sub></td>
+    <td align="center"><sub>オンデマンドプラグイン + GPU 自動</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/img/screenshots/quick-translate.png" alt="クイック翻訳（音声入力付き）"/></td>
+    <td><img src="assets/img/screenshots/live-voice.png" alt="リアルタイム音声字幕"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>クイック翻訳（音声入力付き）</sub></td>
+    <td align="center"><sub>リアルタイム音声字幕</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/img/screenshots/translate-light.png" alt="ライトテーマ"/></td>
+    <td><img src="assets/img/screenshots/history.png" alt="履歴 + ワンクリック再開"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>ライトテーマ</sub></td>
+    <td align="center"><sub>履歴 + ワンクリック再開</sub></td>
+  </tr>
+</table>
 
 ## デプロイ
 

@@ -875,7 +875,7 @@ function setFiles(list) {
   if (list.length === 1) {
     $("drop-text").textContent = list[0].name + "  (" + (list[0].size / 1048576).toFixed(1) + " MB)";
   } else {
-    $("drop-text").textContent = `${list.length} 个文件：` + list.map((f) => f.name).join("、").slice(0, 80);
+    $("drop-text").textContent = `${list.length} ${_label("Files Selected", "个文件：")} ` + list.map((f) => f.name).join(", ").slice(0, 80);
   }
   const anyMedia = list.some((f) => MEDIA_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
   $("media-options").hidden = !anyMedia;
@@ -1063,7 +1063,7 @@ function listenProgress(taskId) {
     if (d.status === "done") {
       es.close(); stopElapsed(); stopSysmonPoll(); setRunState("done");
       $("download-link").href = "/api/download/" + taskId;
-      $("result").hidden = false; setStatus("翻译完成");
+      $("result").hidden = false; setStatus(_label("Translation completed", "翻译完成"));
       if ($("m-cost") && d.cost) $("m-cost").textContent = "≈" + (d.cost.symbol || "") + d.cost.amount;
       renderCoverage(d.coverage);
       renderQa(d.qa);

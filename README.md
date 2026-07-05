@@ -21,6 +21,10 @@
   Two polished frontends (native desktop and web console) over one battle-tested engine — unzip and run, no installation.</p>
 </div>
 
+<div align="center">
+  <img src="assets/img/sample.gif" width="92%" alt="Demo"/>
+</div>
+
 ---
 
 ## Supported Formats
@@ -98,11 +102,34 @@ pip install -r plugins/speechio/requirements.txt  # voice input + read-aloud
 
 Local models (Ollama / LM Studio) are supported for offline or privacy-sensitive use, but online APIs are noticeably faster and better for most workloads.
 
-## Preview
+## Screenshots
 
-<div align="center">
-  <img src="assets/img/sample.gif" width="80%" alt="Preview"/>
-</div>
+<table>
+  <tr>
+    <td><img src="assets/img/screenshots/translate-done.png" alt="One-click file translation with a live dashboard"/></td>
+    <td><img src="assets/img/screenshots/plugins.png" alt="On-demand plugins with automatic GPU"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>One-click file translation with a live dashboard</sub></td>
+    <td align="center"><sub>On-demand plugins with automatic GPU</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/img/screenshots/quick-translate.png" alt="Quick translate with voice input"/></td>
+    <td><img src="assets/img/screenshots/live-voice.png" alt="Real-time voice captions"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Quick translate with voice input</sub></td>
+    <td align="center"><sub>Real-time voice captions</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/img/screenshots/translate-light.png" alt="Light theme"/></td>
+    <td><img src="assets/img/screenshots/history.png" alt="History with one-click resume"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Light theme</sub></td>
+    <td align="center"><sub>History with one-click resume</sub></td>
+  </tr>
+</table>
 
 ## Deployment
 

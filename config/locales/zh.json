@@ -561,5 +561,9 @@
   "Provided by the Image OCR plugin": "随「图像 OCR」插件提供",
   "System / Tab Audio (share)": "系统/标签页声音（需共享）",
   "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "浏览器只能通过“共享屏幕”捕获系统声音：请选「整个屏幕」并勾选「分享系统音频」（或共享某标签页并勾选「分享标签页音频」）。",
-  "🎙 Live captions will appear here once you start speaking.": "🎙 开始说话后，实时字幕会显示在这里。"
+  "🎙 Live captions will appear here once you start speaking.": "🎙 开始说话后，实时字幕会显示在这里。",
+  "Refresh": "刷新",
+  "Download Result": "下载译文",
+  "Context Placeholder": "上下文（可选，仅辅助消歧，不翻译）例如：按钮文字 / 菜单项",
+  "Files Selected": "个文件："
 }

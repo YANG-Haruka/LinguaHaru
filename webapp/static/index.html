@@ -406,7 +406,7 @@
         <div id="result" class="result" hidden>
           <a id="download-link" class="primary" download>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
-            下载译文
+            <span data-i18n="Download Result">下载译文</span>
           </a>
           <div id="coverage" class="coverage" hidden>
             <span class="cov-label" data-i18n="Translation Coverage">翻译覆盖</span>
@@ -499,7 +499,7 @@
 
       <div class="live-split quick-split">
         <div class="card live-pane quick-pane">
-          <input id="quick-context" type="text" class="quick-context" placeholder="上下文（可选，仅辅助消歧，不翻译）例如：按钮文字 / 菜单项" />
+          <input id="quick-context" type="text" class="quick-context" data-i18n-ph="Context Placeholder" placeholder="上下文（可选，仅辅助消歧，不翻译）例如：按钮文字 / 菜单项" />
           <textarea id="quick-input" class="quick-area" data-i18n-ph="Enter Text" placeholder="输入文本"></textarea>
           <div class="quick-foot">
             <span class="muted" data-i18n="Enter To Translate">按回车翻译，Shift+回车换行</span>
@@ -578,7 +578,7 @@
           <button id="proofread-sort-name" data-i18n-title="Sort by Name" title="按名称排序"><span data-i18n="Sort Name">名称</span><span class="pf-sort-arrow" id="pf-name-arrow"></span></button>
           <button id="proofread-refresh">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-1.6 5.6"/><path d="M20 4v5h-5"/></svg>
-            刷新
+            <span data-i18n="Refresh">刷新</span>
           </button>
         </div>
       </div>
@@ -626,7 +626,7 @@
           </div>
           <button id="history-refresh" style="align-self:end">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-1.6 5.6"/><path d="M20 4v5h-5"/></svg>
-            刷新
+            <span data-i18n="Refresh">刷新</span>
           </button>
         </div>
         <div class="table-scroll"><table id="history-table"></table></div>
@@ -792,6 +792,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260706B"></script>
+  <script src="/static/app.js?v=20260706C"></script>
 </body>
 </html>

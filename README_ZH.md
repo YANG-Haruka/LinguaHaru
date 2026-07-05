@@ -21,6 +21,10 @@
   两套精心打磨的界面（原生桌面端 + Web 控制台）共用一个久经考验的引擎，解压即用，无需安装。</p>
 </div>
 
+<div align="center">
+  <img src="assets/img/sample.gif" width="92%" alt="Demo"/>
+</div>
+
 ---
 
 ## 支持的格式
@@ -98,11 +102,34 @@ pip install -r plugins/speechio/requirements.txt  # 语音输入 + 朗读
 
 本地模型（Ollama / LM Studio）适合离线或隐私敏感场景，但多数情况下在线 API 明显更快更好。
 
-## 预览
+## 界面一览
 
-<div align="center">
-  <img src="assets/img/sample.gif" width="80%" alt="预览"/>
-</div>
+<table>
+  <tr>
+    <td><img src="assets/img/screenshots/translate-done.png" alt="一键文件翻译 + 实时仪表盘"/></td>
+    <td><img src="assets/img/screenshots/plugins.png" alt="按需插件 + GPU 自动启用"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>一键文件翻译 + 实时仪表盘</sub></td>
+    <td align="center"><sub>按需插件 + GPU 自动启用</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/img/screenshots/quick-translate.png" alt="速译（带语音输入）"/></td>
+    <td><img src="assets/img/screenshots/live-voice.png" alt="实时语音字幕"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>速译（带语音输入）</sub></td>
+    <td align="center"><sub>实时语音字幕</sub></td>
+  </tr>
+  <tr>
+    <td><img src="assets/img/screenshots/translate-light.png" alt="浅色主题"/></td>
+    <td><img src="assets/img/screenshots/history.png" alt="历史记录 + 一键续译"/></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>浅色主题</sub></td>
+    <td align="center"><sub>历史记录 + 一键续译</sub></td>
+  </tr>
+</table>
 
 ## 部署方式
 

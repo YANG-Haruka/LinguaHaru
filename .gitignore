@@ -58,3 +58,5 @@ webapp/static/vad/*.onnx
 /dist/
 /build/
 /dist_models/
+/data/_archive/
+/data/_capture/

@@ -232,5 +232,9 @@
   "Provided by the Image OCR plugin": "Im Bild-OCR-Plugin enthalten",
   "System / Tab Audio (share)": "System-/Tab-Audio (teilen)",
   "Browsers can only capture system audio via screen-share. Pick Entire Screen and tick 'Share system audio' (or share a tab and tick 'Share tab audio').": "Browser können Systemaudio nur über Bildschirmfreigabe erfassen. 'Gesamter Bildschirm' wählen und 'Systemaudio teilen' aktivieren (oder einen Tab teilen und 'Tab-Audio teilen' aktivieren).",
-  "🎙 Live captions will appear here once you start speaking.": "🎙 Live-Untertitel erscheinen hier, sobald du sprichst."
+  "🎙 Live captions will appear here once you start speaking.": "🎙 Live-Untertitel erscheinen hier, sobald du sprichst.",
+  "Refresh": "Aktualisieren",
+  "Download Result": "Ergebnis herunterladen",
+  "Context Placeholder": "Kontext (optional, nur zur Begriffsklärung, wird nicht übersetzt) z. B. Buttontext / Menüpunkt",
+  "Files Selected": "Datei(en):"
 }
