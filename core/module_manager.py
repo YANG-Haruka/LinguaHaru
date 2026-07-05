@@ -320,11 +320,21 @@ def _freeze_names():
 
 
 def _record_install_delta(key, before):
-    """After an install, persist (now - before) = the dists this plugin pulled in."""
+    """After an install, persist (now - before) = the dists this plugin pulled in.
+
+    MERGED with any existing delta: a REINSTALL over an already-satisfied env
+    adds nothing (now - before = {}), and overwriting would wipe the plugin's
+    cleanup ownership — its transitive deps would be orphaned on uninstall.
+    Stale names in a delta are harmless (pip skips not-installed packages)."""
     try:
-        added = sorted(_freeze_names() - before)
+        added = set(_freeze_names() - before)
+        try:
+            with open(_delta_path(key), encoding="utf-8") as f:
+                added |= {str(p) for p in json.load(f)}
+        except Exception:  # noqa: BLE001 — no previous delta
+            pass
         with open(_delta_path(key), "w", encoding="utf-8") as f:
-            json.dump(added, f, ensure_ascii=False, indent=2)
+            json.dump(sorted(added), f, ensure_ascii=False, indent=2)
     except Exception as e:  # noqa: BLE001 — recording is best-effort
         app_logger.warning(f"Could not record install delta for {key}: {e}")
 
@@ -620,6 +630,19 @@ _OPENCV_VARIANTS = ["opencv-python", "opencv-python-headless",
                     "opencv-contrib-python", "opencv-contrib-python-headless"]
 
 
+def _expand_opencv_family(required):
+    """OpenCV variants are interchangeable providers of the same cv2 package —
+    after _normalize_opencv exactly ONE is installed, possibly under a DIFFERENT
+    name than a survivor's metadata requires (babeldoc requires
+    opencv-python-headless while the kept dist is opencv-contrib-python). So if
+    any surviving distribution requires ANY variant, protect ALL of them, else
+    uninstalling the OCR plugin would strip the cv2 that PDF still needs."""
+    fam = {_norm(v) for v in _OPENCV_VARIANTS}
+    if required & fam:
+        required |= fam
+    return required
+
+
 def _normalize_opencv():
     """If more than one OpenCV variant is installed, uninstall them ALL and
     force-reinstall a single one so every cv2/ file comes from ONE wheel.
@@ -743,6 +766,7 @@ def _transitive_to_remove(name):
                 continue
             dep = _norm(re.split(r"[<>=!~;\[\(\s]", req.strip())[0])
             required_by_survivors.add(dep)
+    required_by_survivors = _expand_opencv_family(required_by_survivors)
     return sorted(candidates - required_by_survivors)
 
 
@@ -802,6 +826,7 @@ def _drop_still_required(pkgs):
                 continue   # optional extra -> not a hard runtime dep
             dep = _norm(re.split(r"[<>=!~;\[\(\s]", req.strip())[0])
             required_by_survivors.add(dep)
+    required_by_survivors = _expand_opencv_family(required_by_survivors)
     return [p for p in pkgs if _norm(p) not in required_by_survivors]
 
 

@@ -52,7 +52,14 @@ def pick_hf_endpoint():
     (hf-mirror.com) only when it isn't. The blind mirror default used to stall
     EVERY download whenever hf-mirror was flaky/down (and slowed users who can
     reach huggingface.co directly). Probed once; hf libs read HF_ENDPOINT at
-    import, so this must run before they're imported."""
+    import, so this must run before they're imported.
+
+    The probe Range-GETs 1 byte of a REAL model file (following the redirect to
+    the LFS/CDN bytes host) instead of HEADing huggingface.co: in mainland China
+    the metadata host often answers while the CDN that serves the actual model
+    bytes is blocked — a HEAD probe then wrongly picked "official" and every
+    whisper/Qwen/LaMa download stalled. (Same lesson as the pip probe, which
+    tests files.pythonhosted.org rather than pypi.org.)"""
     explicit = os.environ.get("HF_ENDPOINT")
     if explicit:
         return explicit
@@ -62,19 +69,21 @@ def pick_hf_endpoint():
             return configured
     except Exception:  # noqa: BLE001
         pass
-    # One short probe of the official endpoint only (so offline/firewalled first
-    # launches wait ~2s, not 6s). Reachable -> official; otherwise fall back to
-    # the China mirror without a second probe. Set HF_ENDPOINT or config
-    # "hf_endpoint" to skip probing entirely.
     import urllib.request
+    req = urllib.request.Request(
+        # A tiny LFS-backed file on a repo we actually use (faster-whisper tiny).
+        "https://huggingface.co/Systran/faster-whisper-tiny/resolve/main/model.bin",
+        headers={"Range": "bytes=0-0", "User-Agent": "LinguaHaru"})
     try:
-        urllib.request.urlopen(
-            urllib.request.Request("https://huggingface.co", method="HEAD"), timeout=2)
+        with urllib.request.urlopen(req, timeout=4) as r:
+            ok = getattr(r, "status", 200) in (200, 206)
+    except Exception:  # noqa: BLE001 — unreachable/blocked -> mirror
+        ok = False
+    if ok:
         app_logger.info("HF endpoint: https://huggingface.co")
         return "https://huggingface.co"
-    except Exception:  # noqa: BLE001 — unreachable/blocked -> mirror
-        app_logger.info("HF endpoint: https://hf-mirror.com (official unreachable)")
-        return "https://hf-mirror.com"
+    app_logger.info("HF endpoint: https://hf-mirror.com (official bytes host unreachable)")
+    return "https://hf-mirror.com"
 
 
 def setup_model_env(defer_network=False):
@@ -129,6 +138,11 @@ def finish_model_env_setup():
     if "hf-mirror" in os.environ.get("HF_ENDPOINT", ""):
         os.environ.setdefault("PADDLE_PDX_MODEL_SOURCE", "bos")
         os.environ.setdefault("PADDLE_PDX_HUGGING_FACE_ENDPOINT", os.environ["HF_ENDPOINT"])
+        # hf-mirror speaks only the classic LFS protocol. With hf-xet installed,
+        # huggingface_hub would try the Xet hosts (cas/xethub.hf.co — separate
+        # domains, also blocked in China) and stall before falling back; force
+        # the classic path when the mirror is active.
+        os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
     # One-time pull-in of models already downloaded to the OLD default caches.
     try:
         migrate_legacy_caches()
