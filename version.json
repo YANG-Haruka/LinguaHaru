@@ -1,15 +1,15 @@
 {
-    "version": "6.0.0",
+    "version": "6.0",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.0.0: full rewrite — dual frontend (Web + Desktop), on-demand GPU-first plugins, manga mode, live captions, glossary manager. / 全面重写：双端界面、按需 GPU 插件、漫画模式、实时字幕、词汇表管理。",
+    "notes": "6.0: ground-up rewrite — dual UIs, 90%+ faster engine, on-demand GPU plugins. / 6.0：从零重写——双端界面、翻译提速 90%+、按需 GPU 插件。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.0.0/LinguaHaru-6.0.0-web-portable.zip",
-            "sha256": "2fa21ea41d3c01a71408895226c15b1049a10ac9c90005ceb2010751d42139bc"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.0/LinguaHaru-6.0-web-portable.zip",
+            "sha256": "833b2f024016b83365cc9ffc908ef68e5982961ed03eb462eb78c63c412dc966"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.0.0/LinguaHaru-6.0.0-desktop-portable.zip",
-            "sha256": "5410fe26a178dd818b4f1847fe360fd4b2b1331b163915df28ef67300ffebb54"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.0/LinguaHaru-6.0-desktop-portable.zip",
+            "sha256": "69d19f5f0fb6d64a461645e8ad586ae5c2f578657467ed9066867ed23d5721ee"
         }
     }
 }
