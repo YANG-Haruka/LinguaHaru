@@ -37,7 +37,7 @@ USER_PLUGINS_DIR = os.path.join(DATA_DIR, "plugins")
 # self-contained plugins that users install without updating the main app.
 GITHUB_REPO = "YANG-Haruka/LinguaHaru"
 _INDEX_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/plugins-index.json"
-_PROXIES = ["", "https://ghproxy.net/", "https://mirror.ghproxy.com/", "https://gh-proxy.com/"]
+_PROXIES = ["", "https://ghproxy.net/", "https://gh-proxy.com/", "https://mirror.ghproxy.com/"]  # flaky one last
 
 
 def _load_dir(base, source):

@@ -33,8 +33,8 @@ _VERSION_URL = f"https://raw.githubusercontent.com/{GITHUB_REPO}/main/version.js
 _PROXIES = [
     "",
     "https://ghproxy.net/",
-    "https://mirror.ghproxy.com/",
     "https://gh-proxy.com/",
+    "https://mirror.ghproxy.com/",   # flaky/often dead — keep last
 ]
 
 
@@ -152,9 +152,19 @@ def _find_inner_root(extracted):
 def _sync_base_deps(root):
     """Re-install base deps with the bundled uv (pip fallback). Returns True only
     if the install actually succeeded (checked via returncode) — a new version that
-    added a base dependency must not be reported as a success if deps didn't land."""
+    added a base dependency must not be reported as a success if deps didn't land.
+
+    Uses the same China-aware index selection as plugin installs (official PyPI
+    when its wheel host is reachable, Tsinghua mirror otherwise, with a mirror
+    retry on failure) — otherwise a mainland user's UPDATE would stall on the
+    dependency sync and roll back a perfectly good update."""
+    exe = "uv.exe" if os.name == "nt" else "uv"
     py = os.path.join(root, "python", "python.exe" if os.name == "nt" else "python")
-    uv = os.path.join(root, "python", "uv.exe" if os.name == "nt" else "uv")
+    # The portable bundles uv under python/Scripts/ (pip-installed); accept the
+    # bare python/ location too for manual installs.
+    uv = next((c for c in (os.path.join(root, "python", "Scripts", exe),
+                           os.path.join(root, "python", exe)) if os.path.exists(c)),
+              None)
     reqs = [os.path.join(root, "requirements", "base.txt"),
             os.path.join(root, "requirements", "web.txt" if flavor() == "web" else "qt.txt")]
     args = []
@@ -163,13 +173,23 @@ def _sync_base_deps(root):
             args += ["-r", r]
     if not args:
         return True   # nothing to sync
-    cmd = ([uv, "pip", "install", "--python", py, *args] if os.path.exists(uv)
-           else [py, "-m", "pip", "install", *args])
-    try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
-        return proc.returncode == 0
-    except Exception:  # noqa: BLE001
-        return False
+
+    from core.module_manager import pick_pypi_index, _PYPI_MIRROR
+
+    def _run_sync(index):
+        cmd = ([uv, "pip", "install", "--python", py, "--index-url", index, *args]
+               if uv else [py, "-m", "pip", "install", "--index-url", index, *args])
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            return proc.returncode == 0
+        except Exception:  # noqa: BLE001
+            return False
+
+    index = pick_pypi_index()
+    ok = _run_sync(index)
+    if not ok and index != _PYPI_MIRROR:
+        ok = _run_sync(_PYPI_MIRROR)
+    return ok
 
 
 def _safe_extract(zpath, ex):
