@@ -22,7 +22,8 @@ import subprocess
 PY_VER = "3.12.10"
 EMBED_URL = f"https://www.python.org/ftp/python/{PY_VER}/python-{PY_VER}-embed-amd64.zip"
 GETPIP_URL = "https://bootstrap.pypa.io/get-pip.py"
-ROOT = os.path.dirname(os.path.abspath(__file__))
+# This file lives in tools/; the app root is the repo root one level up.
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT_ROOT = os.path.join(ROOT, "dist")
 
 # App payload copied into every portable (the backend + static config/assets +
