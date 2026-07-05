@@ -1,88 +1,153 @@
 <div align="center">
-  <img src="assets/img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
+  <img src="assets/img/ico.png" alt="LinguaHaru" height="180" />
 
+  <h1>LinguaHaru</h1>
 
-[English](README.md) | [简体中文](README_ZH.md) | 日本語
-<br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/jp-Home" target="_blank">📚 使用方法ガイド（Wiki）</a>
+  <p>
+    <a href="README.md">English</a> | <a href="README_ZH.md">简体中文</a> | 日本語
+    <br/>
+    <a href="https://github.com/YANG-Haruka/LinguaHaru/wiki" target="_blank">ユーザーガイド（Wiki）</a>
+  </p>
 
-<div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
-<p align='center'>ワンクリックで様々な一般的なファイル形式に対して高品質で正確な翻訳を提供する次世代AI翻訳ツール</p>
-<h3 align='center'>対応ファイル形式</h3>
-<p align='center'><b>📄 DOCX</b> • <b>📊 XLSX</b> • <b>📑 PPTX</b> • <b>📰 PDF</b> • <b>📝 TXT</b> • <b>🎬 SRT/ASS/VTT/LRC</b> • <b>📘 MD</b> • <b>📚 EPUB</b> • <b>🗂 CSV/TSV</b> • <b>🌐 HTML</b> • <b>📃 ODT</b> • <b>🔤 JSON</b></p>
+  <p>
+    <img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru?style=flat-square" alt="Release"/>
+    <img src="https://img.shields.io/github/downloads/YANG-Haruka/LinguaHaru/total?style=flat-square" alt="Downloads"/>
+    <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru?style=flat-square" alt="License"/>
+    <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru?style=flat-square" alt="Stars"/>
+    <img src="https://img.shields.io/badge/python-3.12-blue?style=flat-square" alt="Python"/>
+  </p>
 
+  <p><b>ドキュメント・字幕・画像・動画・ライブ音声を、ワンクリックで高品質 AI 翻訳。</b><br/>
+  作り込まれた 2 つのフロントエンド（ネイティブデスクトップ + Web コンソール）が、実績あるひとつのエンジンを共有。解凍するだけ、インストール不要。</p>
 </div>
-<h2 id="What's This">これは何ですか？</h2>
-最先端の大規模言語モデルに基づいたこの翻訳ツールは、シンプルな操作で優れた翻訳品質を提供し、多様な文書形式と言語をサポートしています。
 
-以下の機能を提供します：
+---
 
-- **2つのフロントエンド**：Web UI（ブラウザ）とデスクトップ（Qt Fluent Design）。同一バックエンド、お好みで選択。
-- **多形式対応**：.docx / .pptx / .xlsx / .pdf / .txt / 字幕(srt/ass/vtt/lrc) / .md / .epub / csv / html / odt / json、画像・動画/音声も。
-- **多言語翻訳**：中/英/日/韓/露など 13+ 言語。UI も多言語。
-- **ワンクリック翻訳**：ドラッグするだけ。翻訳モード（精確/汎用）・用語集・対訳出力・形式別オプション対応。
-- **ホーム「翻訳」**：Google 翻訳風の短文クイック翻訳。音声入力・読み上げ対応。
-- **リアルタイム音声**：話しながら翻訳。自動文区切り、原文と訳文をライブ表示。
-- **プラグイン + マーケット**：PDF・画像 OCR・動画/音声字幕・リアルタイム音声・音声入力はオプションのプラグイン。必要な時だけインストール（uv 同梱で高速）。リモートマーケットからサードパーティ製の自己完結プラグインも本体更新なしで追加可能。
-- **スマート更新**（ポータブル版）：ワンクリックで本体を更新し、導入済みプラグイン・モデル・設定を保持。
-- **初回ガイド**：各ページを案内するインタラクティブなスポットライトツアー。
-- **柔軟なエンジン**：オンライン API（DeepSeek / OpenAI など）とローカル（Ollama / LM Studio）を自由に切替。
-- **中国本土対応**：HuggingFace / PyPI / GitHub は公式を優先探索し、不通時はミラー（hf-mirror / 清華 / ghproxy）へ自動切替。
-- **LAN 共有**（Web 版のみ）：1 台のホストを LAN 内の各デバイスで共用。
+## 対応フォーマット
 
+| カテゴリ | フォーマット |
+|---|---|
+| オフィス文書 | DOCX · PPTX · XLSX · PDF |
+| テキスト・電子書籍 | TXT · Markdown · EPUB · HTML · ODT · JSON · CSV / TSV |
+| 字幕 | SRT · VTT · ASS · SSA · LRC |
+| 画像（プラグイン） | PNG · JPG · WebP · BMP …… スキャン漫画にも対応 |
+| 動画・音声（プラグイン） | MP4 · MKV · MP3 · WAV …… 自動文字起こし + 字幕翻訳 |
+| ライブ音声（プラグイン） | マイクまたはシステム音声を、話しながらリアルタイム翻訳 |
 
-<h2 id="install">インストールと使用方法</h2>
+## LinguaHaru を選ぶ理由
 
-### 方法A（推奨）：ポータブル版 — 解凍してすぐ実行
+**品質と速度のために作られた翻訳エンジン。** スマートなバッチ処理、モデル別レート制御付き並列リクエスト、翻訳キャッシュ、用語集の強制適用、プレースホルダー保護、翻訳後の QA チェック。アトミックな逐次書き込みでどのジョブもクラッシュ安全。中断したタスクは正確に再開でき、6.0 エンジンは前世代より 90% 以上高速です。
 
-Python も CUDA も不要。ダウンロードして解凍、ダブルクリックするだけ。
+**2 つの完全なフロントエンド、1 つのバックエンド。**
+- **デスクトップ** —— Fluent Design のネイティブ Windows アプリ（ライト/ダーク、フローティング字幕、ドラッグ&ドロップ対応）。
+- **Web コンソール** —— ブラウザで同じ全機能。マルチユーザーセッション分離、LAN 共有、公開サーバーモード。
+
+**重い機能はすべてプラグイン。** 基本パッケージは小さいまま、必要なものだけをアプリ内のプラグインページからインストール。NVIDIA GPU は自動検出され、GPU ランタイム（CUDA torch、onnxruntime-gpu）も自動導入。アンインストール時は依存関係を完全に回収します。
+
+| プラグイン | 追加される機能 | GPU |
+|---|---|---|
+| PDF | レイアウトを保持した PDF 翻訳（BabelDOC エンジン） | — |
+| 画像 OCR | 文字を描き戻す画像翻訳；PP-OCRv6 | 自動（約 60× 高速化） |
+| 漫画モード | スキャン漫画/PDF の吹き出し検出・文字消去・訳文描き戻し、校正後の再出力に対応 | 自動 |
+| 動画/音声 | 音声認識（SenseVoice、Whisper、Qwen3-ASR）+ 字幕翻訳；ffmpeg 同梱 | 自動 |
+| リアルタイム音声 | ストリーミング字幕、文単位の補正、幻覚ガード、用語集の適用 | 自動 |
+| 音声入力 | クイック翻訳ページのマイク入力と読み上げ | 自動 |
+
+**毎日使いたくなる便利さ。** Google 風クイック翻訳（音声入力・読み上げ付き）、用語集の完全管理（新規/インポート/削除、文書・クイック・ライブ翻訳すべてに適用）、プロジェクト別履歴とワンクリック再開、トークン数とコストのリアルタイム見積もり、アプリ内校正エディタと再出力、初回起動時のインタラクティブツアー、13 言語の完全ローカライズ UI。
+
+**安全で安定。** 致命的な API エラー（無効なキー、残高不足）を検出してあなたの言語で説明。失敗・中断したタスクは履歴に残り再開可能。Web はユーザー別セッション分離 + CSRF 保護。SHA-256 検証付きセルフアップデートは失敗時に自動ロールバック。
+
+**中国大陸のネットワークにも優しい。** 依存関係・モデル・アップデートのすべてが高速ミラーへ自動フォールバック（Tsinghua PyPI、hf-mirror、ModelScope、Baidu BOS、ghproxy）。
+
+## クイックスタート
+
+### 方法 A（推奨）：ポータブル版
+
+Python も CUDA 設定も不要。ダウンロードして解凍、ダブルクリックするだけ。
 
 1. [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) からダウンロード：
-    - `LinguaHaru-web.zip` — Web 版（ブラウザ）
-    - `LinguaHaru-desktop.zip` — デスクトップ版（Qt）
-2. 任意の場所に解凍。
-3. 起動：
-    - `Start-Web.bat` — **ブラウザを自動で開きます**（URL 入力不要）
-    - `Start-Desktop.bat` — ネイティブウィンドウ
-4. 「インターフェース管理」で接口（例：DeepSeek）を追加し、API キーを入力、カードをクリックして有効化。
-5. PDF / 画像 OCR / 動画字幕 / リアルタイム音声が必要なら、「プラグイン」ページで**必要な時にインストール**（uv 同梱で高速、本土ではミラー自動使用）。
-6. モデルは「プラグイン」ページから、または[モデル説明](docs/MODELS.md)に従いネットディスクから個別にダウンロードし、アプリの `models/` フォルダへ解凍。
+   - `LinguaHaru-*-desktop-portable.zip` —— ネイティブデスクトップ版
+   - `LinguaHaru-*-web-portable.zip` —— Web 版（ブラウザが自動で開きます）
+2. 任意の場所に解凍し、`Start-Desktop.bat` または `Start-Web.bat` を実行。
+3. **インターフェース管理** でインターフェースを追加（例：DeepSeek）、API キーを貼り付けてカードをクリックして有効化。
+4. PDF / OCR / 動画 / ライブ音声が必要なら、**プラグイン** ページからワンクリックでインストール —— GPU は自動処理。
+5. 新バージョンが出たらアプリ内でそのままアップデート —— プラグイン・モデル・設定はすべて保持されます。
 
-> 新バージョンが出たら、ポータブル版は**スマート更新**でその場で更新し、導入済みプラグイン・モデル・設定を保持します。
+### 方法 B：ソースから実行
 
-### 方法B：ソースから実行（開発 / 上級）
+```bash
+conda create -n lingua-haru python=3.12 && conda activate lingua-haru
+pip install -r requirements/base.txt
 
-1. Python 3.12（[Conda](https://www.anaconda.com/download) 仮想環境を推奨）
-    ```bash
-    conda create -n lingua-haru python=3.12 && conda activate lingua-haru
-    ```
-2. コア依存 + フロントエンドを1つ
-    ```bash
-    pip install -r requirements/base.txt
-    pip install -r requirements/web.txt   # Web:     python -m webapp.server  (http://127.0.0.1:8080)
-    pip install -r requirements/qt.txt    # Desktop: python app_qt.py
-    ```
-3. オプションプラグイン（UI「プラグイン」ページからも可）
-    ```bash
-    pip install -r plugins/pdf/requirements.txt       # PDF（BabelDOC、レイアウト保持）
-    pip install -r plugins/ocr/requirements.txt       # 画像 OCR
-    pip install -r plugins/video/requirements.txt     # 動画/音声字幕（ffmpeg 同梱）+ リアルタイム音声
-    pip install -r plugins/speechio/requirements.txt  # 翻訳ページの音声入力 + 読み上げ
-    # モデルは初回使用時に models/ へダウンロード（GPU 文字起こしには CUDA 版 torch が必要）。
-    ```
+pip install -r requirements/web.txt   # Web:        python -m webapp.server
+pip install -r requirements/qt.txt    # デスクトップ: python app_qt.py
+```
 
-### おすすめのエンジン
-**[DeepSeek](https://platform.deepseek.com/) の最新 Flash モデルを推奨** —— 高速・高品質・低価格で、翻訳結果が最も良好です。「インターフェース管理」で API キーを入力して有効化するだけ。
+オプションのプラグインはアプリ内から、または手動でインストールできます：
 
-> ローカルモデル（[Ollama](https://ollama.com/) / LM Studio）にも対応していますが**非推奨**です。オンライン API より速度・品質が明らかに劣ることが多く、オフライン/プライバシー重視などの特殊な場合のみ検討してください。
+```bash
+pip install -r plugins/pdf/requirements.txt       # PDF（BabelDOC）
+pip install -r plugins/ocr/requirements.txt       # 画像 OCR + 漫画モード
+pip install -r plugins/video/requirements.txt     # 動画/音声 + リアルタイム音声
+pip install -r plugins/speechio/requirements.txt  # 音声入力 + 読み上げ
+```
 
-<h2 id="preview">プレビュー</h2>
+### 推奨エンジン
+
+**[DeepSeek](https://platform.deepseek.com/) の最新 Flash モデル** —— 速く、高品質で、安価。インターフェース管理に API キーを貼り付けて有効化するだけ。
+
+ローカルモデル（Ollama / LM Studio）はオフラインやプライバシー重視の用途に対応していますが、多くの場合オンライン API の方が明らかに高速で高品質です。
+
+## プレビュー
+
 <div align="center">
-  <img src="assets/img/sample.gif" width="80%"/>
+  <img src="assets/img/sample.gif" width="80%" alt="プレビュー"/>
 </div>
 
+## デプロイ
 
-## ソフトウェア免責事項  
-本ソフトウェアはGPL-3.0ライセンスのもとで完全にオープンソースです。自由にご利用いただけます。
-本ソフトはAI翻訳サービスのみを提供しており、翻訳内容については作者に責任はありません。
-どうぞ法令を遵守し、適切な形でご利用くださいませ。
-もしクレジットを入れていただけたらとっても嬉しいです～♡もちろん、なくても全然大丈夫です(´︶`)ﾉ
+| モード | 方法 |
+|---|---|
+| デスクトップ | `Start-Desktop.bat`（ポータブル）または `python app_qt.py` |
+| ローカル Web | `Start-Web.bat`（ポータブル）または `python -m webapp.server` —— 8080 から空きポートを自動選択 |
+| LAN 共有 | Web 設定で LAN モードをオン。同一ネットワークの全デバイスで 1 台のホストを共有 |
+| 公開サーバー | サーバーモードは訪問者からキー/モデル管理を隠し、ホストのキーで提供 |
+| Docker | `docker compose up -d` —— `Dockerfile` / `docker-compose.yml` 参照；`HOST` / `PORT` / `ADMIN_PASSWORD` に対応 |
+
+## プロジェクト構成
+
+```
+core/                バックエンド —— UI 以外の全ロジック
+  engine/            翻訳エンジン（バッチ、リトライ、QA、キャッシュ）
+  translators/       フォーマット別トランスレータ（docx、pptx、xlsx、pdf、srt……）
+  pipelines/         抽出/復元パイプライン + メディア（STT）/ 画像（OCR）/ 漫画
+  llm/               LLM API ラッパー（オンライン / ローカル）
+webapp/              Web フロントエンド —— FastAPI + 静的 HTML/CSS/JS
+qt_app/              デスクトップフロントエンド —— PySide6 + Fluent Widgets
+plugins/             オプションプラグインのマニフェスト（アプリ内でオンデマンド導入）
+config/              静的設定 —— プロンプト、言語パック、API 設定、デフォルト設定
+assets/              静的アセット —— アイコン、画像、tiktoken データ
+glossary/            シード用語集（Default.csv）
+requirements/        base.txt + フロントエンド別追加依存
+tools/               ビルドスクリプト（ポータブルビルダー）
+tests/               テストスイート（フォーマットコーパス、Web セッション、i18n、アップデーター……）
+```
+
+## サポート・お問い合わせ
+
+<div align="center">
+  <a href="https://www.harukayang.com/" target="_blank">ホームページ</a> ·
+  <a href="https://www.linkedin.com/in/yang-haruka/" target="_blank">LinkedIn</a> ·
+  QQ 3234306205 · WeChat HarukaQnQ
+  <br/><br/>
+  <img src="assets/img/support_qr.png" width="200" alt="サポート QR"/>
+  <p>LinguaHaru があなたの時間を節約できたなら、コーヒー 1 杯が次のアップデートの力になります。<br/>
+  同じ「WeChat + Alipay」統合 QR を作りたい方は<a href="https://www.harukayang.com/combined-pay.html" target="_blank">ガイド</a>をご覧ください。</p>
+</div>
+
+## 免責事項
+
+本ソフトウェアは GPL-3.0 ライセンスの下で完全にオープンソースであり、自由に使用できます。
+AI による翻訳サービスのみを提供するものであり、翻訳内容について作者は一切の責任を負いません。
+関連する法令を遵守してご利用ください。
+クレジット表記はいつでも嬉しいですが、完全に任意です (´ω｀)♡

@@ -1,88 +1,153 @@
 <div align="center">
-  <img src="assets/img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
+  <img src="assets/img/ico.png" alt="LinguaHaru" height="180" />
 
-[English](README.md) | 简体中文 | [日本語](README_JP.md)  
-<br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/zh-Home" target="_blank">📚 使用说明 Wiki</a>
+  <h1>LinguaHaru</h1>
 
+  <p>
+    <a href="README.md">English</a> | 简体中文 | <a href="README_JP.md">日本語</a>
+    <br/>
+    <a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/zh-Home" target="_blank">使用说明（Wiki）</a>
+  </p>
 
-<div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
-<p align='center'>次世代AI翻译神器，一键高质精准翻译各类常用文件</p>
-<h3 align='center'>支持的文件格式</h3>
-<p align='center'><b>📄 DOCX</b> • <b>📊 XLSX</b> • <b>📑 PPTX</b> • <b>📰 PDF</b> • <b>📝 TXT</b> • <b>🎬 SRT/ASS/VTT/LRC</b> • <b>📘 MD</b> • <b>📚 EPUB</b> • <b>🗂 CSV/TSV</b> • <b>🌐 HTML</b> • <b>📃 ODT</b> • <b>🔤 JSON</b></p>
+  <p>
+    <img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru?style=flat-square" alt="Release"/>
+    <img src="https://img.shields.io/github/downloads/YANG-Haruka/LinguaHaru/total?style=flat-square" alt="Downloads"/>
+    <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru?style=flat-square" alt="License"/>
+    <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru?style=flat-square" alt="Stars"/>
+    <img src="https://img.shields.io/badge/python-3.12-blue?style=flat-square" alt="Python"/>
+  </p>
 
+  <p><b>一键式高质量 AI 翻译 —— 文档、字幕、图片、视频与实时语音。</b><br/>
+  两套精心打磨的界面（原生桌面端 + Web 控制台）共用一个久经考验的引擎，解压即用，无需安装。</p>
 </div>
-<h2 id="What's This">这是什么？</h2>
-这款基于最前沿大语言模型的翻译工具，以极简操作提供卓越翻译质量，支持多种文档格式与语言。
 
-它提供以下功能：
+---
 
-- **双前端**：网页版（浏览器界面）与桌面版（Qt Fluent Design），同一套后端，按喜好选择。
-- **多格式兼容**：.docx / .pptx / .xlsx / .pdf / .txt / 字幕(srt/ass/vtt/lrc) / .md / .epub / csv / html / odt / json，以及图片、视频/音频。
-- **全球语言互译**：覆盖中/英/日/韩/俄等 13+ 语言，界面同样多语言。
-- **一键极速翻译**：拖入文件即翻；支持翻译模式（精确/通用）、术语表、双语对照、各格式专属选项。
-- **首页「翻译」**：Google-翻译式快速短文本翻译，支持语音输入与朗读。
-- **实时语音**：边说边译，自动断句，实时显示原文与译文。
-- **插件系统 + 插件市场**：PDF、图片 OCR、视频/音频字幕、实时语音、语音输入做成可选插件，按需安装（自带 uv，安装快）；还可从远程市场下载第三方自包含插件，无需更新主程序。
-- **智能更新**（便携版）：检测到新版一键自动更新，保留已装插件、模型和你的设置/接口。
-- **新手引导**：首次打开的交互式聚光灯教程，带你认识每个页面。
-- **灵活翻译引擎**：在线 API（DeepSeek / OpenAI 等）与本地模型（Ollama / LM Studio）自由切换。
-- **国内友好**：HuggingFace / PyPI / GitHub 均自动探测官方，连不上时切国内镜像（hf-mirror / 清华 / ghproxy）。
-- **局域网共享**（仅网页版）：一台主机，局域网内多设备共用。
+## 支持的格式
 
+| 类别 | 格式 |
+|---|---|
+| 办公文档 | DOCX · PPTX · XLSX · PDF |
+| 文本与电子书 | TXT · Markdown · EPUB · HTML · ODT · JSON · CSV / TSV |
+| 字幕 | SRT · VTT · ASS · SSA · LRC |
+| 图片（插件） | PNG · JPG · WebP · BMP …… 含扫描版漫画 |
+| 视频与音频（插件） | MP4 · MKV · MP3 · WAV …… 自动转写并翻译字幕 |
+| 实时语音（插件） | 麦克风或系统声音，边说边译 |
 
-<h2 id="install">安装和使用</h2>
+## 为什么选 LinguaHaru
 
-### 方式一（推荐）：便携版，解压即用
+**为质量与速度而生的翻译引擎。** 智能分批、并发请求与按模型限流、翻译缓存、术语表强制、占位符保护、译后 QA 检查。原子化增量写盘让任何任务都崩溃安全；中断的任务可以精确续传，6.0 引擎比上一代提速 90% 以上。
 
-无需 Python、无需 CUDA，下载解压双击即可。
+**两套完整前端，一个后端。**
+- **桌面端** —— Fluent Design 原生 Windows 应用（浅色/深色、悬浮实时字幕、全局拖拽）。
+- **Web 控制台** —— 浏览器里的同款全功能，支持多用户会话隔离、局域网共享与公共服务器模式。
 
-1. 到 [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) 下载：
-    - `LinguaHaru-web.zip` —— 网页版（浏览器界面）
-    - `LinguaHaru-desktop.zip` —— 桌面版（Qt）
-2. 解压到任意目录（路径可含中文）。
-3. 双击启动：
-    - `Start-Web.bat` —— **会自动打开浏览器**，无需手动输网址
-    - `Start-Desktop.bat` —— 桌面窗口
-4. 「接口管理」添加翻译接口（如 DeepSeek），填入 API Key，点击卡片激活。
-5. 需要 PDF / 图片 OCR / 视频字幕 / 实时语音时，到「插件」页**按需安装**（自带 uv，安装快；国内自动走镜像）。
-6. 模型可在「插件」页按需下载；也可从网盘单独下载（见 [模型说明](docs/MODELS.md)）后解压进程序的 `models/` 文件夹。
+**重的东西全是插件。** 基础包保持小巧，需要什么在应用内插件页装什么。自动检测 NVIDIA 显卡并安装 GPU 运行时（CUDA torch、onnxruntime-gpu）；卸载插件会完整回收它带来的所有依赖。
 
-> 检测到新版本时，便携版可一键**智能更新**，自动保留已装插件、模型与你的设置。
+| 插件 | 提供的能力 | GPU |
+|---|---|---|
+| PDF | 保留排版的 PDF 翻译（BabelDOC 引擎） | — |
+| 图片 OCR | 图片翻译并回填文字；PP-OCRv6 | 自动（提速约 60×） |
+| 漫画模式 | 扫描漫画/PDF 的气泡识别、抹字、译文回填，支持校对后再导出 | 自动 |
+| 视频/音频 | 语音转写（SenseVoice、Whisper、Qwen3-ASR）+ 字幕翻译；内置 ffmpeg | 自动 |
+| 实时语音 | 流式字幕、整句修正、防幻觉、术语加固 | 自动 |
+| 语音输入 | 速译页的麦克风输入与朗读 | 自动 |
 
-### 方式二：从源码运行（开发 / 进阶）
+**日常好用的细节。** Google 风格的速译（带语音输入与朗读）；完整词汇表管理（新建/导入/删除），文档、速译、实时翻译全局套用；项目级历史与一键续译；实时 token 与费用估算；应用内校对编辑器并可重新导出；首次运行交互式引导；13 种完整本地化界面语言。
 
-1. Python 3.12（建议用 [Conda](https://www.anaconda.com/download) 建虚拟环境）
-    ```bash
-    conda create -n lingua-haru python=3.12 && conda activate lingua-haru
-    ```
-2. 核心依赖 + 选一个前端
-    ```bash
-    pip install -r requirements/base.txt
-    pip install -r requirements/web.txt   # 网页版：python -m webapp.server  (默认 http://127.0.0.1:8080)
-    pip install -r requirements/qt.txt    # 桌面版：python app_qt.py
-    ```
-3. 可选插件（也可在 UI「插件」页一键安装）
-    ```bash
-    pip install -r plugins/pdf/requirements.txt       # PDF（BabelDOC，保排版）
-    pip install -r plugins/ocr/requirements.txt       # 图片 OCR
-    pip install -r plugins/video/requirements.txt     # 视频/音频字幕（内置 ffmpeg）+ 实时语音
-    pip install -r plugins/speechio/requirements.txt  # 翻译页语音输入 + 朗读
-    # 模型首次使用时自动下载到 models/（GPU 语音转写需自行安装 CUDA 版 torch）
-    ```
+**安全稳定。** 致命 API 错误（密钥无效、余额不足）自动识别并用你的语言解释；失败/中断任务进历史、可续译；Web 端按用户会话隔离 + CSRF 防护；SHA-256 校验的自更新，失败自动回滚。
 
-### 翻译接口推荐
-**推荐使用 [DeepSeek](https://platform.deepseek.com/) 最新的 Flash 模型** —— 速度快、质量高、价格便宜,翻译效果最佳。在「接口管理」填入 API Key 激活即可。
+**对中国大陆网络友好。** 依赖、模型、更新全链路自动回退到高速镜像（清华 PyPI、hf-mirror、ModelScope、百度 BOS、ghproxy），无需科学上网。
 
-> 也支持本地模型（[Ollama](https://ollama.com/) / LM Studio），但**不建议**：本地模型翻译质量和速度通常明显不如在线 API,仅在无网络/隐私要求等特殊场景下考虑。
+## 快速开始
 
-<h2 id="preview">预览</h2>
+### 方式 A（推荐）：便携版
+
+不需要 Python，不需要配 CUDA。下载、解压、双击。
+
+1. 从 [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) 下载：
+   - `LinguaHaru-*-desktop-portable.zip` —— 原生桌面端
+   - `LinguaHaru-*-web-portable.zip` —— Web 端（自动打开浏览器）
+2. 解压到任意位置，运行 `Start-Desktop.bat` 或 `Start-Web.bat`。
+3. 在 **接口管理** 添加接口（如 DeepSeek），粘贴 API 密钥，点击卡片激活。
+4. 需要 PDF / OCR / 视频 / 实时语音？在 **插件** 页一键安装 —— GPU 自动处理。
+5. 有新版本时应用内一键自更新 —— 已装插件、模型与设置全部保留。
+
+### 方式 B：源码运行
+
+```bash
+conda create -n lingua-haru python=3.12 && conda activate lingua-haru
+pip install -r requirements/base.txt
+
+pip install -r requirements/web.txt   # Web:   python -m webapp.server
+pip install -r requirements/qt.txt    # 桌面:  python app_qt.py
+```
+
+可选插件可在应用内插件页安装，或手动：
+
+```bash
+pip install -r plugins/pdf/requirements.txt       # PDF（BabelDOC）
+pip install -r plugins/ocr/requirements.txt       # 图片 OCR + 漫画模式
+pip install -r plugins/video/requirements.txt     # 视频/音频 + 实时语音
+pip install -r plugins/speechio/requirements.txt  # 语音输入 + 朗读
+```
+
+### 推荐引擎
+
+**[DeepSeek](https://platform.deepseek.com/) 最新 Flash 模型** —— 快、好、便宜。在接口管理里粘贴 API 密钥并激活即可。
+
+本地模型（Ollama / LM Studio）适合离线或隐私敏感场景，但多数情况下在线 API 明显更快更好。
+
+## 预览
+
 <div align="center">
-  <img src="assets/img/sample.gif" width="80%"/>
+  <img src="assets/img/sample.gif" width="80%" alt="预览"/>
 </div>
 
+## 部署方式
 
-## 软件免责声明  
-本软件完全开源，遵循 GPL-3.0 协议，欢迎自由使用。
-软件本身仅提供 AI 翻译服务，所有翻译内容的责任与作者无关。
-请用户遵守法律，进行合法、合规的翻译活动。
-如果愿意署名，我们会非常感激～当然，不署名也完全没有关系哦 (´▽｀)♡
+| 模式 | 方法 |
+|---|---|
+| 桌面 | `Start-Desktop.bat`（便携版）或 `python app_qt.py` |
+| 本机 Web | `Start-Web.bat`（便携版）或 `python -m webapp.server` —— 从 8080 起自动选空闲端口 |
+| 局域网共享 | Web 设置里打开局域网模式，同一网络所有设备共用一台主机 |
+| 公共服务器 | 服务器模式对访客隐藏密钥/模型管理，使用主机的密钥提供服务 |
+| Docker | `docker compose up -d` —— 见 `Dockerfile` / `docker-compose.yml`；支持 `HOST` / `PORT` / `ADMIN_PASSWORD` |
+
+## 项目结构
+
+```
+core/                后端 —— 全部非 UI 逻辑
+  engine/            翻译引擎（分批、重试、QA、缓存）
+  translators/       各格式翻译器（docx、pptx、xlsx、pdf、srt……）
+  pipelines/         抽取/回填管线 + 媒体（STT）/ 图片（OCR）/ 漫画
+  llm/               LLM API 封装（在线 / 本地）
+webapp/              Web 前端 —— FastAPI + 静态 HTML/CSS/JS
+qt_app/              桌面前端 —— PySide6 + Fluent Widgets
+plugins/             可选插件清单（应用内按需安装）
+config/              静态配置 —— 提示词、语言包、接口配置、默认设置
+assets/              静态资源 —— 图标、图片、tiktoken 数据
+glossary/            种子词汇表（Default.csv）
+requirements/        base.txt + 各前端附加依赖
+tools/               构建脚本（便携包构建器）
+tests/               测试套件（格式语料、Web 会话、i18n、更新器……）
+```
+
+## 支持与联系
+
+<div align="center">
+  <a href="https://www.harukayang.com/" target="_blank">个人主页</a> ·
+  <a href="https://www.linkedin.com/in/yang-haruka/" target="_blank">领英</a> ·
+  QQ 3234306205 · 微信 HarukaQnQ
+  <br/><br/>
+  <img src="assets/img/support_qr.png" width="200" alt="赞助二维码"/>
+  <p>如果 LinguaHaru 帮你省了时间，投喂一杯咖啡就是更新的动力。<br/>
+  想创建相同的「微信+支付宝」聚合收款码？参考 <a href="https://www.harukayang.com/combined-pay.html" target="_blank">教程</a>。</p>
+</div>
+
+## 软件声明
+
+本软件基于 GPL-3.0 协议完全开源，可自由使用。
+软件仅提供基于 AI 的翻译服务，作者不对翻译内容承担任何责任。
+请确保您的使用符合相关法律法规。
+署名永远令人开心~ 但完全是自愿的 (´ω｀)♡

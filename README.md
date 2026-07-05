@@ -1,107 +1,152 @@
 <div align="center">
-  <img src="assets/img/ico.png" alt="LinguaHaru" id="title" style="height: 200px; width: auto;" />
+  <img src="assets/img/ico.png" alt="LinguaHaru" height="180" />
 
-English | [简体中文](README_ZH.md) | [日本語](README_JP.md) 
-<br/><a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/en-Home" target="_blank">📚 User Guide (Wiki)</a>
+  <h1>LinguaHaru</h1>
 
+  <p>
+    English | <a href="README_ZH.md">简体中文</a> | <a href="README_JP.md">日本語</a>
+    <br/>
+    <a href="https://github.com/YANG-Haruka/LinguaHaru/wiki/en-Home" target="_blank">User Guide (Wiki)</a>
+  </p>
 
-<div align=center><img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru"/>   <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru"/></div>
-<p align='center'>Next-generation AI translation tool that provides high-quality, precise translations for various common file formats with a single click</p>
-<h3 align='center'>Supported File Formats</h3>
-<p align='center'><b>📄 DOCX</b> • <b>📊 XLSX</b> • <b>📑 PPTX</b> • <b>📰 PDF</b> • <b>📝 TXT</b> • <b>🎬 SRT/ASS/VTT/LRC</b> • <b>📘 MD</b> • <b>📚 EPUB</b> • <b>🗂 CSV/TSV</b> • <b>🌐 HTML</b> • <b>📃 ODT</b> • <b>🔤 JSON</b></p>
+  <p>
+    <img src="https://img.shields.io/github/v/release/YANG-Haruka/LinguaHaru?style=flat-square" alt="Release"/>
+    <img src="https://img.shields.io/github/downloads/YANG-Haruka/LinguaHaru/total?style=flat-square" alt="Downloads"/>
+    <img src="https://img.shields.io/github/license/YANG-Haruka/LinguaHaru?style=flat-square" alt="License"/>
+    <img src="https://img.shields.io/github/stars/YANG-Haruka/LinguaHaru?style=flat-square" alt="Stars"/>
+    <img src="https://img.shields.io/badge/python-3.12-blue?style=flat-square" alt="Python"/>
+  </p>
 
+  <p><b>One-click, high-quality AI translation for documents, subtitles, images, video and live speech.</b><br/>
+  Two polished frontends (native desktop and web console) over one battle-tested engine — unzip and run, no installation.</p>
 </div>
-<h2 id="What's This">What's This?</h2>
-This translation tool is based on cutting-edge large language models, offering exceptional translation quality with minimal operation, supporting multiple document formats and languages.
 
-It provides the following features:
+---
 
-- **Two frontends**: a Web UI (browser) and a Desktop app (Qt Fluent Design) over one shared backend — pick whichever you like.
-- **Multi-format**: .docx / .pptx / .xlsx / .pdf / .txt / subtitles (srt/ass/vtt/lrc) / .md / .epub / csv / html / odt / json, plus images and video/audio.
-- **Global languages**: 13+ languages (Chinese/English/Japanese/Korean/Russian, …); the UI is localized too.
-- **One-click translation**: drag a file in; with translation modes (precise/general), glossary, bilingual output, and per-format options.
-- **Home "Translate"**: Google-Translate-style quick short-text translation, with voice input and read-aloud.
-- **Real-time voice**: translate as you speak, with automatic sentence splitting and live source/translation display.
-- **Plugin system + market**: PDF, image OCR, video/audio subtitles, real-time voice and voice-input are optional plugins, installed on demand (bundled uv, fast); you can also download self-contained third-party plugins from a remote market without updating the main app.
-- **Smart update** (portable build): one-click in-app update that preserves installed plugins, models and your settings/interfaces.
-- **First-run onboarding**: an interactive spotlight tour of every page.
-- **Flexible engines**: online APIs (DeepSeek / OpenAI, …) and local models (Ollama / LM Studio).
-- **China-friendly**: HuggingFace / PyPI / GitHub auto-probe the official source and fall back to mirrors (hf-mirror / Tsinghua / ghproxy) when unreachable.
-- **LAN sharing** (web only): one host, used by every device on the local network.
+## Supported Formats
 
+| Category | Formats |
+|---|---|
+| Office documents | DOCX · PPTX · XLSX · PDF |
+| Text & e-books | TXT · Markdown · EPUB · HTML · ODT · JSON · CSV / TSV |
+| Subtitles | SRT · VTT · ASS · SSA · LRC |
+| Images (plugin) | PNG · JPG · WebP · BMP … including scanned manga |
+| Video & audio (plugin) | MP4 · MKV · MP3 · WAV … automatic transcription plus subtitle translation |
+| Live speech (plugin) | Microphone or system audio, translated as you speak |
 
-<h2 id="install">Installation and Usage</h2>
+## Why LinguaHaru
 
-### Option A (recommended): portable build — unzip and run
+**Translation engine built for quality and speed.** Smart batching, concurrent requests with per-model rate control, translation caching, glossary enforcement, placeholder protection and post-translation QA checks. Atomic incremental writes make every job crash-safe; interrupted runs resume exactly where they stopped, and the 6.0 engine is 90%+ faster than the previous line.
 
-No Python, no CUDA. Just download, unzip, double-click.
+**Two full frontends, one backend.**
+- **Desktop** — native Windows app in Fluent Design (light/dark, floating live captions, drag-and-drop everywhere).
+- **Web console** — the same features in your browser, with multi-user session isolation, LAN sharing and a public server mode.
 
-1. Download from [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest):
-    - `LinguaHaru-web.zip` — Web UI (browser)
-    - `LinguaHaru-desktop.zip` — Desktop (Qt)
-2. Unzip anywhere.
-3. Launch:
-    - `Start-Web.bat` — **opens your browser automatically** (no need to type the URL)
-    - `Start-Desktop.bat` — native window
-4. In **Interface Management**, add an interface (e.g. DeepSeek), paste your API key, click the card to activate.
-5. For PDF / image OCR / video subtitles / real-time voice, install the plugin **on demand** in the **Plugins** page (bundled uv = fast; auto-uses a China mirror when needed).
-6. Models can be downloaded from the Plugins page, or fetched per-model from a netdisk (see [model guide](docs/MODELS.md)) and unzipped into the app's `models/` folder.
+**Everything heavy is a plugin.** The base download stays small; install only what you need from the in-app Plugins page. NVIDIA GPUs are detected automatically and the GPU runtimes (CUDA torch, onnxruntime-gpu) are installed for you. Uninstalling a plugin reclaims every dependency it brought in.
 
-> When a new version is available, the portable build can **smart-update** in place, preserving installed plugins, models and your settings.
+| Plugin | What it adds | GPU |
+|---|---|---|
+| PDF | Layout-preserving PDF translation (BabelDOC engine) | — |
+| Image OCR | Image translation with text re-rendering; PP-OCRv6 | Auto (~60× faster) |
+| Manga mode | Bubble detection, text erasing and re-lettering for scanned comics/PDFs, with proofread-and-re-export | Auto |
+| Video / Audio | Speech transcription (SenseVoice, Whisper, Qwen3-ASR) and subtitle translation; ffmpeg bundled | Auto |
+| Real-Time Voice | Streaming captions with sentence correction, hallucination guards and glossary enforcement | Auto |
+| Voice input | Microphone input and read-aloud on the quick-translate page | Auto |
 
-### Option B: run from source (dev / advanced)
+**Daily-driver conveniences.** Google-style quick translation with voice input and read-aloud; a full glossary manager (create / import / delete) applied across document, quick and live translation; per-project history with one-click resume; live token and cost estimation; an in-app proofreading editor with re-export; a first-run interactive tour; 13 fully localized UI languages.
 
-1. Python 3.12 (a [Conda](https://www.anaconda.com/download) env is recommended)
-    ```bash
-    conda create -n lingua-haru python=3.12 && conda activate lingua-haru
-    ```
-2. Core deps + one frontend
-    ```bash
-    pip install -r requirements/base.txt
-    pip install -r requirements/web.txt   # web:     python -m webapp.server  (http://127.0.0.1:8080)
-    pip install -r requirements/qt.txt    # desktop: python app_qt.py
-    ```
-3. Optional plugins (or install them from the in-app Plugins page)
-    ```bash
-    pip install -r plugins/pdf/requirements.txt       # PDF (BabelDOC, layout-preserving)
-    pip install -r plugins/ocr/requirements.txt       # image OCR
-    pip install -r plugins/video/requirements.txt     # video/audio subtitles (ffmpeg bundled) + real-time voice
-    pip install -r plugins/speechio/requirements.txt  # Translate-page voice input + read-aloud
-    # Models download to models/ on first use (GPU speech transcription needs a CUDA build of torch).
-    ```
+**Safe and stable.** Fatal API errors (bad key, no balance) are detected and explained in your language; failed or stopped runs land in history and can be resumed; per-user session isolation and CSRF protection on the web; SHA-256-verified self-update with automatic rollback.
+
+**Mainland-China friendly.** Dependencies, models and updates all fall back to fast mirrors automatically (Tsinghua PyPI, hf-mirror, ModelScope, Baidu BOS, ghproxy) — no VPN required.
+
+## Quick Start
+
+### Option A (recommended): portable build
+
+No Python, no CUDA setup. Download, unzip, double-click.
+
+1. Grab a package from [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest):
+   - `LinguaHaru-*-desktop-portable.zip` — native desktop app
+   - `LinguaHaru-*-web-portable.zip` — web console (opens your browser automatically)
+2. Unzip anywhere, then run `Start-Desktop.bat` or `Start-Web.bat`.
+3. In **Interface Management**, add an interface (e.g. DeepSeek), paste your API key, click the card to activate.
+4. Need PDF / OCR / video / live voice? Install the plugin from the **Plugins** page — one click, GPU handled automatically.
+5. When a new version ships, the app updates itself in place — plugins, models and settings are preserved.
+
+### Option B: run from source
+
+```bash
+conda create -n lingua-haru python=3.12 && conda activate lingua-haru
+pip install -r requirements/base.txt
+
+pip install -r requirements/web.txt   # web:     python -m webapp.server
+pip install -r requirements/qt.txt    # desktop: python app_qt.py
+```
+
+Optional plugins can be installed from the in-app Plugins page, or manually:
+
+```bash
+pip install -r plugins/pdf/requirements.txt       # PDF (BabelDOC)
+pip install -r plugins/ocr/requirements.txt       # image OCR + manga mode
+pip install -r plugins/video/requirements.txt     # video/audio + real-time voice
+pip install -r plugins/speechio/requirements.txt  # voice input + read-aloud
+```
 
 ### Recommended engine
-**We recommend [DeepSeek](https://platform.deepseek.com/)'s latest Flash model** — fast, high-quality, and cheap; the best translation results. Just paste your API key in Interface Management and activate it.
 
-> Local models ([Ollama](https://ollama.com/) / LM Studio) are also supported but **not recommended**: they're usually noticeably slower and lower-quality than online APIs — use them only for offline / privacy-sensitive cases.
+**[DeepSeek](https://platform.deepseek.com/)'s latest Flash model** — fast, high-quality and inexpensive. Paste your API key into Interface Management and activate.
 
-<h2 id="preview">Preview</h2>
+Local models (Ollama / LM Studio) are supported for offline or privacy-sensitive use, but online APIs are noticeably faster and better for most workloads.
+
+## Preview
+
 <div align="center">
-  <img src="assets/img/sample.gif" width="80%"/>
+  <img src="assets/img/sample.gif" width="80%" alt="Preview"/>
 </div>
 
+## Deployment
+
+| Mode | How |
+|---|---|
+| Desktop | `Start-Desktop.bat` (portable) or `python app_qt.py` |
+| Local web | `Start-Web.bat` (portable) or `python -m webapp.server` — auto-picks a free port from 8080 |
+| LAN sharing | Toggle LAN mode in web Settings; every device on the network can use one host |
+| Public server | Server mode hides key/model management from visitors and serves with the host's key |
+| Docker | `docker compose up -d` — see `Dockerfile` / `docker-compose.yml`; honors `HOST` / `PORT` / `ADMIN_PASSWORD` |
 
 ## Project Structure
-Clear split: **`core/` = backend** (all non-UI logic), **`webapp/` + `qt_app/` = frontends**, **`config/` = static config**, **`assets/` = static assets**, **`data/` = mutable runtime state**.
+
 ```
 core/                Backend — all non-UI logic
-  engine/            Translation engine (base translator, response checker, splitter)
+  engine/            Translation engine (batching, retry, QA, caching)
   translators/       Per-format translator classes (docx, pptx, xlsx, pdf, srt, ...)
-  pipelines/         Per-format extract/restore + media (STT) / image (OCR)
-  llm/               LLM API wrappers (online / offline)
-  backend.py + services: languages, history, pricing, updater, api_keys,
-                     optional_modules, module_manager, prompts, logging
-webapp/              Web frontend — FastAPI (server.py) + static/ (HTML/CSS/JS)
+  pipelines/         Extract/restore pipelines + media (STT) / image (OCR) / manga
+  llm/               LLM API wrappers (online / local)
+webapp/              Web frontend — FastAPI + static HTML/CSS/JS
 qt_app/              Desktop frontend — PySide6 + Fluent Widgets
-config/              Static config — system_config.json, api_config/, prompts/, locales/
-assets/              Static assets — img/ (icons, gif), models/ (tiktoken BPE)
-data/                Mutable runtime — temp/, result/, log/, web_uploads/ (gitignored);
-                     glossary/ (tracked); mykeys/ (gitignored, local API keys)
-requirements/        base.txt + per-feature extras (web, qt, ocr, pdf, video)
-tests/               Test suite (corpus per format, qt, web sessions, i18n, ...)
+plugins/             Optional-plugin manifests (installed on demand in-app)
+config/              Static config — prompts, locales, api_config, default settings
+assets/              Static assets — icons, images, tiktoken data
+glossary/            Seed glossary (Default.csv)
+requirements/        base.txt + per-frontend extras
+tools/               Build scripts (portable builder)
+tests/               Test suite (formats corpus, web sessions, i18n, updater, ...)
 ```
 
-## Software Disclaimer  
+## Support & Contact
+
+<div align="center">
+  <a href="https://www.harukayang.com/" target="_blank">Homepage</a> ·
+  <a href="https://www.linkedin.com/in/yang-haruka/" target="_blank">LinkedIn</a> ·
+  QQ 3234306205 · WeChat HarukaQnQ
+  <br/><br/>
+  <img src="assets/img/support_qr.png" width="200" alt="Support QR"/>
+  <p>If LinguaHaru saves you time, a coffee keeps the updates coming.<br/>
+  Want the same combined WeChat + Alipay QR? See the <a href="https://www.harukayang.com/combined-pay.html" target="_blank">guide</a>.</p>
+</div>
+
+## Disclaimer
+
 This software is fully open-source under the GPL-3.0 license and can be freely used.
 It only provides AI-based translation services; the creator holds no responsibility for the translated content.
 Please ensure your use complies with applicable laws and regulations.
