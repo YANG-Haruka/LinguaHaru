@@ -606,6 +606,50 @@ def _maybe_install_cuda_onnxruntime(name):
     _pip("--index-url", pypi, "onnxruntime")
 
 
+# The cv2 import machinery allows exactly ONE OpenCV distribution: every variant
+# (opencv-python / -headless / -contrib) ships the SAME cv2/ directory, so
+# co-installed variants overwrite each other file-by-file in extraction order.
+# The OCR stack pulls THREE at once (paddleocr -> opencv-python 4.x, paddlex ->
+# opencv-contrib-python pinned OLDER, our reqs -> opencv-python-headless): a 4.10
+# loader mixed with 4.13 binaries dies at import with "partially initialized
+# module 'cv2' has no attribute 'gapi_wip_gst_GStreamerPipeline'" — and the first
+# failure poisons the whole process (broken module stays in sys.modules), killing
+# every later manga/OCR translation until restart. Order-dependent, so it breaks
+# only on SOME machines.
+_OPENCV_VARIANTS = ["opencv-python", "opencv-python-headless",
+                    "opencv-contrib-python", "opencv-contrib-python-headless"]
+
+
+def _normalize_opencv():
+    """If more than one OpenCV variant is installed, uninstall them ALL and
+    force-reinstall a single one so every cv2/ file comes from ONE wheel.
+    Keep contrib when present (superset API, and paddlex pins it strictly),
+    else the newest variant. Safe no-op when 0-1 variants are installed."""
+    have = {v: _installed_version(v) for v in _OPENCV_VARIANTS}
+    have = {v: ver for v, ver in have.items() if ver}
+    if len(have) <= 1:
+        return
+    if "opencv-contrib-python" in have:
+        keep, ver = "opencv-contrib-python", have["opencv-contrib-python"]
+    else:
+        keep, ver = max(have.items(), key=lambda kv: _version_tuple(kv[1]))
+    app_logger.info(f"Multiple OpenCV variants {sorted(have)} — keeping {keep}=={ver}")
+    _emit("检测到多个 OpenCV 变体，正在归一化(防 cv2 损坏)… / normalizing OpenCV variants…")
+    _run([sys.executable, "-m", "pip", "uninstall", "-y", *sorted(have)])
+    uv = _uv_exe()
+    idx = pick_pypi_index()
+    spec = f"{keep}=={ver}"
+    if uv:
+        ok, _out = _run([uv, "pip", "install", "--python", sys.executable,
+                         "--reinstall", "--index-url", idx, spec])
+    else:
+        ok, _out = _run([sys.executable, "-m", "pip", "install", "--force-reinstall",
+                         "--index-url", idx, spec])
+    if not ok:   # never leave the env with NO cv2 — retry on the mirror
+        _run([sys.executable, "-m", "pip", "install", "--force-reinstall",
+              "--index-url", _PYPI_MIRROR, spec])
+
+
 def install_module(name):
     req = plugins_registry.requirements_path(name)
     if not req:
@@ -622,6 +666,8 @@ def install_module(name):
     _maybe_install_cuda_torch(name)   # GPU machines get CUDA torch before the rest
     ok, out = _run_install(req)
     if ok:
+        # A single consistent cv2 BEFORE anything imports it (see _normalize_opencv).
+        _normalize_opencv()
         # AFTER the reqs (which pull CPU onnxruntime): swap in CUDA onnxruntime for GPU OCR.
         _maybe_install_cuda_onnxruntime(name)
     if ok and m:

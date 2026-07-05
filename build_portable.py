@@ -5,8 +5,8 @@ Engines (OCR/STT/PDF/video — torch/onnxruntime/rapidocr/…) are NOT bundled; 
 plugin system pip-installs them on demand into this Python at runtime (which works
 because it's a real Python, unlike the frozen build — see module_manager).
 
-    python build_portable.py web    -> dist_lite/LinguaHaru-web/
-    python build_portable.py qt     -> dist_lite/LinguaHaru-desktop/
+    python build_portable.py web    -> dist/LinguaHaru-web/
+    python build_portable.py qt     -> dist/LinguaHaru-desktop/
 
 Run on Windows (the embeddable Python is win amd64). Needs network (downloads the
 embeddable Python + pip + base wheels).
@@ -23,7 +23,7 @@ PY_VER = "3.12.10"
 EMBED_URL = f"https://www.python.org/ftp/python/{PY_VER}/python-{PY_VER}-embed-amd64.zip"
 GETPIP_URL = "https://bootstrap.pypa.io/get-pip.py"
 ROOT = os.path.dirname(os.path.abspath(__file__))
-OUT_ROOT = os.path.join(ROOT, "dist_lite")
+OUT_ROOT = os.path.join(ROOT, "dist")
 
 # App payload copied into every portable (the backend + static config/assets +
 # the plugin manifests, but NOT plugin deps).
