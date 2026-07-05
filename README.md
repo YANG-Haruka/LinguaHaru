@@ -160,16 +160,12 @@ tools/               Build scripts (portable builder)
 tests/               Test suite (formats corpus, web sessions, i18n, updater, ...)
 ```
 
-## Support & Contact
+## Contact
 
 <div align="center">
   <a href="https://www.harukayang.com/" target="_blank">Homepage</a> ·
   <a href="https://www.linkedin.com/in/yang-haruka/" target="_blank">LinkedIn</a> ·
   QQ 3234306205 · WeChat HarukaQnQ
-  <br/><br/>
-  <img src="assets/img/support_qr.png" width="200" alt="Support QR"/>
-  <p>If LinguaHaru saves you time, a coffee keeps the updates coming.<br/>
-  Want the same combined WeChat + Alipay QR? See the <a href="https://www.harukayang.com/combined-pay.html" target="_blank">guide</a>.</p>
 </div>
 
 ## Disclaimer

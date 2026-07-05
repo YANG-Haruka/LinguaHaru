@@ -160,16 +160,12 @@ tools/               ビルドスクリプト（ポータブルビルダー）
 tests/               テストスイート（フォーマットコーパス、Web セッション、i18n、アップデーター……）
 ```
 
-## サポート・お問い合わせ
+## お問い合わせ
 
 <div align="center">
   <a href="https://www.harukayang.com/" target="_blank">ホームページ</a> ·
   <a href="https://www.linkedin.com/in/yang-haruka/" target="_blank">LinkedIn</a> ·
   QQ 3234306205 · WeChat HarukaQnQ
-  <br/><br/>
-  <img src="assets/img/support_qr.png" width="200" alt="サポート QR"/>
-  <p>LinguaHaru があなたの時間を節約できたなら、コーヒー 1 杯が次のアップデートの力になります。<br/>
-  同じ「WeChat + Alipay」統合 QR を作りたい方は<a href="https://www.harukayang.com/combined-pay.html" target="_blank">ガイド</a>をご覧ください。</p>
 </div>
 
 ## 免責事項

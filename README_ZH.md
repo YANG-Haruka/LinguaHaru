@@ -160,16 +160,12 @@ tools/               构建脚本（便携包构建器）
 tests/               测试套件（格式语料、Web 会话、i18n、更新器……）
 ```
 
-## 支持与联系
+## 联系方式
 
 <div align="center">
   <a href="https://www.harukayang.com/" target="_blank">个人主页</a> ·
   <a href="https://www.linkedin.com/in/yang-haruka/" target="_blank">领英</a> ·
   QQ 3234306205 · 微信 HarukaQnQ
-  <br/><br/>
-  <img src="assets/img/support_qr.png" width="200" alt="赞助二维码"/>
-  <p>如果 LinguaHaru 帮你省了时间，投喂一杯咖啡就是更新的动力。<br/>
-  想创建相同的「微信+支付宝」聚合收款码？参考 <a href="https://www.harukayang.com/combined-pay.html" target="_blank">教程</a>。</p>
 </div>
 
 ## 软件声明
