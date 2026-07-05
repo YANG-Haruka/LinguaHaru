@@ -1,4 +1,4 @@
-# LinguaHaru v5.1.0
+# LinguaHaru v6.0.0
 
 一站式 AI 翻译 — 文档、字幕、图片、实时语音。便携版,解压即用。
 One-stop AI translation — documents, subtitles, images, real-time voice. Portable, unzip and run.
@@ -19,7 +19,7 @@ One-stop AI translation — documents, subtitles, images, real-time voice. Porta
 3. 「接口管理」添加翻译接口(如 DeepSeek),填 API Key,点卡片激活。
 4. 需要 PDF / 图片 OCR / 视频字幕 / 实时语音时,到「插件」页按需安装(自带 uv,安装很快)。
 
-## v5.1.0 亮点 / Highlights
+## v6.0.0 亮点 / Highlights
 - **便携版打包**:内嵌 Python,真实环境,插件可随时按需安装(不像冻结 exe)。Portable embeddable-Python build.
 - **插件市场**:内置 5 个可选插件(PDF / 图片 OCR / 视频音频 / 实时语音 / 翻译语音输入)+ 远程市场(可下载第三方自包含插件,无需更新主程序)。Built-in + remote plugin market.
 - **智能更新**(便携版):一键自动更新,保留已装插件、模型和你的设置/接口。In-app update preserving plugins/models/settings.
@@ -42,7 +42,7 @@ LinguaHaru-desktop.zip  2d83435b871650afecc34686fbd55e5ce2c1275b59b44ed29b9d90b2
 > won't match and self-update will (correctly) refuse.
 
 ## 发布顺序 / Release order (重要)
-1. **先**把这两个 zip 传到 GitHub Release `v5.1.0`(`version.json` 里的 `url` 才不会 404)。
+1. **先**把这两个 zip 传到 GitHub Release `v6.0.0`(`version.json` 里的 `url` 才不会 404)。
 2. 上传完、确认能下载后,**再**更新远程 `version.json`(发布清单)。在资产就绪前更新清单,用户会检查到更新却下载 404。
 
 ## 中国大陆下载通道 / China download channels
