@@ -26,13 +26,14 @@ class _UpdateCheckWorker(QThread):
     done = Signal(dict)
 
     def run(self):
+        # Always emit (empty dict on failure) so a MANUAL check can tell
+        # "up to date" (dict with a version) from "couldn't reach the server"
+        # (empty). The startup handler ignores an empty/no-update result.
         try:
             from core.updater import check_for_update
-            res = check_for_update()
-            if res:
-                self.done.emit(res)
+            self.done.emit(check_for_update() or {})
         except Exception:
-            pass
+            self.done.emit({})
 
 
 class _SelfUpdateWorker(QThread):
@@ -423,6 +424,7 @@ class MainWindow(FluentWindow):
         notes = info.get("notes")
         if notes:
             body += "\n\n" + str(notes)
+        body += "\n\n" + tr("Update Later Hint", self._lang)
         asset = info.get("asset_url")
         sha = info.get("asset_sha256")
         box = MessageBox(title, body, self)
@@ -437,6 +439,26 @@ class MainWindow(FluentWindow):
             self._start_self_update(asset, sha, info.get("asset_urls"))
         else:
             QDesktopServices.openUrl(QUrl(info.get("url") or ""))
+
+    def check_update_manual(self):
+        """Manual 'Check for Updates' from Settings: report the outcome either way
+        (has update -> the same dialog; up to date / unreachable -> an InfoBar)."""
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        InfoBar.info(tr("Checking Update", self._lang), "", duration=2000,
+                     position=InfoBarPosition.TOP, parent=self)
+        self._manual_uw = _UpdateCheckWorker()
+
+        def handle(info):
+            if info and info.get("update"):
+                self._on_update_checked(info)
+            elif info and info.get("latest"):
+                InfoBar.success(tr("Already Latest", self._lang), "", duration=3000,
+                                position=InfoBarPosition.TOP, parent=self)
+            else:
+                InfoBar.warning(tr("Update Check Failed", self._lang), "", duration=4000,
+                                position=InfoBarPosition.TOP, parent=self)
+        self._manual_uw.done.connect(handle)
+        self._manual_uw.start()
 
     def _start_self_update(self, asset, sha256, asset_urls=None):
         from qfluentwidgets import StateToolTip, InfoBar, InfoBarPosition

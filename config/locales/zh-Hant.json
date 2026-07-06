@@ -373,5 +373,11 @@
   "完成一次翻译后，项目会按文件类型与时间显示在这里。": "完成一次翻译后，项目会按文件类型与时间显示在这里。",
   "PP-OCRv6 + 气泡分组 · 竖排 · PDF→PDF · 复用图像 OCR": "PP-OCRv6 + 氣泡分組 · 直排 · PDF→PDF · 複用圖像 OCR",
   "Business WeChat": "本專案由個人開發，商業合作請加微信",
-  "Free Software Notice": "本軟體免費開源；如需商用或進一步優化，歡迎聯繫。"
+  "Free Software Notice": "本軟體免費開源；如需商用或進一步優化，歡迎聯繫。",
+  "About": "關於",
+  "Version": "版本",
+  "Checking Update": "正在檢查更新…",
+  "Already Latest": "已是最新版本",
+  "Update Check Failed": "檢查更新失敗，請稍後再試",
+  "Update Later Hint": "也可稍後在設定中進行檢查"
 }

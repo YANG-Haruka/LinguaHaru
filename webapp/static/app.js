@@ -724,20 +724,37 @@ if ($("tour-next")) $("tour-next").onclick = () => {
 };
 
 // ----- update banner -----
+function _fillVersion() {
+  const v = BOOT && BOOT.version ? "v" + BOOT.version : "";
+  if (v) { const a = $("app-version"), b = $("app-version-2");
+    if (a) a.textContent = v; if (b) b.textContent = v; }
+}
+// Returns "update" | "latest" | "fail". Startup calls it and ignores the result;
+// the Settings "Check for Updates" button uses it to report the outcome.
 async function checkUpdate() {
+  _fillVersion();
   try {
     const u = await api("/api/update-check");
     if (u && u.update) {
       $("update-text").textContent = `${_label("Update Available", "发现新版本")} ${u.latest}` +
-        `（${_label("Current Version", "当前")} ${u.current}）`;
+        `（${_label("Current Version", "当前")} ${u.current}） · ${_label("Update Later Hint", "也可稍后在设置中进行检查")}`;
       $("update-link").href = u.url;
-      // Portable build with a direct package URL -> offer one-click in-app update
-      // (keeps installed plugins + models). Otherwise just the download link.
       if ($("update-now")) $("update-now").hidden = !u.asset_url;
       $("update-banner").hidden = false;
+      return "update";
     }
-  } catch (e) { /* offline / unreachable — silently skip */ }
+    return (u && u.current) ? "latest" : "fail";
+  } catch (e) { return "fail"; }
 }
+if ($("check-update-btn")) $("check-update-btn").onclick = async () => {
+  const btn = $("check-update-btn");
+  btn.disabled = true;
+  toast(_label("Checking Update", "正在检查更新…"), "");
+  const r = await checkUpdate();
+  btn.disabled = false;
+  if (r === "latest") toast(_label("Already Latest", "已是最新版本"), "ok");
+  else if (r === "fail") toast(_label("Update Check Failed", "检查更新失败，请稍后再试"), "bad");
+};
 $("update-dismiss").onclick = () => { $("update-banner").hidden = true; };
 if ($("update-now")) $("update-now").onclick = async () => {
   const btn = $("update-now");

@@ -549,6 +549,20 @@ class SettingsPage(ScrollArea):
         self.card_models.body.addWidget(self.stt_hint)
         self._refresh_models()
 
+        # About / updates — last section: current version + a manual check button.
+        from core.version import __version__
+        self.card_about = _CollapsibleCard(tr("About", lang))
+        layout.addWidget(self.card_about)
+        about_row = QHBoxLayout()
+        about_row.setSpacing(8)
+        self.version_label = BodyLabel(f"{tr('Version', lang)}  v{__version__}")
+        about_row.addWidget(self.version_label)
+        about_row.addStretch(1)
+        self.check_update_btn = PushButton(FluentIcon.SYNC, tr("Check for Updates", lang))
+        self.check_update_btn.clicked.connect(self._on_check_update)
+        about_row.addWidget(self.check_update_btn)
+        self.card_about.body.addLayout(about_row)
+
         self._apply_tips()
         layout.addStretch(1)
 
@@ -897,6 +911,11 @@ class SettingsPage(ScrollArea):
         from core.optional_modules import plugin_model_states
         return plugin_model_states(plugin)
 
+    def _on_check_update(self):
+        mw = self.window()
+        if hasattr(mw, "check_update_manual"):
+            mw.check_update_manual()
+
     def _change_models_dir(self):
         path = QFileDialog.getExistingDirectory(
             self, tr("Model Location", self._lang), model_store.current_dir())
@@ -1008,6 +1027,10 @@ class SettingsPage(ScrollArea):
         self.hist_clear_btn.setText(tr("Clear History", lang))
         self.hist_clear_files_btn.setText(tr("Clear History And Files", lang))
         self.card_models.set_title(tr("Model Management", lang))
+        self.card_about.set_title(tr("About", lang))
+        from core.version import __version__
+        self.version_label.setText(f"{tr('Version', lang)}  v{__version__}")
+        self.check_update_btn.setText(tr("Check for Updates", lang))
         self.models_loc_label.setText(tr("Model Location", lang))
         self.models_browse.setText(tr("Change Location", lang))
         self.ocr_header.setText(tr("Image OCR Model", lang))

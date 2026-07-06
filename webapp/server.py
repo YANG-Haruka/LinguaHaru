@@ -338,7 +338,9 @@ def bootstrap():
     config = backend.read_config()
     online = config.get("default_online", False)
     from core.llm.online_translation import _DEFAULT_RPM
+    from core.version import __version__
     return {
+        "version": __version__,
         "languages": backend.available_languages(),
         "online_models": backend.scan_online_models(),
         "local_models": backend.scan_local_models(),

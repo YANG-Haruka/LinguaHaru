@@ -312,5 +312,11 @@
   "完成一次翻译后，项目会按文件类型与时间显示在这里。": "Finished jobs will be listed here by type and time.",
   "PP-OCRv6 + 气泡分组 · 竖排 · PDF→PDF · 复用图像 OCR": "PP-OCRv6 + bubble grouping · vertical text · PDF→PDF · reuses Image OCR",
   "Business WeChat": "Проект, разработанный одним человеком. По вопросам сотрудничества добавляйте меня в WeChat",
-  "Free Software Notice": "LinguaHaru бесплатен и с открытым исходным кодом; по коммерческому использованию или доработкам — пишите."
+  "Free Software Notice": "LinguaHaru бесплатен и с открытым исходным кодом; по коммерческому использованию или доработкам — пишите.",
+  "About": "О программе",
+  "Version": "Версия",
+  "Checking Update": "Проверка обновлений…",
+  "Already Latest": "У вас последняя версия",
+  "Update Check Failed": "Не удалось проверить обновления, повторите позже",
+  "Update Later Hint": "Проверить обновления также можно позже в настройках."
 }
