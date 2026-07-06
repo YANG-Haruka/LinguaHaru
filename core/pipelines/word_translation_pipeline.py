@@ -2864,6 +2864,63 @@ def should_translate_enhanced(text):
     except:
         return True  # Default to translate if function fails
 
+_CJK_TEXT_RE = re.compile(r'[㐀-鿿぀-ヿ가-힣豈-﫿]')
+
+
+def _cjk_font_for_lang(dst_lang):
+    """A clean, always-available Windows font for the target CJK script. Sans
+    fonts (YaHei/Yu Gothic/Malgun) match the Latin sans (Calibri/Arial) most
+    English source docs use, so translated CJK doesn't clash."""
+    d = (dst_lang or "").lower()
+    if d in ("ja", "japanese") or "日本" in (dst_lang or ""):
+        return "Yu Gothic"
+    if d in ("ko", "korean") or "한국" in (dst_lang or ""):
+        return "Malgun Gothic"
+    return "Microsoft YaHei"   # zh (simplified + traditional) and default
+
+
+def _enforce_consistent_cjk_font(temp_dir, dst_lang, namespaces):
+    """Set a consistent East Asian font on every run that has CJK text but no
+    eastAsia font. Without this, a run whose font is Latin-only (e.g. Calibri, the
+    default in many English docs) makes Word pick a per-glyph OS fallback for the
+    translated CJK — mixing 宋体/黑体 so some characters look bold at random."""
+    import glob
+    w = namespaces['w']
+    font = _cjk_font_for_lang(dst_lang)
+    targets = [os.path.join(temp_dir, "word", "document.xml")]
+    targets += glob.glob(os.path.join(temp_dir, "word", "header*.xml"))
+    targets += glob.glob(os.path.join(temp_dir, "word", "footer*.xml"))
+    for path in targets:
+        if not os.path.exists(path):
+            continue
+        try:
+            tree = etree.parse(path, _SAFE_PARSER)
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"CJK-font pass skipped {os.path.basename(path)}: {e}")
+            continue
+        root = tree.getroot()
+        changed = False
+        for r in root.iter(f"{{{w}}}r"):
+            text = "".join(t.text or "" for t in r.findall(f"{{{w}}}t"))
+            if not _CJK_TEXT_RE.search(text):
+                continue
+            rpr = r.find(f"{{{w}}}rPr")
+            if rpr is None:
+                rpr = etree.Element(f"{{{w}}}rPr")
+                r.insert(0, rpr)
+            rfonts = rpr.find(f"{{{w}}}rFonts")
+            if rfonts is None:
+                rfonts = etree.Element(f"{{{w}}}rFonts")
+                rpr.insert(0, rfonts)
+            if rfonts.get(f"{{{w}}}eastAsia"):
+                continue   # respect an existing East Asian font
+            rfonts.set(f"{{{w}}}eastAsia", font)
+            rfonts.set(f"{{{w}}}hint", "eastAsia")
+            changed = True
+        if changed:
+            tree.write(path, xml_declaration=True, encoding="UTF-8", standalone=True)
+
+
 def write_translated_content_to_word(file_path, original_json_path, translated_json_path, save_temp_dir, result_dir, bilingual_mode=False, src_lang=None, dst_lang=None):
     """
     Write translated content back to Word document.
@@ -3119,6 +3176,13 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         else:
             lang_suffix = "translated"
         result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_{lang_suffix}.docx")
+
+        # Give translated CJK runs a consistent East Asian font (fixes mixed
+        # 宋体/黑体 fallback that reads as random bolding) before repacking.
+        try:
+            _enforce_consistent_cjk_font(temp_dir, dst_lang, namespaces)
+        except Exception as e:  # noqa: BLE001 — never fail the save over fonts
+            app_logger.warning(f"CJK-font consistency pass failed: {e}")
 
         # Create new DOCX file with all original files preserved
         with ZipFile(result_path, 'w', ZIP_DEFLATED) as new_doc:
@@ -4766,6 +4830,28 @@ def _should_distribute_runs(original_run_infos, new_text):
     return len(distinct_rpr) > 1
 
 
+# Word/punctuation boundaries to snap run splits to, so a run never cuts inside a
+# word. Includes CJK punctuation because CJK text has no spaces — without this the
+# proportional split would cut mid-word (e.g. 烘|焙) and misplace bold/color.
+_RUN_BREAK_CHARS = set(" \t\n，。、；：！？…—－·「」『』（）【】《》〉〈,.;:!?)]}\"'")
+
+
+def _snap_to_boundary(chars, approx, lo, hi, window=8):
+    """Nudge a proportional split index to the nearest word/punctuation boundary
+    within +/-`window` chars. A boundary is the position right *after* a maximal
+    run of break chars (so a punctuation cluster like "——" or "、" stays whole,
+    not split down the middle). Forward-biased (emphasis prefixes translate denser
+    than their source length suggests). Falls back to `approx` when none is near."""
+    approx = max(lo, min(approx, hi))
+    for d in range(window + 1):
+        for cand in (approx + d, approx - d):
+            if (lo <= cand <= hi and cand - 1 >= 0
+                    and chars[cand - 1] in _RUN_BREAK_CHARS
+                    and (cand >= hi or chars[cand] not in _RUN_BREAK_CHARS)):
+                return cand
+    return approx
+
+
 def add_text_with_distributed_run_formatting(paragraph, text, namespaces, original_run_infos):
     """Rebuild runs by distributing `text` across the original runs in proportion
     to each original run's character length, preserving every run's rPr.
@@ -4806,14 +4892,13 @@ def add_text_with_distributed_run_formatting(paragraph, text, namespaces, origin
             char_index = len(chars)
         else:
             proportion = info['length'] / total_length
-            target_length = max(1, int(len(chars) * proportion))
+            target_length = max(1, round(len(chars) * proportion))
             end = min(char_index + target_length, len(chars))
-            # Light word-boundary nudge: if we'd cut mid-word, extend to the
-            # next space (bounded) so words aren't split unnecessarily.
-            if 0 < end < len(chars) and chars[end - 1] != ' ' and chars[end] != ' ':
-                limit = min(len(chars), char_index + int(target_length * 1.5))
-                while end < limit and chars[end] != ' ':
-                    end += 1
+            # Snap the cut to the nearest word/punctuation boundary so a run never
+            # splits inside a word. Critical for CJK (no spaces): the old
+            # space-only nudge cut mid-word and misplaced bold/color onto the
+            # wrong characters.
+            end = _snap_to_boundary(chars, end, char_index + 1, len(chars))
             run_text = chars[char_index:end]
             char_index = end
 
