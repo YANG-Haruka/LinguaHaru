@@ -523,9 +523,12 @@ class MainWindow(FluentWindow):
         from PySide6.QtCore import Qt
         from PySide6.QtGui import QPixmap
         from PySide6.QtWidgets import QLabel
-        from qfluentwidgets import MessageBoxBase, BodyLabel
+        from qfluentwidgets import MessageBoxBase, BodyLabel, StrongBodyLabel
 
         dlg = MessageBoxBase(self)
+        biz = StrongBodyLabel(tr("Business WeChat", self._lang), dlg)
+        biz.setAlignment(Qt.AlignCenter)
+        dlg.viewLayout.addWidget(biz)
         qr = QPixmap(os.path.join(backend.REPO_ROOT, "assets", "img", "support_qr.png"))
         img = QLabel(dlg)
         img.setPixmap(qr.scaledToWidth(300, Qt.SmoothTransformation))
@@ -537,6 +540,11 @@ class MainWindow(FluentWindow):
         tip.setOpenExternalLinks(True)
         tip.setWordWrap(True)
         dlg.viewLayout.addWidget(tip)
+        notice = BodyLabel(tr("Free Software Notice", self._lang), dlg)
+        notice.setAlignment(Qt.AlignCenter)
+        notice.setWordWrap(True)
+        notice.setTextColor("#808080", "#a0a0a0")
+        dlg.viewLayout.addWidget(notice)
         dlg.yesButton.setText(tr("Confirm", self._lang))
         dlg.cancelButton.hide()
         dlg.widget.setMinimumWidth(380)

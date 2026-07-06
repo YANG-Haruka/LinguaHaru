@@ -331,5 +331,7 @@
   "完成一次翻译后会出现在这里。": "Finish a translation and it will appear here.",
   "还没有翻译记录": "No translations yet",
   "完成一次翻译后，项目会按文件类型与时间显示在这里。": "Finished jobs will be listed here by type and time.",
-  "PP-OCRv6 + 气泡分组 · 竖排 · PDF→PDF · 复用图像 OCR": "PP-OCRv6 + 吹き出し · 縦書き · PDF→PDF · 画像OCRを再利用"
+  "PP-OCRv6 + 气泡分组 · 竖排 · PDF→PDF · 复用图像 OCR": "PP-OCRv6 + 吹き出し · 縦書き · PDF→PDF · 画像OCRを再利用",
+  "Business WeChat": "商業利用のお問い合わせは WeChat まで",
+  "Free Software Notice": "LinguaHaru は無料・オープンソースです。商用利用やさらなるカスタマイズはお気軽にご連絡ください。"
 }

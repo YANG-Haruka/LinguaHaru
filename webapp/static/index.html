@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260706A" />
+  <link rel="stylesheet" href="/static/style.css?v=20260706B" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -101,7 +101,7 @@
         <select id="ui-lang" class="ui-lang-select" title="界面语言"></select>
       </div>
       <div class="bottom-row">
-        <span class="bottom-label mono">主题 / Theme</span>
+        <span class="bottom-label mono" data-i18n="Theme">主题</span>
         <button id="theme-toggle" class="icon-btn" title="切换主题"></button>
       </div>
     </div>
@@ -144,6 +144,7 @@
     <div id="support-modal" class="modal-overlay" hidden>
       <div class="modal support-modal">
         <h3 data-i18n="Support / Contact">支持或联系我</h3>
+        <p class="support-biz" data-i18n="Business WeChat">商业合作请添加微信</p>
         <div class="support-qr">
           <img src="/assets/img/support_qr.png" alt="Support QR" />
           <p class="muted">
@@ -151,6 +152,7 @@
             <a href="https://www.harukayang.com/combined-pay.html" target="_blank" rel="noopener">harukayang.com/combined-pay.html</a>
           </p>
         </div>
+        <p class="support-notice" data-i18n="Free Software Notice">本软件免费开源；如需商用或进一步优化，欢迎联系。</p>
         <div class="support-links">
           <a class="support-row" href="https://www.harukayang.com/" target="_blank" rel="noopener">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>
@@ -792,6 +794,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260706D"></script>
+  <script src="/static/app.js?v=20260706E"></script>
 </body>
 </html>

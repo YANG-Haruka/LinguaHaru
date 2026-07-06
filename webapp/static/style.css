@@ -224,7 +224,7 @@ html[data-theme="light"] .footer {
 /* sidebar bottom */
 .sidebar-bottom {
   margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; flex-direction: column; align-items: stretch; gap: 2px;
 }
 .sidebar-bottom .env {
   font-family: var(--font-mono); font-size: 0.6rem; letter-spacing: 0.8px;
@@ -1216,6 +1216,8 @@ html[data-theme="dark"] .seg.active { background: var(--surface-3); border-color
 .support-link:hover{background:var(--hover);color:var(--text)}
 .support-link svg{width:16px;height:16px;flex:none}
 .support-modal{max-width:400px}
+.support-biz{margin:4px 0 0;text-align:center;font-size:0.86rem;font-weight:600;color:var(--accent)}
+.support-notice{margin:14px 0 2px;padding-top:12px;border-top:1px solid var(--border);text-align:center;font-size:0.8rem;color:var(--text-2);line-height:1.5}
 .support-qr{text-align:center;margin-top:10px}
 .support-qr img{max-width:280px;width:100%;border-radius:14px}
 .support-qr p{margin:10px 0 0;font-size:0.82rem;line-height:1.55}
