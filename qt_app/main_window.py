@@ -390,6 +390,10 @@ class MainWindow(FluentWindow):
         if hasattr(self, "_sky"):
             self._sky.setGeometry(0, 0, self.width(), self.height())
             self._sky.lower()
+        # Keep the update progress tip pinned inside the corner while resizing.
+        tip = getattr(self, "_update_tip", None)
+        if tip:
+            tip.move(tip.getSuitablePos())
         self._auto_nav(animate=True)
 
     def _auto_nav(self, animate=True):
@@ -463,7 +467,10 @@ class MainWindow(FluentWindow):
     def _start_self_update(self, asset, sha256, asset_urls=None):
         from qfluentwidgets import StateToolTip, InfoBar, InfoBarPosition
         self._update_tip = StateToolTip(tr("Updating", self._lang), "0%", self)
-        self._update_tip.move(self.width() - 240, 20)
+        # Let qfluentwidgets place it: getSuitablePos() keeps the tip fully inside
+        # the window using its ACTUAL size and clears the title bar — a hardcoded
+        # offset (self.width()-240, 20) overflowed the right edge / title bar.
+        self._update_tip.move(self._update_tip.getSuitablePos())
         self._update_tip.show()
         self._self_update_worker = _SelfUpdateWorker(asset, sha256, self, asset_urls=asset_urls)
 
