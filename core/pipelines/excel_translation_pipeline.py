@@ -1977,6 +1977,17 @@ def _force_restore_excel_parts(original_path, result_path, prefixes):
         res = {n: z.read(n) for n in z.namelist()}
 
     touched = False
+    # Drop openpyxl's OWN versions of these parts first. On save openpyxl renames
+    # and duplicates media (one copy per drawing anchor — e.g. 30 images balloon
+    # to ~200) and rewrites drawing rels; leaving those alongside the restored
+    # originals produces duplicate media and dangling/mismatched relationships
+    # that Excel refuses to open (openpyxl itself is lenient and still reads it).
+    # Removing them, then restoring the original bytes, yields the original's
+    # self-consistent drawing/media/rels subsystem.
+    for n in list(res.keys()):
+        if n.startswith(prefixes) and n not in orig:
+            del res[n]
+            touched = True
     for n, b in orig.items():
         if n.startswith(prefixes) and res.get(n) != b:
             res[n] = b
@@ -1987,10 +1998,23 @@ def _force_restore_excel_parts(original_path, result_path, prefixes):
     ct = "[Content_Types].xml"
     if ct in orig and ct in res:
         ctr = res[ct].decode("utf-8")
-        for ov in re.findall(r'<Override\b[^>]*?/>', orig[ct].decode("utf-8")):
+        orig_ct = orig[ct].decode("utf-8")
+        for ov in re.findall(r'<Override\b[^>]*?/>', orig_ct):
             part = re.search(r'PartName="([^"]+)"', ov)
             if part and part.group(1).lstrip("/").startswith(prefixes) and part.group(1) not in ctr:
                 ctr = ctr.replace("</Types>", ov + "</Types>")
+        # Re-add <Default Extension> entries for restored parts whose extension the
+        # result no longer declares. openpyxl drops the Default when it drops an
+        # image it can't model (e.g. emf/wmf); restoring that image without its
+        # Default leaves an orphan part with no content type, which Excel refuses
+        # to open (openpyxl itself is lenient and still reads it).
+        have_defaults = {e.lower() for e in re.findall(r'<Default Extension="([^"]+)"', ctr)}
+        restored_exts = {n.rsplit(".", 1)[-1].lower() for n in orig
+                         if n.startswith(prefixes) and "." in n}
+        for ext in restored_exts - have_defaults:
+            m = re.search(r'<Default Extension="' + re.escape(ext) + r'"[^>]*?/>', orig_ct, re.I)
+            if m:
+                ctr = ctr.replace("</Types>", m.group(0) + "</Types>")
         res[ct] = ctr.encode("utf-8")
 
     tmp = result_path + ".force.tmp"
