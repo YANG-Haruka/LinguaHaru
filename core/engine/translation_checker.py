@@ -11,6 +11,17 @@ from rich.table import Table
 from rich.console import Console
 
 
+def _safe_console_print(console, renderable):
+    """Print a cosmetic rich table — must NEVER break translation. On a legacy
+    Windows (GBK) console, rich raises UnicodeEncodeError on characters outside
+    GBK (•, em-dash, …); swallow any console error so validation/writeback of the
+    segment is unaffected (the per-project utf-8 log still records everything)."""
+    try:
+        console.print(renderable)
+    except Exception:  # noqa: BLE001 — a console render must not fail a translation
+        pass
+
+
 # --- crash-safe + buffered persistence ------------------------------------- #
 # Writes go to a temp file + os.replace (atomic) so a crash / out-of-credit
 # mid-write can never corrupt the file. The append-only RESULT file is also kept
@@ -362,7 +373,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                 fail_table.add_column("Translated", style="yellow", overflow="fold")
                 for key, value in original_json.items():
                     fail_table.add_row(str(key), markup.escape(str(value)), markup.escape(str(value)))
-                Console(highlight=True, tab_size=4).print(fail_table)
+                _safe_console_print(Console(highlight=True, tab_size=4), fail_table)
                 
                 _mark_all_as_failed(original_text, FAILED_JSON_PATH)
                 # Return failure (not the originals): returning source text here
@@ -384,7 +395,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                 fail_table.add_column("Translated", style="yellow", overflow="fold")
                 for key, value in original_json.items():
                     fail_table.add_row(str(key), markup.escape(str(value)), markup.escape(str(value)))
-                Console(highlight=True, tab_size=4).print(fail_table)
+                _safe_console_print(Console(highlight=True, tab_size=4), fail_table)
                 _mark_all_as_failed(original_text, FAILED_JSON_PATH)
                 return {}
 
@@ -476,7 +487,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                 markup.escape(str(item['translated']))
             )
         
-        CONSOLE.print(success_table)
+        _safe_console_print(CONSOLE, success_table)
     
     # Display failed translations
     if failed_translations:
@@ -511,7 +522,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
                     markup.escape(str(translated_json.get(str(item['count_split']), '')))
                 )
         
-        CONSOLE.print(failed_table)
+        _safe_console_print(CONSOLE, failed_table)
  
     # Save successful translations
     save_json(RESULT_SPLIT_JSON_PATH, successful_translations)
@@ -566,7 +577,7 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
             error_table.add_column("Error", style="bright_red")
             error_table.add_row(markup.escape(str(e)))
             
-            CONSOLE.print(error_table)
+            _safe_console_print(CONSOLE, error_table)
             app_logger.error(f"Error updating translation status: {e}")
     
     return result_dict

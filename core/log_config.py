@@ -9,6 +9,17 @@ from colorama import Fore, Style, init
 
 init(autoreset=True)
 
+# Never let a console write crash the app on a character the terminal's encoding
+# can't represent. On a Chinese-locale Windows console (GBK) a '•'/em-dash/… in a
+# log line or a rich table would otherwise raise UnicodeEncodeError and, if that
+# happens inside a translation segment, fail the segment. errors='replace' makes
+# such characters degrade to '?' instead of raising.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(errors="replace")
+    except Exception:  # noqa: BLE001 — stream may be None/replaced; best-effort
+        pass
+
 # The task whose per-project log the CURRENT execution context belongs to. Set at
 # the start of a translation and propagated into its ThreadPoolExecutor workers,
 # so concurrent translations each write to their OWN log file without interleaving
