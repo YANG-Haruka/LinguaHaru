@@ -1045,7 +1045,6 @@ let _progressES = null;
 function listenProgress(taskId) {
   // Reset the dashboard so a previous run's numbers don't linger on screen.
   ["m-files", "m-speed", "m-tokens", "m-eta", "m-threads", "m-cpu", "m-gpu"].forEach((id) => { const e = $(id); if (e) e.textContent = "—"; });
-  if ($("m-cost")) $("m-cost").textContent = "";
   // Compute device (static, from bootstrap): tells the user GPU vs CPU.
   const _hw = BOOT.hardware || {};
   if ($("m-device")) $("m-device").textContent =
@@ -1078,8 +1077,6 @@ function listenProgress(taskId) {
     // the live cost); fall back to parsing the desc.
     if (d.tokens != null) $("m-tokens").textContent = _fmtTokens(d.tokens);
     else $("m-tokens").textContent = (desc.match(/([\d.]+\s*[KMkm]?)\s*tokens/i) || [, "—"])[1].replace(/\s/g, "");
-    // Live cost estimate (parity with Qt) — shown whenever the payload carries it.
-    if ($("m-cost")) $("m-cost").textContent = d.cost ? ("≈" + (d.cost.symbol || "") + d.cost.amount) : "";
     $("m-eta").textContent = m(/ETA\s+([\d:]+)/i);
     $("m-threads").textContent = m(/(\d+)\s*threads/i);
     // Sync the pause UI to the server's authoritative state.
@@ -1091,10 +1088,9 @@ function listenProgress(taskId) {
       es.close(); stopElapsed(); stopSysmonPoll(); setRunState("done");
       $("download-link").href = "/api/download/" + taskId;
       $("result").hidden = false; setStatus(_label("Translation completed", "翻译完成"));
-      if ($("m-cost") && d.cost) $("m-cost").textContent = "≈" + (d.cost.symbol || "") + d.cost.amount;
       renderCoverage(d.coverage);
       renderQa(d.qa);
-      showThanks(d.tokens, d.cost);
+      showThanks(d.tokens);
     } else if (d.status === "error") {
       es.close(); stopElapsed(); stopSysmonPoll(); setRunState("error"); setStatus(_label("错误: ", "错误: ") + (d.error || "未知错误"));
     } else if (d.status === "stopped") {
@@ -2141,7 +2137,7 @@ function saveLiveHistory() {
     body: JSON.stringify({ source_lines: src, translated_lines: dst,
       src_display: "Auto", dst_display: dstDisplay,
       tokens: liveSessionTokens, ui_lang: _uiLang }) })
-    .then((r) => { if (r && r.saved) showThanks(r.tokens, r.cost); })
+    .then((r) => { if (r && r.saved) showThanks(r.tokens); })
     .catch(() => {});
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
@@ -2260,7 +2256,7 @@ function stopGoogle() {
 // finishes (document translation done, real-time voice stopped), summarizing
 // the tokens used + estimated cost. `cost` is {amount, symbol, currency} or null.
 const THANKS_COOLDOWN_MS = 10 * 60 * 1000;   // pop the card at most once per 10 min
-function showThanks(tokens, cost) {
+function showThanks(tokens) {
   // Shown when a LONG task finishes (document translation, real-time voice).
   // Skipped when there are no tokens to report, and throttled so frequent runs
   // don't pop a card every time. Quick Translate never calls this.
@@ -2278,15 +2274,11 @@ function showThanks(tokens, cost) {
   const tokenLine = tokens
     ? `<div class="thanks-stat"><span>${_label("Thanks Tokens Label", "本次消耗")}</span><b>${fmtTokens(tokens)} tokens</b></div>`
     : "";
-  const costLine = cost
-    ? `<div class="thanks-stat"><span>${_label("Thanks Cost Label", "预计花费")}</span><b>${cost.symbol}${cost.amount} ${cost.currency}</b></div>`
-    : "";
   ov.innerHTML =
     `<div class="thanks-card">
        <div class="thanks-flower">✿</div>
        <h3>${_label("Thanks Title", "感谢使用 LinguaHaru")}</h3>
        ${tokenLine}
-       ${costLine}
        <button id="thanks-ok">${_label("OK", "好的")}</button>
      </div>`;
   ov.addEventListener("click", (e) => { if (e.target === ov || e.target.id === "thanks-ok") ov.remove(); });
@@ -2945,12 +2937,10 @@ function _histActBtn(acts, text, fn, cls) {
 
 function buildHistoryDetail(r) {
   const box = document.createElement("div"); box.className = "hist-detail-box";
-  const cost = (r.cost_amount != null && r.cost_currency) ? `${r.cost_amount} ${r.cost_currency}` : "—";
   box.appendChild(_statChips([
     [_label("Source Language", "语言"), `${r.src_lang_display || r.src_lang || ""} → ${r.dst_lang_display || r.dst_lang || ""}`],
     [_label("Model", "模型"), `${r.model || ""} (${r.use_online ? "Online" : "Offline"})`],
     [_label("Tokens", "Tokens"), _fmtTok(r.total_tokens)],
-    [_label("Estimated cost", "费用"), cost],
     [_label("Duration", "用时"), _fmtDuration(r.duration_seconds)],
   ]));
   if (r.error_reason) {
@@ -2972,14 +2962,11 @@ function buildBatchDetail(recs) {
   const box = document.createElement("div"); box.className = "hist-detail-box";
   const done = recs.filter((r) => r.status === "success").length;
   const tokens = recs.reduce((a, r) => a + (r.total_tokens || 0), 0);
-  const costAmt = recs.reduce((a, r) => a + (r.cost_amount || 0), 0);
-  const ccy = (recs.find((r) => r.cost_currency) || {}).cost_currency || "";
   box.appendChild(_statChips([
     [_label("Files", "文件"), `${done}/${recs.length}`],
     [_label("Source Language", "语言"), `${recs[0].src_lang_display || ""} → ${recs[0].dst_lang_display || ""}`],
     [_label("Model", "模型"), recs[0].model || ""],
     [_label("Tokens", "Tokens"), _fmtTok(tokens)],
-    [_label("Estimated cost", "费用"), costAmt ? `${costAmt.toFixed(4)} ${ccy}` : "—"],
   ]));
   const list = document.createElement("div"); list.className = "hist-files";
   for (const r of recs) {

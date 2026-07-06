@@ -21,7 +21,7 @@ def _fmt_tokens(n):
     return str(n)
 
 
-def show_thanks(parent, lang, tokens, cost_amount=None, cost_symbol=None, cost_currency=None):
+def show_thanks(parent, lang, tokens):
     """Show the thanks dialog when a LONG task finishes. Skipped when there are
     no tokens to report, and throttled to once per _COOLDOWN_S. Not used for
     high-frequency Quick Translate."""
@@ -33,8 +33,6 @@ def show_thanks(parent, lang, tokens, cost_amount=None, cost_symbol=None, cost_c
         return
     _last_shown = now
     lines = [f"{tr('Thanks Tokens Label', lang)}: {_fmt_tokens(tokens)} tokens"]
-    if cost_amount is not None:
-        lines.append(f"{tr('Thanks Cost Label', lang)}: {cost_symbol}{cost_amount} {cost_currency}")
     try:
         box = MessageBox(tr("Thanks Title", lang), "\n".join(lines), parent)
         box.yesButton.setText(tr("OK", lang))

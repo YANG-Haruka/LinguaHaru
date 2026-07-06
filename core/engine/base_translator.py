@@ -190,18 +190,6 @@ class DocumentTranslator:
             # Get input filename
             input_file = os.path.basename(self.input_file_path)
 
-            # Approximate cost for the project record (online only).
-            cost_amount = cost_currency = None
-            if self.use_online and self.total_tokens > 0:
-                try:
-                    from core.pricing import estimate_cost
-                    cost_amount, _symbol, cost_currency = estimate_cost(
-                        self.model, self.total_prompt_tokens,
-                        self.total_completion_tokens, self.session_lang)
-                    cost_amount = round(cost_amount, 4)
-                except Exception:  # noqa: BLE001
-                    cost_amount = cost_currency = None
-
             # Create record
             record = create_translation_record(
                 translation_id=self.translation_id,
@@ -218,8 +206,8 @@ class DocumentTranslator:
                 output_file_path=output_file_path or "",
                 log_file_path=log_file_path,
                 status=status,
-                cost_amount=cost_amount,
-                cost_currency=cost_currency,
+                cost_amount=None,
+                cost_currency=None,
                 translation_options=getattr(self, "topts", None),
                 error_reason=error_reason,
                 error_category=error_category,
@@ -1270,14 +1258,6 @@ class DocumentTranslator:
                 f"{self.num_threads} {self._get_status_message('threads')}",
                 f"{self._get_status_message('Total tokens used')}: {self._format_tokens(self.total_tokens)}",
             ]
-            # Approximate cost (online only), in the UI language's currency.
-            if self.use_online and self.total_tokens > 0:
-                from core.pricing import estimate_cost
-                amount, symbol, ccy = estimate_cost(
-                    self.model, self.total_prompt_tokens,
-                    self.total_completion_tokens, self.session_lang)
-                parts.append(f"{self._get_status_message('Estimated cost')}: "
-                             f"{symbol}{amount:.4f} {ccy}")
             self.final_stats = " | ".join(parts)
         except Exception:
             self.final_stats = ""

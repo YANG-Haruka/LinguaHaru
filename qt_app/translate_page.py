@@ -976,20 +976,10 @@ class TranslatePage(QStackedWidget):
                                  qa=self._aggregate_qa())
         # A user-initiated stop is not an error; only real failures flag the popup.
         self._info(tr("Translate", self._lang), summary, error=bool(failed and not ok))
-        # Thank-you + token/cost summary for the finished (long) translation run.
+        # Thank-you + token summary for the finished (long) translation run.
         if ok:
-            cost_amount = cost_symbol = cost_currency = None
-            if self._run_online:
-                try:
-                    from core.pricing import estimate_cost
-                    amt, cost_symbol, cost_currency = estimate_cost(
-                        self._run_model, self._prompt_tokens, self._completion_tokens, self._lang)
-                    cost_amount = round(amt, 4)
-                except Exception:  # noqa: BLE001
-                    pass
             from qt_app.thanks import show_thanks
-            show_thanks(self.window(), self._lang, self._exact_tokens,
-                        cost_amount, cost_symbol, cost_currency)
+            show_thanks(self.window(), self._lang, self._exact_tokens)
 
     def _aggregate_qa(self):
         """Merge per-file qa warning dicts into {check: total_count}. Returns None

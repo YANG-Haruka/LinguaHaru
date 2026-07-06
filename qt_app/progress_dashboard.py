@@ -332,20 +332,5 @@ class ProgressDashboard(QWidget):
         self.threads_card.set_value(thread_count)
 
     def _cost_sub(self, total_tokens, prompt_tokens, completion_tokens, model):
-        """'12,345 tokens · ≈¥0.05' — exact tokens + estimated cost. Uses the exact
-        prompt/completion split when known, otherwise a 50/50 approximation of the
-        live total so a cost shows during the run too."""
-        sub = f"{int(total_tokens):,} tokens"
-        if not model:
-            return sub
-        p, c = int(prompt_tokens or 0), int(completion_tokens or 0)
-        if p == 0 and c == 0 and total_tokens:        # live: approximate the split
-            p = c = int(total_tokens) // 2
-        if p == 0 and c == 0:
-            return sub
-        try:
-            from core.pricing import estimate_cost
-            amt, symbol, _ccy = estimate_cost(model, p, c, self._lang)
-            return f"{sub} · ≈{symbol}{amt:.4f}"
-        except Exception:  # noqa: BLE001 — cost is best-effort
-            return sub
+        """'12,345 tokens' — exact token count (cost estimate removed)."""
+        return f"{int(total_tokens):,} tokens"

@@ -997,19 +997,11 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
                 TASKS[task_id]["ended_at"] = time.time()
 
     def _usage_summary():
-        """{"tokens", "cost":{amount,symbol,currency}} from accumulated usage."""
+        """{"tokens"} from accumulated usage (cost estimate removed)."""
         with _TASKS_LOCK:
             t = TASKS.get(task_id, {})
-            tp, tc, tt = t.get("tok_prompt", 0), t.get("tok_completion", 0), t.get("tokens", 0)
-        out = {"tokens": tt, "cost": None}
-        if use_online and tt > 0:
-            try:
-                from core.pricing import estimate_cost
-                amt, sym, ccy = estimate_cost(model, tp, tc, ui_lang)
-                out["cost"] = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
-            except Exception:  # noqa: BLE001
-                pass
-        return out
+            tt = t.get("tokens", 0)
+        return {"tokens": tt, "cost": None}
 
     total = len(file_paths)
     # One readable, unique folder per run (start datetime + short id), so each
@@ -1203,24 +1195,12 @@ async def translate(
 
 
 def _live_usage(state):
-    """During a run: total tokens so far (finished files + the in-flight file) and
-    an estimated cost — parity with the Qt dashboard's live cost. None if no tokens
-    yet. Cost currency follows the task's UI language (zh→CNY, etc.)."""
-    p = int(state.get("tok_prompt", 0)) + int(state.get("live_prompt", 0))
-    c = int(state.get("tok_completion", 0)) + int(state.get("live_completion", 0))
+    """During a run: total tokens so far (finished files + the in-flight file).
+    None if no tokens yet. (Cost estimate removed.)"""
     tot = int(state.get("tokens", 0)) + int(state.get("live_tokens", 0))
     if tot <= 0:
         return None
-    out = {"tokens": tot, "cost": None}
-    model = state.get("model")
-    if model and (p or c):
-        try:
-            from core.pricing import estimate_cost
-            amt, sym, ccy = estimate_cost(model, p, c, state.get("ui_lang", "en"))
-            out["cost"] = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
-        except Exception:  # noqa: BLE001 — cost is best-effort
-            pass
-    return out
+    return {"tokens": tot, "cost": None}
 
 
 @app.get("/api/progress/{task_id}")
@@ -1394,17 +1374,9 @@ def _run_resume(task_id, session_id, rec, ui_lang="en"):
             resume_record_id=rec.get("id"))
         with _TASKS_LOCK:
             t = TASKS.get(task_id, {})
-            tp, tc, tt = t.get("tok_prompt", 0), t.get("tok_completion", 0), t.get("tokens", 0)
-        cost = None
-        if use_online and tt > 0:
-            try:
-                from core.pricing import estimate_cost
-                amt, sym, ccy = estimate_cost(model, tp, tc, ui_lang)
-                cost = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
-            except Exception:  # noqa: BLE001
-                pass
+            tt = t.get("tokens", 0)
         set_state(status="done", progress=1.0, desc="Translation completed",
-                  output=out, tokens=tt, cost=cost)
+                  output=out, tokens=tt, cost=None)
     except HardApiError as e:
         app_logger.error(f"Web resume aborted [{getattr(e,'category','api_error')}]: {e}")
         set_state(status="error", error=_friendly_api_error(e, ui_lang))
@@ -1521,15 +1493,8 @@ def _run_resume_batch(task_id, session_id, recs, ui_lang="en"):
 
         with _TASKS_LOCK:
             t = TASKS.get(task_id, {})
-            tp, tc, tt = t.get("tok_prompt", 0), t.get("tok_completion", 0), t.get("tokens", 0)
+            tt = t.get("tokens", 0)
         cost = None
-        if last_online and tt > 0:
-            try:
-                from core.pricing import estimate_cost
-                amt, sym, ccy = estimate_cost(last_model, tp, tc, ui_lang)
-                cost = {"amount": round(amt, 4), "symbol": sym, "currency": ccy}
-            except Exception:  # noqa: BLE001
-                pass
         if not outputs:
             set_state(status="error", error="All files failed. See log.")
         elif total == 1:
@@ -2321,16 +2286,7 @@ def live_save_history(payload: dict, request: Request):
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)
     tokens = int(payload.get("tokens", 0) or 0)
-    # Estimate cost from the session's tokens (output-heavy, but we only have the
-    # total — split is unknown, so attribute it all to completion = upper bound).
     cost_amount = cost_currency = cost_symbol = None
-    if use_online and tokens > 0:
-        try:
-            from core.pricing import estimate_cost
-            amt, sym, ccy = estimate_cost(model, 0, tokens, payload.get("ui_lang", "en"))
-            cost_amount, cost_symbol, cost_currency = round(amt, 4), sym, ccy
-        except Exception:  # noqa: BLE001
-            pass
     from core.translation_history import save_live_session
     rec = save_live_session(
         src, dst, payload.get("src_display", "Auto"),

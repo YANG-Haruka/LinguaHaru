@@ -985,21 +985,13 @@ class LivePage(ScrollArea):
             online = backend.get_config("default_online", True)
             model = backend.get_active_model(online)
             tokens = int(self._session_tokens or 0)
-            cost_amount = cost_currency = cost_symbol = None
-            if online and tokens > 0:
-                try:
-                    from core.pricing import estimate_cost
-                    amt, cost_symbol, cost_currency = estimate_cost(model, 0, tokens, self._lang)
-                    cost_amount = round(amt, 4)
-                except Exception:  # noqa: BLE001
-                    pass
             save_live_session(src, dst, "Auto",
                               self.target_combo.currentText(), model, online,
                               result_dir, log_dir, total_tokens=tokens,
-                              cost_amount=cost_amount, cost_currency=cost_currency)
+                              cost_amount=None, cost_currency=None)
             if not getattr(self, "_shutting_down", False):   # no modal during app close
                 from qt_app.thanks import show_thanks
-                show_thanks(self.window(), self._lang, tokens, cost_amount, cost_symbol, cost_currency)
+                show_thanks(self.window(), self._lang, tokens)
         except Exception:  # noqa: BLE001 — history is best-effort
             pass
 
