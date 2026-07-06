@@ -335,5 +335,6 @@
   "Add Row": "Aggiungi riga",
   "Loading Model": "Caricamento del modello…",
   "Local Mode Needs Plugin": "La modalita locale richiede il plugin Voce (SenseVoice). Clicca qui per installarlo.",
-  "Google Live Needs Key": "La traduzione live di Google richiede una chiave API Google. Impostala in Gestione interfacce."
+  "Google Live Needs Key": "La traduzione live di Google richiede una chiave API Google. Impostala in Gestione interfacce.",
+  "About Description": "LinguaHaru è sviluppato e mantenuto in autonomia da Harukayang da gennaio 2025 — grazie per averci accompagnato. È gratuito e open source con licenza GPL-3.0; per collaborazioni commerciali, sviluppi su misura o ulteriori ottimizzazioni, non esitare a contattarmi. Feedback e suggerimenti sono sempre benvenuti su GitHub."
 }

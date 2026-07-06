@@ -396,5 +396,6 @@
   "Add Row": "新增列",
   "Loading Model": "正在載入模型…",
   "Local Mode Needs Plugin": "本機模式需要「語音」外掛（SenseVoice）。點此前往「外掛」安裝。",
-  "Google Live Needs Key": "Google 即時翻譯需要 Google API Key。請在「介面管理」中填寫。"
+  "Google Live Needs Key": "Google 即時翻譯需要 Google API Key。請在「介面管理」中填寫。",
+  "About Description": "LinguaHaru 由 Harukayang 自 2025 年 1 月起獨立開發與維護，感謝一路以來的陪伴。本專案基於 GPL-3.0 免費開源；如需商業合作、客製開發或進一步優化，歡迎隨時聯繫。也歡迎在 GitHub 上回饋問題與建議。"
 }

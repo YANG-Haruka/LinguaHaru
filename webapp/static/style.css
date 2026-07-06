@@ -1236,3 +1236,5 @@ html[data-theme="dark"] .seg.active { background: var(--surface-3); border-color
   font-size:0.9rem;text-decoration:none}
 .support-row:hover{background:var(--hover);border-color:var(--border-strong)}
 .support-row svg,.support-row img{width:18px;height:18px;flex:none}
+
+.about-desc { margin: 0 0 14px; font-size: 0.86rem; line-height: 1.65; color: var(--text-2); }

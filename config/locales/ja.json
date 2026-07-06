@@ -356,5 +356,6 @@
   "Add Row": "行を追加",
   "Loading Model": "モデルを読み込み中…",
   "Local Mode Needs Plugin": "ローカルモードには「音声」プラグイン（SenseVoice）が必要です。ここをクリックして「プラグイン」からインストールしてください。",
-  "Google Live Needs Key": "Google リアルタイム翻訳には Google API キーが必要です。「インターフェース管理」で入力してください。"
+  "Google Live Needs Key": "Google リアルタイム翻訳には Google API キーが必要です。「インターフェース管理」で入力してください。",
+  "About Description": "LinguaHaru は 2025 年 1 月から Harukayang が個人で開発・保守しています。これまでのご愛顧に感謝します。GPL-3.0 のもとで無料・オープンソースです。商業利用のご相談、カスタム開発、さらなる最適化などはお気軽にご連絡ください。GitHub でのフィードバックやご提案もいつでも歓迎します。"
 }

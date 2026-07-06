@@ -335,5 +335,6 @@
   "Add Row": "Thêm hàng",
   "Loading Model": "Đang tải mô hình…",
   "Local Mode Needs Plugin": "Chế độ cục bộ cần plugin Giọng nói (SenseVoice). Nhấn vào đây để cài trong trang Plugin.",
-  "Google Live Needs Key": "Dịch trực tiếp Google cần Google API key. Vui lòng nhập trong Quản lý giao diện."
+  "Google Live Needs Key": "Dịch trực tiếp Google cần Google API key. Vui lòng nhập trong Quản lý giao diện.",
+  "About Description": "LinguaHaru được Harukayang phát triển và duy trì độc lập từ tháng 1 năm 2025 — cảm ơn mọi người đã đồng hành. Dự án miễn phí và mã nguồn mở theo GPL-3.0; nếu cần hợp tác thương mại, phát triển tùy chỉnh hoặc tối ưu sâu hơn, hãy liên hệ. Mọi phản hồi và góp ý luôn được hoan nghênh trên GitHub."
 }

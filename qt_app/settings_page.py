@@ -553,6 +553,10 @@ class SettingsPage(ScrollArea):
         from core.version import __version__
         self.card_about = _CollapsibleCard(tr("About", lang))
         layout.addWidget(self.card_about)
+        self.about_desc = BodyLabel(tr("About Description", lang))
+        self.about_desc.setWordWrap(True)
+        self.about_desc.setTextColor("#606060", "#b0b0b0")
+        self.card_about.body.addWidget(self.about_desc)
         about_row = QHBoxLayout()
         about_row.setSpacing(8)
         self.version_label = BodyLabel(f"{tr('Version', lang)}  v{__version__}")
@@ -1028,6 +1032,7 @@ class SettingsPage(ScrollArea):
         self.hist_clear_files_btn.setText(tr("Clear History And Files", lang))
         self.card_models.set_title(tr("Model Management", lang))
         self.card_about.set_title(tr("About", lang))
+        self.about_desc.setText(tr("About Description", lang))
         from core.version import __version__
         self.version_label.setText(f"{tr('Version', lang)}  v{__version__}")
         self.check_update_btn.setText(tr("Check for Updates", lang))

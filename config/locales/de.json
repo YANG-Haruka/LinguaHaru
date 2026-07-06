@@ -335,5 +335,6 @@
   "Add Row": "Zeile hinzufügen",
   "Loading Model": "Modell wird geladen…",
   "Local Mode Needs Plugin": "Der lokale Modus benötigt das Sprach-Plugin (SenseVoice). Hier klicken, um es auf der Plugin-Seite zu installieren.",
-  "Google Live Needs Key": "Google-Echtzeitübersetzung benötigt einen Google-API-Schlüssel. Bitte in der Schnittstellenverwaltung eintragen."
+  "Google Live Needs Key": "Google-Echtzeitübersetzung benötigt einen Google-API-Schlüssel. Bitte in der Schnittstellenverwaltung eintragen.",
+  "About Description": "LinguaHaru wird seit Januar 2025 eigenständig von Harukayang entwickelt und gepflegt — danke, dass ihr diesen Weg mitgeht. Es ist unter GPL-3.0 kostenlos und quelloffen; für kommerzielle Zusammenarbeit, individuelle Entwicklung oder weitere Optimierung meldet euch gern. Feedback und Vorschläge sind auf GitHub jederzeit willkommen."
 }
