@@ -24,9 +24,6 @@
 <div align="center">
   <img src="assets/img/before-after.gif" width="92%" alt="翻訳前後の比較"/>
   <br/><sub><b>左が原文、右が翻訳</b> —— 漫画・PDF 論文・Word・Excel、レイアウト・画像・書式をそのまま保持。</sub>
-  <br/><br/>
-  <img src="assets/img/sample.gif" width="92%" alt="アプリのデモ"/>
-  <br/><sub>Web コンソールの操作フロー。</sub>
 </div>
 
 ---
