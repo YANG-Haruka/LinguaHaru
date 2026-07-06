@@ -636,5 +636,22 @@
   "Checking Update": "Checking for updates…",
   "Already Latest": "You're on the latest version",
   "Update Check Failed": "Update check failed, please try again later",
-  "Update Later Hint": "You can also check for updates later in Settings."
+  "Update Later Hint": "You can also check for updates later in Settings.",
+  "WeChat Contact": "WeChat: HarukaQnQ",
+  "Leave Blank Unchanged": "Leave blank to keep unchanged",
+  "RPM No Limit": "0 = no limit",
+  "Thread Default": "Blank = default",
+  "Admin Password Needed": "Admin password required",
+  "LAN Admin Password": "LAN admin password",
+  "Bilingual Option": "Bilingual (translation beside/above the original; Word, Excel, PDF, subtitles, TXT, MD, EPUB, HTML)",
+  "API Key Not Set": "No API key set — please add one in Settings.",
+  "Drop Files Here": "Drop files here, or click to upload",
+  "Translate Subtitles Option": "Translate subtitles (otherwise transcribe only)",
+  "Local Mode Label": "Local model · SenseVoice + LLM",
+  "Google Live Label": "Google live · Gemini Live",
+  "Recognized Source": "Recognized",
+  "Add Row": "Add row",
+  "Loading Model": "Loading model…",
+  "Local Mode Needs Plugin": "Local mode needs the Voice plugin (SenseVoice). Click here to install it on the Plugins page.",
+  "Google Live Needs Key": "Google live translation needs a Google API key. Please add one in Interface Management."
 }

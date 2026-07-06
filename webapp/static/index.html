@@ -155,7 +155,7 @@
           </button>
           <button class="support-row" id="support-copy-wechat" title="点击复制">
             <img src="/assets/icons/wechat.svg" alt="WeChat" width="18" height="18" />
-            <span>微信：HarukaQnQ</span>
+            <span data-i18n="WeChat Contact">微信：HarukaQnQ</span>
           </button>
           <a class="support-row" href="https://www.linkedin.com/in/yang-haruka/" target="_blank" rel="noopener">
             <img src="/assets/icons/linkedin.svg" alt="LinkedIn" width="18" height="18" />
@@ -175,14 +175,14 @@
         <div class="field"><label data-i18n="Interface Name">接口名称</label><input id="if-name" placeholder="My Provider" /></div>
         <div class="field"><label data-i18n="Base URL" data-i18n-title="Base URL Tip">Base URL</label><input id="if-base" placeholder="https://api.example.com/v1" /></div>
         <div class="field"><label data-i18n="Model ID" data-i18n-title="Model ID Tip">模型 ID</label><input id="if-model" placeholder="gpt-4o" /></div>
-        <div class="field"><label data-i18n="API Key">API 密钥</label><input id="if-key" type="password" placeholder="留空则不修改" /></div>
+        <div class="field"><label data-i18n="API Key">API 密钥</label><input id="if-key" type="password" placeholder="留空则不修改" data-i18n-ph="Leave Blank Unchanged" /></div>
         <div class="row-2">
           <div class="field"><label data-i18n="Temperature" data-i18n-title="Temperature Tip">Temperature</label><input id="if-temp" type="text" placeholder="1.3" /></div>
           <div class="field"><label data-i18n="Top P" data-i18n-title="Top P Tip">Top P</label><input id="if-topp" type="text" placeholder="0.95" /></div>
         </div>
         <div class="row-2">
-          <div class="field"><label data-i18n="RPM Limit" data-i18n-title="RPM Limit Tip">RPM 限制</label><input id="if-rpm" type="number" min="0" max="100000" placeholder="0 = 不限制" /></div>
-          <div class="field"><label data-i18n="Thread Count" data-i18n-title="Thread Count Tip">线程数</label><input id="if-thread" type="number" min="1" max="64" placeholder="留空用默认" /></div>
+          <div class="field"><label data-i18n="RPM Limit" data-i18n-title="RPM Limit Tip">RPM 限制</label><input id="if-rpm" type="number" min="0" max="100000" placeholder="0 = 不限制" data-i18n-ph="RPM No Limit" /></div>
+          <div class="field"><label data-i18n="Thread Count" data-i18n-title="Thread Count Tip">线程数</label><input id="if-thread" type="number" min="1" max="64" placeholder="留空用默认" data-i18n-ph="Thread Default" /></div>
         </div>
         <div class="row-2">
           <div class="field"><label data-i18n="Max Retries" data-i18n-title="Max Retries Tip">最大重试次数</label><input id="if-retries" type="number" min="1" max="10" placeholder="4" /></div>
@@ -214,9 +214,9 @@
     <!-- LAN admin password prompt (shown on 401 from an admin endpoint) -->
     <div id="admin-modal" class="modal-overlay" hidden>
       <div class="modal">
-        <h3>需要管理密码</h3>
-        <div class="field"><label>局域网管理密码</label><input id="admin-pw" type="password" autocomplete="current-password" /></div>
-        <div class="modal-actions"><span style="flex:1"></span><button id="admin-cancel">取消</button><button id="admin-ok" class="primary">确定</button></div>
+        <h3 data-i18n="Admin Password Needed">需要管理密码</h3>
+        <div class="field"><label data-i18n="LAN Admin Password">局域网管理密码</label><input id="admin-pw" type="password" autocomplete="current-password" /></div>
+        <div class="modal-actions"><span style="flex:1"></span><button id="admin-cancel" data-i18n="Cancel">取消</button><button id="admin-ok" class="primary" data-i18n="Confirm">确定</button></div>
       </div>
     </div>
 
@@ -281,12 +281,12 @@
         </div>
 
         <div class="card">
-          <label class="check"><input type="checkbox" id="translate-bilingual" /> 双语对照（译文与原文并排/上下保留，适用于 Word/Excel/PDF/字幕/TXT/MD/EPUB/HTML）</label>
+          <label class="check"><input type="checkbox" id="translate-bilingual" /> <span data-i18n="Bilingual Option">双语对照（译文与原文并排/上下保留，适用于 Word/Excel/PDF/字幕/TXT/MD/EPUB/HTML）</span></label>
         </div>
 
         <div id="apikey-warning" class="warn" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 4l-8 14a1.5 1.5 0 0 0 1.3 2.2h16.8a1.5 1.5 0 0 0 1.3-2.2l-8-14a1.5 1.5 0 0 0-2.6 0z"/></svg>
-          <span>尚未设置 API 密钥 —— 请在「设置」中填写。</span>
+          <span data-i18n="API Key Not Set">尚未设置 API 密钥 —— 请在「设置」中填写。</span>
         </div>
 
         <div class="card drop" id="dropzone">
@@ -298,7 +298,7 @@
             <div class="drop-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="M7 9l5-5 5 5"/><path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
             </div>
-            <div id="drop-text">将文件拖放到此处，或点击上传</div>
+            <div id="drop-text" data-i18n="Drop Files Here">将文件拖放到此处，或点击上传</div>
           </div>
         </div>
 
@@ -308,7 +308,7 @@
             <label data-i18n="Speech-to-Text Model">语音转文字模型</label>
             <select id="stt-model"></select>
           </div>
-          <label class="check"><input type="checkbox" id="translate-subs" checked /> 翻译字幕（不勾选则仅转写）</label>
+          <label class="check"><input type="checkbox" id="translate-subs" checked /> <span data-i18n="Translate Subtitles Option">翻译字幕（不勾选则仅转写）</span></label>
           <div class="muted" id="media-note"></div>
         </div>
 
@@ -419,11 +419,11 @@
         <div class="segmented" id="live-mode" role="tablist" style="margin-bottom:14px">
           <button class="seg active" data-mode="local" role="tab">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg>
-            本地模型 · SenseVoice + LLM
+            <span data-i18n="Local Mode Label">本地模型 · SenseVoice + LLM</span>
           </button>
           <button class="seg" data-mode="google" role="tab">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg>
-            Google 实时翻译 · Gemini Live
+            <span data-i18n="Google Live Label">Google 实时翻译 · Gemini Live</span>
           </button>
         </div>
         <div id="live-hint" class="warn" hidden>
@@ -455,13 +455,13 @@
         <div class="live-meter" id="live-status"></div>
         <div class="live-split">
           <div class="card live-pane">
-            <h3>识别原文<span class="tag">Source</span></h3>
+            <h3><span data-i18n="Recognized Source">识别原文</span><span class="tag">Source</span></h3>
             <div class="live-pane-sub mono" data-i18n="Auto Detect">自动识别语言</div>
             <div id="live-input" class="live-text"></div>
           </div>
           <div class="card live-pane">
-            <h3>翻译结果<span class="tag">Target</span></h3>
-            <div class="live-pane-sub mono">当前模型: <span id="live-model">—</span></div>
+            <h3><span data-i18n="Translation Result">翻译结果</span><span class="tag">Target</span></h3>
+            <div class="live-pane-sub mono"><span data-i18n="Current Model">当前模型</span>: <span id="live-model">—</span></div>
             <div id="live-output" class="live-text"></div>
           </div>
         </div>
@@ -549,7 +549,7 @@
         <div class="actions">
           <button id="glossary-add-row">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
-            添加行
+            <span data-i18n="Add Row">添加行</span>
           </button>
           <button id="glossary-save" class="primary" data-i18n="Save Glossary">保存词汇表</button>
         </div>
@@ -581,7 +581,7 @@
         <div class="actions">
           <button id="proofread-save" class="primary" data-i18n="Save Edits">保存修改</button>
           <button id="proofread-export" data-i18n="Re-export">重新导出</button>
-          <a id="proofread-download" class="primary" download hidden>下载</a>
+          <a id="proofread-download" class="primary" download hidden data-i18n="Download">下载</a>
         </div>
         <div id="proofread-status" class="muted"></div>
       </div>
@@ -790,10 +790,10 @@
  <div id="model-loading-overlay" hidden>
    <div class="mlo-box">
      <div class="mlo-spinner" aria-hidden="true"></div>
-     <div class="mlo-text" id="model-loading-text">正在加载模型…</div>
+     <div class="mlo-text" id="model-loading-text" data-i18n="Loading Model">正在加载模型…</div>
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260706G"></script>
+  <script src="/static/app.js?v=20260706I"></script>
 </body>
 </html>

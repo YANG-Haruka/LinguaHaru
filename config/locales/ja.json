@@ -339,5 +339,22 @@
   "Checking Update": "アップデートを確認中…",
   "Already Latest": "すでに最新版です",
   "Update Check Failed": "アップデートの確認に失敗しました。後でもう一度お試しください",
-  "Update Later Hint": "設定から後でアップデートを確認することもできます。"
+  "Update Later Hint": "設定から後でアップデートを確認することもできます。",
+  "WeChat Contact": "WeChat：HarukaQnQ",
+  "Leave Blank Unchanged": "空欄のままで変更しません",
+  "RPM No Limit": "0 = 無制限",
+  "Thread Default": "空欄 = デフォルト",
+  "Admin Password Needed": "管理パスワードが必要です",
+  "LAN Admin Password": "LAN 管理パスワード",
+  "Bilingual Option": "バイリンガル（訳文を原文と並記／上下に保持。Word・Excel・PDF・字幕・TXT・MD・EPUB・HTML 対応）",
+  "API Key Not Set": "API キーが未設定です — 「設定」で入力してください。",
+  "Drop Files Here": "ここにファイルをドロップ、またはクリックしてアップロード",
+  "Translate Subtitles Option": "字幕を翻訳（オフなら文字起こしのみ）",
+  "Local Mode Label": "ローカルモデル · SenseVoice + LLM",
+  "Google Live Label": "Google リアルタイム · Gemini Live",
+  "Recognized Source": "認識結果",
+  "Add Row": "行を追加",
+  "Loading Model": "モデルを読み込み中…",
+  "Local Mode Needs Plugin": "ローカルモードには「音声」プラグイン（SenseVoice）が必要です。ここをクリックして「プラグイン」からインストールしてください。",
+  "Google Live Needs Key": "Google リアルタイム翻訳には Google API キーが必要です。「インターフェース管理」で入力してください。"
 }

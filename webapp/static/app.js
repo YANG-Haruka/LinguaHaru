@@ -495,6 +495,16 @@ function applyI18n(lang) {
     const k = el.dataset.i18nTitle;
     el.title = L[k] || EN[k] || el.title;
   });
+  // Translation-mode picker is filled from BOOT.translation_modes (label/label_en);
+  // relabel it here so a language switch (or a fill that ran before _uiLang was set)
+  // always shows the right language.
+  const modeSel = $("set-translation-mode");
+  if (modeSel && BOOT.translation_modes) {
+    for (const o of modeSel.options) {
+      const m = BOOT.translation_modes.find((x) => x.id === o.value);
+      if (m) o.textContent = _uiLang.startsWith("zh") ? (m.label || m.id) : (m.label_en || m.label || m.id);
+    }
+  }
   localStorage.setItem("lh-lang", lang);
 }
 function initUiLang() {
@@ -2176,12 +2186,12 @@ async function updateLiveHint() {
   _liveHintIsPlugin = false;
   if (liveMode === "local") {
     if (!BOOT.local_live_available) {
-      msg = "本地模式需要「语音」插件（SenseVoice）。点此前往「插件」安装。";
+      msg = _label("Local Mode Needs Plugin", "本地模式需要「语音」插件（SenseVoice）。点此前往「插件」安装。");
       _liveHintIsPlugin = true;
     }
   } else {
     const st = await api("/api/apikey?model=" + encodeURIComponent("(Google) Live Translate")).catch(() => ({ has_key: false }));
-    if (!st.has_key) msg = "Google 实时翻译需要 Google API Key。请在「接口管理」中填写。";
+    if (!st.has_key) msg = _label("Google Live Needs Key", "Google 实时翻译需要 Google API Key。请在「接口管理」中填写。");
   }
   $("live-hint-text").textContent = msg;
   $("live-hint").hidden = !msg;

@@ -25,11 +25,11 @@ _BUILTIN = {
     # "standard" = the default. DeepSeek advises setting EITHER temperature OR
     # top_p, not both; use a low-ish temperature (0.3) for stable JSON/terms and
     # leave top_p unset. (1.3 + top_p 0.95 together destabilized JSON/glossary.)
-    "standard": {"label": "标准", "temperature": 0.3, "top_p": None},
-    "precise":  {"label": "精准", "temperature": 0.1, "top_p": 0.9},
-    "natural":  {"label": "自然", "temperature": 0.4, "top_p": 0.95},
-    "polish":   {"label": "润色", "temperature": 0.6, "top_p": 0.95},
-    "subtitle": {"label": "字幕精简", "temperature": 0.25, "top_p": 0.9},
+    "standard": {"label": "标准", "label_en": "Standard", "temperature": 0.3, "top_p": None},
+    "precise":  {"label": "精准", "label_en": "Precise", "temperature": 0.1, "top_p": 0.9},
+    "natural":  {"label": "自然", "label_en": "Natural", "temperature": 0.4, "top_p": 0.95},
+    "polish":   {"label": "润色", "label_en": "Polish", "temperature": 0.6, "top_p": 0.95},
+    "subtitle": {"label": "字幕精简", "label_en": "Subtitle", "temperature": 0.25, "top_p": 0.9},
 }
 DEFAULT_MODE = "standard"
 

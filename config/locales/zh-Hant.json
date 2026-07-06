@@ -379,5 +379,22 @@
   "Checking Update": "正在檢查更新…",
   "Already Latest": "已是最新版本",
   "Update Check Failed": "檢查更新失敗，請稍後再試",
-  "Update Later Hint": "也可稍後在設定中進行檢查"
+  "Update Later Hint": "也可稍後在設定中進行檢查",
+  "WeChat Contact": "微信：HarukaQnQ",
+  "Leave Blank Unchanged": "留空則不修改",
+  "RPM No Limit": "0 = 不限制",
+  "Thread Default": "留空用預設",
+  "Admin Password Needed": "需要管理密碼",
+  "LAN Admin Password": "區域網路管理密碼",
+  "Bilingual Option": "雙語對照（譯文與原文並排/上下保留，適用於 Word/Excel/PDF/字幕/TXT/MD/EPUB/HTML）",
+  "API Key Not Set": "尚未設定 API 密鑰 —— 請在「設定」中填寫。",
+  "Drop Files Here": "將檔案拖放到此處，或點擊上傳",
+  "Translate Subtitles Option": "翻譯字幕（不勾選則僅轉寫）",
+  "Local Mode Label": "本機模型 · SenseVoice + LLM",
+  "Google Live Label": "Google 即時翻譯 · Gemini Live",
+  "Recognized Source": "辨識原文",
+  "Add Row": "新增列",
+  "Loading Model": "正在載入模型…",
+  "Local Mode Needs Plugin": "本機模式需要「語音」外掛（SenseVoice）。點此前往「外掛」安裝。",
+  "Google Live Needs Key": "Google 即時翻譯需要 Google API Key。請在「介面管理」中填寫。"
 }
