@@ -5,11 +5,11 @@
     "assets": {
         "web": {
             "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.1/LinguaHaru-6.1-web-portable.zip",
-            "sha256": "4ef9fac2c9b1cd4c4c5c2da56c87691a2585f908781ef17ca3d7614751c74d9c"
+            "sha256": "9b31844bf26fc494b3ac8bb83dac055c8ba64764a90797b2b2bc850699c2184d"
         },
         "desktop": {
             "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.1/LinguaHaru-6.1-desktop-portable.zip",
-            "sha256": "8c52b97e1f454086fb5ccba3633857c66bd9b11b1656d8e834ff3c9ffe89b15e"
+            "sha256": "44c24529b8ac865a5f34ba7bf1958c0ee30cac3a3de4ec3fedcbb0dfa6579a5a"
         }
     }
 }
