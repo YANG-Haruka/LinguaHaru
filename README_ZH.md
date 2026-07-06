@@ -22,7 +22,11 @@
 </div>
 
 <div align="center">
-  <img src="assets/img/sample.gif" width="92%" alt="Demo"/>
+  <img src="assets/img/before-after.gif" width="92%" alt="翻译前后对比"/>
+  <br/><sub><b>左为原文，右为译文</b> —— 漫画、PDF 论文、Word、Excel，排版、图片与格式完整保留。</sub>
+  <br/><br/>
+  <img src="assets/img/sample.gif" width="92%" alt="应用演示"/>
+  <br/><sub>Web 控制台，全流程演示。</sub>
 </div>
 
 ---

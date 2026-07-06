@@ -22,7 +22,11 @@
 </div>
 
 <div align="center">
-  <img src="assets/img/sample.gif" width="92%" alt="Demo"/>
+  <img src="assets/img/before-after.gif" width="92%" alt="Before / After translation demo"/>
+  <br/><sub><b>Original on the left, translation on the right</b> — manga, PDF papers, Word, Excel. Layout, images and formatting preserved.</sub>
+  <br/><br/>
+  <img src="assets/img/sample.gif" width="92%" alt="App workflow demo"/>
+  <br/><sub>The web console, end to end.</sub>
 </div>
 
 ---
