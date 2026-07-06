@@ -4,10 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>LinguaHaru</title>
+  <link rel="icon" type="image/png" href="/assets/img/ico.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260706D" />
+  <link rel="stylesheet" href="/static/style.css?v=20260706E" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -16,7 +17,7 @@
    <button id="nav-toggle" class="icon-btn" title="菜单" aria-label="菜单">
      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
    </button>
-   <span class="mobile-brand">LinguaHaru</span>
+   <img class="mobile-brand-logo" src="/assets/img/logo.png" alt="LinguaHaru" />
    <button id="theme-toggle-m" class="icon-btn" title="切换主题" aria-label="切换主题"></button>
  </header>
  <div class="scrim" id="scrim"></div>
@@ -24,16 +25,8 @@
  <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <span class="logomark">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="9" />
-          <path d="M3 12h18" />
-          <path d="M12 3c2.6 2.7 2.6 15.3 0 18" />
-          <path d="M12 3c-2.6 2.7-2.6 15.3 0 18" />
-          <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
-        </svg>
-      </span>
-      <span class="word"><b>LinguaHaru</b><span>Translation Console</span></span>
+      <img class="brand-logo" src="/assets/img/logo.png" alt="LinguaHaru" />
+      <span class="brand-sub mono">Translation Console</span>
     </div>
 
     <nav class="nav" id="tabs">
