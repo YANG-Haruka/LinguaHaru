@@ -274,7 +274,7 @@ class ProgressDashboard(QWidget):
         if not coverage or not coverage.get("total"):
             self.coverage.hide()
             return
-        parts = [f"{cat} {n}" for cat, n in coverage.get("by_category", {}).items() if n]
+        parts = [f"{tr(cat, self._lang)} {n}" for cat, n in coverage.get("by_category", {}).items() if n]
         parts.append(f"{coverage.get('fallback', 0)} {tr('Untranslated', self._lang)}")
         if coverage.get("needs_review"):
             parts.append(f"{coverage['needs_review']} {tr('Needs review', self._lang)}")

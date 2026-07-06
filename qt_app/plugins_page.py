@@ -231,7 +231,7 @@ class OptionalPluginCard(CardWidget):
         head.addWidget(self.icon, 0, Qt.AlignTop)
         col = QVBoxLayout()
         col.setSpacing(0)
-        col.addWidget(StrongBodyLabel(mod["name"], self))
+        col.addWidget(StrongBodyLabel(tr(mod["name"], lang), self))
         head.addLayout(col, 1)
         self.badge = None
         head.addStretch(1)
@@ -240,7 +240,7 @@ class OptionalPluginCard(CardWidget):
         # Short engine subtitle (muted) — e.g. "BabelDOC" / "RapidOCR · …".
         # The raw "pip install …" command is NOT shown here; it lives on the
         # install button's tooltip instead.
-        self.subtitle = CaptionLabel(mod["detail"], self)
+        self.subtitle = CaptionLabel(tr(mod["detail"], lang) if mod.get("detail") else "", self)
         self.subtitle.setWordWrap(True)
         self.subtitle.setTextColor("#808080", "#a0a0a0")
         layout.addWidget(self.subtitle)

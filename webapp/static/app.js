@@ -435,11 +435,11 @@ async function activateIface(name, online) {
 let _ifaceEditing = null;
 async function openIfaceConfig(name) {
   _ifaceEditing = name;
-  $("iface-modal-title").textContent = name || "添加接口";
+  $("iface-modal-title").textContent = name || _label("Add Interface", "添加接口");
   $("if-name").value = name || ""; $("if-name").disabled = !!name;
   $("if-delete").hidden = !name;
   $("if-base").value = ""; $("if-model").value = ""; $("if-key").value = "";
-  $("if-temp").value = ""; $("if-topp").value = ""; $("if-key").placeholder = "在此输入 API 密钥";
+  $("if-temp").value = ""; $("if-topp").value = ""; $("if-key").placeholder = _label("在此输入 API 密钥", "在此输入 API 密钥");
   $("if-rpm").value = ""; $("if-thread").value = ""; $("if-retries").value = "";
   if (name) {
     try {
@@ -448,7 +448,7 @@ async function openIfaceConfig(name) {
       $("if-temp").value = c.temperature ?? ""; $("if-topp").value = c.top_p ?? "";
       $("if-rpm").value = c.rpm ?? ""; $("if-thread").value = c.thread_count ?? "";
       $("if-retries").value = c.max_retries ?? "";
-      $("if-key").placeholder = c.has_key ? "已设置（留空则不修改）" : "在此输入 API 密钥";
+      $("if-key").placeholder = c.has_key ? _label("已设置（留空则不修改）", "已设置（留空则不修改）") : _label("在此输入 API 密钥", "在此输入 API 密钥");
     } catch {}
   }
   $("iface-modal").hidden = false;
@@ -564,7 +564,7 @@ async function boot() {
 
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
   $("set-lan").checked = !!c.lan_mode;
-  $("set-lan-admin").placeholder = c.has_lan_admin ? "已设置（留空则不修改）" : "留空则不启用";
+  $("set-lan-admin").placeholder = c.has_lan_admin ? _label("已设置（留空则不修改）", "已设置（留空则不修改）") : _label("留空则不启用", "留空则不启用");
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
   if ($("set-translation-mode")) {
     const sel = $("set-translation-mode");
@@ -917,7 +917,7 @@ function requiredPluginsReady(files) {
 }
 
 $("translate-btn").onclick = async () => {
-  if (!currentFiles.length) { setStatus("请先选择文件。"); return; }
+  if (!currentFiles.length) { setStatus(_label("请先选择文件。", "请先选择文件。")); return; }
   // Pre-check: a file whose format needs an OPTIONAL plugin that isn't installed
   // would just fail mid-run. Warn up front and offer to go install it.
   if (!requiredPluginsReady(currentFiles)) return;
@@ -944,7 +944,7 @@ $("translate-btn").onclick = async () => {
     const ext = "." + f.name.split(".").pop().toLowerCase();
     if (VIDEO_EXTS.includes(ext)) {
       const sizeMB = (f.size / 1048576).toFixed(1);
-      setStatus(`正在浏览器内提取音轨：${f.name}（避免上传整段视频）…`);
+      setStatus(_label("正在浏览器内提取音轨：{f}（避免上传整段视频）…", "正在浏览器内提取音轨：{f}（避免上传整段视频）…").replace("{f}", f.name));
       setExtractProgress(0, `提取音轨：${f.name}…`);
       clientLog.push(`${ts()} audio-extract start: ${f.name} (${sizeMB} MB)`);
       const t0 = performance.now();
@@ -962,7 +962,7 @@ $("translate-btn").onclick = async () => {
         // Extraction failed (often the ffmpeg.wasm CDN is blocked, or the video
         // is too big for browser memory) — we now upload the whole video and let
         // the server extract audio. Say so: a multi-GB upload is slower.
-        setStatus(`音轨提取未成功，将上传整段视频（${f.name}，可能较慢）…`);
+        setStatus(_label("音轨提取未成功，将上传整段视频（{f}，可能较慢）…", "音轨提取未成功，将上传整段视频（{f}，可能较慢）…").replace("{f}", f.name));
         clientLog.push(`${ts()} audio-extract FAILED: ${f.name} — `
           + `${(e && e.message) || e}; uploading full video instead`);
       }
@@ -982,7 +982,7 @@ $("translate-btn").onclick = async () => {
     const { task_id } = await api("/api/translate", { method: "POST", body: fd });
     currentTask = task_id;
     listenProgress(task_id);
-  } catch (e) { setRunState("idle"); setStatus("错误: " + e.message); }
+  } catch (e) { setRunState("idle"); setStatus(_label("错误: ", "错误: ") + e.message); }
 };
 
 // ----- run controls (pause / resume / stop / back) -----
@@ -1069,7 +1069,7 @@ function listenProgress(taskId) {
       renderQa(d.qa);
       showThanks(d.tokens, d.cost);
     } else if (d.status === "error") {
-      es.close(); stopElapsed(); stopSysmonPoll(); setRunState("error"); setStatus("错误: " + (d.error || "未知错误"));
+      es.close(); stopElapsed(); stopSysmonPoll(); setRunState("error"); setStatus(_label("错误: ", "错误: ") + (d.error || "未知错误"));
     } else if (d.status === "stopped") {
       es.close(); stopElapsed(); stopSysmonPoll(); setRunState("stopped"); setStatus(_label("Stopped", "已停止"));
     }
@@ -1131,7 +1131,7 @@ function renderCoverage(cov) {
   if (!cov || !cov.total) { box.hidden = true; return; }
   const parts = [];
   for (const [cat, n] of Object.entries(cov.by_category || {})) {
-    if (n) parts.push(`${cat} ${n}`);
+    if (n) parts.push(`${_label(cat, cat)} ${n}`);
   }
   parts.push(`${cov.fallback || 0} ${_label("Untranslated", "未翻译")}`);
   if (cov.needs_review) parts.push(`${cov.needs_review} ${_label("Needs review", "需复核")}`);
@@ -1234,7 +1234,7 @@ function stopElapsed() { if (_elapTimer) { clearInterval(_elapTimer); _elapTimer
 // (Online/offline is driven by the active interface, not a checkbox.)
 $("set-lan").onchange = () => {
   saveConfig({ lan_mode: $("set-lan").checked });
-  $("settings-status").textContent = "局域网模式已更新 —— 重启程序后生效。";
+  $("settings-status").textContent = _label("局域网模式已更新 —— 重启程序后生效。", "局域网模式已更新 —— 重启程序后生效。");
 };
 $("set-lan-admin").onchange = () => {
   const v = $("set-lan-admin").value;
@@ -1242,8 +1242,8 @@ $("set-lan-admin").onchange = () => {
   saveConfig({ lan_admin_password: v });
   _adminToken = v;                          // in-memory, so the owner keeps access
   $("set-lan-admin").value = "";
-  $("set-lan-admin").placeholder = "已设置（留空则不修改）";
-  $("settings-status").textContent = "局域网管理密码已更新。";
+  $("set-lan-admin").placeholder = _label("已设置（留空则不修改）", "已设置（留空则不修改）");
+  $("settings-status").textContent = _label("局域网管理密码已更新。", "局域网管理密码已更新。");
 };
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
 if ($("set-translation-mode")) $("set-translation-mode").onchange = () => saveConfig({ translation_mode: $("set-translation-mode").value });
@@ -1301,15 +1301,15 @@ if ($("set-vad-maxseg")) $("set-vad-maxseg").onchange = () => {
 };
 if ($("set-result-dir")) $("set-result-dir").onchange = () => saveConfig({ result_dir: $("set-result-dir").value.trim() || "data/result" });
 if ($("set-result-browse")) $("set-result-browse").onclick = async () => {
-  $("settings-status").textContent = "正在打开文件夹选择器…（窗口可能在后台）";
+  $("settings-status").textContent = _label("正在打开文件夹选择器…（窗口可能在后台）", "正在打开文件夹选择器…（窗口可能在后台）");
   try {
     const r = await api("/api/pick-folder", { method: "POST" });
     if (r && r.path) {
       $("set-result-dir").value = r.path;
       saveConfig({ result_dir: r.path });
-      $("settings-status").textContent = "结果保存位置已更新。";
+      $("settings-status").textContent = _label("结果保存位置已更新。", "结果保存位置已更新。");
     } else { $("settings-status").textContent = ""; }
-  } catch (e) { $("settings-status").textContent = "无法打开文件夹选择器：" + e.message; }
+  } catch (e) { $("settings-status").textContent = _label("无法打开文件夹选择器：", "无法打开文件夹选择器：") + e.message; }
 };
 if ($("set-hist-max")) $("set-hist-max").onchange = () => saveConfig({ history_max_records: Math.max(0, parseInt($("set-hist-max").value || "0", 10) || 0) });
 if ($("set-hist-age")) $("set-hist-age").onchange = () => saveConfig({ history_max_age_days: Math.max(0, parseInt($("set-hist-age").value || "0", 10) || 0) });
@@ -1318,20 +1318,20 @@ if ($("set-log-age")) $("set-log-age").onchange = () => saveConfig({ log_max_age
 if ($("set-log-size")) $("set-log-size").onchange = () => saveConfig({ log_max_size_mb: Math.max(0, parseInt($("set-log-size").value || "0", 10) || 0) });
 if ($("set-result-size")) $("set-result-size").onchange = () => saveConfig({ result_max_size_mb: Math.max(0, parseInt($("set-result-size").value || "0", 10) || 0) });
 if ($("set-hist-clear")) $("set-hist-clear").onclick = async () => {
-  if (!confirm("确定清空全部历史记录？此操作不可撤销。")) return;
+  if (!confirm(_label("确定清空全部历史记录？此操作不可撤销。", "确定清空全部历史记录？此操作不可撤销。"))) return;
   try {
     await api("/api/history/clear", { method: "POST" });
-    $("settings-status").textContent = "历史记录已清空。";
+    $("settings-status").textContent = _label("历史记录已清空。", "历史记录已清空。");
     if (typeof loadHistory === "function") loadHistory();
-  } catch (e) { $("settings-status").textContent = "清空失败：" + e.message; }
+  } catch (e) { $("settings-status").textContent = _label("清空失败：", "清空失败：") + e.message; }
 };
 if ($("set-hist-clear-files")) $("set-hist-clear-files").onclick = async () => {
-  if (!confirm("确定清空历史记录，并删除这些记录生成的译文/日志文件？\n你的原始文件不会被删除。此操作不可撤销。")) return;
+  if (!confirm(_label("确定清空历史记录，并删除这些记录生成的译文/日志文件？\n你的原始文件不会被删除。此操作不可撤销。", "确定清空历史记录，并删除这些记录生成的译文/日志文件？\n你的原始文件不会被删除。此操作不可撤销。"))) return;
   try {
     const d = await api("/api/history/clear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ with_files: true }) });
-    $("settings-status").textContent = `历史记录已清空，删除了 ${d.files_deleted || 0} 个文件。`;
+    $("settings-status").textContent = _label("历史记录已清空，删除了 {n} 个文件。", "历史记录已清空，删除了 {n} 个文件。").replace("{n}", d.files_deleted || 0);
     if (typeof loadHistory === "function") loadHistory();
-  } catch (e) { $("settings-status").textContent = "清空失败：" + e.message; }
+  } catch (e) { $("settings-status").textContent = _label("清空失败：", "清空失败：") + e.message; }
 };
 // PDF options (Translate page) — persisted to config; backend reads them.
 if ($("pdf-translate-table")) $("pdf-translate-table").onchange = () => saveConfig({ pdf_translate_table: $("pdf-translate-table").checked });
@@ -1374,7 +1374,7 @@ function renderModules() {
     const head = document.createElement("div"); head.className = "plugin-card-head";
     const ic = document.createElement("span"); ic.className = "plugin-card-icon";
     ic.innerHTML = PLUGIN_ICON[m.name] || ICON.download;
-    const nm = document.createElement("div"); nm.className = "plugin-card-name"; nm.textContent = m.name;
+    const nm = document.createElement("div"); nm.className = "plugin-card-name"; nm.textContent = _label(m.name, m.name);
     const statEl = document.createElement("span"); statEl.className = "plugin-card-status";
     statEl.innerHTML = m.available ? pill("on", _label("Installed", "已安装"), ICON.check)
                                    : pill("off", _label("Not Installed", "未安装"), ICON.cross);
@@ -1383,7 +1383,7 @@ function renderModules() {
 
     // Engine subtitle (muted).
     const sub = document.createElement("div"); sub.className = "plugin-card-sub";
-    sub.textContent = _engineSubtitle(m.detail);
+    sub.textContent = _engineSubtitle(_label(m.detail, m.detail) || m.detail);
     card.appendChild(sub);
 
     // Model line: clickable chip (selectable) / read-only fixed model / nothing.
@@ -1446,7 +1446,7 @@ async function renderMarket() {
     card.className = "plugin-card market";
     const head = document.createElement("div"); head.className = "plugin-card-head";
     const ic = document.createElement("span"); ic.className = "plugin-card-icon"; ic.innerHTML = ICON.download;
-    const nm = document.createElement("div"); nm.className = "plugin-card-name"; nm.textContent = p.name || p.key;
+    const nm = document.createElement("div"); nm.className = "plugin-card-name"; nm.textContent = _label(p.name || p.key, p.name || p.key);
     const badge = document.createElement("span"); badge.className = "plugin-card-status";
     badge.innerHTML = pill("off", _label("Available", "可下载"), ICON.download);
     head.append(ic, nm, badge); card.appendChild(head);
@@ -1532,7 +1532,7 @@ async function refreshPickerRows(m, chipText) {
   list.innerHTML = "";
   let data;
   try { data = await api("/api/modules/models?name=" + encodeURIComponent(m.name)); }
-  catch (e) { list.textContent = (e.message || "加载失败"); return; }
+  catch (e) { list.textContent = (e.message || _label("Failed", "加载失败")); return; }
   m.current_model = data.current_model;
   for (const s of data.models) {
     const row = document.createElement("div");
@@ -1583,7 +1583,7 @@ async function pickerInstall(m, s, chipText) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: m.name, model_id: s.id }),
     });
-  } catch (e) { status.innerHTML = pill("bad", "失败", ICON.cross); return; }
+  } catch (e) { status.innerHTML = pill("bad", _label("Failed", "失败"), ICON.cross); return; }
   const poll = setInterval(async () => {
     let j;
     try { j = await api("/api/modules/status?name=" + encodeURIComponent(m.name)); }
@@ -1731,7 +1731,7 @@ async function loadGlossaryTable(name) {
   }
   t.appendChild(head);
   for (const row of data.rows) addGlossaryRow(row);
-  $("glossary-status").textContent = `已加载 ${data.rows.length} 条`;
+  $("glossary-status").textContent = _label("已加载 {n} 条", "已加载 {n} 条").replace("{n}", data.rows.length);
 }
 function addGlossaryRow(values) {
   const t = $("glossary-table");
@@ -1753,7 +1753,7 @@ $("glossary-save").onclick = async () => {
   });
   const res = await api("/api/glossary", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name: $("glossary-edit-select").value, columns: glossaryCols, rows }) });
-  $("glossary-status").textContent = `已保存 ${res.count} 条`;
+  $("glossary-status").textContent = _label("已保存 {n} 条", "已保存 {n} 条").replace("{n}", res.count);
 };
 
 // Refresh BOTH glossary dropdowns (editor + translate page) from a fresh list,
@@ -1844,7 +1844,7 @@ async function loadProofreadDocs() {
   fillSelect($("proofread-select"), data.docs.length ? data.docs : ["(无可校对文档)"]);
   if (!data.docs.length) {
     $("proofread-table").innerHTML = "<tr><td style='border:none'>" +
-      emptyState(EICON.files, "暂无可校对的文档", "完成一次翻译后会出现在这里。") + "</td></tr>";
+      emptyState(EICON.files, _label("暂无可校对的文档", "暂无可校对的文档"), _label("完成一次翻译后会出现在这里。", "完成一次翻译后会出现在这里。")) + "</td></tr>";
     $("proofread-pager").replaceChildren();
     $("proofread-status").textContent = "";
     return;
@@ -1867,7 +1867,7 @@ let proofreadRows = [], proofreadPage = 0;
 const PROOFREAD_PAGE = 100;
 
 async function loadProofreadTable(name) {
-  $("proofread-status").textContent = "加载中…";
+  $("proofread-status").textContent = _label("加载中…", "加载中…");
   tableSkeleton($("proofread-table"), 6);
   const data = await api("/api/proofread?name=" + encodeURIComponent(name));
   proofreadCols = data.columns;
@@ -1913,7 +1913,7 @@ function renderProofreadPager(start, end) {
   const pg = $("proofread-pager");
   pg.replaceChildren();
   $("proofread-status").textContent = "";
-  if (total <= PROOFREAD_PAGE) { $("proofread-status").textContent = `共 ${total} 行`; return; }
+  if (total <= PROOFREAD_PAGE) { $("proofread-status").textContent = _label("共 {n} 行", "共 {n} 行").replace("{n}", total); return; }
   const mk = (label, disabled, fn) => {
     const b = document.createElement("button");
     b.textContent = label; b.disabled = disabled; if (!disabled) b.onclick = fn;
@@ -1922,7 +1922,7 @@ function renderProofreadPager(start, end) {
   pg.appendChild(mk("‹ 上一页", proofreadPage === 0, () => { proofreadPage--; renderProofreadPage(); }));
   const info = document.createElement("span");
   info.className = "pager-info";
-  info.textContent = `第 ${proofreadPage + 1}/${pages} 页 · 显示 ${start + 1}–${end} / 共 ${total} 行`;
+  info.textContent = _label("第 {a}/{b} 页 · 显示 {c}–{d} / 共 {n} 行", "第 {a}/{b} 页 · 显示 {c}–{d} / 共 {n} 行").replace("{a}", proofreadPage + 1).replace("{b}", pages).replace("{c}", start + 1).replace("{d}", end).replace("{n}", total);
   pg.appendChild(info);
   pg.appendChild(mk("下一页 ›", proofreadPage >= pages - 1, () => { proofreadPage++; renderProofreadPage(); }));
 }
@@ -1931,19 +1931,19 @@ $("proofread-save").onclick = async () => {
   // proofreadRows holds the full document with edits applied across all pages.
   const res = await api("/api/proofread", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, rows: proofreadRows }) });
-  $("proofread-status").textContent = `已保存（修改 ${res.changed} 行）`;
+  $("proofread-status").textContent = _label("已保存（修改 {n} 行）", "已保存（修改 {n} 行）").replace("{n}", res.changed);
 };
 $("proofread-export").onclick = async () => {
   const name = $("proofread-select").value;
-  $("proofread-status").textContent = "导出中…";
+  $("proofread-status").textContent = _label("导出中…", "导出中…");
   try {
     await api("/api/proofread/export", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }) });
     const dl = $("proofread-download");
     dl.href = "/api/proofread/download?name=" + encodeURIComponent(name);
     dl.hidden = false;
-    $("proofread-status").textContent = "导出完成，点击下载。";
-  } catch (e) { $("proofread-status").textContent = "导出失败：" + e.message; }
+    $("proofread-status").textContent = _label("导出完成，点击下载。", "导出完成，点击下载。");
+  } catch (e) { $("proofread-status").textContent = _label("导出失败：", "导出失败：") + e.message; }
 };
 
 // ----- live voice translation (dual mode) -----
@@ -2131,7 +2131,7 @@ function setLiveBusy(b) { const g = $("live-go"); if (g) g.classList.toggle("run
 function onLiveInputChange() {
   const sel = $("live-input-dev");
   if (sel && sel.value === "__system__") {
-    setLiveStatus("翻译某个网页的声音：开始后在共享框选「该标签页」并勾选「分享标签页音频」（无需整个屏幕）。翻译整机声音：选「整个屏幕」并勾「分享系统音频」。");
+    setLiveStatus(_label("翻译某个网页的声音：开始后在共享框选「该标签页」并勾选「分享标签页音频」（无需整个屏幕）。翻译整机声音：选「整个屏幕」并勾「分享系统音频」。", "翻译某个网页的声音：开始后在共享框选「该标签页」并勾选「分享标签页音频」（无需整个屏幕）。翻译整机声音：选「整个屏幕」并勾「分享系统音频」。"));
   }
   switchLiveInput();
 }
@@ -2193,7 +2193,7 @@ function refreshLiveModel() {
 async function startGoogle() {
   try {
     liveStream = await acquireLiveStream();
-  } catch (e) { setLiveStatus("无法访问输入设备：" + e.message); return; }
+  } catch (e) { setLiveStatus(_label("无法访问输入设备：", "无法访问输入设备：") + e.message); return; }
   $("live-input").textContent = ""; $("live-output").textContent = "";
   liveCtx = new AudioContext();
   const srcRate = liveCtx.sampleRate;
@@ -2205,8 +2205,8 @@ async function startGoogle() {
   liveWS = new WebSocket(`${proto}//${location.host}/ws/live-translate?target=${encodeURIComponent($("live-target").value)}`);
   liveWS.onopen = () => setLiveStatus(liveListenMsg());
   liveWS.onmessage = onLiveMessage;
-  liveWS.onclose = () => { setLiveStatus("连接已关闭"); liveRunning = false; setLiveBusy(false); };
-  liveWS.onerror = () => setLiveStatus("连接错误");
+  liveWS.onclose = () => { setLiveStatus(_label("连接已关闭", "连接已关闭")); liveRunning = false; setLiveBusy(false); };
+  liveWS.onerror = () => setLiveStatus(_label("连接错误", "连接错误"));
 
   liveProc.onaudioprocess = (e) => {
     if (!liveWS || liveWS.readyState !== 1) return;
@@ -2225,7 +2225,7 @@ function stopGoogle() {
   // Also release the 24k playback context (browsers cap live AudioContexts; not
   // closing it leaked one per Google session until the cap threw).
   if (playCtx) { try { playCtx.close(); } catch (e) {} playCtx = null; }
-  liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
+  liveRunning = false; setLiveBusy(false); setLiveStatus(_label("已停止", "已停止"));
 }
 
 // --- Local (SenseVoice + LLM): audio-thread VAD segments -> POST per utterance ---
@@ -2288,12 +2288,12 @@ async function startLocal() {
   try {
     liveStream = await acquireLiveStream();
   } catch (e) {
-    setLiveStatus("无法访问输入设备：" + e.message);
+    setLiveStatus(_label("无法访问输入设备：", "无法访问输入设备：") + e.message);
     try { liveCtx.close(); } catch (e2) {} liveCtx = null; return;
   }
   $("live-input").textContent = ""; $("live-output").textContent = "";
   // Preload the local model so the first sentence isn't blocked on a slow load.
-  setLiveStatus("正在加载本地模型…（首次需下载/加载，请稍候）");
+  setLiveStatus(_label("正在加载本地模型…（首次需下载/加载，请稍候）", "正在加载本地模型…（首次需下载/加载，请稍候）"));
   showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
   try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "live" }) }); }
   catch (e) { /* load lazily */ }
@@ -2308,10 +2308,10 @@ async function startLocal() {
     else await startWorkletVad();
   } catch (e) {
     if (useSilero) {   // neural VAD failed (network/CDN?) -> fall back to energy
-      setLiveStatus("Silero VAD 不可用（" + e.message + "），回退能量 VAD…");
+      setLiveStatus(_label("Silero VAD 不可用（", "Silero VAD 不可用（") + e.message + _label("），回退能量 VAD…", "），回退能量 VAD…"));
       try { await startWorkletVad(); }
-      catch (e2) { setLiveStatus("VAD 初始化失败：" + e2.message); stopLocal(); return; }
-    } else { setLiveStatus("VAD 初始化失败：" + e.message); stopLocal(); return; }
+      catch (e2) { setLiveStatus(_label("VAD 初始化失败：", "VAD 初始化失败：") + e2.message); stopLocal(); return; }
+    } else { setLiveStatus(_label("VAD 初始化失败：", "VAD 初始化失败：") + e.message); stopLocal(); return; }
   }
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   liveCtxHistory = [];   // fresh coherence context per session
@@ -2372,7 +2372,7 @@ async function startSileroVad() {
     baseAssetPath: "/static/vad/", onnxWASMBasePath: "/static/vad/", model: "legacy",
     onSpeechStart() {
       liveSileroSpeaking = true; liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = ""; liveDetHist = []; liveDetHist = [];
-      liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus("识别中…");
+      liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus(_label("识别中…", "识别中…"));
     },
     onFrameProcessed(_probs, frame) {
       if (!liveSileroSpeaking || !frame || !frame.length) return;
@@ -2399,7 +2399,7 @@ function stopLocal() {
   if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
   if (liveCtx) liveCtx.close();
   liveSilero = null; liveSileroSpeaking = false; liveNode = null;
-  liveRunning = false; setLiveBusy(false); setLiveStatus("已停止");
+  liveRunning = false; setLiveBusy(false); setLiveStatus(_label("已停止", "已停止"));
 }
 // --- Streaming live recognition (Windows-Live-Captions style) ---------------
 // Within one VAD utterance the worklet sends growing `partial` audio; we re-run
@@ -2441,7 +2441,7 @@ function onVadMessage(e) {
   const m = e.data || {};
   if (m.type === "speechstart") {
     liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = "";
-    setLiveStatus("识别中…");
+    setLiveStatus(_label("识别中…", "识别中…"));
   } else if (m.type === "partial") {
     streamPartial(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
   } else if (m.type === "segment") {
@@ -2573,7 +2573,7 @@ async function streamPartial(int16) {
     liveCommittedText += stable.slice(0, consumed);
     pipInterim = tail.slice(consumed);      // live, not-yet-committed tail
     updatePipCaption();
-    if (liveRunning && pipInterim) setLiveStatus("识别中：" + pipInterim);
+    if (liveRunning && pipInterim) setLiveStatus(_label("识别中…", "识别中…") + " " + pipInterim);
   } catch (e) { /* transient; next partial retries */ }
   finally {
     livePartialBusy = false;
@@ -2690,7 +2690,7 @@ function int16ToB64(int16) {
 }
 function onLiveMessage(ev) {
   let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
-  if (d.type === "error") { setLiveStatus("错误：" + d.message); return; }
+  if (d.type === "error") { setLiveStatus(_label("错误：", "错误：") + d.message); return; }
   const sc = d.serverContent;
   if (!sc) return;
   if (sc.inputTranscription && sc.inputTranscription.text) appendLive("live-input", sc.inputTranscription.text);
@@ -2724,7 +2724,7 @@ async function switchLiveInput() {
   if (!liveRunning) return;             // not running -> selection applies on next start
   let newStream;
   try { newStream = await acquireLiveStream(); }
-  catch (e) { setLiveStatus("无法切换输入：" + e.message); return; }
+  catch (e) { setLiveStatus(_label("无法切换输入：", "无法切换输入：") + e.message); return; }
   try {
     if (liveSrc) liveSrc.disconnect();
     if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
@@ -2733,8 +2733,8 @@ async function switchLiveInput() {
     if (liveSilero) liveSilero.receive(liveSrc);            // neural VAD
     else liveSrc.connect(liveMode === "google" ? liveProc : liveNode);
     stopMicMeter(); startMicMeter();   // re-bind the level meter to the new stream
-    setLiveStatus("已切换输入 · 正在聆听…");
-  } catch (e) { setLiveStatus("切换输入失败：" + e.message); }
+    setLiveStatus(_label("已切换输入 · 正在聆听…", "已切换输入 · 正在聆听…"));
+  } catch (e) { setLiveStatus(_label("切换输入失败：", "切换输入失败：") + e.message); }
 }
 
 // --- Floating captions (Document Picture-in-Picture, Chrome 116+) ---
@@ -2785,11 +2785,11 @@ function updatePipCaption() {
 }
 async function toggleLivePip() {
   if (!("documentPictureInPicture" in window)) {
-    setLiveStatus("此浏览器不支持悬浮字幕（需 Chrome 116+）"); return;
+    setLiveStatus(_label("此浏览器不支持悬浮字幕（需 Chrome 116+）", "此浏览器不支持悬浮字幕（需 Chrome 116+）")); return;
   }
   if (pipWin && !pipWin.closed) { pipWin.close(); pipWin = null; return; }
   try { pipWin = await window.documentPictureInPicture.requestWindow({ width: 560, height: 240 }); }
-  catch (e) { setLiveStatus("无法打开悬浮字幕：" + e.message); return; }
+  catch (e) { setLiveStatus(_label("无法打开悬浮字幕：", "无法打开悬浮字幕：") + e.message); return; }
   const d = pipWin.document;
   const st = d.createElement("style");
   st.textContent = "html,body{height:100%;}"
@@ -2829,7 +2829,7 @@ async function refreshGoogleKeyPlaceholder() {
   try {
     const st = await api("/api/apikey?model=" + encodeURIComponent("(Google) Live Translate"));
     $("iface-google-key").value = "";
-    $("iface-google-key").placeholder = st.has_key ? "已设置（留空则不修改）" : "AQ... / AIza...";
+    $("iface-google-key").placeholder = st.has_key ? _label("已设置（留空则不修改）", "已设置（留空则不修改）") : "AQ... / AIza...";
   } catch {}
 }
 if ($("iface-google-key")) $("iface-google-key").onchange = async () => {
@@ -2838,7 +2838,7 @@ if ($("iface-google-key")) $("iface-google-key").onchange = async () => {
   await api("/api/apikey", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ model: "(Google) Live Translate", api_key: key }) });
   $("iface-google-key").value = "";
-  $("iface-google-key").placeholder = "已设置（留空则不修改）";
+  $("iface-google-key").placeholder = _label("已设置（留空则不修改）", "已设置（留空则不修改）");
   updateLiveHint && updateLiveHint();
 };
 
@@ -3007,7 +3007,7 @@ async function loadHistory() {
   try {
     data = await api(`/api/history?file_type=${encodeURIComponent(ftype)}&status=${encodeURIComponent(fstatus)}&sort_by=${sortBy}&desc=${descFlag === "1"}`);
   }
-  catch (e) { t.innerHTML = "<tr><td style='border:none'>" + emptyState(EICON.inbox, "无法加载记录", e.message) + "</td></tr>"; return; }
+  catch (e) { t.innerHTML = "<tr><td style='border:none'>" + emptyState(EICON.inbox, _label("无法加载记录", "无法加载记录"), e.message) + "</td></tr>"; return; }
   // Populate the file-type filter once (from all types present).
   if (!historyTypesFilled && data.file_types) {
     for (const ft of data.file_types) {
@@ -3017,7 +3017,7 @@ async function loadHistory() {
   }
   if (!data.records.length) {
     t.innerHTML = "<tr><td style='border:none'>" +
-      emptyState(EICON.inbox, "还没有翻译记录", "完成一次翻译后，项目会按文件类型与时间显示在这里。") + "</td></tr>";
+      emptyState(EICON.inbox, _label("还没有翻译记录", "还没有翻译记录"), _label("完成一次翻译后，项目会按文件类型与时间显示在这里。", "完成一次翻译后，项目会按文件类型与时间显示在这里。")) + "</td></tr>";
     return;
   }
   t.innerHTML = `<tr><th>${_label("Status", "状态")}</th><th>${_label("Upload File", "文件")}</th><th>${_label("File Type", "类型")}</th><th>${_label("Time", "时间")}</th></tr>`;
@@ -3187,7 +3187,7 @@ async function quickTranslate() {
     $("quick-status").textContent = "";
     renderQuickHistory(r.history || []);
   } catch (e) {
-    $("quick-status").textContent = "错误: " + (e.message || "").slice(0, 120);
+    $("quick-status").textContent = _label("错误: ", "错误: ") + (e.message || "").slice(0, 120);
   }
 }
 
@@ -3213,7 +3213,7 @@ async function quickCopy() {
     const prev = btn.textContent;
     btn.textContent = _label("Copied", "已复制");
     setTimeout(() => { btn.textContent = prev; }, 1200);
-  } catch (e) { $("quick-status").textContent = "复制失败"; }
+  } catch (e) { $("quick-status").textContent = _label("复制失败", "复制失败"); }
 }
 
 async function loadQuickHistory() {
@@ -3292,8 +3292,8 @@ async function quickMic() {
   try {
     _quickRecStream = await navigator.mediaDevices.getUserMedia(
       { audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  } catch (e) { $("quick-status").textContent = "无法访问麦克风：" + e.message; return; }
-  $("quick-status").textContent = "正在加载本地模型…";
+  } catch (e) { $("quick-status").textContent = _label("无法访问麦克风：", "无法访问麦克风：") + e.message; return; }
+  $("quick-status").textContent = _label("正在加载本地模型…", "正在加载本地模型…");
   // Quick voice uses its own STT model (quick_stt_model) — preload THAT, not live.
   showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
   try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "quick" }) }); }
@@ -3309,10 +3309,10 @@ async function quickMic() {
     _quickRecNode.port.onmessage = onQuickVad;
     _quickRecNode.port.postMessage({ type: "mode", mode: "open" });
     _quickRecSrc.connect(_quickRecNode); _quickRecNode.connect(_quickRecCtx.destination);
-  } catch (e) { $("quick-status").textContent = "VAD 初始化失败：" + e.message; stopQuickMic(); return; }
+  } catch (e) { $("quick-status").textContent = _label("VAD 初始化失败：", "VAD 初始化失败：") + e.message; stopQuickMic(); return; }
   _quickRecording = true;
   $("quick-mic").classList.add("recording");
-  $("quick-status").textContent = "正在聆听…（说完一句自动识别）";
+  $("quick-status").textContent = _label("正在聆听…（说完一句自动识别）", "正在聆听…（说完一句自动识别）");
 }
 function stopQuickMic() {
   try {
@@ -3332,18 +3332,18 @@ function onQuickVad(e) {
   }
 }
 async function quickRecognize(int16) {
-  $("quick-status").textContent = "识别中…";
+  $("quick-status").textContent = _label("识别中…", "识别中…");
   try {
     // Use the quick plugin's own STT endpoint (not /api/live-recognize).
     const r = await api("/api/quick-recognize", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ audio_b64: int16ToB64(int16) }) });
-    if (!r.source) { $("quick-status").textContent = "未识别到语音"; return; }
+    if (!r.source) { $("quick-status").textContent = _label("未识别到语音", "未识别到语音"); return; }
     $("quick-input").value = r.source;
     if (r.detected && [...$("quick-src").options].some((o) => o.value === r.detected)) $("quick-src").value = r.detected;
     $("quick-status").textContent = "";
     quickTranslate();
-  } catch (e) { $("quick-status").textContent = "识别失败：" + (e.message || "").slice(0, 120); }
+  } catch (e) { $("quick-status").textContent = _label("识别失败：", "识别失败：") + (e.message || "").slice(0, 120); }
 }
 
 // Read-aloud: POST the current output text + target language to /api/tts, which
@@ -3367,13 +3367,13 @@ async function quickSpeak() {
     _quickAudio = new Audio(URL.createObjectURL(blob));
     _quickAudio.play();
     $("quick-status").textContent = "";
-  } catch (e) { $("quick-status").textContent = "朗读失败：" + (e.message || "").slice(0, 120); }
+  } catch (e) { $("quick-status").textContent = _label("朗读失败：", "朗读失败：") + (e.message || "").slice(0, 120); }
 }
 
 boot().catch((e) => {
   const pre = document.createElement("pre");
   pre.style.padding = "24px";
-  pre.textContent = "启动失败: " + (e && e.message ? e.message : e);
+  pre.textContent = _label("启动失败: ", "启动失败: ") + (e && e.message ? e.message : e);
   document.body.innerHTML = "";
   document.body.appendChild(pre);
 });
