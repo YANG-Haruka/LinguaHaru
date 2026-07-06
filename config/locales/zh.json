@@ -665,5 +665,14 @@
   "Loading Model": "正在加载模型…",
   "Local Mode Needs Plugin": "本地模式需要「语音」插件（SenseVoice）。点此前往「插件」安装。",
   "Google Live Needs Key": "Google 实时翻译需要 Google API Key。请在「接口管理」中填写。",
-  "About Description": "LinguaHaru 由 Harukayang 自 2025 年 1 月起独立开发与维护，感谢一路以来的陪伴。本项目基于 GPL-3.0 免费开源；如需商业合作、定制开发或进一步优化，欢迎随时联系。也欢迎在 GitHub 上反馈问题与建议。"
+  "About Description": "LinguaHaru 由 Harukayang 自 2025 年 1 月起独立开发与维护，感谢一路以来的陪伴。本项目基于 GPL-3.0 免费开源；如需商业合作、定制开发或进一步优化，欢迎随时联系。也欢迎在 GitHub 上反馈问题与建议。",
+  "Admin Login": "管理员登录",
+  "Admin Logout": "退出管理员",
+  "Admin Logged In": "已作为管理员登录",
+  "Incorrect Password": "密码错误，请重试",
+  "Admin Login Success": "已登录，管理功能已解锁",
+  "Admin Password Saved": "局域网管理密码已更新",
+  "Saved": "已保存",
+  "LAN User Features": "普通用户可见功能（局域网模式下、未登录管理员的其他设备）",
+  "LAN User Features Hint": "取消勾选即对普通用户隐藏该功能（管理页面始终仅管理员可见）。"
 }

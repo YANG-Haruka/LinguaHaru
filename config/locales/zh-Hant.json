@@ -397,5 +397,14 @@
   "Loading Model": "正在載入模型…",
   "Local Mode Needs Plugin": "本機模式需要「語音」外掛（SenseVoice）。點此前往「外掛」安裝。",
   "Google Live Needs Key": "Google 即時翻譯需要 Google API Key。請在「介面管理」中填寫。",
-  "About Description": "LinguaHaru 由 Harukayang 自 2025 年 1 月起獨立開發與維護，感謝一路以來的陪伴。本專案基於 GPL-3.0 免費開源；如需商業合作、客製開發或進一步優化，歡迎隨時聯繫。也歡迎在 GitHub 上回饋問題與建議。"
+  "About Description": "LinguaHaru 由 Harukayang 自 2025 年 1 月起獨立開發與維護，感謝一路以來的陪伴。本專案基於 GPL-3.0 免費開源；如需商業合作、客製開發或進一步優化，歡迎隨時聯繫。也歡迎在 GitHub 上回饋問題與建議。",
+  "Admin Login": "管理員登入",
+  "Admin Logout": "登出管理員",
+  "Admin Logged In": "已以管理員身分登入",
+  "Incorrect Password": "密碼錯誤，請重試",
+  "Admin Login Success": "已登入，管理功能已解鎖",
+  "Admin Password Saved": "區域網路管理密碼已更新",
+  "Saved": "已儲存",
+  "LAN User Features": "一般使用者可見功能（區域網路下、未登入管理員的其他裝置）",
+  "LAN User Features Hint": "取消勾選即對一般使用者隱藏該功能（管理頁面始終僅管理員可見）。"
 }

@@ -654,5 +654,14 @@
   "Loading Model": "Loading model…",
   "Local Mode Needs Plugin": "Local mode needs the Voice plugin (SenseVoice). Click here to install it on the Plugins page.",
   "Google Live Needs Key": "Google live translation needs a Google API key. Please add one in Interface Management.",
-  "About Description": "LinguaHaru has been independently developed and maintained by Harukayang since January 2025 — thank you all for coming along on the journey. It's free and open-source under GPL-3.0; for commercial cooperation, custom development, or deeper optimization, feel free to reach out. Feedback and suggestions are always welcome on GitHub."
+  "About Description": "LinguaHaru has been independently developed and maintained by Harukayang since January 2025 — thank you all for coming along on the journey. It's free and open-source under GPL-3.0; for commercial cooperation, custom development, or deeper optimization, feel free to reach out. Feedback and suggestions are always welcome on GitHub.",
+  "Admin Login": "Admin Login",
+  "Admin Logout": "Log out admin",
+  "Admin Logged In": "Signed in as admin",
+  "Incorrect Password": "Incorrect password, please try again",
+  "Admin Login Success": "Logged in — management unlocked",
+  "Admin Password Saved": "LAN admin password updated",
+  "Saved": "Saved",
+  "LAN User Features": "Features visible to normal users (other LAN devices not logged in as admin)",
+  "LAN User Features Hint": "Unchecking hides that feature from normal users (management pages are always admin-only)."
 }

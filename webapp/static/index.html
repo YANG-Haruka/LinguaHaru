@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260706F" />
+  <link rel="stylesheet" href="/static/style.css?v=20260706G" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -78,6 +78,14 @@
         <button class="tab" data-tab="settings" title="设置">
           <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h9"/><path d="M18 7h2"/><circle cx="15.5" cy="7" r="2.2"/><path d="M4 17h2"/><path d="M11 17h9"/><circle cx="8.5" cy="17" r="2.2"/></svg></span>
           <span data-i18n="Settings">设置</span>
+        </button>
+      </div>
+
+      <!-- LAN mode only, for a non-admin device: unlock the management UI. -->
+      <div class="nav-group" id="admin-login-group" hidden>
+        <button class="tab" id="admin-login-tab" title="管理员登录">
+          <span class="ti"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="10.5" width="15" height="9.5" rx="2"/><path d="M8 10.5V7a4 4 0 0 1 8 0v3.5"/></svg></span>
+          <span data-i18n="Admin Login">管理员登录</span>
         </button>
       </div>
     </nav>
@@ -214,8 +222,9 @@
     <!-- LAN admin password prompt (shown on 401 from an admin endpoint) -->
     <div id="admin-modal" class="modal-overlay" hidden>
       <div class="modal">
-        <h3 data-i18n="Admin Password Needed">需要管理密码</h3>
+        <h3 id="admin-modal-title" data-i18n="Admin Password Needed">需要管理密码</h3>
         <div class="field"><label data-i18n="LAN Admin Password">局域网管理密码</label><input id="admin-pw" type="password" autocomplete="current-password" /></div>
+        <div id="admin-msg" class="admin-msg" hidden></div>
         <div class="modal-actions"><span style="flex:1"></span><button id="admin-cancel" data-i18n="Cancel">取消</button><button id="admin-ok" class="primary" data-i18n="Confirm">确定</button></div>
       </div>
     </div>
@@ -649,6 +658,21 @@
         <div class="set-card-body">
           <label class="check"><input type="checkbox" id="set-lan" /> <span data-i18n="LAN Mode Label">局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</span></label>
           <div class="field" style="margin-top:10px"><label data-i18n="LAN Admin Label">局域网管理密码（不设密码时，只有本机可修改配置 / 密钥 / 插件，其他设备无法管理；设置后其他设备需输入此密码才能管理）</label><input type="password" id="set-lan-admin" data-i18n-ph="LAN Admin Placeholder" placeholder="留空 = 仅本机可管理" /></div>
+          <div id="lan-features" class="field" style="margin-top:14px" hidden>
+            <label data-i18n="LAN User Features">普通用户可见功能（局域网模式下、未登录管理员的其他设备）</label>
+            <div style="display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:8px">
+              <label class="check"><input type="checkbox" class="lan-feat" data-feat="translate" /> <span data-i18n="File Translation">文件翻译</span></label>
+              <label class="check"><input type="checkbox" class="lan-feat" data-feat="live" /> <span data-i18n="Real-Time Voice">实时语音</span></label>
+              <label class="check"><input type="checkbox" class="lan-feat" data-feat="glossary" /> <span data-i18n="Glossary">词汇表</span></label>
+              <label class="check"><input type="checkbox" class="lan-feat" data-feat="proofread" /> <span data-i18n="Proofread">校对</span></label>
+              <label class="check"><input type="checkbox" class="lan-feat" data-feat="history" /> <span data-i18n="History">历史记录</span></label>
+            </div>
+            <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="LAN User Features Hint">取消勾选即对普通用户隐藏该功能（管理页面始终仅管理员可见）。</div>
+          </div>
+          <div id="admin-logout-row" class="field" style="margin-top:12px; align-items:center; gap:12px" hidden>
+            <span class="muted" data-i18n="Admin Logged In">已作为管理员登录</span>
+            <button id="admin-logout-btn" data-i18n="Admin Logout">退出管理员</button>
+          </div>
         </div>
       </details>
       <details class="card set-card">
@@ -795,6 +819,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260706K"></script>
+  <script src="/static/app.js?v=20260706M"></script>
 </body>
 </html>

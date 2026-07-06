@@ -336,5 +336,14 @@
   "Loading Model": "Chargement du modele…",
   "Local Mode Needs Plugin": "Le mode local necessite le plugin Voix (SenseVoice). Cliquez ici pour l'installer.",
   "Google Live Needs Key": "La traduction en direct Google necessite une cle API Google. Renseignez-la dans la gestion des interfaces.",
-  "About Description": "LinguaHaru est développé et maintenu de façon indépendante par Harukayang depuis janvier 2025 — merci de faire ce chemin avec nous. Il est gratuit et open source sous GPL-3.0 ; pour une collaboration commerciale, un développement sur mesure ou une optimisation plus poussée, n'hésitez pas à me contacter. Les retours et suggestions sont toujours les bienvenus sur GitHub."
+  "About Description": "LinguaHaru est développé et maintenu de façon indépendante par Harukayang depuis janvier 2025 — merci de faire ce chemin avec nous. Il est gratuit et open source sous GPL-3.0 ; pour une collaboration commerciale, un développement sur mesure ou une optimisation plus poussée, n'hésitez pas à me contacter. Les retours et suggestions sont toujours les bienvenus sur GitHub.",
+  "Admin Login": "Connexion admin",
+  "Admin Logout": "Déconnexion admin",
+  "Admin Logged In": "Connecté en tant qu'admin",
+  "Incorrect Password": "Mot de passe incorrect, réessayez",
+  "Admin Login Success": "Connecté — gestion déverrouillée",
+  "Admin Password Saved": "Mot de passe admin LAN mis à jour",
+  "Saved": "Enregistré",
+  "LAN User Features": "Fonctions visibles par les utilisateurs normaux (autres appareils du LAN non connectés en admin)",
+  "LAN User Features Hint": "Décocher masque cette fonction aux utilisateurs normaux (les pages d'administration restent réservées à l'admin)."
 }

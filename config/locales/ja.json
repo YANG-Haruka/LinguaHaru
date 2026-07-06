@@ -357,5 +357,14 @@
   "Loading Model": "モデルを読み込み中…",
   "Local Mode Needs Plugin": "ローカルモードには「音声」プラグイン（SenseVoice）が必要です。ここをクリックして「プラグイン」からインストールしてください。",
   "Google Live Needs Key": "Google リアルタイム翻訳には Google API キーが必要です。「インターフェース管理」で入力してください。",
-  "About Description": "LinguaHaru は 2025 年 1 月から Harukayang が個人で開発・保守しています。これまでのご愛顧に感謝します。GPL-3.0 のもとで無料・オープンソースです。商業利用のご相談、カスタム開発、さらなる最適化などはお気軽にご連絡ください。GitHub でのフィードバックやご提案もいつでも歓迎します。"
+  "About Description": "LinguaHaru は 2025 年 1 月から Harukayang が個人で開発・保守しています。これまでのご愛顧に感謝します。GPL-3.0 のもとで無料・オープンソースです。商業利用のご相談、カスタム開発、さらなる最適化などはお気軽にご連絡ください。GitHub でのフィードバックやご提案もいつでも歓迎します。",
+  "Admin Login": "管理者ログイン",
+  "Admin Logout": "管理者ログアウト",
+  "Admin Logged In": "管理者としてログイン中",
+  "Incorrect Password": "パスワードが違います。もう一度お試しください",
+  "Admin Login Success": "ログインしました — 管理機能が使えます",
+  "Admin Password Saved": "LAN 管理パスワードを更新しました",
+  "Saved": "保存しました",
+  "LAN User Features": "一般ユーザーに表示する機能（管理者ログインしていない LAN 上の他の端末）",
+  "LAN User Features Hint": "チェックを外すと一般ユーザーからそのタブを隠します（管理ページは常に管理者専用）。"
 }

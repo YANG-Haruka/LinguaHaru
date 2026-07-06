@@ -190,6 +190,51 @@ _hash_pw = backend.hash_lan_password
 _verify_pw = backend.verify_lan_password
 
 
+# --- LAN admin session -------------------------------------------------------
+# A remote LAN peer logs in once with the admin password (POST /api/admin/login);
+# we mint a random session token, keep it in memory, and set it as an httponly
+# cookie. Admin endpoints then accept that cookie — so the password is entered
+# once (not per action) and its cleartext never lives in the browser. Tokens are
+# dropped on logout or server restart (a cheap, LAN-appropriate session store).
+_ADMIN_COOKIE = "lh_admin"
+_ADMIN_SESSIONS = set()
+_admin_session_ok = contextvars.ContextVar("admin_session_ok", default=False)
+
+
+def _admin_pw_set():
+    """True if a LAN admin password exists (config hash or env)."""
+    return bool(str(backend.get_config("lan_admin_password_hash", "") or "")
+                or (os.environ.get("LINGUAHARU_ADMIN_PASSWORD") or "").strip())
+
+
+def _admin_pw_ok(pw):
+    """Verify a candidate admin password against the config hash or env password."""
+    pw = str(pw or "")
+    if not pw:
+        return False
+    pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
+    if pw_hash and _verify_pw(pw, pw_hash):
+        return True
+    env_pw = (os.environ.get("LINGUAHARU_ADMIN_PASSWORD") or "").strip()
+    return bool(env_pw and hmac.compare_digest(pw, env_pw))
+
+
+def _is_admin():
+    """True when the current request may administer the server: the local owner
+    (loopback), a valid admin-session cookie, or a valid X-Admin-Token / env
+    password. Mirrors _block_in_server_mode so the bootstrap `is_admin` flag and
+    the endpoint guard never disagree. (Server mode disables admin entirely.)"""
+    if server_mode_on():
+        return False
+    if not _bound_externally():
+        return True                      # localhost-only bind: the single local user
+    if _client_is_local.get():
+        return True                      # the host machine's owner
+    if _admin_session_ok.get():
+        return True                      # logged-in admin session (cookie)
+    return _admin_pw_ok(_admin_token.get())
+
+
 def _block_in_server_mode():
     """Guard admin-only endpoints (changing the server's model/key, RPM, modules,
     interfaces). Always blocked in public server mode.
@@ -202,26 +247,13 @@ def _block_in_server_mode():
     caller is local and unrestricted."""
     if server_mode_on():
         raise HTTPException(403, "Disabled in server mode")
-    if not _bound_externally():
-        return  # bound to localhost; only the local user can reach this
-    if _client_is_local.get():
-        return  # the host machine's owner may always administer
-    # An env-provided admin password bootstraps remote administration in headless
-    # deploys (Docker): the owner connects from a non-loopback IP, so they can't be
-    # auto-trusted and can't set a password through the (guarded) config endpoint.
-    # `LINGUAHARU_ADMIN_PASSWORD` lets them authenticate from the start.
-    env_pw = (os.environ.get("LINGUAHARU_ADMIN_PASSWORD") or "").strip()
-    token = _admin_token.get()
-    # Constant-time compare so a remote attacker can't recover the env password
-    # byte-by-byte from response timing (the LAN-hash path is already constant-time
-    # via _verify_pw).
-    if env_pw and token and hmac.compare_digest(str(token), env_pw):
-        return
-    pw_hash = str(backend.get_config("lan_admin_password_hash", "") or "")
-    if not pw_hash and not env_pw:
+    if _is_admin():
+        return  # local owner, valid admin session, or valid X-Admin-Token/env pw
+    # Reachable remotely but not authenticated. If no password was ever configured,
+    # refuse remote administration outright (rather than leave it wide open).
+    if not _admin_pw_set():
         raise HTTPException(403, "Remote administration disabled (set LINGUAHARU_ADMIN_PASSWORD or a LAN admin password)")
-    if not (token and pw_hash and _verify_pw(token, pw_hash)):
-        raise HTTPException(401, "Admin password required")
+    raise HTTPException(401, "Admin password required")
 
 
 @app.middleware("http")
@@ -243,6 +275,8 @@ async def _session_and_isolation(request, call_next):
             request.headers.get("origin"), request.headers.get("host", "")):
         return JSONResponse({"detail": "Cross-origin request blocked"}, status_code=403)
     _admin_token.set(request.headers.get("X-Admin-Token", ""))
+    _acook = request.cookies.get(_ADMIN_COOKIE, "")
+    _admin_session_ok.set(bool(_acook) and _acook in _ADMIN_SESSIONS)
     # "Local" = the request really came from this machine -> the owner, auto-trusted
     # for admin. Behind a reverse proxy the client IP is the proxy's loopback addr,
     # which would falsely auto-trust EVERY remote request. So when bound externally,
@@ -332,6 +366,36 @@ def index():
 # --------------------------------------------------------------------------- #
 # Config / metadata
 # --------------------------------------------------------------------------- #
+@app.post("/api/admin/login")
+async def admin_login(request: Request):
+    """Verify the LAN admin password and start an admin session (httponly cookie).
+    Returns 200 {ok:true} on success, 401 on a wrong password — so the client can
+    tell the user clearly instead of silently failing later."""
+    if server_mode_on():
+        raise HTTPException(403, "Disabled in server mode")
+    try:
+        payload = await request.json()
+    except Exception:  # noqa: BLE001
+        payload = {}
+    if not _admin_pw_ok(payload.get("password")):
+        raise HTTPException(401, "Incorrect password")
+    import secrets
+    token = secrets.token_urlsafe(32)
+    _ADMIN_SESSIONS.add(token)
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(_ADMIN_COOKIE, token, httponly=True, samesite="lax", max_age=7 * 24 * 3600)
+    return resp
+
+
+@app.post("/api/admin/logout")
+async def admin_logout(request: Request):
+    """End the admin session (drop the token + clear the cookie)."""
+    _ADMIN_SESSIONS.discard(request.cookies.get(_ADMIN_COOKIE, ""))
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(_ADMIN_COOKIE)
+    return resp
+
+
 @app.get("/api/bootstrap")
 def bootstrap():
     """Everything the frontend needs on load."""
@@ -353,6 +417,12 @@ def bootstrap():
         "ext_plugin": extension_plugin_map(),  # ext -> required plugin name
         "hardware": sysmon.hardware_summary(),  # GPU/CPU compute device
         "server_mode": server_mode_on(),
+        # Role gating: is_admin drives which UI the client shows. A remote LAN
+        # peer that hasn't logged in is a normal user (translate-only); the local
+        # owner and logged-in admins get the full management UI. admin_session
+        # tells the client to offer a "log out" action (vs auto-admin localhost).
+        "is_admin": _is_admin(),
+        "admin_session": _admin_session_ok.get(),
         "local_live_available": realtime_voice_available(),
         # "翻译语音输入" plugin: gates the Quick-Translate mic (STT) + speaker (TTS).
         "quick_voice_available": quick_voice_available(),
@@ -392,6 +462,9 @@ def bootstrap():
             "manga_mode": config.get("manga_mode", False),
             "lan_mode": config.get("lan_mode", False),
             "has_lan_admin": bool(config.get("lan_admin_password_hash")),  # never expose the value
+            # Feature tabs the admin has hidden from normal (non-admin) LAN users,
+            # e.g. ["live","glossary"]. Admin-only tabs are always hidden regardless.
+            "lan_hidden_features": config.get("lan_hidden_features", []),
             "result_dir": config.get("result_dir", "data/result"),
             "history_max_records": config.get("history_max_records", 1000),
             "history_max_age_days": config.get("history_max_age_days", 0),
@@ -503,7 +576,7 @@ async def update_config(payload: dict):
                "mask_placeholders", "dedup_context",
                "bilingual_bold", "bilingual_color", "live_stream_translation",
                "web_vad", "live_vad_hang_ms", "live_vad_sensitivity",
-               "live_vad_max_seg_ms", "lan_mode",
+               "live_vad_max_seg_ms", "lan_mode", "lan_hidden_features",
                "result_dir", "history_max_records", "history_max_age_days",
                "log_max_files", "log_max_age_days", "log_max_size_mb",
                "result_max_size_mb",

@@ -575,6 +575,7 @@ async function boot() {
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
   $("set-lan").checked = !!c.lan_mode;
   $("set-lan-admin").placeholder = c.has_lan_admin ? _label("已设置（留空则不修改）", "已设置（留空则不修改）") : _label("留空则不启用", "留空则不启用");
+  syncLanFeatures(c);
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
   if ($("set-translation-mode")) {
     const sel = $("set-translation-mode");
@@ -626,6 +627,7 @@ async function boot() {
   refreshLiveModel();
   updateLiveHint();
   if (BOOT.server_mode) applyServerMode();
+  else applyRole();
   refreshApiKeyState();
   refreshModels();
   refreshMediaNote();
@@ -793,16 +795,87 @@ if ($("update-now")) $("update-now").onclick = async () => {
 // In public-deploy (server) mode the server owns the model + key, so hide the
 // admin/settings UI and the per-translate model picker. Inline display:none
 // beats the .tab/.field stylesheet rules (HTML [hidden] would be overridden).
-function applyServerMode() {
-  document.body.classList.add("server-mode");
-  for (const t of ["settings", "history", "modules", "interface"]) {
+function _hideTabs(tabs) {
+  for (const t of tabs) {
     const btn = document.querySelector(`.tab[data-tab="${t}"]`);
     if (btn) btn.style.display = "none";
   }
+}
+function applyServerMode() {
+  document.body.classList.add("server-mode");
+  _hideTabs(["settings", "history", "modules", "interface"]);
   const modelField = $("model").closest(".field");
   if (modelField) modelField.style.display = "none";
   $("apikey-warning").hidden = true;
 }
+
+// Role gating (LAN mode): a device that isn't the admin sees a translate-only UI;
+// the management pages (settings / plugins / interface / server model picker) are
+// hidden. An "Admin Login" entry (shown only when a LAN admin password exists)
+// unlocks them. Enforcement is on the server — this is the matching UX layer.
+function applyRole() {
+  const isAdmin = BOOT.is_admin !== false;   // default true (localhost / personal)
+  const c = BOOT.config || {};
+  if (!isAdmin) {
+    document.body.classList.add("user-role");
+    _hideTabs(["interface", "modules", "settings"]);   // always admin-only
+    _hideTabs(c.lan_hidden_features || []);            // admin-configured hides
+    const modelField = $("model").closest(".field");
+    if (modelField) modelField.style.display = "none";
+    // If the active tab got hidden, fall back to the primary Translate page.
+    const active = document.querySelector(".tab.active");
+    if (active && active.style.display === "none") switchTab("quick");
+  }
+  // The login entry only makes sense on a LAN host that HAS an admin password.
+  const grp = $("admin-login-group");
+  if (grp) grp.hidden = !(c.lan_mode && !isAdmin && c.has_lan_admin);
+  // Logged-in admins get a "log out" affordance in Settings.
+  const lrow = $("admin-logout-row");
+  if (lrow) lrow.hidden = !BOOT.admin_session;
+}
+
+// Explicit admin login (from the nav entry). Verifies against the server, sets an
+// httponly admin-session cookie, and tells the user clearly whether it worked.
+async function adminLogin() {
+  const m = $("admin-modal"), msg = $("admin-msg");
+  if (!m) return;
+  $("admin-pw").value = "";
+  if (msg) { msg.hidden = true; msg.className = "admin-msg"; }
+  if ($("admin-modal-title")) $("admin-modal-title").textContent = _label("Admin Login", "管理员登录");
+  m.hidden = false;
+  $("admin-pw").focus();
+  const submit = async () => {
+    const pw = $("admin-pw").value;
+    if (!pw) return;
+    // Raw fetch (not api()): api() intercepts 401 with its own password prompt,
+    // which would swallow the "wrong password" result we want to show inline.
+    let ok = false;
+    try {
+      const r = await fetch("/api/admin/login", { method: "POST",
+        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) });
+      ok = r.ok;
+    } catch (e) { ok = false; }
+    if (ok) {
+      m.hidden = true;
+      toast(_label("Admin Login Success", "已登录，管理功能已解锁"), "ok");
+      location.reload();   // reload picks up is_admin=true and shows the full UI
+    } else {
+      if (msg) { msg.hidden = false; msg.className = "admin-msg bad";
+        msg.textContent = _label("Incorrect Password", "密码错误，请重试"); }
+      $("admin-pw").select();
+    }
+  };
+  $("admin-ok").onclick = submit;
+  $("admin-pw").onkeydown = (ev) => { if (ev.key === "Enter") submit(); };
+  $("admin-cancel").onclick = () => { m.hidden = true; };
+}
+
+async function adminLogout() {
+  try { await api("/api/admin/logout", { method: "POST" }); } catch (e) { /* ignore */ }
+  location.reload();
+}
+if ($("admin-login-tab")) $("admin-login-tab").onclick = adminLogin;
+if ($("admin-logout-btn")) $("admin-logout-btn").onclick = adminLogout;
 
 // File-type icons that drift across the drop-zone background (same SVG set as
 // the Qt app, served from /assets/icons/filetypes/). [svgKey, suffix].
@@ -1257,16 +1330,34 @@ function stopElapsed() { if (_elapTimer) { clearInterval(_elapTimer); _elapTimer
 // (Online/offline is driven by the active interface, not a checkbox.)
 $("set-lan").onchange = () => {
   saveConfig({ lan_mode: $("set-lan").checked });
+  if ($("lan-features")) $("lan-features").hidden = !$("set-lan").checked;
   $("settings-status").textContent = _label("局域网模式已更新 —— 重启程序后生效。", "局域网模式已更新 —— 重启程序后生效。");
 };
+
+// Which user-facing features a normal (non-admin) LAN device can see. Unchecking
+// a box hides that tab from normal users (admin pages are always admin-only).
+function syncLanFeatures(c) {
+  const hidden = (c && c.lan_hidden_features) || [];
+  document.querySelectorAll(".lan-feat").forEach((cb) => { cb.checked = !hidden.includes(cb.dataset.feat); });
+  const box = $("lan-features");
+  if (box) box.hidden = !(c && c.lan_mode);
+}
+document.querySelectorAll(".lan-feat").forEach((cb) => {
+  cb.onchange = () => {
+    const hidden = [...document.querySelectorAll(".lan-feat")].filter((x) => !x.checked).map((x) => x.dataset.feat);
+    saveConfig({ lan_hidden_features: hidden });
+    if (BOOT.config) BOOT.config.lan_hidden_features = hidden;
+    toast(_label("Saved", "已保存"), "ok");
+  };
+});
 $("set-lan-admin").onchange = () => {
   const v = $("set-lan-admin").value;
   if (!v) return;                          // empty = keep the existing password
   saveConfig({ lan_admin_password: v });
-  _adminToken = v;                          // in-memory, so the owner keeps access
+  if (BOOT.config) BOOT.config.has_lan_admin = true;   // login entry now available
   $("set-lan-admin").value = "";
   $("set-lan-admin").placeholder = _label("已设置（留空则不修改）", "已设置（留空则不修改）");
-  $("settings-status").textContent = _label("局域网管理密码已更新。", "局域网管理密码已更新。");
+  toast(_label("Admin Password Saved", "局域网管理密码已更新"), "ok");
 };
 $("set-auto-glossary").onchange = () => saveConfig({ auto_extract_glossary: $("set-auto-glossary").checked });
 if ($("set-translation-mode")) $("set-translation-mode").onchange = () => saveConfig({ translation_mode: $("set-translation-mode").value });

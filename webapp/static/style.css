@@ -1238,3 +1238,7 @@ html[data-theme="dark"] .seg.active { background: var(--surface-3); border-color
 .support-row svg,.support-row img{width:18px;height:18px;flex:none}
 
 .about-desc { margin: 0 0 14px; font-size: 0.86rem; line-height: 1.65; color: var(--text-2); }
+
+.admin-msg{margin:2px 0 8px;font-size:0.85rem;padding:7px 11px;border-radius:8px}
+.admin-msg.bad{color:#c62828;background:rgba(198,40,40,0.10)}
+.admin-msg.ok{color:#2e7d32;background:rgba(46,125,50,0.10)}

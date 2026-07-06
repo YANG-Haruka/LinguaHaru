@@ -336,5 +336,14 @@
   "Loading Model": "모델 로딩 중…",
   "Local Mode Needs Plugin": "로컬 모드에는 '음성' 플러그인(SenseVoice)이 필요합니다. 여기를 클릭해 플러그인 페이지에서 설치하세요.",
   "Google Live Needs Key": "Google 실시간 번역에는 Google API 키가 필요합니다. 인터페이스 관리에서 입력하세요.",
-  "About Description": "LinguaHaru는 2025년 1월부터 Harukayang이 개인적으로 개발·유지보수하고 있습니다. 함께해 주셔서 감사합니다. GPL-3.0 기반의 무료 오픈소스이며, 상업적 협업·맞춤 개발·추가 최적화가 필요하시면 언제든 문의해 주세요. GitHub에서의 피드백과 제안도 언제나 환영합니다."
+  "About Description": "LinguaHaru는 2025년 1월부터 Harukayang이 개인적으로 개발·유지보수하고 있습니다. 함께해 주셔서 감사합니다. GPL-3.0 기반의 무료 오픈소스이며, 상업적 협업·맞춤 개발·추가 최적화가 필요하시면 언제든 문의해 주세요. GitHub에서의 피드백과 제안도 언제나 환영합니다.",
+  "Admin Login": "관리자 로그인",
+  "Admin Logout": "관리자 로그아웃",
+  "Admin Logged In": "관리자로 로그인됨",
+  "Incorrect Password": "비밀번호가 틀렸습니다. 다시 시도하세요",
+  "Admin Login Success": "로그인됨 — 관리 기능 잠금 해제",
+  "Admin Password Saved": "LAN 관리자 비밀번호가 업데이트됨",
+  "Saved": "저장됨",
+  "LAN User Features": "일반 사용자에게 표시할 기능(관리자 로그인하지 않은 LAN의 다른 기기)",
+  "LAN User Features Hint": "체크를 해제하면 일반 사용자에게 해당 기능이 숨겨집니다(관리 페이지는 항상 관리자 전용)."
 }

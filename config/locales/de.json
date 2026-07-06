@@ -336,5 +336,14 @@
   "Loading Model": "Modell wird geladen…",
   "Local Mode Needs Plugin": "Der lokale Modus benötigt das Sprach-Plugin (SenseVoice). Hier klicken, um es auf der Plugin-Seite zu installieren.",
   "Google Live Needs Key": "Google-Echtzeitübersetzung benötigt einen Google-API-Schlüssel. Bitte in der Schnittstellenverwaltung eintragen.",
-  "About Description": "LinguaHaru wird seit Januar 2025 eigenständig von Harukayang entwickelt und gepflegt — danke, dass ihr diesen Weg mitgeht. Es ist unter GPL-3.0 kostenlos und quelloffen; für kommerzielle Zusammenarbeit, individuelle Entwicklung oder weitere Optimierung meldet euch gern. Feedback und Vorschläge sind auf GitHub jederzeit willkommen."
+  "About Description": "LinguaHaru wird seit Januar 2025 eigenständig von Harukayang entwickelt und gepflegt — danke, dass ihr diesen Weg mitgeht. Es ist unter GPL-3.0 kostenlos und quelloffen; für kommerzielle Zusammenarbeit, individuelle Entwicklung oder weitere Optimierung meldet euch gern. Feedback und Vorschläge sind auf GitHub jederzeit willkommen.",
+  "Admin Login": "Admin-Anmeldung",
+  "Admin Logout": "Admin abmelden",
+  "Admin Logged In": "Als Administrator angemeldet",
+  "Incorrect Password": "Falsches Passwort, bitte erneut versuchen",
+  "Admin Login Success": "Angemeldet — Verwaltung entsperrt",
+  "Admin Password Saved": "LAN-Admin-Passwort aktualisiert",
+  "Saved": "Gespeichert",
+  "LAN User Features": "Für normale Nutzer sichtbare Funktionen (andere Geräte im LAN, nicht als Admin angemeldet)",
+  "LAN User Features Hint": "Deaktivieren blendet die Funktion für normale Nutzer aus (Verwaltungsseiten bleiben immer nur für Admins)."
 }
