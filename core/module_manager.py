@@ -360,6 +360,82 @@ def _cu_tag(index):
     return tail if tail.startswith("cu") else None
 
 
+# GPU compute capability -> the PyTorch CUDA wheel channel that first shipped
+# kernels for it. Checked high-to-low; the first threshold the GPU meets wins.
+# A too-old channel installs fine but then throws "no kernel image is available
+# for execution on the device" at runtime (the exact RTX-50-series failure).
+#
+# ⚠️ UPDATE THIS as new GPU archs / torch channels ship — see the wheel list at
+# https://download.pytorch.org/whl/ and PyTorch release notes for which cuNNN
+# first carries a new sm_XX:
+#   sm_120 (cap 12.0)  Blackwell / RTX 50-series  -> cu128, needs CUDA 12.8 driver
+#   sm_80–90 (8.0–9.0) Ampere/Ada/Hopper / RTX 30–40 -> default cu121 (proven,
+#                       broadest driver compatibility)
+# Each row: (min_compute_cap, min_driver_cuda_version, wheel_index).
+_CUDA_CHANNELS_BY_CAP = [
+    (12.0, 12.8, "https://download.pytorch.org/whl/cu128"),   # Blackwell / RTX 50xx
+]
+
+
+def _gpu_compute_cap():
+    """Highest NVIDIA GPU compute capability as a float (12.0 = Blackwell/RTX 50xx,
+    8.9 = Ada/RTX 40xx, 8.6 = Ampere/RTX 30xx), via nvidia-smi. None if unknown.
+    Read from nvidia-smi (not torch) so it works BEFORE we've picked/installed the
+    right torch — the whole point is to choose torch by the GPU's arch."""
+    try:
+        out = subprocess.run(
+            ["nvidia-smi", "--query-gpu=compute_cap", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, timeout=8,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+        caps = [float(x) for x in out.stdout.split() if x.strip()]
+        return max(caps) if caps else None
+    except Exception:  # noqa: BLE001 — no nvidia-smi / parse error -> unknown
+        return None
+
+
+def _driver_cuda_version():
+    """The max CUDA version the installed NVIDIA driver supports (e.g. 12.8), from
+    nvidia-smi's header. A torch cuNNN runtime must be <= this or it won't run.
+    None if unknown. Handles both header formats: the classic "CUDA Version: 12.8"
+    and the newer 610+ driver "CUDA UMD Version: 13.3"."""
+    import re
+    try:
+        out = subprocess.run(
+            ["nvidia-smi"], capture_output=True, text=True, timeout=8,
+            creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+        m = re.search(r"CUDA(?:\s+UMD)?\s+Version:\s*([0-9]+\.[0-9]+)", out.stdout)
+        return float(m.group(1)) if m else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _pick_cuda_index():
+    """The best PyTorch CUDA wheel index for THIS machine's GPU. Newer archs need a
+    newer cuNNN channel (Blackwell/sm_120 needs cu128); older cards keep the
+    broadly-driver-compatible default. Also honours the DRIVER's CUDA ceiling — a
+    channel the driver can't run is skipped (with a "please update the driver"
+    warning) so we don't download a 2.5GB torch that then can't execute. Config
+    'torch_cuda_index' overrides entirely — a URL to pin, or "" to force CPU."""
+    cfg = _config_get("torch_cuda_index", "__auto__")
+    if cfg != "__auto__":
+        return cfg
+    cap = _gpu_compute_cap()
+    drv = _driver_cuda_version()
+    if cap is not None:
+        for min_cap, min_cuda, index in _CUDA_CHANNELS_BY_CAP:
+            if cap < min_cap:
+                continue
+            if drv is not None and drv < min_cuda:
+                app_logger.warning(
+                    "GPU compute_cap %.1f needs CUDA %.1f torch, but the driver only "
+                    "supports CUDA %.1f — update the NVIDIA driver for GPU acceleration; "
+                    "STT will run on CPU until then.", cap, min_cuda, drv)
+                break   # driver too old for this arch's channel -> CPU fallback at runtime
+            app_logger.info("GPU compute_cap %.1f + driver CUDA %s -> %s", cap, drv, index)
+            return index
+    return _PYTORCH_CUDA_INDEX
+
+
 def _pytorch_host_reachable(index):
     """HEAD-probe the wheel index host. HTTPError still means the server answered
     (reachable); only a connection/timeout error means blocked -> use the mirror.
@@ -474,7 +550,7 @@ def _maybe_install_cuda_torch(name):
         return
     if not _nvidia_gpu_present() or _torch_is_cuda():
         return
-    idx = _config_get("torch_cuda_index", _PYTORCH_CUDA_INDEX)
+    idx = _pick_cuda_index()   # GPU-arch + driver aware (Blackwell -> cu128, …)
     if not idx:
         return   # explicitly disabled -> keep CPU torch
 

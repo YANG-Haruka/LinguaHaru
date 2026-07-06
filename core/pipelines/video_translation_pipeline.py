@@ -178,11 +178,46 @@ _whisper_models = {}   # size -> WhisperModel
 _sensevoice = None     # (asr_model, vad_model)
 _qwen_models = {}      # repo id -> Qwen3ASRModel
 
+# Set once we discover the GPU can't actually RUN our torch build — e.g. an RTX
+# 50-series/Blackwell card with a too-old torch → "no kernel image is available
+# for execution on the device". torch.cuda.is_available() returns True there (it
+# only proves a driver exists, NOT that the build has kernels for this GPU), so
+# the only way to know is to run a kernel and catch the failure. Once set, all STT
+# loads on CPU for the rest of the process — slower, but it works instead of
+# silently producing nothing.
+_STT_FORCE_CPU = False
+
+
+def _is_cuda_runtime_error(exc):
+    """True if an exception looks like 'this GPU/torch can't actually do CUDA'
+    (kernel-image mismatch, CUDA init/runtime failure, OOM) — meaning we should
+    retry on CPU rather than surface an error the user can't act on."""
+    s = f"{type(exc).__name__}: {exc}".lower()
+    return any(k in s for k in (
+        "no kernel image", "cuda error", "cuda runtime", "device-side assert",
+        "cublas", "cudnn", "cuda out of memory", "no cuda gpus are available",
+        "torch not compiled with cuda"))
+
+
+def _fall_back_to_cpu_stt(reason=""):
+    """Pin STT to CPU for the rest of the process and drop any GPU-loaded models so
+    the next load rebuilds them on CPU. Idempotent."""
+    global _STT_FORCE_CPU, _sensevoice, _whisper_models, _qwen_models
+    if not _STT_FORCE_CPU:
+        app_logger.warning("STT: GPU unusable (%s) — using CPU for this session", reason)
+    _STT_FORCE_CPU = True
+    _sensevoice = None
+    _whisper_models = {}
+    _qwen_models = {}
+
 
 def _stt_device():
-    """Return 'cuda' if a CUDA-capable GPU + GPU torch build are present, else
-    'cpu'. STT is many times faster on GPU; this is auto-detected so a machine
-    with an NVIDIA GPU (and a CUDA torch build) uses it without any config."""
+    """Return 'cuda' if a CUDA-capable GPU + a WORKING GPU torch build are present,
+    else 'cpu'. Auto-detected so a GPU machine uses it without config — but once a
+    CUDA kernel actually fails at runtime (a too-new GPU for the installed torch),
+    we pin to CPU (see _fall_back_to_cpu_stt) so the feature still works."""
+    if _STT_FORCE_CPU:
+        return "cpu"
     try:
         import torch
         if torch.cuda.is_available():
@@ -1354,15 +1389,28 @@ def preload_recognizer(model_id=None):
             t0 = time.time()
             _get_sensevoice(model_def["size"])
             app_logger.info(f"SenseVoice loaded in {time.time() - t0:.1f}s; warming up…")
-            try:
+            def _warm(tag=""):
                 import numpy as np
                 asr, _vad = _sensevoice
                 t1 = time.time()
                 asr.generate(input=np.zeros(16000, dtype=np.float32), fs=16000,
                              language="auto", use_itn=True)
-                app_logger.info(f"SenseVoice warm-up done in {time.time() - t1:.1f}s")
+                app_logger.info(f"SenseVoice warm-up done{tag} in {time.time() - t1:.1f}s")
+            try:
+                _warm()
             except Exception as e:  # noqa: BLE001
-                app_logger.warning(f"SenseVoice warm-up skipped: {e}")
+                # The warm-up is exactly where a "GPU can't run this torch" failure
+                # first surfaces (e.g. RTX 50xx on a too-old torch). Reload on CPU so
+                # real-time voice actually produces results instead of nothing.
+                if _stt_device() == "cuda" and _is_cuda_runtime_error(e):
+                    _fall_back_to_cpu_stt(str(e).splitlines()[0] if str(e) else type(e).__name__)
+                    try:
+                        _get_sensevoice(model_def["size"])   # rebuilds on CPU now
+                        _warm(" (CPU)")
+                    except Exception as e2:  # noqa: BLE001
+                        app_logger.warning(f"SenseVoice CPU warm-up skipped: {e2}")
+                else:
+                    app_logger.warning(f"SenseVoice warm-up skipped: {e}")
             return True
         if engine == "qwen3asr":
             t0 = time.time()
@@ -1445,7 +1493,15 @@ def _recognize_sensevoice(audio, src_lang, sample_rate, model_name):
     from funasr.utils.postprocess_utils import rich_transcription_postprocess
     asr, _vad = _get_sensevoice(model_name)
     lang = _sensevoice_lang(src_lang)
-    res = asr.generate(input=audio, fs=sample_rate, language=lang, use_itn=True)
+    try:
+        res = asr.generate(input=audio, fs=sample_rate, language=lang, use_itn=True)
+    except Exception as e:  # noqa: BLE001 — self-heal a GPU that can't run this torch
+        if _stt_device() == "cuda" and _is_cuda_runtime_error(e):
+            _fall_back_to_cpu_stt(str(e).splitlines()[0] if str(e) else type(e).__name__)
+            asr, _vad = _get_sensevoice(model_name)   # rebuild on CPU
+            res = asr.generate(input=audio, fs=sample_rate, language=lang, use_itn=True)
+        else:
+            raise
     if not res:
         return "", None
     raw = res[0].get("text", "") if isinstance(res[0], dict) else str(res[0])
