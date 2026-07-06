@@ -595,9 +595,16 @@ async def update_config(payload: dict):
                 config["lan_admin_password_hash"] = _hash_pw(v)
             else:
                 config.pop("lan_admin_password_hash", None)
+            # Rotating or clearing the password must revoke every standing admin
+            # session — otherwise a leaked/stale cookie keeps admin access until
+            # the process restarts, defeating the point of changing the password.
+            _ADMIN_SESSIONS.clear()
             continue
         if k in allowed:
             config[k] = v
+    # Turning LAN mode off should likewise drop remote admin sessions.
+    if payload.get("lan_mode") is False:
+        _ADMIN_SESSIONS.clear()
     config.pop("lan_admin_password", None)  # belt-and-suspenders: no plaintext
     backend.write_config(config)
     if "rpm_limit" in payload:  # apply the new RPM cap without a restart
