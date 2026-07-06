@@ -668,5 +668,15 @@
   "Feature Group Options": "Translation options",
   "Feature Group PDF": "PDF options",
   "Bilingual Feature": "Bilingual",
-  "Subtitles Feature": "Subtitle translation"
+  "Subtitles Feature": "Subtitle translation",
+  "Feature Group Formats": "File formats",
+  "Format Disabled": "This file format isn't available — please contact the administrator.",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "Subtitles",
+  "Format Text": "Text / e-book",
+  "Format Image": "Images",
+  "Format Video": "Video / audio"
 }

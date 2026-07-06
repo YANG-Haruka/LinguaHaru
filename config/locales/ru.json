@@ -350,5 +350,15 @@
   "Feature Group Options": "Параметры перевода",
   "Feature Group PDF": "Параметры PDF",
   "Bilingual Feature": "Двуязычный",
-  "Subtitles Feature": "Перевод субтитров"
+  "Subtitles Feature": "Перевод субтитров",
+  "Feature Group Formats": "Форматы файлов",
+  "Format Disabled": "Этот формат файла недоступен — обратитесь к администратору.",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "Субтитры",
+  "Format Text": "Текст / эл. книга",
+  "Format Image": "Изображения",
+  "Format Video": "Видео / аудио"
 }

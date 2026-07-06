@@ -350,5 +350,15 @@
   "Feature Group Options": "ตัวเลือกการแปล",
   "Feature Group PDF": "ตัวเลือก PDF",
   "Bilingual Feature": "สองภาษา",
-  "Subtitles Feature": "การแปลคำบรรยาย"
+  "Subtitles Feature": "การแปลคำบรรยาย",
+  "Feature Group Formats": "รูปแบบไฟล์",
+  "Format Disabled": "ไม่รองรับรูปแบบไฟล์นี้ โปรดติดต่อผู้ดูแลระบบ",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "คำบรรยาย",
+  "Format Text": "ข้อความ / อีบุ๊ก",
+  "Format Image": "รูปภาพ",
+  "Format Video": "วิดีโอ / เสียง"
 }

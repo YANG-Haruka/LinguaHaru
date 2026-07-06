@@ -371,5 +371,15 @@
   "Feature Group Options": "翻訳オプション",
   "Feature Group PDF": "PDF オプション",
   "Bilingual Feature": "バイリンガル対訳",
-  "Subtitles Feature": "字幕翻訳"
+  "Subtitles Feature": "字幕翻訳",
+  "Feature Group Formats": "ファイル形式",
+  "Format Disabled": "このファイル形式は現在利用できません。管理者にお問い合わせください。",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "字幕",
+  "Format Text": "テキスト / 電子書籍",
+  "Format Image": "画像",
+  "Format Video": "動画 / 音声"
 }

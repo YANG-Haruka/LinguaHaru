@@ -29,6 +29,10 @@ from qt_app.i18n import tr
 _LAN_FEATURE_GROUPS = [
     ("Feature Group Pages", [("translate", "File Translation"), ("live", "Real-Time Voice"),
                              ("glossary", "Glossary"), ("proofread", "Proofread"), ("history", "History")]),
+    ("Feature Group Formats", [("fmt-word", "Format Word"), ("fmt-ppt", "Format PPT"),
+                               ("fmt-excel", "Format Excel"), ("fmt-pdf", "Format PDF"),
+                               ("fmt-subtitle", "Format Subtitle"), ("fmt-text", "Format Text"),
+                               ("fmt-image", "Format Image"), ("fmt-video", "Format Video")]),
     ("Feature Group Options", [("bilingual", "Bilingual Feature"), ("subtitles", "Subtitles Feature"),
                                ("manga", "Manga Mode")]),
     ("Feature Group PDF", [("pdf-ocr", "Scanned PDF OCR"), ("pdf-table", "Translate Tables"),

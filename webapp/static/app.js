@@ -982,7 +982,33 @@ dz.ondragleave = () => dz.classList.remove("dragover");
 dz.ondrop = (e) => { e.preventDefault(); dz.classList.remove("dragover"); if (e.dataTransfer.files.length) setFiles([...e.dataTransfer.files]); };
 $("file-input").onchange = (e) => { if (e.target.files.length) setFiles([...e.target.files]); };
 
+// Extensions the admin has disabled for normal LAN users (empty for the owner/
+// admin, who sees everything). Built from lan_hidden_features + format_categories.
+function _blockedExts() {
+  if (BOOT.is_admin !== false) return null;   // owner/admin: nothing blocked
+  const hidden = (BOOT.config && BOOT.config.lan_hidden_features) || [];
+  const cats = BOOT.format_categories || {};
+  const blocked = new Set();
+  hidden.forEach((k) => (cats[k] || []).forEach((e) => blocked.add(e.toLowerCase())));
+  return blocked.size ? blocked : null;
+}
+
 function setFiles(list) {
+  // Drop any file whose format the admin disabled for normal users (also enforced
+  // server-side), and tell the user to ask the admin.
+  const blocked = _blockedExts();
+  if (blocked) {
+    const kept = list.filter((f) => !blocked.has("." + f.name.split(".").pop().toLowerCase()));
+    if (kept.length !== list.length) toast(_label("Format Disabled", "该文件格式暂不支持，请联系管理员"), "bad");
+    list = kept;
+    if (!list.length) {
+      currentFiles = [];
+      $("drop-text").textContent = _label("Drop Files Here", "将文件拖放到此处，或点击上传");
+      $("media-options").hidden = true; $("pdf-options").hidden = true;
+      if ($("manga-options")) $("manga-options").hidden = true;
+      return;
+    }
+  }
   currentFiles = list;
   if (list.length === 1) {
     $("drop-text").textContent = list[0].name + "  (" + (list[0].size / 1048576).toFixed(1) + " MB)";

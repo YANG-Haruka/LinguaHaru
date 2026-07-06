@@ -679,5 +679,15 @@
   "Feature Group Options": "翻译选项",
   "Feature Group PDF": "PDF 选项",
   "Bilingual Feature": "双语对照",
-  "Subtitles Feature": "翻译字幕"
+  "Subtitles Feature": "翻译字幕",
+  "Feature Group Formats": "文件格式",
+  "Format Disabled": "该文件格式暂不支持，请联系管理员",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "字幕",
+  "Format Text": "文本/电子书",
+  "Format Image": "图片",
+  "Format Video": "视频/音频"
 }

@@ -350,5 +350,15 @@
   "Feature Group Options": "Tùy chọn dịch",
   "Feature Group PDF": "Tùy chọn PDF",
   "Bilingual Feature": "Song ngữ",
-  "Subtitles Feature": "Dịch phụ đề"
+  "Subtitles Feature": "Dịch phụ đề",
+  "Feature Group Formats": "Định dạng tệp",
+  "Format Disabled": "Định dạng tệp này không khả dụng — vui lòng liên hệ quản trị viên.",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "Phụ đề",
+  "Format Text": "Văn bản / e-book",
+  "Format Image": "Hình ảnh",
+  "Format Video": "Video / âm thanh"
 }

@@ -423,6 +423,8 @@ def bootstrap():
         # tells the client to offer a "log out" action (vs auto-admin localhost).
         "is_admin": _is_admin(),
         "admin_session": _admin_session_ok.get(),
+        "format_categories": backend.FORMAT_CATEGORIES,  # feature-key -> [exts]
+
         "local_live_available": realtime_voice_available(),
         # "翻译语音输入" plugin: gates the Quick-Translate mic (STT) + speaker (TTS).
         "quick_voice_available": quick_voice_available(),
@@ -1201,6 +1203,15 @@ async def translate(
         if sum(1 for t in running if t.get("session_id") == session_id) >= MAX_ACTIVE_TASKS_PER_SESSION:
             raise HTTPException(
                 429, "You already have the maximum number of translations running. Please wait.")
+
+    # Format gating: a normal LAN user must not translate a format the admin has
+    # disabled. Enforced here (not just hidden in the UI, which they could bypass).
+    if not _is_admin():
+        hidden = set(backend.get_config("lan_hidden_features", []) or [])
+        for f in files:
+            key = backend.format_key_for_ext(os.path.splitext(f.filename or "")[1])
+            if key and key in hidden:
+                raise HTTPException(403, "This file type is not available on this server")
 
     # One upload dir per task (nested under the session) so concurrent or
     # same-named uploads never clobber each other.

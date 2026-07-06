@@ -54,6 +54,29 @@ for _ext in MEDIA_EXTENSIONS:
     TRANSLATOR_MODULES[_ext] = "core.translators.video_translator.VideoTranslator"
 
 
+# File-format categories a LAN admin can allow/deny for normal users. Maps a
+# stable feature key -> its extensions. Both frontends use it to render the
+# format toggles; the server uses it to ENFORCE a denial (a normal LAN user must
+# not be able to bypass the hidden UI and upload a denied type anyway).
+FORMAT_CATEGORIES = {
+    "fmt-word":     [".docx"],
+    "fmt-ppt":      [".pptx"],
+    "fmt-excel":    [".xlsx", ".csv", ".tsv"],
+    "fmt-pdf":      [".pdf"],
+    "fmt-subtitle": [".srt", ".vtt", ".ass", ".ssa", ".lrc"],
+    "fmt-text":     [".txt", ".md", ".epub", ".html", ".htm", ".odt", ".json"],
+    "fmt-image":    list(IMAGE_EXTENSIONS),
+    "fmt-video":    list(MEDIA_EXTENSIONS),
+}
+_EXT_TO_FORMAT_KEY = {e: k for k, exts in FORMAT_CATEGORIES.items() for e in exts}
+
+
+def format_key_for_ext(ext):
+    """The format-category key for a file extension ('.mp4' -> 'fmt-video'), or
+    None if the extension isn't a categorised type."""
+    return _EXT_TO_FORMAT_KEY.get((ext or "").lower())
+
+
 def accepted_extensions():
     """All extensions the UI should accept in the file picker (sorted)."""
     return sorted(TRANSLATOR_MODULES.keys())

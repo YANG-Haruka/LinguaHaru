@@ -350,5 +350,15 @@
   "Feature Group Options": "번역 옵션",
   "Feature Group PDF": "PDF 옵션",
   "Bilingual Feature": "이중 언어",
-  "Subtitles Feature": "자막 번역"
+  "Subtitles Feature": "자막 번역",
+  "Feature Group Formats": "파일 형식",
+  "Format Disabled": "이 파일 형식은 사용할 수 없습니다. 관리자에게 문의하세요.",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "자막",
+  "Format Text": "텍스트 / 전자책",
+  "Format Image": "이미지",
+  "Format Video": "동영상 / 오디오"
 }

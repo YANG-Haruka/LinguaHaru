@@ -350,5 +350,15 @@
   "Feature Group Options": "Opciones de traducción",
   "Feature Group PDF": "Opciones de PDF",
   "Bilingual Feature": "Bilingüe",
-  "Subtitles Feature": "Traducción de subtítulos"
+  "Subtitles Feature": "Traducción de subtítulos",
+  "Feature Group Formats": "Formatos de archivo",
+  "Format Disabled": "Este formato de archivo no está disponible: contacta con el administrador.",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "Subtítulos",
+  "Format Text": "Texto / libro electrónico",
+  "Format Image": "Imágenes",
+  "Format Video": "Vídeo / audio"
 }

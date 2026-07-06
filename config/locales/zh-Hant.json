@@ -411,5 +411,15 @@
   "Feature Group Options": "翻譯選項",
   "Feature Group PDF": "PDF 選項",
   "Bilingual Feature": "雙語對照",
-  "Subtitles Feature": "翻譯字幕"
+  "Subtitles Feature": "翻譯字幕",
+  "Feature Group Formats": "檔案格式",
+  "Format Disabled": "該檔案格式暫不支援，請聯絡管理員",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "字幕",
+  "Format Text": "文字/電子書",
+  "Format Image": "圖片",
+  "Format Video": "影片/音訊"
 }

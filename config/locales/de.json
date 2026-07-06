@@ -350,5 +350,15 @@
   "Feature Group Options": "Übersetzungsoptionen",
   "Feature Group PDF": "PDF-Optionen",
   "Bilingual Feature": "Zweisprachig",
-  "Subtitles Feature": "Untertitel übersetzen"
+  "Subtitles Feature": "Untertitel übersetzen",
+  "Feature Group Formats": "Dateiformate",
+  "Format Disabled": "Dieses Dateiformat ist nicht verfügbar — bitte wende dich an den Administrator.",
+  "Format Word": "Word",
+  "Format PPT": "PowerPoint",
+  "Format Excel": "Excel",
+  "Format PDF": "PDF",
+  "Format Subtitle": "Untertitel",
+  "Format Text": "Text / E-Book",
+  "Format Image": "Bilder",
+  "Format Video": "Video / Audio"
 }
