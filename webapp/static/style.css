@@ -610,8 +610,19 @@ button.danger { color: #fff; background: #ef4444; border: none; }
 }
 
 /* ----- interface language selector (sidebar bottom) ----- */
-.bottom-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
-.ui-lang-select { padding: 4px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: .85rem; }
+/* Uniform sidebar-bottom items: [icon] [label] — support, theme, language all
+   share one shape (icon + text row, hover highlight). */
+.bottom-item { display: flex; align-items: center; gap: 9px; width: 100%; box-sizing: border-box;
+  height: 34px; padding: 0 8px; border: none; border-radius: 8px; background: transparent;
+  color: var(--text-2); cursor: pointer; font-size: 0.85rem; font-family: inherit;
+  text-align: left; line-height: 1; }
+.bottom-item:hover { background: var(--hover); color: var(--text); }
+.bottom-item > svg, .bottom-item .bi-icon > svg { width: 16px; height: 16px; flex: none; }
+.bottom-item .bi-icon { display: inline-flex; align-items: center; width: 16px; height: 16px; flex: none; }
+.bottom-item-lang select { appearance: none; -webkit-appearance: none; border: none;
+  background: transparent; color: inherit; font: inherit; cursor: pointer; flex: 1;
+  height: 16px; line-height: 16px; margin: 0; padding: 0; outline: none; }
+.bottom-item-lang select option { color: #111; }
 
 /* ----- progress dashboard (mirrors the Qt ring + metric cards) ----- */
 .dash { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; padding: 18px; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }

@@ -515,7 +515,7 @@ function applyTheme(theme) {
   const root = document.documentElement;
   root.setAttribute("data-theme", theme);
   root.style.colorScheme = theme === "dark" ? "dark" : "light";
-  $("theme-toggle").innerHTML = theme === "dark" ? ICON.sun : ICON.moon;
+  const ti = $("theme-icon"); if (ti) ti.innerHTML = theme === "dark" ? ICON.sun : ICON.moon;
   const tm = $("theme-toggle-m"); if (tm) tm.innerHTML = theme === "dark" ? ICON.sun : ICON.moon;
   localStorage.setItem("lh-theme", theme);
   if (window.LHBackground) window.LHBackground.setMode(theme);

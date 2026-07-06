@@ -171,8 +171,8 @@ class MainWindow(FluentWindow):
         # Proofread, History, Plugins, Settings) are added in _build_deferred_pages
         # after the window is shown.
 
-        # Support/contact entry + interface-language picker + theme toggle pinned
-        # at the bottom of the navigation rail (support above language above theme).
+        # Bottom of the navigation rail — three uniform items in this order:
+        # Support / Contact → Theme → Interface Language (matches the web sidebar).
         nav.addItem(
             routeKey="support-contact",
             icon=FluentIcon.HEART,
@@ -182,18 +182,18 @@ class MainWindow(FluentWindow):
             position=NavigationItemPosition.BOTTOM,
         )
         nav.addItem(
-            routeKey="ui-lang",
-            icon=FluentIcon.GLOBE,
-            text=tr("Interface Language", self._lang),
-            onClick=self._show_lang_menu,
-            selectable=False,
-            position=NavigationItemPosition.BOTTOM,
-        )
-        nav.addItem(
             routeKey="theme-toggle",
             icon=FluentIcon.CONSTRACT,
             text=tr("Theme", self._lang),
             onClick=self.toggle_theme,
+            selectable=False,
+            position=NavigationItemPosition.BOTTOM,
+        )
+        nav.addItem(
+            routeKey="ui-lang",
+            icon=FluentIcon.GLOBE,
+            text=tr("Interface Language", self._lang),
+            onClick=self._show_lang_menu,
             selectable=False,
             position=NavigationItemPosition.BOTTOM,
         )

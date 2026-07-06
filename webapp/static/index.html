@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20260706B" />
+  <link rel="stylesheet" href="/static/style.css?v=20260706D" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -90,20 +90,18 @@
     </nav>
 
     <div class="sidebar-bottom">
-      <div class="bottom-row">
-        <button id="support-contact" class="support-link">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
-          <span data-i18n="Support / Contact">支持或联系我</span>
-        </button>
-      </div>
-      <div class="bottom-row">
-        <span class="bottom-label mono" data-i18n="Interface Language">界面语言</span>
-        <select id="ui-lang" class="ui-lang-select" title="界面语言"></select>
-      </div>
-      <div class="bottom-row">
-        <span class="bottom-label mono" data-i18n="Theme">主题</span>
-        <button id="theme-toggle" class="icon-btn" title="切换主题"></button>
-      </div>
+      <button id="support-contact" class="bottom-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/></svg>
+        <span data-i18n="Support / Contact">支持或联系我</span>
+      </button>
+      <button id="theme-toggle" class="bottom-item" title="切换主题">
+        <span class="bi-icon" id="theme-icon"></span>
+        <span data-i18n="Theme">主题</span>
+      </button>
+      <label class="bottom-item bottom-item-lang" title="界面语言">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18"/><path d="M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg>
+        <select id="ui-lang"></select>
+      </label>
     </div>
   </aside>
 
@@ -794,6 +792,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260706E"></script>
+  <script src="/static/app.js?v=20260706F"></script>
 </body>
 </html>
