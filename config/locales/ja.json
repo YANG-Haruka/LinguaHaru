@@ -366,5 +366,10 @@
   "Admin Password Saved": "LAN 管理パスワードを更新しました",
   "Saved": "保存しました",
   "LAN User Features": "一般ユーザーに表示する機能（管理者ログインしていない LAN 上の他の端末）",
-  "LAN User Features Hint": "チェックを外すと一般ユーザーからそのタブを隠します（管理ページは常に管理者専用）。"
+  "LAN User Features Hint": "チェックを外すと一般ユーザーからそのタブを隠します（管理ページは常に管理者専用）。",
+  "Feature Group Pages": "ページ",
+  "Feature Group Options": "翻訳オプション",
+  "Feature Group PDF": "PDF オプション",
+  "Bilingual Feature": "バイリンガル対訳",
+  "Subtitles Feature": "字幕翻訳"
 }

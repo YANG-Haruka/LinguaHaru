@@ -663,5 +663,10 @@
   "Admin Password Saved": "LAN admin password updated",
   "Saved": "Saved",
   "LAN User Features": "Features visible to normal users (other LAN devices not logged in as admin)",
-  "LAN User Features Hint": "Unchecking hides that feature from normal users (management pages are always admin-only)."
+  "LAN User Features Hint": "Unchecking hides that feature from normal users (management pages are always admin-only).",
+  "Feature Group Pages": "Pages",
+  "Feature Group Options": "Translation options",
+  "Feature Group PDF": "PDF options",
+  "Bilingual Feature": "Bilingual",
+  "Subtitles Feature": "Subtitle translation"
 }

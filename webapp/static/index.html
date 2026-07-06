@@ -289,7 +289,7 @@
           <div class="field"><label data-i18n="Glossary">词汇表</label><select id="glossary"></select></div>
         </div>
 
-        <div class="card">
+        <div class="card" data-feat="bilingual">
           <label class="check"><input type="checkbox" id="translate-bilingual" /> <span data-i18n="Bilingual Option">双语对照（译文与原文并排/上下保留，适用于 Word/Excel/PDF/字幕/TXT/MD/EPUB/HTML）</span></label>
         </div>
 
@@ -317,37 +317,37 @@
             <label data-i18n="Speech-to-Text Model">语音转文字模型</label>
             <select id="stt-model"></select>
           </div>
-          <label class="check"><input type="checkbox" id="translate-subs" checked /> <span data-i18n="Translate Subtitles Option">翻译字幕（不勾选则仅转写）</span></label>
+          <label class="check" data-feat="subtitles"><input type="checkbox" id="translate-subs" checked /> <span data-i18n="Translate Subtitles Option">翻译字幕（不勾选则仅转写）</span></label>
           <div class="muted" id="media-note"></div>
         </div>
 
         <!-- PDF options (shown only when a PDF is selected) -->
         <div class="card pdf-options" id="pdf-options" hidden>
           <div class="pdf-options-head" data-i18n="PDF Options">PDF 选项</div>
-          <div class="pdf-opt">
+          <div class="pdf-opt" data-feat="pdf-table">
             <label class="check"><input type="checkbox" id="pdf-translate-table" /> <span data-i18n="Translate Tables">Translate table text</span></label>
             <div class="muted" data-i18n="Translate Tables Hint">Translate Tables Hint</div>
           </div>
-          <div class="pdf-opt">
+          <div class="pdf-opt" data-feat="pdf-ocr">
             <label class="check"><input type="checkbox" id="pdf-ocr-scanned" /> <span data-i18n="Scanned PDF OCR">Scanned PDF OCR</span></label>
             <div class="muted" data-i18n="Scanned PDF OCR Hint">Scanned PDF OCR Hint</div>
           </div>
-          <div class="pdf-opt">
+          <div class="pdf-opt" data-feat="pdf-dual">
             <label class="check"><input type="checkbox" id="pdf-dual-alternating" /> <span data-i18n="Dual Alternating Pages">Dual Alternating Pages</span></label>
             <div class="muted" data-i18n="Dual Alternating Hint">Dual Alternating Hint</div>
           </div>
-          <div class="pdf-opt">
+          <div class="pdf-opt" data-feat="pdf-only">
             <label class="check"><input type="checkbox" id="pdf-only-translated" /> <span data-i18n="Only Translated Pages">Only Translated Pages</span></label>
             <div class="muted" data-i18n="Only Translated Pages Hint">Only Translated Pages Hint</div>
           </div>
-          <div class="pdf-opt">
+          <div class="pdf-opt" data-feat="pdf-pages">
             <label class="field-label" data-i18n="Page Range" for="pdf-pages">Page Range</label>
             <input type="text" id="pdf-pages" placeholder="1-3,5" />
             <div class="muted" data-i18n="Page Range Hint">Page Range Hint</div>
           </div>
         </div>
 
-        <div class="card" id="manga-options" hidden>
+        <div class="card" id="manga-options" hidden data-feat="manga">
           <label class="check"><input type="checkbox" id="manga-mode" /> <span data-i18n="Manga Mode">漫画模式</span></label>
           <div class="muted" data-i18n="Manga Mode Hint">Manga Mode Hint</div>
           <div class="muted" id="manga-pdf-hint" data-i18n="Manga Mode PDF Hint" hidden>Manga Mode PDF Hint</div>
@@ -660,14 +660,35 @@
           <div class="field" style="margin-top:10px"><label data-i18n="LAN Admin Label">局域网管理密码（不设密码时，只有本机可修改配置 / 密钥 / 插件，其他设备无法管理；设置后其他设备需输入此密码才能管理）</label><input type="password" id="set-lan-admin" data-i18n-ph="LAN Admin Placeholder" placeholder="留空 = 仅本机可管理" /></div>
           <div id="lan-features" class="field" style="margin-top:14px" hidden>
             <label data-i18n="LAN User Features">普通用户可见功能（局域网模式下、未登录管理员的其他设备）</label>
-            <div style="display:flex; flex-wrap:wrap; gap:8px 16px; margin-top:8px">
-              <label class="check"><input type="checkbox" class="lan-feat" data-feat="translate" /> <span data-i18n="File Translation">文件翻译</span></label>
-              <label class="check"><input type="checkbox" class="lan-feat" data-feat="live" /> <span data-i18n="Real-Time Voice">实时语音</span></label>
-              <label class="check"><input type="checkbox" class="lan-feat" data-feat="glossary" /> <span data-i18n="Glossary">词汇表</span></label>
-              <label class="check"><input type="checkbox" class="lan-feat" data-feat="proofread" /> <span data-i18n="Proofread">校对</span></label>
-              <label class="check"><input type="checkbox" class="lan-feat" data-feat="history" /> <span data-i18n="History">历史记录</span></label>
+            <div class="lan-feat-grp" style="margin-top:8px">
+              <div class="muted lan-feat-grp-t" data-i18n="Feature Group Pages">页面</div>
+              <div class="lan-feat-row">
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="translate" /> <span data-i18n="File Translation">文件翻译</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="live" /> <span data-i18n="Real-Time Voice">实时语音</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="glossary" /> <span data-i18n="Glossary">词汇表</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="proofread" /> <span data-i18n="Proofread">校对</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="history" /> <span data-i18n="History">历史记录</span></label>
+              </div>
             </div>
-            <div class="muted" style="margin-top:6px; font-size:0.8rem" data-i18n="LAN User Features Hint">取消勾选即对普通用户隐藏该功能（管理页面始终仅管理员可见）。</div>
+            <div class="lan-feat-grp" style="margin-top:10px">
+              <div class="muted lan-feat-grp-t" data-i18n="Feature Group Options">翻译选项</div>
+              <div class="lan-feat-row">
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="bilingual" /> <span data-i18n="Bilingual Feature">双语对照</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="subtitles" /> <span data-i18n="Subtitles Feature">翻译字幕</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="manga" /> <span data-i18n="Manga Mode">漫画模式</span></label>
+              </div>
+            </div>
+            <div class="lan-feat-grp" style="margin-top:10px">
+              <div class="muted lan-feat-grp-t" data-i18n="Feature Group PDF">PDF 选项</div>
+              <div class="lan-feat-row">
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="pdf-ocr" /> <span data-i18n="Scanned PDF OCR">扫描件 OCR</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="pdf-table" /> <span data-i18n="Translate Tables">表格翻译</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="pdf-dual" /> <span data-i18n="Dual Alternating Pages">双栏对照</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="pdf-pages" /> <span data-i18n="Page Range">页码范围</span></label>
+                <label class="check"><input type="checkbox" class="lan-feat" data-feat="pdf-only" /> <span data-i18n="Only Translated Pages">仅译文页</span></label>
+              </div>
+            </div>
+            <div class="muted" style="margin-top:8px; font-size:0.8rem" data-i18n="LAN User Features Hint">取消勾选即对普通用户隐藏该功能（管理页面始终仅管理员可见）。</div>
           </div>
           <div id="admin-logout-row" class="field" style="margin-top:12px; align-items:center; gap:12px" hidden>
             <span class="muted" data-i18n="Admin Logged In">已作为管理员登录</span>
@@ -819,6 +840,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260706M"></script>
+  <script src="/static/app.js?v=20260706N"></script>
 </body>
 </html>

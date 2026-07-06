@@ -345,5 +345,10 @@
   "Admin Password Saved": "Đã cập nhật mật khẩu quản trị LAN",
   "Saved": "Đã lưu",
   "LAN User Features": "Tính năng hiển thị cho người dùng thường (thiết bị LAN khác chưa đăng nhập quản trị)",
-  "LAN User Features Hint": "Bỏ chọn để ẩn tính năng khỏi người dùng thường (trang quản lý luôn chỉ dành cho quản trị)."
+  "LAN User Features Hint": "Bỏ chọn để ẩn tính năng khỏi người dùng thường (trang quản lý luôn chỉ dành cho quản trị).",
+  "Feature Group Pages": "Trang",
+  "Feature Group Options": "Tùy chọn dịch",
+  "Feature Group PDF": "Tùy chọn PDF",
+  "Bilingual Feature": "Song ngữ",
+  "Subtitles Feature": "Dịch phụ đề"
 }

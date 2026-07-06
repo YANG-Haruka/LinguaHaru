@@ -345,5 +345,10 @@
   "Admin Password Saved": "LAN 관리자 비밀번호가 업데이트됨",
   "Saved": "저장됨",
   "LAN User Features": "일반 사용자에게 표시할 기능(관리자 로그인하지 않은 LAN의 다른 기기)",
-  "LAN User Features Hint": "체크를 해제하면 일반 사용자에게 해당 기능이 숨겨집니다(관리 페이지는 항상 관리자 전용)."
+  "LAN User Features Hint": "체크를 해제하면 일반 사용자에게 해당 기능이 숨겨집니다(관리 페이지는 항상 관리자 전용).",
+  "Feature Group Pages": "페이지",
+  "Feature Group Options": "번역 옵션",
+  "Feature Group PDF": "PDF 옵션",
+  "Bilingual Feature": "이중 언어",
+  "Subtitles Feature": "자막 번역"
 }

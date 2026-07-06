@@ -1242,3 +1242,6 @@ html[data-theme="dark"] .seg.active { background: var(--surface-3); border-color
 .admin-msg{margin:2px 0 8px;font-size:0.85rem;padding:7px 11px;border-radius:8px}
 .admin-msg.bad{color:#c62828;background:rgba(198,40,40,0.10)}
 .admin-msg.ok{color:#2e7d32;background:rgba(46,125,50,0.10)}
+
+.lan-feat-grp-t{font-size:0.8rem;margin-bottom:4px;font-weight:500;opacity:0.75}
+.lan-feat-row{display:flex;flex-wrap:wrap;gap:8px 16px}

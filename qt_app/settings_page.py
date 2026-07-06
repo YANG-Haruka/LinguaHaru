@@ -16,11 +16,25 @@ from qfluentwidgets import (
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, CaptionLabel,
     CardWidget, PushButton, LineEdit, FluentIcon, MessageBox, ComboBox,
     ToolTipFilter, ToolTipPosition, MessageBoxBase, SpinBox, DoubleSpinBox,
+    CheckBox, FlowLayout,
 )
 
 from core import backend
 from core import model_store
 from qt_app.i18n import tr
+
+# Feature-visibility groups (feature-key, i18n-label) the LAN admin can hide from
+# normal LAN users. Mirrors the Web checkboxes exactly (same keys -> same
+# lan_hidden_features config -> the Web UI other devices see respects them).
+_LAN_FEATURE_GROUPS = [
+    ("Feature Group Pages", [("translate", "File Translation"), ("live", "Real-Time Voice"),
+                             ("glossary", "Glossary"), ("proofread", "Proofread"), ("history", "History")]),
+    ("Feature Group Options", [("bilingual", "Bilingual Feature"), ("subtitles", "Subtitles Feature"),
+                               ("manga", "Manga Mode")]),
+    ("Feature Group PDF", [("pdf-ocr", "Scanned PDF OCR"), ("pdf-table", "Translate Tables"),
+                           ("pdf-dual", "Dual Alternating Pages"), ("pdf-pages", "Page Range"),
+                           ("pdf-only", "Only Translated Pages")]),
+]
 
 # Outlined button styles: a neutral one and a red "danger" one (for the
 # irreversible delete), both with a hover fill — cleaner than solid blocks.
@@ -246,6 +260,35 @@ class SettingsPage(ScrollArea):
         admin_row.addWidget(self.lan_admin_label)
         admin_row.addWidget(self.lan_admin_edit, 1)
         self.card_run.body.addLayout(admin_row)
+
+        # Feature visibility for normal LAN users. The local owner always sees
+        # everything; unchecking a box hides that tab/option from other (non-admin)
+        # LAN devices. Shares the lan_hidden_features config with the Web UI.
+        self.feat_title = CaptionLabel(tr("LAN User Features", lang))
+        self.feat_title.setWordWrap(True)
+        self.card_run.body.addWidget(self.feat_title)
+        _hidden = set(config.get("lan_hidden_features", []) or [])
+        self._feat_boxes = {}          # feature-key -> CheckBox
+        self._feat_group_labels = []   # (CaptionLabel, i18n-key)
+        for grp_key, items in _LAN_FEATURE_GROUPS:
+            gl = CaptionLabel(tr(grp_key, lang))
+            gl.setStyleSheet("font-weight:600;")
+            self.card_run.body.addWidget(gl)
+            self._feat_group_labels.append((gl, grp_key))
+            flow = FlowLayout(needAni=False)
+            flow.setContentsMargins(0, 0, 0, 2)
+            flow.setHorizontalSpacing(16)
+            flow.setVerticalSpacing(6)
+            for key, label_key in items:
+                cb = CheckBox(tr(label_key, lang))
+                cb.setChecked(key not in _hidden)
+                cb.stateChanged.connect(self._save_features)
+                self._feat_boxes[key] = (cb, label_key)
+                flow.addWidget(cb)
+            self.card_run.body.addLayout(flow)
+        self.feat_hint = CaptionLabel(tr("LAN User Features Hint", lang))
+        self.feat_hint.setWordWrap(True)
+        self.card_run.body.addWidget(self.feat_hint)
 
         # --- Card 2: Translation Options ---
         # Three tiers: common (this card), Advanced, and Real-Time Voice — so the
@@ -651,6 +694,12 @@ class SettingsPage(ScrollArea):
             self.lan_admin_edit.clear()
             self.lan_admin_edit.setPlaceholderText("已设置（留空则不修改）")
 
+    def _save_features(self, *_):
+        """Persist which features are hidden from normal LAN users (unchecked =
+        hidden). Same lan_hidden_features config the Web UI reads."""
+        hidden = [k for k, (cb, _lbl) in self._feat_boxes.items() if not cb.isChecked()]
+        backend.set_config("lan_hidden_features", hidden)
+
     # --- data & storage handlers ---
     def _save_hist_max(self):
         try:
@@ -1004,6 +1053,12 @@ class SettingsPage(ScrollArea):
         self.lan_label.setText(tr("LAN Mode", lang))
         self.lan_hint.setText(tr("LAN access hint", lang))
         self.lan_admin_label.setText(tr("LAN admin password", lang))
+        self.feat_title.setText(tr("LAN User Features", lang))
+        self.feat_hint.setText(tr("LAN User Features Hint", lang))
+        for _gl, _gk in self._feat_group_labels:
+            _gl.setText(tr(_gk, lang))
+        for _key, (_cb, _lbl) in self._feat_boxes.items():
+            _cb.setText(tr(_lbl, lang))
         self.card_options.set_title(tr("Translation Options", lang))
         self.card_advanced.set_title(tr("Advanced Options", lang))
         self.card_live.set_title(tr("Real-Time Voice", lang))

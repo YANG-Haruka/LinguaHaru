@@ -345,5 +345,10 @@
   "Admin Password Saved": "Contraseña de administrador de LAN actualizada",
   "Saved": "Guardado",
   "LAN User Features": "Funciones visibles para usuarios normales (otros dispositivos de la LAN sin iniciar sesión como administrador)",
-  "LAN User Features Hint": "Desmarcar oculta esa función a los usuarios normales (las páginas de administración son siempre solo para administradores)."
+  "LAN User Features Hint": "Desmarcar oculta esa función a los usuarios normales (las páginas de administración son siempre solo para administradores).",
+  "Feature Group Pages": "Páginas",
+  "Feature Group Options": "Opciones de traducción",
+  "Feature Group PDF": "Opciones de PDF",
+  "Bilingual Feature": "Bilingüe",
+  "Subtitles Feature": "Traducción de subtítulos"
 }

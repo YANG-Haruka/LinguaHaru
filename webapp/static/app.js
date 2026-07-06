@@ -818,8 +818,20 @@ function applyRole() {
   const c = BOOT.config || {};
   if (!isAdmin) {
     document.body.classList.add("user-role");
+    const hidden = c.lan_hidden_features || [];
     _hideTabs(["interface", "modules", "settings"]);   // always admin-only
-    _hideTabs(c.lan_hidden_features || []);            // admin-configured hides
+    _hideTabs(hidden);                                 // admin-hidden pages (tab keys)
+    // Admin-hidden inline options (bilingual / subtitles / manga / pdf-*), each
+    // tagged with data-feat on its container.
+    document.querySelectorAll("[data-feat]").forEach((el) => {
+      if (hidden.includes(el.dataset.feat)) el.style.display = "none";
+    });
+    // If every PDF sub-option is hidden, drop the now-empty "PDF Options" header.
+    const pdfCard = $("pdf-options");
+    if (pdfCard && !pdfCard.querySelector(".pdf-opt:not([style*='display: none'])")) {
+      const head = pdfCard.querySelector(".pdf-options-head");
+      if (head) head.style.display = "none";
+    }
     const modelField = $("model").closest(".field");
     if (modelField) modelField.style.display = "none";
     // If the active tab got hidden, fall back to the primary Translate page.

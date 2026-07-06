@@ -406,5 +406,10 @@
   "Admin Password Saved": "區域網路管理密碼已更新",
   "Saved": "已儲存",
   "LAN User Features": "一般使用者可見功能（區域網路下、未登入管理員的其他裝置）",
-  "LAN User Features Hint": "取消勾選即對一般使用者隱藏該功能（管理頁面始終僅管理員可見）。"
+  "LAN User Features Hint": "取消勾選即對一般使用者隱藏該功能（管理頁面始終僅管理員可見）。",
+  "Feature Group Pages": "頁面",
+  "Feature Group Options": "翻譯選項",
+  "Feature Group PDF": "PDF 選項",
+  "Bilingual Feature": "雙語對照",
+  "Subtitles Feature": "翻譯字幕"
 }

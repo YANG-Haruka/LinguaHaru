@@ -674,5 +674,10 @@
   "Admin Password Saved": "局域网管理密码已更新",
   "Saved": "已保存",
   "LAN User Features": "普通用户可见功能（局域网模式下、未登录管理员的其他设备）",
-  "LAN User Features Hint": "取消勾选即对普通用户隐藏该功能（管理页面始终仅管理员可见）。"
+  "LAN User Features Hint": "取消勾选即对普通用户隐藏该功能（管理页面始终仅管理员可见）。",
+  "Feature Group Pages": "页面",
+  "Feature Group Options": "翻译选项",
+  "Feature Group PDF": "PDF 选项",
+  "Bilingual Feature": "双语对照",
+  "Subtitles Feature": "翻译字幕"
 }

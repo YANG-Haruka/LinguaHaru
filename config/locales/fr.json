@@ -345,5 +345,10 @@
   "Admin Password Saved": "Mot de passe admin LAN mis à jour",
   "Saved": "Enregistré",
   "LAN User Features": "Fonctions visibles par les utilisateurs normaux (autres appareils du LAN non connectés en admin)",
-  "LAN User Features Hint": "Décocher masque cette fonction aux utilisateurs normaux (les pages d'administration restent réservées à l'admin)."
+  "LAN User Features Hint": "Décocher masque cette fonction aux utilisateurs normaux (les pages d'administration restent réservées à l'admin).",
+  "Feature Group Pages": "Pages",
+  "Feature Group Options": "Options de traduction",
+  "Feature Group PDF": "Options PDF",
+  "Bilingual Feature": "Bilingue",
+  "Subtitles Feature": "Traduction des sous-titres"
 }
