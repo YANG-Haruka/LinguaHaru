@@ -1,15 +1,15 @@
 {
-    "version": "6.0",
+    "version": "6.1",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.0: ground-up rewrite — dual UIs, 90%+ faster engine, on-demand GPU plugins. / 6.0：从零重写——双端界面、翻译提速 90%+、按需 GPU 插件。",
+    "notes": "6.1: LAN admin roles — normal-user view, per-feature & per-format visibility, admin login session. / 6.1：局域网管理员角色——普通用户视图、按功能与格式的可见性控制、管理员登录会话。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.0/LinguaHaru-6.0-web-portable.zip",
-            "sha256": "7d7a16223270aa83c3a71bbdbe32163a445872ca69384b955e2cad84e22cf497"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.1/LinguaHaru-6.1-web-portable.zip",
+            "sha256": "4ef9fac2c9b1cd4c4c5c2da56c87691a2585f908781ef17ca3d7614751c74d9c"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.0/LinguaHaru-6.0-desktop-portable.zip",
-            "sha256": "073f8bba49e38e47b08539191beee7b5d3ae01dafca27bc9bd738d81d24d956f"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.1/LinguaHaru-6.1-desktop-portable.zip",
+            "sha256": "fb1788f166c21beed3aedcd61479678077b2059e1b811525801afeee0735c944"
         }
     }
 }
