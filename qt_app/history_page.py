@@ -394,13 +394,10 @@ class HistoryPage(QWidget):
         langs = (f"{rec.get('src_lang_display') or rec.get('src_lang', '')} → "
                  f"{rec.get('dst_lang_display') or rec.get('dst_lang', '')}")
         mode = "Online" if rec.get("use_online") else "Offline"
-        cost = (f"{rec.get('cost_amount')} {rec.get('cost_currency')}"
-                if rec.get("cost_amount") is not None and rec.get("cost_currency") else "—")
         self._fill_grid([
             (tr("Source Language", L), langs),
             (tr("Model", L), f"{rec.get('model', '')} ({mode})"),
             (tr("Tokens", L), format_tokens(rec.get("total_tokens", 0))),
-            (tr("Estimated cost", L), cost),
             (tr("Duration", L), format_duration(int(rec.get("duration_seconds") or 0))),
             (tr("Output File", L), os.path.basename(rec.get("output_file_path") or "") or "—"),
         ])
@@ -429,8 +426,6 @@ class HistoryPage(QWidget):
         self._set_status_pill(_agg_status(recs))
         done = sum(1 for r in recs if r.get("status") == "success")
         total_tokens = sum(int(r.get("total_tokens") or 0) for r in recs)
-        cost_amt = sum(float(r.get("cost_amount") or 0) for r in recs)
-        ccy = next((r.get("cost_currency") for r in recs if r.get("cost_currency")), "")
         langs = (f"{recs[0].get('src_lang_display') or ''} → "
                  f"{recs[0].get('dst_lang_display') or ''}")
         self._fill_grid([
@@ -440,7 +435,6 @@ class HistoryPage(QWidget):
             (tr("Source Language", L), langs),
             (tr("Model", L), recs[0].get("model", "")),
             (tr("Tokens", L), format_tokens(total_tokens)),
-            (tr("Estimated cost", L), f"{cost_amt:.4f} {ccy}" if cost_amt else "—"),
             (tr("Duration", L), format_duration(
                 sum(int(r.get("duration_seconds") or 0) for r in recs))),
         ])

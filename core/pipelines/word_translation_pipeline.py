@@ -2909,11 +2909,17 @@ def _enforce_consistent_cjk_font(temp_dir, dst_lang, namespaces):
                 rpr = etree.Element(f"{{{w}}}rPr")
                 r.insert(0, rpr)
             rfonts = rpr.find(f"{{{w}}}rFonts")
+            # Respect an existing East Asian font, whether explicit or theme-based.
+            if rfonts is not None and (rfonts.get(f"{{{w}}}eastAsia")
+                                       or rfonts.get(f"{{{w}}}eastAsiaTheme")):
+                continue
             if rfonts is None:
                 rfonts = etree.Element(f"{{{w}}}rFonts")
-                rpr.insert(0, rfonts)
-            if rfonts.get(f"{{{w}}}eastAsia"):
-                continue   # respect an existing East Asian font
+                # In CT_RPr only w:rStyle may precede w:rFonts — insert after it
+                # (else at the front) to keep the run properties schema-valid.
+                rstyle = rpr.find(f"{{{w}}}rStyle")
+                pos = list(rpr).index(rstyle) + 1 if rstyle is not None else 0
+                rpr.insert(pos, rfonts)
             rfonts.set(f"{{{w}}}eastAsia", font)
             rfonts.set(f"{{{w}}}hint", "eastAsia")
             changed = True
