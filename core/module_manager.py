@@ -226,32 +226,135 @@ def pick_pypi_index():
     return _pypi_index
 
 
-def _install_cmd(req, index, upgrade):
+def _site_packages():
+    """site-packages of the interpreter we install into (sys.executable)."""
+    import sysconfig
+    p = sysconfig.get_paths().get("purelib")
+    return p if p and os.path.isdir(p) else None
+
+
+def _repair_broken_metadata():
+    """Remove *.dist-info dirs missing their METADATA file — leftovers of an
+    interrupted install that make uv/pip choke ('Failed to read metadata for X',
+    os error 2). The package's code may still import, but its install record is
+    corrupt; dropping the dist-info lets the installer reinstall it cleanly.
+    Returns the removed dist-info names."""
+    import glob
+    sp = _site_packages()
+    if not sp:
+        return []
+    removed = []
+    for di in glob.glob(os.path.join(sp, "*.dist-info")):
+        if not os.path.exists(os.path.join(di, "METADATA")):
+            try:
+                shutil.rmtree(di)
+                removed.append(os.path.basename(di))
+            except Exception:  # noqa: BLE001
+                pass
+    if removed:
+        app_logger.warning("Removed %d corrupt package record(s) before install: %s",
+                           len(removed), ", ".join(removed))
+        _emit("清理残缺的安装记录… / cleaning up corrupt package records…")
+    return removed
+
+
+def _freeze_constraints():
+    """A constraints file pinning every currently-installed package, so a plugin
+    install only ADDS packages and never upgrades/reinstalls one the RUNNING app
+    has loaded — on Windows a loaded C-extension (Pillow, numpy, …) can't be
+    replaced and the install dies with a locked-file error (os error 5). Returns a
+    temp path (caller deletes it) or None if freezing failed."""
+    import tempfile
+    uv = _uv_exe()
+    cmd = ([uv, "pip", "freeze", "--python", sys.executable] if uv
+           else [sys.executable, "-m", "pip", "freeze"])
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
+                             creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+    except Exception:  # noqa: BLE001
+        return None
+    if out.returncode != 0:
+        return None
+    # Keep only plain 'name==version' pins; drop editable / @-url / -e / blank lines
+    # (not valid as constraints).
+    lines = [ln.strip() for ln in out.stdout.splitlines()
+             if "==" in ln and " @ " not in ln and not ln.startswith(("-e", "-", "#"))]
+    if not lines:
+        return None
+    try:
+        fd, path = tempfile.mkstemp(suffix=".txt", prefix="lh_con_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return path
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _install_cmd(req, index, upgrade, constraints=None):
     uv = _uv_exe()
     up = ["--upgrade"] if upgrade else []
     idx = ["--index-url", index]
+    con = ["--constraint", constraints] if constraints else []
     if uv:
-        return [uv, "pip", "install", "--python", sys.executable, *idx, *up, "-r", req]
-    return [sys.executable, "-m", "pip", "install", *idx, *up, "-r", req]
+        return [uv, "pip", "install", "--python", sys.executable, *idx, *up, *con, "-r", req]
+    return [sys.executable, "-m", "pip", "install", *idx, *up, *con, "-r", req]
 
 
-def _run_install(req, upgrade=False):
-    """Install from a requirements file into THIS interpreter. uv (with --python
-    pointing at our interpreter) when available, else `python -m pip`. Uses a
-    mainland-China PyPI mirror automatically when the official wheel host is
-    unreachable, AND auto-retries on the mirror if an official install fails (so a
-    wrong probe / transient CDN block still recovers instead of just erroring)."""
-    blocked = _frozen_block()
-    if blocked:
-        return blocked
+def _install_attempt(req, upgrade, constraints):
+    """One install attempt (official index, then China mirror on failure)."""
     index = pick_pypi_index()
-    ok, out = _run(_install_cmd(req, index, upgrade))
+    ok, out = _run(_install_cmd(req, index, upgrade, constraints))
     if not ok and index != _PYPI_MIRROR:
         app_logger.info("Install failed on %s — retrying on China mirror", index)
         _emit("⚠ 官方源安装失败，正在切换国内镜像重试… / retrying on China mirror…")
-        ok, out2 = _run(_install_cmd(req, _PYPI_MIRROR, upgrade))
+        ok, out2 = _run(_install_cmd(req, _PYPI_MIRROR, upgrade, constraints))
         out = (out + "\n--- retry on mirror ---\n" + out2)[-4000:]
     return ok, out
+
+
+def _is_constraint_conflict(out):
+    s = (out or "").lower()
+    return any(k in s for k in ("no solution found", "are incompatible",
+                                "cannot be installed", "conflicting"))
+
+
+def _is_locked_file(out):
+    s = (out or "").lower()
+    return any(k in s for k in ("os error 5", "拒绝访问", "access is denied",
+                                "failed to remove file", "used by another process"))
+
+
+def _run_install(req, upgrade=False):
+    """Install from a requirements file into THIS interpreter (uv with --python, else
+    pip). Auto-uses a China PyPI mirror when the official host is unreachable / fails.
+
+    Two robustness guards (Windows portable installs into a RUNNING app):
+    - First repair any half-installed package records (missing METADATA) so a prior
+      interrupted install doesn't make every future resolve fail (os error 2).
+    - Pin the already-installed set as constraints so we only ADD packages and never
+      replace a loaded C-extension (os error 5 locked file). If that pin causes a
+      real version conflict, retry without it so a legit install still goes through."""
+    blocked = _frozen_block()
+    if blocked:
+        return blocked
+    _repair_broken_metadata()
+    constraints = None if upgrade else _freeze_constraints()
+    try:
+        ok, out = _install_attempt(req, upgrade, constraints)
+        if not ok and constraints and _is_constraint_conflict(out):
+            app_logger.info("Constrained install hit a version conflict — retrying unconstrained")
+            ok, out = _install_attempt(req, upgrade, None)
+        if not ok and _is_locked_file(out):
+            out += ("\n\n⚠ 某个正在使用的组件无法更新（文件被占用）。请完全退出 "
+                    "LinguaHaru 后重新安装该插件。/ A component in use couldn't be updated "
+                    "— fully close LinguaHaru, then reinstall this plugin.")
+        return ok, out
+    finally:
+        if constraints:
+            try:
+                os.remove(constraints)
+            except Exception:  # noqa: BLE001
+                pass
 
 
 def _run_uninstall(pkgs):
