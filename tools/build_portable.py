@@ -34,9 +34,12 @@ VARIANTS = {
     "web": {"name": "LinguaHaru-web", "dirs": ["webapp"],
             "reqs": ["requirements/base.txt", "requirements/web.txt"],
             "entry": "-m webapp.server", "launcher": "Start-Web.bat"},
-    "qt":  {"name": "LinguaHaru-desktop", "dirs": ["qt_app"],
+    # The desktop app's LAN mode starts `python -m webapp.server` as a subprocess,
+    # so the portable must ALSO ship the webapp package + its FastAPI/uvicorn deps —
+    # otherwise the LAN admin feature can't launch in the portable (ModuleNotFound).
+    "qt":  {"name": "LinguaHaru-desktop", "dirs": ["qt_app", "webapp"],
             "files": ["app_qt.py"],
-            "reqs": ["requirements/base.txt", "requirements/qt.txt"],
+            "reqs": ["requirements/base.txt", "requirements/qt.txt", "requirements/web.txt"],
             "entry": "app_qt.py", "launcher": "Start-Desktop.bat",
             "prune": "pyside6"},
 }
