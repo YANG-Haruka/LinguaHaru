@@ -11,6 +11,15 @@ from core.log_config import app_logger
 from typing import Dict, List
 import re
 
+
+def _slide_num(name):
+    """Numeric sort key for slideN.xml / notesSlideN.xml. A plain .sort() is LEXICAL
+    (slide1, slide10, slide2 …), which scrambles slide order for decks with >=10
+    slides. Extraction and write-back MUST sort identically or translations land on
+    the wrong slide (whole-deck garble) — so both use this."""
+    m = re.search(r'(\d+)\.xml$', name)
+    return int(m.group(1)) if m else 0
+
 def extract_ppt_content_to_json(file_path, temp_dir):
     """
     Extract text content from PowerPoint, processing each paragraph/cell as a single unit.
@@ -835,13 +844,13 @@ def write_translated_content_to_ppt(file_path: str, original_json_path: str, tra
 
     try:
         with ZipFile(file_path, 'r') as pptx:
-            slides = [name for name in pptx.namelist() 
+            slides = [name for name in pptx.namelist()
                      if name.startswith('ppt/slides/slide') and name.endswith('.xml')]
-            slides.sort()
-            
-            notes_slides = [name for name in pptx.namelist() 
+            slides.sort(key=_slide_num)   # NUMERIC — must match extraction (>=10 slides)
+
+            notes_slides = [name for name in pptx.namelist()
                           if name.startswith('ppt/notesSlides/notesSlide') and name.endswith('.xml')]
-            notes_slides.sort()
+            notes_slides.sort(key=_slide_num)
             
             # Get SmartArt diagram files
             diagram_files = [name for name in pptx.namelist()
