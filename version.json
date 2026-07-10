@@ -1,15 +1,15 @@
 {
-    "version": "6.1",
+    "version": "6.2",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.1: LAN admin roles — normal-user view, per-feature & per-format visibility, admin login session. / 6.1：局域网管理员角色——普通用户视图、按功能与格式的可见性控制、管理员登录会话。",
+    "notes": "6.2: GPU torch auto-select (RTX 50-series) + CPU fallback, reliable plugin install, China mirror auto-detect, PPTX fixes. / 6.2：GPU torch 自适应（含 50 系）+ CPU 兜底、插件安装更稳、国内镜像自动识别、PPTX 修复。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.1/LinguaHaru-6.1-web-portable.zip",
-            "sha256": "2f7361cd95b48f8d5c67cfaf70f71aa202207e00de118f1f0a5bc6058b1e0314"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.2/LinguaHaru-6.2-web-portable.zip",
+            "sha256": "9cbf0df635239cfea287435212a1131a09e1ef60b6f2d67d24d2456c82be4e62"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.1/LinguaHaru-6.1-desktop-portable.zip",
-            "sha256": "a50b9f977813eb9103cc428256806b1a0fc9d881d90e9995226777b46a9d067f"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.2/LinguaHaru-6.2-desktop-portable.zip",
+            "sha256": "e271907fcbd7c98a2671be46b4e6db6eb78d3ccd0b73c2c4ba3b0e9ae4467e32"
         }
     }
 }
