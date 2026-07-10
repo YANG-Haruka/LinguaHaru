@@ -1,15 +1,15 @@
 {
-    "version": "6.2",
+    "version": "6.3",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.2: GPU torch auto-select (RTX 50-series) + CPU fallback, reliable plugin install, China mirror auto-detect, PPTX fixes. / 6.2：GPU torch 自适应（含 50 系）+ CPU 兜底、插件安装更稳、国内镜像自动识别、PPTX 修复。",
+    "notes": "6.3: PPTX fixes — 10+ slide decks no longer scrambled, long translations auto-shrink to fit (no more overlap). / 6.3：PPTX 修复——10 页以上不再错乱、长译文自动缩字不再叠字。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.2/LinguaHaru-6.2-web-portable.zip",
-            "sha256": "9cbf0df635239cfea287435212a1131a09e1ef60b6f2d67d24d2456c82be4e62"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.3/LinguaHaru-6.3-web-portable.zip",
+            "sha256": "a32971f7025f01d8380c34a19c1c0eefcace46a5a1dbbc7555aaea82b7760b41"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.2/LinguaHaru-6.2-desktop-portable.zip",
-            "sha256": "e271907fcbd7c98a2671be46b4e6db6eb78d3ccd0b73c2c4ba3b0e9ae4467e32"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.3/LinguaHaru-6.3-desktop-portable.zip",
+            "sha256": "4f71a10bdb91cc4bd747667af74ad0da916648aa8c94e33e17abe958d928c01a"
         }
     }
 }
