@@ -681,5 +681,7 @@
   "Format Video": "Video / audio",
   "China Mirror": "China mirror (plugin downloads)",
   "China Mirror Hint": "Force the Tsinghua PyPI mirror for plugin/dependency downloads — turn on if the official server is too slow.",
-  "China Mirror Label": "Force plugin/dependency downloads via China mirror (Tsinghua PyPI; enable on poor networks / in mainland China)"
+  "China Mirror Label": "Force plugin/dependency downloads via China mirror (Tsinghua PyPI; enable on poor networks / in mainland China)",
+  "Excel Shrink": "Excel: auto-shrink long text",
+  "Excel Shrink Label": "Excel: auto-shrink long text (scales the font to the column width when the translation doesn't fit; off by default)"
 }

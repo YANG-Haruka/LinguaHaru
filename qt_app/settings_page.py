@@ -355,6 +355,12 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("dedup_context", v))
         self.dedup_ctx_label = BodyLabel(tr("Context-aware Dedup", lang))
         adv_form.addRow(self.dedup_ctx_label, self.dedup_ctx)
+        self.excel_shrink = SwitchButton()
+        self.excel_shrink.setChecked(config.get("excel_shrink_to_fit", False))
+        self.excel_shrink.checkedChanged.connect(
+            lambda v: backend.set_config("excel_shrink_to_fit", v))
+        self.excel_shrink_label = BodyLabel(tr("Excel Shrink", lang))
+        adv_form.addRow(self.excel_shrink_label, self.excel_shrink)
         self.with_ctx = SwitchButton()
         self.with_ctx.setChecked(config.get("translate_with_context", False))
         self.with_ctx.checkedChanged.connect(
@@ -1086,6 +1092,7 @@ class SettingsPage(ScrollArea):
         self.auto_glossary_label.setText(tr("AI Glossary Extraction", lang))
         self.mask_ph_label.setText(tr("Placeholder Protection", lang))
         self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))
+        self.excel_shrink_label.setText(tr("Excel Shrink", lang))
         self.with_ctx_label.setText(tr("Type Context", lang))
         self.tone_label.setText(tr("Tone", lang))
         self.length_label.setText(tr("Length", lang))

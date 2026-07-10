@@ -692,5 +692,7 @@
   "Format Video": "视频/音频",
   "China Mirror": "国内镜像源（插件下载）",
   "China Mirror Hint": "插件/依赖下载强制走清华 PyPI 镜像；官方源太慢或下不动时开启。",
-  "China Mirror Label": "插件/依赖下载强制使用国内镜像源（清华 PyPI；网络不佳或国内无法下载插件时勾选）"
+  "China Mirror Label": "插件/依赖下载强制使用国内镜像源（清华 PyPI；网络不佳或国内无法下载插件时勾选）",
+  "Excel Shrink": "Excel 长文字自动缩小字体",
+  "Excel Shrink Label": "Excel 长文字自动缩小字体（译文放不下时按列宽自动缩小；默认关闭）"
 }

@@ -363,5 +363,7 @@
   "Format Video": "Video / âm thanh",
   "China Mirror": "Máy chủ gương TQ (tải plugin)",
   "China Mirror Hint": "Buộc dùng máy chủ gương Tsinghua PyPI để tải plugin/phụ thuộc — bật khi máy chủ chính thức quá chậm.",
-  "China Mirror Label": "Buộc tải plugin/phụ thuộc qua máy chủ gương TQ (Tsinghua PyPI; bật khi mạng kém / ở Trung Quốc đại lục)"
+  "China Mirror Label": "Buộc tải plugin/phụ thuộc qua máy chủ gương TQ (Tsinghua PyPI; bật khi mạng kém / ở Trung Quốc đại lục)",
+  "Excel Shrink": "Excel: tự thu nhỏ chữ dài",
+  "Excel Shrink Label": "Excel: tự thu nhỏ chữ dài (thu nhỏ phông theo độ rộng cột khi bản dịch không vừa; mặc định tắt)"
 }

@@ -13,9 +13,43 @@ _SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_networ
 from typing import Dict, List
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
+from openpyxl.styles import Alignment
 from openpyxl.utils import range_boundaries
 from .skip_pipeline import should_translate
 from core.log_config import app_logger
+
+
+def _excel_shrink_enabled():
+    """Config 'excel_shrink_to_fit' (default OFF): when on, a longer translation gets
+    Excel's native 'shrink to fit' so it auto-scales down to the column width instead
+    of being clipped/hidden. Off by default — spreadsheets are laid out deliberately,
+    so this is opt-in."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("excel_shrink_to_fit", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _apply_shrink_to_fit(cell, original_text, translated_value):
+    """Set 'shrink to fit' on a cell whose translation is longer than the source, so
+    it scales down to the column width. Skips cells set to wrap (Excel makes shrink &
+    wrap mutually exclusive) and preserves the cell's other alignment attributes."""
+    try:
+        if len(str(translated_value or "")) <= len(str(original_text or "")):
+            return
+        al = cell.alignment
+        if al is not None and al.wrap_text:
+            return
+        cell.alignment = Alignment(
+            horizontal=al.horizontal if al else None,
+            vertical=al.vertical if al else None,
+            text_rotation=al.text_rotation if al else 0,
+            indent=al.indent if al else 0,
+            wrap_text=False, shrink_to_fit=True)
+    except Exception:  # noqa: BLE001 — formatting is best-effort
+        pass
 
 
 def extract_excel_content_to_json(file_path, temp_dir, use_xlwings=False):
@@ -303,6 +337,7 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
 
     # Convert translations to a dictionary {count: translated_value}
     translations = {str(item["count_src"]): item["translated"] for item in translated_data}
+    shrink_to_fit = _excel_shrink_enabled()   # opt-in: auto-shrink long translations
 
     # Track sheet name translations to apply at the end
     sheet_name_translations = {}
@@ -371,6 +406,8 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         sheet = workbook[sheet_name]
         cell = sheet.cell(row=row, column=column)
         cell.value = _safe_cell_value(value)
+        if shrink_to_fit and not isinstance(cell, MergedCell):
+            _apply_shrink_to_fit(cell, original_text, value)
 
     # Data-validation popup write-back (openpyxl-native; do this before the
     # sheet-rename pass so item["sheet"] still resolves to the original title).
@@ -1428,6 +1465,7 @@ def _write_with_xlwings(file_path, original_json_path, translated_json_path, res
     app_logger.info(f"Original data count: {len(original_data)}")
     app_logger.info(f"Translation data count: {len(translated_data)}")
 
+    shrink_to_fit = _excel_shrink_enabled()   # opt-in: auto-shrink long translations
     translations = {}
     for item in translated_data:
         count_src = str(item["count_src"])
@@ -1640,6 +1678,13 @@ def _write_with_xlwings(file_path, original_json_path, translated_json_path, res
                                     column = merge_start_col
 
                             sheet.cells(row, column).value = value
+                            if shrink_to_fit:
+                                try:
+                                    _rng = sheet.cells(row, column).api
+                                    if not _rng.WrapText:      # shrink & wrap are exclusive
+                                        _rng.ShrinkToFit = True
+                                except Exception:  # noqa: BLE001
+                                    pass
                             successful_updates += 1
 
                             if successful_updates % 100 == 0:

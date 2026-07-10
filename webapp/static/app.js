@@ -596,6 +596,7 @@ async function boot() {
   if ($("set-length")) $("set-length").value = c.translation_length || "";
   if ($("set-style")) $("set-style").value = c.translation_style || "";
   if ($("set-mask-ph")) $("set-mask-ph").checked = c.mask_placeholders !== false;
+  if ($("set-excel-shrink")) $("set-excel-shrink").checked = !!c.excel_shrink_to_fit;
   if ($("set-dedup-context")) $("set-dedup-context").checked = !!c.dedup_context;
   if ($("set-with-context")) $("set-with-context").checked = !!c.translate_with_context;
   if ($("set-image-lama")) $("set-image-lama").checked = !!c.image_inpaint_lama;
@@ -1408,6 +1409,7 @@ if ($("set-tone")) $("set-tone").onchange = () => saveConfig({ translation_tone:
 if ($("set-length")) $("set-length").onchange = () => saveConfig({ translation_length: $("set-length").value });
 if ($("set-style")) $("set-style").onchange = () => saveConfig({ translation_style: $("set-style").value.trim() });
 if ($("set-mask-ph")) $("set-mask-ph").onchange = () => saveConfig({ mask_placeholders: $("set-mask-ph").checked });
+if ($("set-excel-shrink")) $("set-excel-shrink").onchange = () => saveConfig({ excel_shrink_to_fit: $("set-excel-shrink").checked });
 if ($("set-dedup-context")) $("set-dedup-context").onchange = () => saveConfig({ dedup_context: $("set-dedup-context").checked });
 if ($("set-with-context")) $("set-with-context").onchange = () => saveConfig({ translate_with_context: $("set-with-context").checked });
 async function refreshCacheStats() {

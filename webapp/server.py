@@ -579,7 +579,7 @@ async def update_config(payload: dict):
                "bilingual_bold", "bilingual_color", "live_stream_translation",
                "web_vad", "live_vad_hang_ms", "live_vad_sensitivity",
                "live_vad_max_seg_ms", "lan_mode", "lan_hidden_features",
-               "use_china_mirror",
+               "use_china_mirror", "excel_shrink_to_fit",
                "result_dir", "history_max_records", "history_max_age_days",
                "log_max_files", "log_max_age_days", "log_max_size_mb",
                "result_max_size_mb",
