@@ -1128,12 +1128,9 @@ def _apply_text_paragraph_translation(slide_tree, item: Dict, translated_text: s
         
         if item['paragraph_index'] < len(paragraphs):
             paragraph = paragraphs[item['paragraph_index']]
+            # (explicit font-shrink for long translations happens inside
+            # _distribute_text_to_runs, shared by every write-back path)
             _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
-            # normAutofit only shrinks when PowerPoint re-lays-out (on edit); explicitly
-            # scaling the font too keeps a much-longer translation from overflowing its
-            # box and colliding with the shape below, even on first open / PDF export.
-            _shrink_cell_font(paragraph, (item.get('value') or '').replace('␊', '').replace('␍', ''),
-                              translated_text, namespaces)
 
 def _apply_table_cell_paragraph_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
     """Apply translation to a table cell paragraph, distributing across runs."""
@@ -1154,8 +1151,6 @@ def _apply_table_cell_paragraph_translation(slide_tree, item: Dict, translated_t
                 if item['paragraph_index'] < len(paragraphs):
                     paragraph = paragraphs[item['paragraph_index']]
                     _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
-                    _shrink_cell_font(paragraph, (item.get('value') or '').replace('␊', '').replace('␍', ''),
-                                      translated_text, namespaces)
 
 def _apply_table_cell_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
     """Apply translation to a table cell, distributing across runs. (For backward compatibility)"""
@@ -1252,6 +1247,13 @@ def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, n
         _intelligent_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
     # Longer target text must not overflow its box/cell -> shrink-to-fit.
     _set_shrink_to_fit(parent_element, namespaces)
+    # normAutofit only takes effect when PowerPoint re-lays-out (on edit), and table
+    # cells ignore it outright — so ALSO scale the explicit run sizes here, at the one
+    # spot every write-back path goes through (text boxes, tables, shapes, SmartArt,
+    # masters, notes). Keeps a much-longer translation from overflowing on first
+    # open / PDF export. The scope of `parent_element` always matches the item's.
+    _shrink_cell_font(parent_element, (item.get('value') or '').replace('␊', '').replace('␍', ''),
+                      translated_text, namespaces)
 
 def _simple_text_distribution(text_runs, translated_text: str, namespaces: Dict):
     """Fallback used when the recorded run structure doesn't match the live runs.

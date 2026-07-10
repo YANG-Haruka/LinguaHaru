@@ -11,6 +11,7 @@ Run:  uvicorn webapp.server:app  (or python -m webapp.server)
 import os
 import sys
 import json
+import hashlib
 import hmac
 import shutil
 import threading
@@ -135,11 +136,22 @@ def _host_override():
     return (os.environ.get("LINGUAHARU_HOST") or os.environ.get("HOST") or "").strip() or None
 
 
+# Whether THIS process actually bound a non-loopback address, recorded once at
+# startup (see __main__). The socket can't re-bind at runtime, so this must not
+# follow live config: turning lan_mode OFF in settings while the process still
+# listens on 0.0.0.0 must NOT drop the remote-admin guard — that would instantly
+# make every LAN peer an admin until the restart the UI asks for ("fail open").
+_SERVED_EXTERNALLY = False
+
+
 def _bound_externally():
-    """True when the server is reachable off-box: lan_mode, server/deploy mode, OR
-    an explicit non-loopback HOST env (e.g. Docker's 0.0.0.0). Drives the
-    remote-admin auth guard so the bind address and the guard can never disagree —
-    a 0.0.0.0 bind WITHOUT the guard would leave admin endpoints wide open."""
+    """True when the server is reachable off-box: lan_mode, server/deploy mode, an
+    explicit non-loopback HOST env (e.g. Docker's 0.0.0.0), OR — decisively — the
+    address this process actually bound at startup. Drives the remote-admin auth
+    guard so the bind address and the guard can never disagree — a 0.0.0.0 bind
+    WITHOUT the guard would leave admin endpoints wide open."""
+    if _SERVED_EXTERNALLY:
+        return True
     if backend.get_config("lan_mode", False) or server_mode_on():
         return True
     h = _host_override()
@@ -197,8 +209,20 @@ _verify_pw = backend.verify_lan_password
 # once (not per action) and its cleartext never lives in the browser. Tokens are
 # dropped on logout or server restart (a cheap, LAN-appropriate session store).
 _ADMIN_COOKIE = "lh_admin"
-_ADMIN_SESSIONS = set()
+# token -> the credential fingerprint it was issued under (see _admin_pw_fingerprint)
+_ADMIN_SESSIONS = {}
 _admin_session_ok = contextvars.ContextVar("admin_session_ok", default=False)
+
+
+def _admin_pw_fingerprint():
+    """Identifies the CURRENT admin credential. Each session stores the fingerprint
+    it was issued under and is only honoured while it still matches — so rotating or
+    clearing the password kills every standing session no matter WHERE the change
+    came from (web /api/config, or the Qt settings page writing the config file
+    directly, which can't reach this process's memory)."""
+    cfg = str(backend.get_config("lan_admin_password_hash", "") or "")
+    env = (os.environ.get("LINGUAHARU_ADMIN_PASSWORD") or "").strip()
+    return hashlib.sha256(f"{cfg}\x00{env}".encode("utf-8")).hexdigest()
 
 
 def _admin_pw_set():
@@ -233,6 +257,16 @@ def _is_admin():
     if _admin_session_ok.get():
         return True                      # logged-in admin session (cookie)
     return _admin_pw_ok(_admin_token.get())
+
+
+def _feature_hidden(key):
+    """Server-side twin of the UI's per-feature hiding: True when a NON-admin
+    caller uses a feature the admin removed for normal LAN users (the UI hiding
+    alone is cosmetic — a direct API call would sail past it). Admins and the
+    local owner are never restricted."""
+    if _is_admin():
+        return False
+    return key in set(backend.get_config("lan_hidden_features", []) or [])
 
 
 def _block_in_server_mode():
@@ -276,7 +310,10 @@ async def _session_and_isolation(request, call_next):
         return JSONResponse({"detail": "Cross-origin request blocked"}, status_code=403)
     _admin_token.set(request.headers.get("X-Admin-Token", ""))
     _acook = request.cookies.get(_ADMIN_COOKIE, "")
-    _admin_session_ok.set(bool(_acook) and _acook in _ADMIN_SESSIONS)
+    # A session is only honoured while the password it was issued under is still
+    # the current one (fingerprint match) — password rotated/cleared -> dead.
+    _admin_session_ok.set(bool(_acook) and
+                          _ADMIN_SESSIONS.get(_acook) == _admin_pw_fingerprint())
     # "Local" = the request really came from this machine -> the owner, auto-trusted
     # for admin. Behind a reverse proxy the client IP is the proxy's loopback addr,
     # which would falsely auto-trust EVERY remote request. So when bound externally,
@@ -366,22 +403,49 @@ def index():
 # --------------------------------------------------------------------------- #
 # Config / metadata
 # --------------------------------------------------------------------------- #
+# Brute-force guard for /api/admin/login: LAN peers get unlimited network access
+# to the endpoint, so failures must cost something. After a few misses from an IP
+# we refuse further attempts for a growing cool-down (in-memory — restarting the
+# server resets it, which is fine at LAN scale).
+_LOGIN_FAILS = {}          # client ip -> [fail_count, locked_until_epoch]
+_LOGIN_FAILS_LOCK = threading.Lock()
+_LOGIN_FREE_TRIES = 5      # misses before the first lockout
+_LOGIN_LOCK_BASE = 30.0    # first lockout in seconds; doubles per further miss
+_LOGIN_LOCK_MAX = 600.0
+
+
 @app.post("/api/admin/login")
 async def admin_login(request: Request):
     """Verify the LAN admin password and start an admin session (httponly cookie).
     Returns 200 {ok:true} on success, 401 on a wrong password — so the client can
-    tell the user clearly instead of silently failing later."""
+    tell the user clearly instead of silently failing later. 429 while an IP is
+    cooling down after repeated wrong passwords (LAN brute-force guard)."""
     if server_mode_on():
         raise HTTPException(403, "Disabled in server mode")
+    ip = request.client.host if request.client else "?"
+    now = time.time()
+    with _LOGIN_FAILS_LOCK:
+        rec = _LOGIN_FAILS.get(ip)
+        if rec and now < rec[1]:
+            raise HTTPException(429, "Too many attempts — try again later")
     try:
         payload = await request.json()
     except Exception:  # noqa: BLE001
         payload = {}
     if not _admin_pw_ok(payload.get("password")):
+        with _LOGIN_FAILS_LOCK:
+            count = (_LOGIN_FAILS.get(ip) or [0, 0.0])[0] + 1
+            lock = 0.0
+            if count >= _LOGIN_FREE_TRIES:
+                lock = now + min(_LOGIN_LOCK_MAX,
+                                 _LOGIN_LOCK_BASE * 2 ** (count - _LOGIN_FREE_TRIES))
+            _LOGIN_FAILS[ip] = [count, lock]
         raise HTTPException(401, "Incorrect password")
+    with _LOGIN_FAILS_LOCK:
+        _LOGIN_FAILS.pop(ip, None)
     import secrets
     token = secrets.token_urlsafe(32)
-    _ADMIN_SESSIONS.add(token)
+    _ADMIN_SESSIONS[token] = _admin_pw_fingerprint()
     resp = JSONResponse({"ok": True})
     resp.set_cookie(_ADMIN_COOKIE, token, httponly=True, samesite="lax", max_age=7 * 24 * 3600)
     return resp
@@ -390,7 +454,7 @@ async def admin_login(request: Request):
 @app.post("/api/admin/logout")
 async def admin_logout(request: Request):
     """End the admin session (drop the token + clear the cookie)."""
-    _ADMIN_SESSIONS.discard(request.cookies.get(_ADMIN_COOKIE, ""))
+    _ADMIN_SESSIONS.pop(request.cookies.get(_ADMIN_COOKIE, ""), None)
     resp = JSONResponse({"ok": True})
     resp.delete_cookie(_ADMIN_COOKIE)
     return resp
@@ -736,6 +800,10 @@ async def set_apikey(payload: dict):
 # --------------------------------------------------------------------------- #
 @app.get("/api/glossary")
 def get_glossary(name: str):
+    # Writes are admin-gated (_block_in_server_mode); the editor's READ must match
+    # the admin's page hiding too — the glossary is global, not per-session.
+    if _feature_hidden("glossary"):
+        raise HTTPException(403, "Glossary is not available on this server")
     import csv
     path = backend.glossary_path(name)
     if not path or not os.path.exists(path):
@@ -1212,14 +1280,18 @@ async def translate(
             raise HTTPException(
                 429, "You already have the maximum number of translations running. Please wait.")
 
-    # Format gating: a normal LAN user must not translate a format the admin has
+    # Feature/format gating: a normal LAN user must not use what the admin has
     # disabled. Enforced here (not just hidden in the UI, which they could bypass).
     if not _is_admin():
         hidden = set(backend.get_config("lan_hidden_features", []) or [])
+        if "translate" in hidden:   # the whole File-Translation page is off
+            raise HTTPException(403, "File translation is not available on this server")
         for f in files:
             key = backend.format_key_for_ext(os.path.splitext(f.filename or "")[1])
             if key and key in hidden:
                 raise HTTPException(403, "This file type is not available on this server")
+        if bilingual and "bilingual" in hidden:
+            bilingual = False   # hidden option can't be smuggled in via a direct call
 
     # One upload dir per task (nested under the session) so concurrent or
     # same-named uploads never clobber each other.
@@ -2187,6 +2259,9 @@ async def live_preload(payload: dict = None):
         preload_recognizer, recognizer_ready,
         get_selected_live_stt_model, get_selected_quick_stt_model)
     scope = (payload or {}).get("scope", "live")
+    # scope='quick' serves the Quick-Translate mic, not the Real-Time Voice page.
+    if scope != "quick" and _feature_hidden("live"):
+        raise HTTPException(403, "Real-time voice is not available on this server")
     model_id = (get_selected_quick_stt_model() if scope == "quick"
                 else get_selected_live_stt_model())
     if scope == "live" and recognizer_ready():
@@ -2202,6 +2277,8 @@ async def live_recognize(payload: dict, request: Request):
     Split from translation so the UI can show the source line immediately."""
     if not realtime_voice_available():
         raise HTTPException(400, "实时语音需要语音(STT)插件。")
+    if _feature_hidden("live"):
+        raise HTTPException(403, "Real-time voice is not available on this server")
     import base64
     try:
         pcm = base64.b64decode(payload.get("audio_b64", ""))
@@ -2240,6 +2317,8 @@ async def live_recognize(payload: dict, request: Request):
 async def live_translate_text(payload: dict):
     """Step 2 of local live voice: translate a recognized line. Model/online are
     taken from the ACTIVE interface (no Settings checkbox)."""
+    if _feature_hidden("live"):
+        raise HTTPException(403, "Real-time voice is not available on this server")
     source = _capped_text(payload, "source")
     if not source:
         return {"translated": ""}
@@ -2330,6 +2409,8 @@ def live_translate_stream(payload: dict):
     """Stream a live-caption translation token-by-token (SSE). Each event is a
     JSON-encoded cumulative string; ends with [DONE]. Online-only; the generator
     falls back to a single chunk offline/on failure."""
+    if _feature_hidden("live"):
+        raise HTTPException(403, "Real-time voice is not available on this server")
     import json as _json
     from fastapi.responses import StreamingResponse
     source = _capped_text(payload, "source")
@@ -2367,6 +2448,8 @@ def live_save_history(payload: dict, request: Request):
     """Save a finished real-time-voice session (source + translation) to the
     per-session history. Called by the frontend when a live session stops."""
     if server_mode_on():               # no history on public/shared deploys
+        return {"saved": False}
+    if _feature_hidden("live"):
         return {"saved": False}
     src = payload.get("source_lines") or []
     dst = payload.get("translated_lines") or []
@@ -2645,6 +2728,9 @@ if __name__ == "__main__":
     import uvicorn
     host = server_host()
     port = server_port(host)
+    # Freeze the security posture to the ACTUAL bind: config may change at
+    # runtime, the listening socket can't (see _bound_externally).
+    globals()["_SERVED_EXTERNALLY"] = not _is_loopback(host)
     url = f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}"
     print(f"LinguaHaru Web → {url}")
     # Auto-open the browser for a local desktop launch (double-click Start-Web.bat),

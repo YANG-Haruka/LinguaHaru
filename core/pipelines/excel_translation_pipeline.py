@@ -1678,7 +1678,10 @@ def _write_with_xlwings(file_path, original_json_path, translated_json_path, res
                                     column = merge_start_col
 
                             sheet.cells(row, column).value = value
-                            if shrink_to_fit:
+                            # Same rule as the openpyxl path (_apply_shrink_to_fit):
+                            # only when the translation is LONGER than the source.
+                            if shrink_to_fit and len(str(value or "")) > len(
+                                    str(cell_data.get("original_value") or "")):
                                 try:
                                     _rng = sheet.cells(row, column).api
                                     if not _rng.WrapText:      # shrink & wrap are exclusive

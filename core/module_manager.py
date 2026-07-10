@@ -561,19 +561,34 @@ def _pick_cuda_index():
     return _PYTORCH_CUDA_INDEX
 
 
-def _pytorch_host_reachable(index):
-    """HEAD-probe the wheel index host. HTTPError still means the server answered
-    (reachable); only a connection/timeout error means blocked -> use the mirror.
-    Mirrors pick_pypi_index()'s logic so China users don't stall on the slow
-    download.pytorch.org CDN."""
-    import urllib.error
+def _pytorch_cdn_fast_enough(index, min_kbps=100):
+    """True only if download.pytorch.org can serve REAL wheel bytes at a usable
+    speed. In mainland China the host typically ANSWERS (a HEAD on the index page
+    succeeds in milliseconds) but then throttles the actual 2.5GB torch wheel to a
+    crawl — the exact trap _pypi_cdn_fast_enough() exists to catch. So, same
+    remedy: list the torch wheels on this index, pull a ranged chunk of a real
+    one, and require a usable throughput; too slow / unreachable -> Aliyun mirror."""
+    import html
+    import re
+    import time
+    from urllib.parse import urljoin
     try:
-        urllib.request.urlopen(
-            urllib.request.Request(index, method="HEAD"), timeout=4)
-        return True
-    except urllib.error.HTTPError:
-        return True
-    except Exception:  # noqa: BLE001 — unreachable/blocked
+        base = index.rstrip("/") + "/torch/"
+        with urllib.request.urlopen(base, timeout=5) as r:
+            page = r.read().decode("utf-8", "replace")
+        m = re.search(r'href="([^"#]+\.whl)[^"]*"', page)
+        if not m:
+            return False
+        whl = urljoin(base, html.unescape(m.group(1)))
+        t0 = time.time()
+        # The r2 wheel CDN 403s requests without a User-Agent — send pip's.
+        req = urllib.request.Request(whl, headers={
+            "Range": "bytes=0-524287", "User-Agent": "pip/24.0"})  # up to 512 KB
+        with urllib.request.urlopen(req, timeout=8) as r:
+            n = len(r.read())
+        dt = max(time.time() - t0, 0.001)
+        return n >= 65536 and (n / 1024 / dt) >= min_kbps
+    except Exception:  # noqa: BLE001 — unreachable / blocked / too slow -> mirror
         return False
 
 
@@ -710,18 +725,24 @@ def _maybe_install_cuda_torch(name):
     cu = _cu_tag(idx)
     app_logger.info("NVIDIA GPU detected + CPU torch — installing CUDA torch from %s", idx)
     _emit("检测到 NVIDIA GPU，正在安装 GPU 版 torch（较大，请耐心）… / installing CUDA torch…")
-    # If the official pytorch host is reachable, prefer it (correct deps, all
-    # platforms). When it's unreachable (mainland China) or the install fails, fall
-    # back to the Aliyun mirror with pinned +cuNNN wheels so the download still
-    # succeeds. Only the official host has a known China mirror mapping (cu != None).
+    # Prefer the official pytorch host when it can actually deliver wheels at a
+    # usable speed (correct deps, all platforms). Go straight to the Aliyun mirror
+    # with pinned +cuNNN wheels when the user forces the China mirror (the same
+    # 'use_china_mirror' switch every other install honours) or when the official
+    # CDN is slow/unreachable — in mainland China it often answers but throttles
+    # the 2.5GB wheel to a crawl, which used to stall the install for hours.
+    # Only the official host has a known China mirror mapping (cu != None).
     ok = False
-    if cu and not _pytorch_host_reachable(idx):
-        app_logger.info("download.pytorch.org unreachable — using Aliyun CUDA torch mirror")
-        _emit("官方源不可达，改用国内镜像下载 GPU torch… / using China mirror for CUDA torch…")
+    china_first = bool(cu) and (
+        _config_get("use_china_mirror", False) or not _pytorch_cdn_fast_enough(idx))
+    if china_first:
+        app_logger.info("download.pytorch.org slow/unreachable (or China mirror forced) "
+                        "— using Aliyun CUDA torch mirror")
+        _emit("官方源不可用或已强制国内镜像，改用国内镜像下载 GPU torch… / using China mirror for CUDA torch…")
         ok = _install_china(cu)
     if not ok:
         ok = _install_official(idx)
-    if not ok and cu:
+    if not ok and cu and not china_first:
         app_logger.warning("Official CUDA torch index failed; retrying on Aliyun mirror")
         _emit("官方源失败，切换国内镜像重试 GPU torch… / retrying CUDA torch on China mirror…")
         ok = _install_china(cu)

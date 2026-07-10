@@ -202,13 +202,14 @@ def _is_cuda_runtime_error(exc):
 def _fall_back_to_cpu_stt(reason=""):
     """Pin STT to CPU for the rest of the process and drop any GPU-loaded models so
     the next load rebuilds them on CPU. Idempotent."""
-    global _STT_FORCE_CPU, _sensevoice, _whisper_models, _qwen_models
+    global _STT_FORCE_CPU, _sensevoice, _whisper_models, _qwen_models, _animewhisper_models
     if not _STT_FORCE_CPU:
         app_logger.warning("STT: GPU unusable (%s) — using CPU for this session", reason)
     _STT_FORCE_CPU = True
     _sensevoice = None
     _whisper_models = {}
     _qwen_models = {}
+    _animewhisper_models = {}
 
 
 def _stt_device():
@@ -1464,18 +1465,30 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=
 
     model_def = get_stt_model(model_id or get_selected_live_stt_model())
     engine, size = _resolve_stt_engine(model_def)
-    if engine == "sensevoice":
-        text, detected = _recognize_sensevoice(audio, src_lang, sample_rate, model_def["size"])
-        app_logger.info(f"STT(SenseVoice) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
-    elif engine == "qwen3asr":
-        text, detected = _recognize_qwen(audio, src_lang, size, sample_rate)
-        app_logger.info(f"STT(Qwen3-ASR:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
-    elif engine == "animewhisper":
-        text, detected = _recognize_animewhisper(audio, src_lang, size, sample_rate)
-        app_logger.info(f"STT(anime-whisper) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
-    else:
-        text, detected = _recognize_whisper(audio, src_lang, size)
-        app_logger.info(f"STT(whisper:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+
+    def _dispatch():
+        if engine == "sensevoice":
+            r = _recognize_sensevoice(audio, src_lang, sample_rate, model_def["size"])
+            app_logger.info(f"STT(SenseVoice) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+        elif engine == "qwen3asr":
+            r = _recognize_qwen(audio, src_lang, size, sample_rate)
+            app_logger.info(f"STT(Qwen3-ASR:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+        elif engine == "animewhisper":
+            r = _recognize_animewhisper(audio, src_lang, size, sample_rate)
+            app_logger.info(f"STT(anime-whisper) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+        else:
+            r = _recognize_whisper(audio, src_lang, size)
+            app_logger.info(f"STT(whisper:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
+        return r
+
+    try:
+        text, detected = _dispatch()
+    except Exception as e:  # noqa: BLE001 — self-heal a GPU that can't run this torch
+        if _stt_device() == "cuda" and _is_cuda_runtime_error(e):
+            _fall_back_to_cpu_stt(str(e).splitlines()[0] if str(e) else type(e).__name__)
+            text, detected = _dispatch()   # models rebuild on CPU
+        else:
+            raise
     # Same whole-segment hallucination guard the offline subtitle pipeline runs:
     # background music / noise that slips past the client VAD makes every ASR
     # emit its training-data outro ("谢谢观看" / "ご視聴ありがとうございました" /
@@ -1775,10 +1788,17 @@ def _ckpt_path(temp_dir, filename, model_id, src_lang, wav_path):
 def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
                        session_lang, model_id, check_stop=None, checkpoint_path=None):
     """Dispatch to the selected STT engine; log WHY on failure (download/load
-    error) to the per-file log instead of failing silently, then re-raise."""
+    error) to the per-file log instead of failing silently, then re-raise.
+
+    If the failure is a CUDA runtime error (GPU too new for the installed torch,
+    OOM, broken driver), pin STT to CPU and retry ONCE — the checkpoint file means
+    the retry resumes from the already-transcribed segments instead of starting
+    over. This covers ALL engines at the single dispatch point (the live-voice
+    path has its own equivalent guard around recognize_utterance)."""
     params = get_stt_params(model_id)
     app_logger.info(f"STT params for {model_id}: {params}")
-    try:
+
+    def _dispatch():
         if engine == "sensevoice":
             return _transcribe_sensevoice(wav_path, size, src_lang, progress_callback, session_lang,
                                           check_stop, checkpoint_path, params)
@@ -1790,7 +1810,13 @@ def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
                                             check_stop, checkpoint_path, params)
         return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang,
                                    check_stop, checkpoint_path, params)
+
+    try:
+        return _dispatch()
     except Exception as e:  # noqa: BLE001
+        if _stt_device() == "cuda" and _is_cuda_runtime_error(e):
+            _fall_back_to_cpu_stt(str(e).splitlines()[0] if str(e) else type(e).__name__)
+            return _dispatch()   # resumes from the checkpoint on CPU
         app_logger.error(
             f"STT transcription failed (engine={engine}, model={model_id}): "
             f"{type(e).__name__}: {e}")
