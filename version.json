@@ -1,15 +1,15 @@
 {
     "version": "6.3",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.3: PPTX fixes — 10+ slide decks no longer scrambled, long translations auto-shrink to fit (no more overlap); optional Excel long-text auto-shrink toggle (Settings, off by default). / 6.3：PPTX 修复——10 页以上不再错乱、长译文自动缩字不再叠字；新增可选「Excel 长文字自动缩小字体」开关（设置里，默认关闭）。",
+    "notes": "6.3: PPTX 10+ slide fix + long-text auto-shrink (PPTX & optional Excel toggle). This rebuild also hardens mainland-China downloads (CUDA torch honours the China-mirror switch + real throughput probe) and adds GPU→CPU fallback for offline video/audio transcription. / 6.3：PPTX 10 页以上错乱修复 + 长译文自动缩字（PPTX 及可选 Excel 开关）。本次重打包还加固了国内下载（GPU torch 尊重国内镜像开关 + 真实测速）并为离线视频/音频转录加了 GPU→CPU 兜底。",
     "assets": {
         "web": {
             "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.3/LinguaHaru-6.3-web-portable.zip",
-            "sha256": "b44d40c2f2caffea506a651a5dfd793f9a4ad24c8b813afb7d9b4e759cfeefe8"
+            "sha256": "744afd3a025b3970148e9ce1c1c372846de8c7eea5fbd791ce36e35da3d126f8"
         },
         "desktop": {
             "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.3/LinguaHaru-6.3-desktop-portable.zip",
-            "sha256": "29107292a0c024f43e9d6e3e259e1d2930496ea5aa471f547081b8f0be10e871"
+            "sha256": "f894649e2f6a8cecb722a87ed2bdbbe9321b91b616bb3c14bc4dde3bef9337b4"
         }
     }
 }
