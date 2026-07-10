@@ -421,5 +421,8 @@
   "Format Subtitle": "字幕",
   "Format Text": "文字/電子書",
   "Format Image": "圖片",
-  "Format Video": "影片/音訊"
+  "Format Video": "影片/音訊",
+  "China Mirror": "國內鏡像源（外掛下載）",
+  "China Mirror Hint": "外掛/相依下載強制走清華 PyPI 鏡像；官方源太慢或下不動時開啟。",
+  "China Mirror Label": "外掛/相依下載強制使用國內鏡像源（清華 PyPI；網路不佳或國內無法下載外掛時勾選）"
 }

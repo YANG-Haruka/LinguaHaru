@@ -360,5 +360,8 @@
   "Format Subtitle": "Sous-titres",
   "Format Text": "Texte / e-book",
   "Format Image": "Images",
-  "Format Video": "Vidéo / audio"
+  "Format Video": "Vidéo / audio",
+  "China Mirror": "Miroir Chine (téléchargements de plugins)",
+  "China Mirror Hint": "Force le miroir PyPI Tsinghua pour les téléchargements de plugins/dépendances — activez-le si le serveur officiel est trop lent.",
+  "China Mirror Label": "Forcer les téléchargements de plugins/dépendances via le miroir Chine (Tsinghua PyPI ; activez-le sur mauvais réseau / en Chine)"
 }

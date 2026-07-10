@@ -360,5 +360,8 @@
   "Format Subtitle": "Legendas",
   "Format Text": "Texto / e-book",
   "Format Image": "Imagens",
-  "Format Video": "Vídeo / áudio"
+  "Format Video": "Vídeo / áudio",
+  "China Mirror": "Espelho da China (downloads de plugins)",
+  "China Mirror Hint": "Força o espelho PyPI da Tsinghua para downloads de plugins/dependências — ative se o servidor oficial estiver lento.",
+  "China Mirror Label": "Forçar downloads de plugins/dependências via espelho da China (Tsinghua PyPI; ative em redes ruins / na China continental)"
 }

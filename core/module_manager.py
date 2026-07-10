@@ -205,25 +205,47 @@ def pick_pypi_index():
             return _pypi_index
     except Exception:  # noqa: BLE001
         pass
-    # Probe the WHEEL host (files.pythonhosted.org, a Fastly CDN), NOT pypi.org:
-    # in mainland China the metadata host often answers while the CDN that actually
-    # serves the wheels is throttled/blocked — which made installs crawl after the
-    # probe wrongly chose "official". HTTPError (e.g. 404) still means the server
-    # responded, so treat it as reachable; only a conn/timeout error -> mirror.
-    import urllib.error
-    try:
-        urllib.request.urlopen(
-            urllib.request.Request("https://files.pythonhosted.org/packages/",
-                                   method="HEAD"), timeout=4)
-        _pypi_index = _PYPI_OFFICIAL
-        app_logger.info("PyPI index: official")
-    except urllib.error.HTTPError:
-        _pypi_index = _PYPI_OFFICIAL
-        app_logger.info("PyPI index: official")
-    except Exception:  # noqa: BLE001 — unreachable/blocked -> China mirror
+    # A config toggle forces the China mirror outright (the reliable guarantee for
+    # mainland users who don't want to depend on auto-detection).
+    if _config_get("use_china_mirror", False):
         _pypi_index = _PYPI_MIRROR
-        app_logger.info("PyPI index: Tsinghua mirror (wheel host unreachable)")
+        app_logger.info("PyPI index: Tsinghua mirror (forced by config)")
+        return _pypi_index
+    # Reachability isn't enough: in mainland China files.pythonhosted.org answers a
+    # HEAD but then THROTTLES the actual multi-hundred-MB wheel downloads to a crawl,
+    # so the old HEAD probe wrongly chose "official" and installs stalled (users
+    # needed a VPN). Measure real THROUGHPUT — pull a small real wheel chunk and
+    # require a usable speed; too slow / unreachable -> China mirror.
+    if _pypi_cdn_fast_enough():
+        _pypi_index = _PYPI_OFFICIAL
+        app_logger.info("PyPI index: official")
+    else:
+        _pypi_index = _PYPI_MIRROR
+        app_logger.info("PyPI index: Tsinghua mirror (official CDN slow/unreachable)")
     return _pypi_index
+
+
+def _pypi_cdn_fast_enough(min_kbps=100):
+    """True only if the PyPI wheel CDN is reachable AND fast enough for real wheel
+    downloads — not just answering a HEAD. Resolves a small, always-present wheel
+    (certifi) and times a ranged chunk fetch; below min_kbps (or any failure) we
+    treat the official source as unusable and fall back to the China mirror. This
+    is what catches the mainland 'reachable-but-throttled CDN' case."""
+    import time
+    try:
+        with urllib.request.urlopen("https://pypi.org/pypi/certifi/json", timeout=3) as r:
+            files = json.loads(r.read().decode("utf-8", "replace")).get("urls", [])
+        whl = next((f["url"] for f in files if str(f.get("url", "")).endswith(".whl")), None)
+        if not whl:
+            return False
+        t0 = time.time()
+        req = urllib.request.Request(whl, headers={"Range": "bytes=0-524287"})  # up to 512 KB
+        with urllib.request.urlopen(req, timeout=6) as r:
+            n = len(r.read())
+        dt = max(time.time() - t0, 0.001)
+        return n >= 65536 and (n / 1024 / dt) >= min_kbps
+    except Exception:  # noqa: BLE001 — unreachable / blocked / too slow -> mirror
+        return False
 
 
 def _site_packages():

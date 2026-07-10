@@ -360,5 +360,8 @@
   "Format Subtitle": "Phụ đề",
   "Format Text": "Văn bản / e-book",
   "Format Image": "Hình ảnh",
-  "Format Video": "Video / âm thanh"
+  "Format Video": "Video / âm thanh",
+  "China Mirror": "Máy chủ gương TQ (tải plugin)",
+  "China Mirror Hint": "Buộc dùng máy chủ gương Tsinghua PyPI để tải plugin/phụ thuộc — bật khi máy chủ chính thức quá chậm.",
+  "China Mirror Label": "Buộc tải plugin/phụ thuộc qua máy chủ gương TQ (Tsinghua PyPI; bật khi mạng kém / ở Trung Quốc đại lục)"
 }

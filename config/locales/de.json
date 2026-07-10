@@ -360,5 +360,8 @@
   "Format Subtitle": "Untertitel",
   "Format Text": "Text / E-Book",
   "Format Image": "Bilder",
-  "Format Video": "Video / Audio"
+  "Format Video": "Video / Audio",
+  "China Mirror": "China-Spiegel (Plugin-Downloads)",
+  "China Mirror Hint": "Erzwingt den Tsinghua-PyPI-Spiegel für Plugin-/Abhängigkeits-Downloads — aktivieren, wenn der offizielle Server zu langsam ist.",
+  "China Mirror Label": "Plugin-/Abhängigkeits-Downloads über China-Spiegel erzwingen (Tsinghua PyPI; bei schlechter Verbindung / in China aktivieren)"
 }

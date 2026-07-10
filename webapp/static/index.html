@@ -657,6 +657,7 @@
         <summary><span class="set-card-title" data-i18n="Run Mode">运行模式</span><span class="set-card-sub" data-i18n="Run Mode Sub">局域网模式 · 管理密码</span></summary>
         <div class="set-card-body">
           <label class="check"><input type="checkbox" id="set-lan" /> <span data-i18n="LAN Mode Label">局域网模式（绑定 0.0.0.0，重启后生效 —— 同一网络的其他设备可访问）</span></label>
+          <label class="check" style="margin-top:10px"><input type="checkbox" id="set-china-mirror" /> <span data-i18n="China Mirror Label">插件/依赖下载强制使用国内镜像源（清华 PyPI；网络不佳或国内无法下载插件时勾选）</span></label>
           <div class="field" style="margin-top:10px"><label data-i18n="LAN Admin Label">局域网管理密码（不设密码时，只有本机可修改配置 / 密钥 / 插件，其他设备无法管理；设置后其他设备需输入此密码才能管理）</label><input type="password" id="set-lan-admin" data-i18n-ph="LAN Admin Placeholder" placeholder="留空 = 仅本机可管理" /></div>
           <div id="lan-features" class="field" style="margin-top:14px" hidden>
             <label data-i18n="LAN User Features">普通用户可见功能（局域网模式下、未登录管理员的其他设备）</label>
@@ -853,6 +854,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260706P"></script>
+  <script src="/static/app.js?v=20260710A"></script>
 </body>
 </html>

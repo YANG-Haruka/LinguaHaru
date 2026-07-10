@@ -360,5 +360,8 @@
   "Format Subtitle": "자막",
   "Format Text": "텍스트 / 전자책",
   "Format Image": "이미지",
-  "Format Video": "동영상 / 오디오"
+  "Format Video": "동영상 / 오디오",
+  "China Mirror": "중국 미러(플러그인 다운로드)",
+  "China Mirror Hint": "플러그인/의존성 다운로드에 칭화 PyPI 미러를 강제합니다. 공식 서버가 느릴 때 켜세요.",
+  "China Mirror Label": "플러그인/의존성 다운로드를 중국 미러(칭화 PyPI)로 강제. 네트워크가 나쁘거나 중국 본토에서 켜기"
 }

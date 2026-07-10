@@ -574,6 +574,7 @@ async function boot() {
 
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
   $("set-lan").checked = !!c.lan_mode;
+  if ($("set-china-mirror")) $("set-china-mirror").checked = !!c.use_china_mirror;
   $("set-lan-admin").placeholder = c.has_lan_admin ? _label("已设置（留空则不修改）", "已设置（留空则不修改）") : _label("留空则不启用", "留空则不启用");
   syncLanFeatures(c);
   $("set-auto-glossary").checked = !!c.auto_extract_glossary;
@@ -1366,6 +1367,10 @@ function stopElapsed() { if (_elapTimer) { clearInterval(_elapTimer); _elapTimer
 
 // ----- settings -----
 // (Online/offline is driven by the active interface, not a checkbox.)
+if ($("set-china-mirror")) $("set-china-mirror").onchange = () => {
+  saveConfig({ use_china_mirror: $("set-china-mirror").checked });
+  toast(_label("Saved", "已保存"), "ok");
+};
 $("set-lan").onchange = () => {
   saveConfig({ lan_mode: $("set-lan").checked });
   if ($("lan-features")) $("lan-features").hidden = !$("set-lan").checked;

@@ -1189,18 +1189,38 @@ def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, n
     _intelligent_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
 
 def _simple_text_distribution(text_runs, translated_text: str, namespaces: Dict):
-    """Simple fallback distribution method."""
-    if not text_runs:
+    """Fallback used when the recorded run structure doesn't match the live runs.
+
+    Rather than dump everything into run[0] and blank the rest — which collapses
+    every run's individual formatting (size/bold/color) into the first run's and
+    makes PowerPoint re-autofit the box (the 'text box misaligned' symptom) — spread
+    the translation across the runs in proportion to their CURRENT text length, so
+    each run keeps its own <a:rPr> formatting and the box layout is preserved."""
+    nodes, lengths = [], []
+    for text_run in text_runs:
+        tn = text_run.xpath('./a:t', namespaces=namespaces)
+        if tn:
+            nodes.append(tn[0])
+            lengths.append(len(tn[0].text or ""))
+    if not nodes:
         return
-    
-    # Put all translated text in the first run, clear others
-    for i, text_run in enumerate(text_runs):
-        text_node = text_run.xpath('./a:t', namespaces=namespaces)
-        if text_node:
-            if i == 0:
-                text_node[0].text = translated_text
-            else:
-                text_node[0].text = ""
+    total = sum(lengths)
+    if total == 0:                      # no measurable text -> all in the first run
+        nodes[0].text = translated_text
+        for n in nodes[1:]:
+            n.text = ""
+        return
+    chars = list(translated_text)
+    pos = 0
+    for i, (node, ln) in enumerate(zip(nodes, lengths)):
+        if i == len(nodes) - 1:         # last run soaks up the remainder (no loss)
+            node.text = "".join(chars[pos:])
+        elif ln == 0:                   # keep originally-empty runs empty
+            node.text = ""
+        else:
+            take = round(len(chars) * ln / total)
+            node.text = "".join(chars[pos:pos + take])
+            pos += take
 
 def _intelligent_text_distribution(text_runs, translated_text: str, original_run_texts: List[str], 
                                  original_run_lengths: List[int], namespaces: Dict):

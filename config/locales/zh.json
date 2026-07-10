@@ -689,5 +689,8 @@
   "Format Subtitle": "字幕",
   "Format Text": "文本/电子书",
   "Format Image": "图片",
-  "Format Video": "视频/音频"
+  "Format Video": "视频/音频",
+  "China Mirror": "国内镜像源（插件下载）",
+  "China Mirror Hint": "插件/依赖下载强制走清华 PyPI 镜像；官方源太慢或下不动时开启。",
+  "China Mirror Label": "插件/依赖下载强制使用国内镜像源（清华 PyPI；网络不佳或国内无法下载插件时勾选）"
 }

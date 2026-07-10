@@ -247,6 +247,20 @@ class SettingsPage(ScrollArea):
         lan_row.addWidget(self.lan_label, 1)
         lan_row.addWidget(self.lan_switch)
         self.card_run.body.addLayout(lan_row)
+        # China mirror toggle: force plugin/dependency downloads through the
+        # Tsinghua PyPI mirror (for mainland users where the official CDN throttles).
+        self.mirror_switch = SwitchButton()
+        self.mirror_switch.setChecked(bool(config.get("use_china_mirror", False)))
+        self.mirror_switch.checkedChanged.connect(
+            lambda v: backend.set_config("use_china_mirror", v))
+        self.mirror_label = BodyLabel(tr("China Mirror", lang))
+        mirror_row = QHBoxLayout()
+        mirror_row.addWidget(self.mirror_label, 1)
+        mirror_row.addWidget(self.mirror_switch)
+        self.card_run.body.addLayout(mirror_row)
+        self.mirror_hint = CaptionLabel(tr("China Mirror Hint", lang))
+        self.mirror_hint.setWordWrap(True)
+        self.card_run.body.addWidget(self.mirror_hint)
         self.lan_hint = CaptionLabel(tr("LAN access hint", lang))
         self.lan_hint.setWordWrap(True)
         self.card_run.body.addWidget(self.lan_hint)
@@ -1057,6 +1071,8 @@ class SettingsPage(ScrollArea):
         self.lan_label.setText(tr("LAN Mode", lang))
         self.lan_hint.setText(tr("LAN access hint", lang))
         self.lan_admin_label.setText(tr("LAN admin password", lang))
+        self.mirror_label.setText(tr("China Mirror", lang))
+        self.mirror_hint.setText(tr("China Mirror Hint", lang))
         self.feat_title.setText(tr("LAN User Features", lang))
         self.feat_hint.setText(tr("LAN User Features Hint", lang))
         for _gl, _gk in self._feat_group_labels:
