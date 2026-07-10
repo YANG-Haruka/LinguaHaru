@@ -1140,6 +1140,8 @@ def _apply_table_cell_paragraph_translation(slide_tree, item: Dict, translated_t
                 if item['paragraph_index'] < len(paragraphs):
                     paragraph = paragraphs[item['paragraph_index']]
                     _distribute_text_to_runs(paragraph, translated_text, item, namespaces)
+                    _shrink_cell_font(paragraph, (item.get('value') or '').replace('␊', '').replace('␍', ''),
+                                      translated_text, namespaces)
 
 def _apply_table_cell_translation(slide_tree, item: Dict, translated_text: str, namespaces: Dict):
     """Apply translation to a table cell, distributing across runs. (For backward compatibility)"""
@@ -1169,24 +1171,73 @@ def _apply_shape_translation(slide_tree, item: Dict, translated_text: str, names
         shape = non_textbox_shapes[item['shape_index'] - 1]
         _distribute_text_to_runs(shape, translated_text, item, namespaces)
 
+def _set_shrink_to_fit(node, namespaces: Dict):
+    """Set the enclosing text body to 'shrink text on overflow' (a:normAutofit), so a
+    longer translation auto-scales its font down to FIT the original box/cell instead
+    of overflowing it — and, for table cells, without growing the row (which pushes the
+    table into the shape below, the '服务温度' overlap). Only shrinks when text actually
+    overflows; text that already fits is unchanged (fontScale stays 100%)."""
+    a = namespaces['a']
+    # The txBody is an ancestor (paragraph/cell) or a descendant (shape) of `node`.
+    tb = node
+    while tb is not None and not (isinstance(tb.tag, str) and tb.tag.endswith('}txBody')):
+        tb = tb.getparent()
+    if tb is None:
+        found = node.xpath('.//*[local-name()="txBody"]')
+        tb = found[0] if found else None
+    if tb is None:
+        return
+    body_pr = tb.find(f'{{{a}}}bodyPr')
+    if body_pr is None:
+        body_pr = etree.Element(f'{{{a}}}bodyPr')
+        tb.insert(0, body_pr)          # bodyPr must be the first child of txBody
+    # Replace whatever autofit is there (none / noAutofit / spAutoFit) with normAutofit.
+    for tag in ('noAutofit', 'normAutofit', 'spAutoFit'):
+        for e in body_pr.findall(f'{{{a}}}{tag}'):
+            body_pr.remove(e)
+    etree.SubElement(body_pr, f'{{{a}}}normAutofit')
+
+
+def _shrink_cell_font(paragraph, source_text: str, translated_text: str, namespaces: Dict):
+    """Table cells ignore normAutofit (PowerPoint grows the ROW instead of shrinking
+    text), so when a translation is visibly WIDER than the source we scale the
+    paragraph's explicit run font sizes down proportionally — keeping a longer
+    translation from growing the row and colliding with the shape below it (the
+    '服务温度' overlap). Gentle (never below 70% / 7pt) and only when notably wider."""
+    def width(s):   # a CJK glyph is ~2x the advance width of a latin character
+        return sum(2 if '一' <= c <= '鿿' else 1 for c in (s or ""))
+    sw, tw = width(source_text), width(translated_text)
+    if sw == 0 or tw <= sw * 1.15:
+        return
+    scale = max(0.7, sw / tw)
+    for rpr in paragraph.xpath('.//a:rPr', namespaces=namespaces):
+        sz = rpr.get('sz')
+        if sz:
+            try:
+                rpr.set('sz', str(max(700, int(int(sz) * scale))))
+            except ValueError:
+                pass
+
+
 def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, namespaces: Dict):
     """Distribute translated text across multiple runs, preserving spacing and structure."""
     text_runs = parent_element.xpath('.//a:r', namespaces=namespaces)
-    
+
     if not text_runs:
         return
-    
+
     original_run_texts = item.get('run_texts', [])
     original_run_lengths = item.get('run_lengths', [])
-    
+
     # If we don't have the original structure, fallback to simple distribution
     if not original_run_texts or len(original_run_texts) != len(text_runs):
         app_logger.warning("Mismatch in run structure, using simple distribution")
         _simple_text_distribution(text_runs, translated_text, namespaces)
-        return
-    
-    # Use intelligent distribution based on original structure
-    _intelligent_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
+    else:
+        # Use intelligent distribution based on original structure
+        _intelligent_text_distribution(text_runs, translated_text, original_run_texts, original_run_lengths, namespaces)
+    # Longer target text must not overflow its box/cell -> shrink-to-fit.
+    _set_shrink_to_fit(parent_element, namespaces)
 
 def _simple_text_distribution(text_runs, translated_text: str, namespaces: Dict):
     """Fallback used when the recorded run structure doesn't match the live runs.
