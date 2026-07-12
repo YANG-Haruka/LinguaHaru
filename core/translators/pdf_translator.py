@@ -146,6 +146,26 @@ class PdfTranslator(DocumentTranslator):
           BabelDOC produces an output with nothing translated. Surface a clear,
           actionable error instead of a silently-empty result.
         """
+        # SECURITY FLOOR (CVE-2026-54071): BabelDOC <= 0.6.2 unpickles data from a
+        # PDF-controlled CMap path (vendored pdfminer cmapdb) — a crafted PDF can
+        # execute arbitrary code. This app feeds UNTRUSTED PDFs to BabelDOC (LAN /
+        # server uploads), so never run a vulnerable build: refuse with a clear
+        # upgrade path instead. New installs get >=0.6.3 via the plugin pin; this
+        # guards the machines that installed the PDF plugin before the fix.
+        import importlib.metadata
+        import re as _re
+        try:
+            _bd_ver = importlib.metadata.version("babeldoc")
+        except importlib.metadata.PackageNotFoundError:
+            _bd_ver = None
+        if _bd_ver and tuple(int(x) for x in _re.findall(r"\d+", _bd_ver)[:3]) < (0, 6, 3):
+            raise RuntimeError(
+                f"The PDF plugin's BabelDOC {_bd_ver} has a critical vulnerability "
+                "(CVE-2026-54071: a crafted PDF can execute code). Update the PDF "
+                "plugin (BabelDOC 0.6.3+) in Settings → Model Management. / "
+                f"PDF 插件的 BabelDOC {_bd_ver} 存在严重安全漏洞（CVE-2026-54071：恶意 "
+                "PDF 可执行任意代码）。请到 设置 → 模型管理 升级 PDF 插件（0.6.3+）。")
+
         import pymupdf
 
         try:

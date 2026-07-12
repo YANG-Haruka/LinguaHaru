@@ -2,4 +2,6 @@
 #   pip install -r requirements/pdf.txt
 # Heavy dependency (document layout model on onnxruntime); the UI enables
 # .pdf support automatically once installed.
-babeldoc>=0.6
+# >=0.6.3: CVE-2026-54071 — older BabelDOC unpickles PDF-controlled CMap data
+# (arbitrary code execution from a crafted PDF). Do not lower this pin.
+babeldoc>=0.6.3
