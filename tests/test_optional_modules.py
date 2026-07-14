@@ -118,8 +118,16 @@ def test_video():
     wav_path = _ensure_speech_fixture()
     assert os.path.exists(wav_path), "speech.wav fixture missing"
 
-    translator = make_translator(VideoTranslator, wav_path)
-    out_path, missing = translator.process("speech", ".wav")
+    # Force the TRANSLATE path regardless of the machine's saved
+    # 'translate_subtitles' toggle — a local "transcribe-only" setting must not
+    # turn this into a transcript-only run and fail the translation assertion.
+    orig_enabled = VideoTranslator._translate_subtitles_enabled
+    VideoTranslator._translate_subtitles_enabled = staticmethod(lambda: True)
+    try:
+        translator = make_translator(VideoTranslator, wav_path)
+        out_path, missing = translator.process("speech", ".wav")
+    finally:
+        VideoTranslator._translate_subtitles_enabled = orig_enabled
 
     print(f"  output: {out_path}")
     assert out_path.endswith(".srt"), f"expected .srt output, got {out_path}"
