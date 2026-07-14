@@ -1,16 +1,33 @@
 import json
 import os
 import re
+from .txt_translation_pipeline import read_file_with_encoding
 from core.log_config import app_logger
+
+
+def _read_srt_text(file_path):
+    """Read an SRT as text, tolerant of the encoding it was saved in.
+
+    utf-8-sig first: it strips a leading BOM (a plain-utf-8 read glues the BOM
+    onto the first cue index '﻿1', breaking that cue) and covers plain UTF-8.
+    If that fails the file isn't UTF-8 — commonly a GBK/GB2312/Big5/Shift-JIS
+    subtitle from a local player or fansub (byte 0xd5 etc.) — so fall back to
+    chardet + the common-encoding ladder shared with the txt pipeline. The BOM
+    strip guards a UTF-16 file whose detected codec leaves the mark in place."""
+    try:
+        with open(file_path, "r", encoding="utf-8-sig") as file:
+            return file.read()
+    except UnicodeDecodeError:
+        content, enc = read_file_with_encoding(file_path)
+        app_logger.info(f"SRT not UTF-8; read with detected encoding: {enc}")
+        return content.lstrip("﻿")
+
 
 def extract_srt_content_to_json(file_path, temp_dir):
     """
     Extract subtitles from an SRT file and save them in a JSON format.
     """
-    # utf-8-sig strips a leading BOM; with plain utf-8 the BOM glues onto the
-    # first cue's index (﻿1) and the whole first cue fails to match
-    with open(file_path, "r", encoding="utf-8-sig") as file:
-        srt_content = file.read()
+    srt_content = _read_srt_text(file_path)
 
     # Tolerant of common SRT variants: 1-2 digit hours, '.' as millisecond
     # separator, 1-3 millisecond digits. The numeric index line is optional

@@ -266,8 +266,42 @@ def test_ass_hard_space():
     check("dialogue text translated", T in result and "friend" in result, result)
 
 
+def test_srt_non_utf8_encodings():
+    print("SRT: non-UTF-8 files (GBK/Big5/Shift-JIS/EUC-KR) read without crashing")
+    import json
+    from core.pipelines.subtitle_translation_pipeline import extract_srt_content_to_json
+
+    # A GBK-encoded Chinese SRT is the reported case: byte 0xd5 made the utf-8-only
+    # reader raise 'invalid continuation byte' and the whole file failed. Cover the
+    # other common local-player encodings too. Enough lines that chardet is sure.
+    body = ("你好，今天天气不错。", "机器翻译质量近年来大幅提升。",
+            "神经网络能够理解上下文。", "这个字幕是用中文写的。")
+    body_ja = ("こんにちは、今日はいい天気ですね。", "機械翻訳の品質は向上しました。",
+               "文脈を理解できます。", "日本語の字幕です。")
+    body_ko = ("안녕하세요, 오늘 날씨가 좋네요.", "기계 번역 품질이 향상되었습니다.",
+               "문맥을 이해할 수 있습니다.", "한국어 자막입니다.")
+    body_zht = ("你好，今天天氣不錯。", "機器翻譯品質大幅提升。",
+                "神經網絡能理解上下文。", "這是繁體中文字幕。")
+
+    def build(lines):
+        return "".join(
+            f"{i}\n00:00:{i:02d},000 --> 00:00:{i + 1:02d},000\n{t}\n\n"
+            for i, t in enumerate(lines, 1))
+
+    for enc, lines in (("gbk", body), ("shift_jis", body_ja),
+                       ("euc-kr", body_ko), ("big5", body_zht)):
+        src = os.path.join(WORK_DIR, f"enc_{enc}.srt")
+        with open(src, "w", encoding=enc) as f:
+            f.write(build(lines))
+        extracted = [i["value"] for i in json.load(
+            open(extract_srt_content_to_json(src, TEMP_DIR), encoding="utf-8"))]
+        check(f"{enc}: all cues extracted", len(extracted) == len(lines), str(extracted))
+        check(f"{enc}: text decoded correctly (no mojibake)",
+              extracted == list(lines), repr(extracted))
+
+
 if __name__ == "__main__":
     run([test_srt_long_multiline_cues, test_vtt_voice_spans,
          test_vtt_no_hours_timestamps, test_vtt_multiline_cue_grouping,
-         test_srt_bom_and_optional_index, test_ass_hard_space,
-         test_ass_karaoke_tags, test_lrc_repeated_timestamps])
+         test_srt_bom_and_optional_index, test_srt_non_utf8_encodings,
+         test_ass_hard_space, test_ass_karaoke_tags, test_lrc_repeated_timestamps])

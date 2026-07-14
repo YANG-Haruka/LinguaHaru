@@ -4,46 +4,33 @@ import chardet
 from .skip_pipeline import should_translate
 from core.log_config import app_logger
 
-def detect_file_encoding(file_path):
-    """
-    Detect file encoding using chardet library
-    Returns the detected encoding or falls back to common encodings
-    """
-    try:
-        with open(file_path, 'rb') as f:
-            raw_data = f.read()
-            result = chardet.detect(raw_data)
-            encoding = result['encoding']
-            confidence = result['confidence']
-            
-            app_logger.info(f"Detected encoding: {encoding} (confidence: {confidence:.2f})")
-            
-            # If confidence is too low, try common encodings
-            if confidence < 0.7:
-                app_logger.warning("Low confidence in detected encoding, will try fallback options")
-                return None
-            
-            return encoding
-    except Exception as e:
-        app_logger.error(f"Error detecting encoding: {e}")
-        return None
-
 def read_file_with_encoding(file_path):
     """
     Read file content with automatic encoding detection
     Try multiple encoding strategies if needed
     """
-    # First try to detect encoding
-    detected_encoding = detect_file_encoding(file_path)
-    
-    # List of encodings to try (in order of preference)
+    # chardet's BEST guess goes first, even at low confidence. Decoding validates
+    # it (a wrong codec raises UnicodeDecodeError and we move on), so trying the
+    # guess first is strictly safer than discarding it and falling straight to the
+    # greedy gbk — which "successfully" decodes euc-kr/shift_jis bytes into WRONG
+    # CJK characters (silent mojibake). This is why a Korean/Japanese subtitle whose
+    # confidence hovers around the 0.7 line no longer gets mangled as Chinese.
     encodings_to_try = []
-    
-    if detected_encoding:
-        encodings_to_try.append(detected_encoding)
-    
-    # Add common encodings as fallback
-    fallback_encodings = ['utf-8', 'gbk', 'gb2312', 'utf-16', 'utf-16le', 'utf-16be', 'latin1', 'cp1252']
+    try:
+        with open(file_path, 'rb') as f:
+            guess = chardet.detect(f.read())
+        if guess.get('encoding'):
+            app_logger.info(f"Detected encoding: {guess['encoding']} "
+                            f"(confidence: {guess.get('confidence') or 0:.2f})")
+            encodings_to_try.append(guess['encoding'])
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(f"Error detecting encoding: {e}")
+
+    # Add common encodings as fallback. CJK multi-byte codecs (gbk/big5/shift_jis/
+    # euc-*) come before the latin1/cp1252 catch-alls, which decode ANY byte and so
+    # must stay last (reaching them means real detection failed).
+    fallback_encodings = ['utf-8', 'gbk', 'gb2312', 'big5', 'shift_jis', 'euc-kr',
+                          'euc-jp', 'utf-16', 'utf-16le', 'utf-16be', 'latin1', 'cp1252']
     for enc in fallback_encodings:
         if enc not in encodings_to_try:
             encodings_to_try.append(enc)
