@@ -280,13 +280,27 @@ def _repair_broken_metadata():
     return removed
 
 
+def _write_constraint_file(lines):
+    """Write pip/uv constraint lines to a temp file; return its path (caller deletes)
+    or None. No lines -> None (a constraint of nothing is meaningless)."""
+    if not lines:
+        return None
+    import tempfile
+    try:
+        fd, path = tempfile.mkstemp(suffix=".txt", prefix="lh_con_")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        return path
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _freeze_constraints():
     """A constraints file pinning every currently-installed package, so a plugin
     install only ADDS packages and never upgrades/reinstalls one the RUNNING app
     has loaded — on Windows a loaded C-extension (Pillow, numpy, …) can't be
     replaced and the install dies with a locked-file error (os error 5). Returns a
     temp path (caller deletes it) or None if freezing failed."""
-    import tempfile
     uv = _uv_exe()
     cmd = ([uv, "pip", "freeze", "--python", sys.executable] if uv
            else [sys.executable, "-m", "pip", "freeze"])
@@ -301,15 +315,38 @@ def _freeze_constraints():
     # (not valid as constraints).
     lines = [ln.strip() for ln in out.stdout.splitlines()
              if "==" in ln and " @ " not in ln and not ln.startswith(("-e", "-", "#"))]
-    if not lines:
-        return None
+    return _write_constraint_file(lines)
+
+
+def _loaded_native_dists():
+    """'name==version' pins for installed distributions that have a LOADED native
+    extension (.pyd/.dll/.so) in THIS process — numpy, cv2/opencv, Pillow, … On
+    Windows these exact files are memory-mapped and CANNOT be renamed/replaced, so
+    an install must never try to upgrade them. Unlike the full freeze, these pins
+    are kept even on the RELAXED retry: relaxing them can only produce an os-error-5
+    locked-file failure, never a success."""
+    native_roots = set()
+    for mod_name, mod in list(sys.modules.items()):
+        f = (getattr(mod, "__file__", None) or "").lower()
+        if f.endswith((".pyd", ".dll", ".so")):
+            native_roots.add(mod_name.split(".")[0])
+    if not native_roots:
+        return []
     try:
-        fd, path = tempfile.mkstemp(suffix=".txt", prefix="lh_con_")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-        return path
+        imp_map = importlib.metadata.packages_distributions()
     except Exception:  # noqa: BLE001
-        return None
+        return []
+    pins, seen = [], set()
+    for root in native_roots:
+        for dist in imp_map.get(root, []):
+            if dist in seen:
+                continue
+            seen.add(dist)
+            try:
+                pins.append(f"{dist}=={importlib.metadata.version(dist)}")
+            except Exception:  # noqa: BLE001
+                pass
+    return pins
 
 
 def _install_cmd(req, index, upgrade, constraints=None):
@@ -361,22 +398,35 @@ def _run_install(req, upgrade=False):
         return blocked
     _repair_broken_metadata()
     constraints = None if upgrade else _freeze_constraints()
+    # Loaded native libs can NEVER be replaced while the app runs; pin them even on
+    # the relaxed retry so the resolver upgrades everything else the conflict was
+    # about instead of dying on an os-error-5 rename of numpy/cv2.
+    loaded_con = None if upgrade else _write_constraint_file(_loaded_native_dists())
+    _lock_hint = ("\n\n⚠ 某个正在使用的组件无法更新（文件被占用）。请完全退出 "
+                  "LinguaHaru 后重新安装该插件。/ A component in use couldn't be updated "
+                  "— fully close LinguaHaru, then reinstall this plugin.")
     try:
         ok, out = _install_attempt(req, upgrade, constraints)
         if not ok and constraints and _is_constraint_conflict(out):
-            app_logger.info("Constrained install hit a version conflict — retrying unconstrained")
-            ok, out = _install_attempt(req, upgrade, None)
+            # Relax the full freeze but KEEP loaded-native libs pinned (see above).
+            app_logger.info("Constrained install conflict — retrying with only loaded-native libs pinned")
+            ok, out = _install_attempt(req, upgrade, loaded_con)
+            if not ok and loaded_con and _is_constraint_conflict(out):
+                # The plugin genuinely needs a NEWER version of a lib that's in use.
+                # That's impossible to swap in a running process — say so plainly
+                # instead of attempting it and failing on a locked file.
+                app_logger.info("Plugin needs to upgrade an in-use native lib — restart required")
+                out += _lock_hint
         if not ok and _is_locked_file(out):
-            out += ("\n\n⚠ 某个正在使用的组件无法更新（文件被占用）。请完全退出 "
-                    "LinguaHaru 后重新安装该插件。/ A component in use couldn't be updated "
-                    "— fully close LinguaHaru, then reinstall this plugin.")
+            out += _lock_hint
         return ok, out
     finally:
-        if constraints:
-            try:
-                os.remove(constraints)
-            except Exception:  # noqa: BLE001
-                pass
+        for _c in (constraints, loaded_con):
+            if _c:
+                try:
+                    os.remove(_c)
+                except Exception:  # noqa: BLE001
+                    pass
 
 
 def _run_uninstall(pkgs):
