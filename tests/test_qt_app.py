@@ -472,7 +472,14 @@ def main():
         print()
     for name, passed in results.items():
         print(f"{'PASS' if passed else 'FAIL'}: {name}")
-    sys.exit(0 if all(results.values()) else 1)
+    ok = all(results.values())
+    # PySide/Qt native objects can make the interpreter's shutdown return a bogus
+    # nonzero code on Windows even when every test passed (sys.exit(0) is reached).
+    # Hard-exit with the ACTUAL result — after flushing — so the suite's exit code
+    # reflects the assertions, not Qt DLL-unload noise. A real failure still exits 1.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0 if ok else 1)
 
 
 if __name__ == "__main__":
