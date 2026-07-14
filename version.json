@@ -1,14 +1,14 @@
 {
-    "version": "6.3",
+    "version": "6.4",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.3: fixes non-UTF-8 subtitles (GBK/Big5/Shift-JIS/EUC-KR SRT no longer crash) and plugin installs failing with a file-lock (os error 5) when a component is in use. Also: PPTX 10+ slide fix + long-text auto-shrink, hardened mainland-China downloads, GPU→CPU STT fallback, and BabelDOC security floor (CVE-2026-54071). / 6.3：修复非 UTF-8 字幕（GBK/Big5/日文/韩文 SRT 不再崩溃）和插件安装文件占用报错（os error 5）；另含 PPTX 10 页以上错乱修复+长译文自动缩字、国内下载加固、STT GPU→CPU 兜底、BabelDOC 安全加固（CVE-2026-54071）。",
+    "notes": "6.4: fixes non-UTF-8 subtitles (GBK/Big5/Shift-JIS/EUC-KR SRT no longer crash) and plugin installs failing with a file-lock (os error 5) when a component is in use. Also bundles everything since 6.3: PPTX 10+ slide fix + long-text auto-shrink, optional Excel auto-shrink toggle, hardened mainland-China downloads, GPU→CPU STT fallback, desktop LAN mode, and BabelDOC security floor (CVE-2026-54071). / 6.4：修复非 UTF-8 字幕（GBK/Big5/日文/韩文 SRT 不再崩溃）和插件安装文件占用报错（os error 5）；并汇总 6.3 以来的全部改动：PPTX 10 页以上错乱修复+长译文自动缩字、可选 Excel 自动缩字开关、国内下载加固、STT GPU→CPU 兜底、桌面版局域网模式、BabelDOC 安全加固（CVE-2026-54071）。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.3/LinguaHaru-6.3-web-portable.zip",
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.4/LinguaHaru-6.4-web-portable.zip",
             "sha256": "cd46f50268d88d6034489b27b295c16c6799b45745e3b1d43a1500b02a1f2153"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.3/LinguaHaru-6.3-desktop-portable.zip",
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.4/LinguaHaru-6.4-desktop-portable.zip",
             "sha256": "3668250b7ac9ee755fe9bd2c708c6eef5f05b7f6568d04438beb162603c38ca5"
         }
     }
