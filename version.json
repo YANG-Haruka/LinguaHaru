@@ -1,15 +1,15 @@
 {
-    "version": "6.4",
+    "version": "6.5",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.4: fixes non-UTF-8 subtitles (GBK/Big5/Shift-JIS/EUC-KR SRT no longer crash) and plugin installs failing with a file-lock (os error 5) when a component is in use. Also bundles everything since 6.3: PPTX 10+ slide fix + long-text auto-shrink, optional Excel auto-shrink toggle, hardened mainland-China downloads, GPU→CPU STT fallback, desktop LAN mode, and BabelDOC security floor (CVE-2026-54071). / 6.4：修复非 UTF-8 字幕（GBK/Big5/日文/韩文 SRT 不再崩溃）和插件安装文件占用报错（os error 5）；并汇总 6.3 以来的全部改动：PPTX 10 页以上错乱修复+长译文自动缩字、可选 Excel 自动缩字开关、国内下载加固、STT GPU→CPU 兜底、桌面版局域网模式、BabelDOC 安全加固（CVE-2026-54071）。",
+    "notes": "6.5: fixes plugin installs dying with 'No solution found' — a too-new numpy (>=2.5) pulled in by any plugin made the Video/Audio voice stack permanently unresolvable (restarts didn't help); env-wide dependency caps (plugins/constraints.txt) now apply to every plugin install/upgrade, and already-affected machines self-heal by downgrading numpy when the plugin is reinstalled. / 6.5：修复插件安装报 'No solution found'（任一插件把过新的 numpy(≥2.5) 带进环境后，视频/语音插件永远装不上、重启也无效）；现在所有插件安装/升级统一应用全局版本约束（plugins/constraints.txt），已中招的电脑更新后重装插件会自动降级 numpy 恢复。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.4/LinguaHaru-6.4-web-portable.zip",
-            "sha256": "1e86da192ce55286b546d177a838d7ab77190a15200910e32f5bea23af54d72f"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.5/LinguaHaru-6.5-web-portable.zip",
+            "sha256": "07d4306bbe559f97b426c539fc755345d981fc486dcffe13e23821d86818bbde"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.4/LinguaHaru-6.4-desktop-portable.zip",
-            "sha256": "e0403481e68ef1ad1ff2a581d4d855215f4e0a5476ed090be5b2a6621466d978"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.5/LinguaHaru-6.5-desktop-portable.zip",
+            "sha256": "99499eb8771e96db4d1e1783723765a0f3dcab75225de7b6d2484e90de2d124c"
         }
     }
 }
