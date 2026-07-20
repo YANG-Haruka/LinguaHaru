@@ -17,6 +17,11 @@ funasr>=1.1.0
 # backtrack to ancient numba 0.53.1 (supports only py<3.10) and the install
 # fails to build. Pin a 3.12-compatible numba so it never picks the old one.
 numba>=0.59
+# Every stable numba caps numpy<2.5, so with a numpy>=2.5 already in the env the
+# resolver dies with "No solution found". Requiring the cap HERE makes the
+# resolver DOWNGRADE numpy instead of failing (plugins/constraints.txt applies
+# the same cap to every plugin so a 2.5+ numpy shouldn't enter the env at all).
+numpy>=1.22,<2.5
 # Optional: capture system audio (speaker loopback) as a live input source.
 # If absent, the Real-Time Voice page silently falls back to microphones only.
 soundcard>=0.4.2

@@ -12,9 +12,12 @@ paddleocr>=3.7
 paddlepaddle>=3.3
 opencv-python-headless>=4.8
 # Used directly by the image pipeline (top-level imports) + optional LaMa inpaint.
-# numpy intentionally UNPINNED (do not cap <2 — that breaks the CUDA torch env).
+# numpy: do NOT cap <2 (that breaks the CUDA torch env), but DO cap <2.5 — no
+# stable numba (needed by the Video/Audio voice stack sharing this env) supports
+# numpy 2.5 yet, and an uncapped install here is exactly how a too-new numpy
+# used to poison the env (see plugins/constraints.txt).
 Pillow>=10
-numpy
+numpy<2.5
 huggingface_hub>=0.20
 # Manga mode for PDF rasterizes pages -> images and repacks the result to a PDF.
 pymupdf>=1.24

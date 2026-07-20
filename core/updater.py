@@ -173,6 +173,12 @@ def _sync_base_deps(root):
             args += ["-r", r]
     if not args:
         return True   # nothing to sync
+    # Honour the same env-wide caps as plugin installs (plugins/constraints.txt in
+    # the NEW payload) so a dep sync can never pull a package version the plugin
+    # stack can't live with (e.g. a numpy no stable numba supports).
+    con = os.path.join(root, "plugins", "constraints.txt")
+    if os.path.exists(con):
+        args = ["--constraint", con, *args]
 
     from core.module_manager import pick_pypi_index, _PYPI_MIRROR
 

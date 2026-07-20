@@ -1,0 +1,17 @@
+# Env-wide version caps applied to EVERY plugin install/upgrade —
+# core/module_manager passes this file as an extra pip/uv --constraint to each
+# install command (main requirements, CUDA torch/onnxruntime swaps, upgrades).
+#
+# A constraint is NOT a dependency: nothing listed here is installed by itself.
+# It only caps the version WHEN some resolve touches the package. This is the
+# one place to stop a "latest" transitive dep pulled by ANY plugin from
+# poisoning the env that all plugins share.
+#
+# numpy: every stable numba release (the Video/Audio + voice plugins need numba
+# via funasr -> librosa/umap-learn) requires numpy<2.5. If a numpy>=2.5 ever
+# lands in the env (e.g. pulled as "latest" by another plugin), the whole STT
+# stack becomes UNRESOLVABLE ("No solution found") because the installer pins
+# already-installed packages. Keep numpy 2.x allowed (the CUDA torch env needs
+# it) — only the too-new series is fenced off. Raise the cap once a stable
+# numba supports the new numpy series.
+numpy<2.5

@@ -349,11 +349,28 @@ def _loaded_native_dists():
     return pins
 
 
+# Env-wide version caps (plugins/constraints.txt) passed as an EXTRA
+# --constraint to EVERY install command below — main requirements, the CUDA
+# torch/onnxruntime swaps, opencv normalization, and upgrades. One place to
+# stop a too-new transitive dep from ANY resolve from poisoning the shared env
+# (e.g. a numpy>=2.5 that no stable numba accepts would make the STT stack
+# permanently unresolvable, because installs pin already-installed packages).
+_GLOBAL_CONSTRAINTS = os.path.join(REPO_ROOT, "plugins", "constraints.txt")
+
+
+def _global_constraint_args():
+    """['--constraint', <path>] when plugins/constraints.txt ships with the app;
+    [] otherwise so a stripped copy still installs."""
+    if os.path.exists(_GLOBAL_CONSTRAINTS):
+        return ["--constraint", _GLOBAL_CONSTRAINTS]
+    return []
+
+
 def _install_cmd(req, index, upgrade, constraints=None):
     uv = _uv_exe()
     up = ["--upgrade"] if upgrade else []
     idx = ["--index-url", index]
-    con = ["--constraint", constraints] if constraints else []
+    con = _global_constraint_args() + (["--constraint", constraints] if constraints else [])
     if uv:
         return [uv, "pip", "install", "--python", sys.executable, *idx, *up, *con, "-r", req]
     return [sys.executable, "-m", "pip", "install", *idx, *up, *con, "-r", req]
@@ -749,10 +766,10 @@ def _maybe_install_cuda_torch(name):
     def _install_official(index):
         if uv:
             cmd = [uv, "pip", "install", "--python", sys.executable, "--index-url",
-                   index, "torch", "torchaudio"]
+                   index, *_global_constraint_args(), "torch", "torchaudio"]
         else:
             cmd = [sys.executable, "-m", "pip", "install", "--index-url", index,
-                   "torch", "torchaudio"]
+                   *_global_constraint_args(), "torch", "torchaudio"]
         ok, _ = _run(cmd)
         return ok
 
@@ -765,10 +782,11 @@ def _maybe_install_cuda_torch(name):
         app_logger.info("Installing CUDA torch from Aliyun mirror: %s", " ".join(pins))
         if uv:
             cmd = [uv, "pip", "install", "--python", sys.executable, "--index-url",
-                   _PYPI_MIRROR, "--find-links", find_links, *pins]
+                   _PYPI_MIRROR, "--find-links", find_links,
+                   *_global_constraint_args(), *pins]
         else:
             cmd = [sys.executable, "-m", "pip", "install", "--index-url", _PYPI_MIRROR,
-                   "--find-links", find_links, *pins]
+                   "--find-links", find_links, *_global_constraint_args(), *pins]
         ok, _ = _run(cmd)
         return ok
 
@@ -863,9 +881,10 @@ def _maybe_install_cuda_onnxruntime(name):
     _emit("检测到 NVIDIA GPU，正在安装 GPU 版 OCR 运行时（较大，请耐心）… / installing CUDA onnxruntime for OCR…")
 
     def _pip(*args):
+        gcon = _global_constraint_args()
         if uv:
-            return _run([uv, "pip", "install", "--python", sys.executable, *args])[0]
-        return _run([sys.executable, "-m", "pip", "install", *args])[0]
+            return _run([uv, "pip", "install", "--python", sys.executable, *gcon, *args])[0]
+        return _run([sys.executable, "-m", "pip", "install", *gcon, *args])[0]
 
     # CPU onnxruntime and onnxruntime-gpu provide the same import name and can't
     # coexist, so we must uninstall the CPU build to install the GPU one. The risk:
@@ -934,15 +953,18 @@ def _normalize_opencv():
     uv = _uv_exe()
     idx = pick_pypi_index()
     spec = f"{keep}=={ver}"
+    # Constrain here too: a force-reinstall re-resolves cv2's deps and would
+    # otherwise happily bump numpy past the env-wide cap.
+    gcon = _global_constraint_args()
     if uv:
         ok, _out = _run([uv, "pip", "install", "--python", sys.executable,
-                         "--reinstall", "--index-url", idx, spec])
+                         "--reinstall", "--index-url", idx, *gcon, spec])
     else:
         ok, _out = _run([sys.executable, "-m", "pip", "install", "--force-reinstall",
-                         "--index-url", idx, spec])
+                         "--index-url", idx, *gcon, spec])
     if not ok:   # never leave the env with NO cv2 — retry on the mirror
         _run([sys.executable, "-m", "pip", "install", "--force-reinstall",
-              "--index-url", _PYPI_MIRROR, spec])
+              "--index-url", _PYPI_MIRROR, *gcon, spec])
 
 
 def install_module(name):
@@ -1197,9 +1219,11 @@ def upgrade_module(name):
     if pkg:
         uv = _uv_exe()
         idx = ["--index-url", pick_pypi_index()]
+        gcon = _global_constraint_args()
         if uv:
-            return _run([uv, "pip", "install", "--upgrade", "--python", sys.executable, *idx, pkg])
-        return _run([sys.executable, "-m", "pip", "install", "--upgrade", *idx, pkg])
+            return _run([uv, "pip", "install", "--upgrade", "--python", sys.executable,
+                         *idx, *gcon, pkg])
+        return _run([sys.executable, "-m", "pip", "install", "--upgrade", *idx, *gcon, pkg])
     return _run_install(m["requirements_path"], upgrade=True)
 
 
