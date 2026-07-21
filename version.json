@@ -1,15 +1,15 @@
 {
-    "version": "6.5",
+    "version": "6.6",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.5: fixes plugin installs dying with 'No solution found' — a too-new numpy (>=2.5) pulled in by any plugin made the Video/Audio voice stack permanently unresolvable (restarts didn't help); env-wide dependency caps (plugins/constraints.txt) now apply to every plugin install/upgrade, and already-affected machines self-heal by downgrading numpy when the plugin is reinstalled. / 6.5：修复插件安装报 'No solution found'（任一插件把过新的 numpy(≥2.5) 带进环境后，视频/语音插件永远装不上、重启也无效）；现在所有插件安装/升级统一应用全局版本约束（plugins/constraints.txt），已中招的电脑更新后重装插件会自动降级 numpy 恢复。",
+    "notes": "6.6: PDF translation no longer dies mid-run downloading fonts (RetryError[ReadTimeout] on networks where github/HF are unreachable) — the PDF plugin now pre-downloads ALL BabelDOC assets (layout model + fonts + CMaps) at install time, visibly and retryably; a drop-in offline font pack (models/babeldoc/assets/) restores assets with zero network; the downloadable PDF model pack (pdf.zip) now includes the previously-missing CMaps. / 6.6：修复 PDF 翻译中途下载字体失败导致整个任务报错（github/HF 不可达网络下的 RetryError 超时）——现在安装 PDF 插件时一次性预下载全部 BabelDOC 资源（版面模型+字体+CMap），失败可见、可重试；离线字体包放入 models/babeldoc/assets/ 即零联网自动补齐；网盘 PDF 模型包（pdf.zip）已补上缺失的 CMap。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.5/LinguaHaru-6.5-web-portable.zip",
-            "sha256": "07d4306bbe559f97b426c539fc755345d981fc486dcffe13e23821d86818bbde"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.6/LinguaHaru-6.6-web-portable.zip",
+            "sha256": "70a6ac2caee1855f8371775ea47edb62cb5a79f1280668e2096118107fdc12f8"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.5/LinguaHaru-6.5-desktop-portable.zip",
-            "sha256": "99499eb8771e96db4d1e1783723765a0f3dcab75225de7b6d2484e90de2d124c"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.6/LinguaHaru-6.6-desktop-portable.zip",
+            "sha256": "bd03ca3bfe3565fc07f987de8c5df977eed34999ebf050ebb080d2bd8beb5b11"
         }
     }
 }
