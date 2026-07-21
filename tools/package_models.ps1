@@ -35,7 +35,11 @@ $MANIFEST = [ordered]@{
   "ocr-small"  = @{ paths = @("paddlex/official_models/PP-OCRv6_small_det",  "paddlex/official_models/PP-OCRv6_small_rec",  $TEXTLINE); note = "PP-OCRv6 small (default)" }
   "ocr-medium" = @{ paths = @("paddlex/official_models/PP-OCRv6_medium_det", "paddlex/official_models/PP-OCRv6_medium_rec", $TEXTLINE); note = "PP-OCRv6 medium (most accurate)" }
   # --- PDF layout (BabelDOC) + image inpaint (LaMa) ---
-  "pdf-doclayout" = @{ paths = @("babeldoc"); note = "BabelDOC layout/fonts for PDF translation" }
+  # EVERYTHING the PDF plugin needs (BabelDOC layout model + fonts + cmaps +
+  # tiktoken) — run tools/babeldoc_offline_assets.py first so the cache is
+  # complete. babeldoc\assets holds the offline_assets_<tag>.zip — the same
+  # fonts compressed AGAIN; shipping it would double the pack size.
+  "pdf" = @{ paths = @("babeldoc"); exclude = @("babeldoc\assets"); note = "PDF translation pack: BabelDOC layout model + fonts + cmaps" }
   "image-inpaint-lama" = @{ paths = @("lama"); note = "LaMa inpaint (erase source text from images)" }
 }
 
@@ -55,6 +59,12 @@ foreach ($id in $MANIFEST.Keys) {
     Copy-Item -Recurse -Force $src $dst
   }
   if ($missing) { Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue; continue }
+  foreach ($ex in @($entry.exclude)) {
+    if ($ex) {
+      $p = Join-Path $stage $ex
+      if (Test-Path $p) { Remove-Item -Recurse -Force $p }
+    }
+  }
   $zip = Join-Path $out "$id.zip"
   if (Test-Path $zip) {   # skip already-built (resume after a failure)
     Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue

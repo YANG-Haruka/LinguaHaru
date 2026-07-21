@@ -336,8 +336,13 @@ def download_plugin_model(name, model_id=None, progress_cb=None):
         if name == "PDF":
             from core import model_store
             model_store.redirect_babeldoc_cache()
-            from babeldoc.assets.assets import get_doclayout_onnx_model_path
-            get_doclayout_onnx_model_path()
+            # Warm ALL assets (DocLayout onnx + fonts + cmaps + tiktoken), not
+            # just the onnx: fonts used to download lazily during the FIRST
+            # translation, where a github/HF timeout killed the whole run after
+            # minutes (RetryError[ReadTimeout]). Failing here instead is visible
+            # and retryable in the plugin UI.
+            from babeldoc.assets.assets import warmup
+            warmup()
             return True
     except Exception as e:  # noqa: BLE001
         from core.log_config import app_logger
