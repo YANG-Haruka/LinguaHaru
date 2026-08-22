@@ -1,15 +1,15 @@
 {
-    "version": "6.6",
+    "version": "6.7",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.6: PDF translation no longer dies mid-run downloading fonts (RetryError[ReadTimeout] on networks where github/HF are unreachable) — the PDF plugin now pre-downloads ALL BabelDOC assets (layout model + fonts + CMaps) at install time, visibly and retryably; a drop-in offline font pack (models/babeldoc/assets/) restores assets with zero network; the downloadable PDF model pack (pdf.zip) now includes the previously-missing CMaps. / 6.6：修复 PDF 翻译中途下载字体失败导致整个任务报错（github/HF 不可达网络下的 RetryError 超时）——现在安装 PDF 插件时一次性预下载全部 BabelDOC 资源（版面模型+字体+CMap），失败可见、可重试；离线字体包放入 models/babeldoc/assets/ 即零联网自动补齐；网盘 PDF 模型包（pdf.zip）已补上缺失的 CMap。",
+    "notes": "6.7: Word bilingual mode now bolds/colors the translation inside table cells (and content controls, headers/footers, footnotes), not only body paragraphs; every format skips inline base64 image data (data:image/...;base64,...) instead of sending image bytes to the model; Excel sheet names are translated again (on by default, toggle in Settings) and every cross-sheet reference (formulas, defined names, validation, charts, hyperlinks, pivots) is rewritten to the new name, so no #REF!. / 6.7：Word 双语对照的表格单元格（含内容控件、页眉页脚、脚注）译文也加粗/着色，不再只有正文生效；所有格式统一跳过内嵌 base64 图片数据（data:image/...;base64,...），不再把图片字节送去翻译；Excel 工作表名重新翻译（默认开启，设置可关），改名时同步改写全部跨表引用（公式/定义名称/数据验证/图表/超链接/透视表），不再出现 #REF!。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.6/LinguaHaru-6.6-web-portable.zip",
-            "sha256": "70a6ac2caee1855f8371775ea47edb62cb5a79f1280668e2096118107fdc12f8"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.7/LinguaHaru-6.7-web-portable.zip",
+            "sha256": "a3bd1cb617aa445246aec4069db6f88877db33f1eccdf74321a17b88f8ade2b0"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.6/LinguaHaru-6.6-desktop-portable.zip",
-            "sha256": "bd03ca3bfe3565fc07f987de8c5df977eed34999ebf050ebb080d2bd8beb5b11"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.7/LinguaHaru-6.7-desktop-portable.zip",
+            "sha256": "d2a71981822a94bdbb4888b351ab3dc043029a2bf362f1a85e15beb2bddab8b7"
         }
     }
 }
