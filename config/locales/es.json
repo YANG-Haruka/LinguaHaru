@@ -365,5 +365,7 @@
   "China Mirror Hint": "Fuerza el espejo PyPI de Tsinghua para descargas de plugins/dependencias — actívalo si el servidor oficial es muy lento.",
   "China Mirror Label": "Forzar descargas de plugins/dependencias vía espejo de China (Tsinghua PyPI; actívalo con red mala / en China continental)",
   "Excel Shrink": "Excel: reducir texto largo automáticamente",
-  "Excel Shrink Label": "Excel: reducir texto largo automáticamente (ajusta la fuente al ancho de columna cuando la traducción no cabe; desactivado por defecto)"
+  "Excel Shrink Label": "Excel: reducir texto largo automáticamente (ajusta la fuente al ancho de columna cuando la traducción no cabe; desactivado por defecto)",
+  "Excel Sheet Names": "Excel: traducir nombres de hojas",
+  "Excel Sheet Names Label": "Excel: traducir nombres de hojas (las fórmulas entre hojas y las referencias de gráficos se actualizan a los nuevos nombres; activado por defecto)"
 }

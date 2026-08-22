@@ -59,6 +59,13 @@ def should_translate(text_value):
     except Exception:
         pass
 
+    # Inline base64 data (data:image/png;base64,... or a bare blob): binary, not
+    # prose — translating it burns tokens for nothing and corrupts the image.
+    if re.search(r'data:[\w.+-]+/[\w.+-]+;base64,', text_value, re.IGNORECASE):
+        return False
+    if len(text_value) >= 100 and re.match(r'^[A-Za-z0-9+/]+={0,2}$', text_value):
+        return False
+
     # If contains multibyte characters (Chinese, Japanese, Korean, etc.), usually needs translation
     if is_multibyte(text_value):
         return True

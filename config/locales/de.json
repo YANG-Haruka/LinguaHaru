@@ -365,5 +365,7 @@
   "China Mirror Hint": "Erzwingt den Tsinghua-PyPI-Spiegel für Plugin-/Abhängigkeits-Downloads — aktivieren, wenn der offizielle Server zu langsam ist.",
   "China Mirror Label": "Plugin-/Abhängigkeits-Downloads über China-Spiegel erzwingen (Tsinghua PyPI; bei schlechter Verbindung / in China aktivieren)",
   "Excel Shrink": "Excel: langen Text automatisch verkleinern",
-  "Excel Shrink Label": "Excel: langen Text automatisch verkleinern (skaliert die Schrift auf die Spaltenbreite, wenn die Übersetzung nicht passt; standardmäßig aus)"
+  "Excel Shrink Label": "Excel: langen Text automatisch verkleinern (skaliert die Schrift auf die Spaltenbreite, wenn die Übersetzung nicht passt; standardmäßig aus)",
+  "Excel Sheet Names": "Excel: Blattnamen übersetzen",
+  "Excel Sheet Names Label": "Excel: Blattnamen übersetzen (blattübergreifende Formeln und Diagrammbezüge werden auf die neuen Namen aktualisiert; standardmäßig an)"
 }

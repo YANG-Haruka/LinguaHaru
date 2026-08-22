@@ -365,5 +365,7 @@
   "China Mirror Hint": "Buộc dùng máy chủ gương Tsinghua PyPI để tải plugin/phụ thuộc — bật khi máy chủ chính thức quá chậm.",
   "China Mirror Label": "Buộc tải plugin/phụ thuộc qua máy chủ gương TQ (Tsinghua PyPI; bật khi mạng kém / ở Trung Quốc đại lục)",
   "Excel Shrink": "Excel: tự thu nhỏ chữ dài",
-  "Excel Shrink Label": "Excel: tự thu nhỏ chữ dài (thu nhỏ phông theo độ rộng cột khi bản dịch không vừa; mặc định tắt)"
+  "Excel Shrink Label": "Excel: tự thu nhỏ chữ dài (thu nhỏ phông theo độ rộng cột khi bản dịch không vừa; mặc định tắt)",
+  "Excel Sheet Names": "Excel: dịch tên trang tính",
+  "Excel Sheet Names Label": "Excel: dịch tên trang tính (công thức liên trang và tham chiếu biểu đồ được cập nhật theo tên mới; mặc định bật)"
 }

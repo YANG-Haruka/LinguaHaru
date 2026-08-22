@@ -386,5 +386,7 @@
   "China Mirror Hint": "プラグイン/依存関係のダウンロードに清華 PyPI ミラーを強制します。公式サーバーが遅い場合にオン。",
   "China Mirror Label": "プラグイン/依存関係のDLを中国ミラー（清華 PyPI）に強制。回線が悪い/中国本土で有効化",
   "Excel Shrink": "Excel：長いテキストを自動縮小",
-  "Excel Shrink Label": "Excel：長いテキストを自動縮小（訳文が収まらないとき列幅に合わせて縮小。既定はオフ）"
+  "Excel Shrink Label": "Excel：長いテキストを自動縮小（訳文が収まらないとき列幅に合わせて縮小。既定はオフ）",
+  "Excel Sheet Names": "Excel：シート名を翻訳",
+  "Excel Sheet Names Label": "Excel：シート名を翻訳（シート間の数式・グラフ参照も新しい名前に更新。既定はオン）"
 }

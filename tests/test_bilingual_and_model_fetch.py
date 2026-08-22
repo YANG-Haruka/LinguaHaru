@@ -224,6 +224,7 @@ def test_docx_bilingual():
     doc = Document()
     doc.add_paragraph("これは《重要》な文書です")
     doc.add_paragraph("Second paragraph of content")
+    doc.add_table(rows=1, cols=1).cell(0, 0).text = "Table cell content"
     doc.save(src)
 
     src_json = extract_word_content_to_json(src, TEMP_DIR)
@@ -239,6 +240,25 @@ def test_docx_bilingual():
           xml.count("《重要》") == 2, f"count={xml.count('《重要》')}")
     check("second paragraph bilingual",
           "Second paragraph of content" in xml and T + "Second paragraph of content" in xml, xml[:500])
+
+    # Translated half (runs after the first <w:br/>) is bold in BOTH body
+    # paragraphs and table cells (bilingual_bold default on).
+    from lxml import etree
+    ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+    root = etree.fromstring(xml.encode("utf-8"))
+
+    def _bold_after_break(p):
+        runs = p.findall("w:r", ns)
+        br = next((i for i, r in enumerate(runs) if r.find("w:br", ns) is not None), None)
+        return br is not None and runs[br + 1:] and all(
+            r.find("w:rPr/w:b", ns) is not None for r in runs[br + 1:])
+
+    body_ps = root.findall("./w:body/w:p", ns)
+    cell_ps = root.findall(".//w:tc/w:p", ns)
+    check("body paragraph translation bolded", any(_bold_after_break(p) for p in body_ps))
+    check("table cell bilingual", T + "Table cell content" in xml)
+    check("table cell translation bolded",
+          bool(cell_ps) and all(_bold_after_break(p) for p in cell_ps))
 
 
 # -------------------------------------------------------------------- html --

@@ -361,6 +361,13 @@ class SettingsPage(ScrollArea):
             lambda v: backend.set_config("excel_shrink_to_fit", v))
         self.excel_shrink_label = BodyLabel(tr("Excel Shrink", lang))
         adv_form.addRow(self.excel_shrink_label, self.excel_shrink)
+        self.excel_sheet_names = SwitchButton()
+        self.excel_sheet_names.setChecked(config.get("excel_translate_sheet_names", True))
+        self.excel_sheet_names.checkedChanged.connect(
+            lambda v: backend.set_config("excel_translate_sheet_names", v))
+        self.excel_sheet_names_label = BodyLabel(tr("Excel Sheet Names", lang))
+        self.excel_sheet_names_label.setToolTip(tr("Excel Sheet Names Label", lang))
+        adv_form.addRow(self.excel_sheet_names_label, self.excel_sheet_names)
         self.with_ctx = SwitchButton()
         self.with_ctx.setChecked(config.get("translate_with_context", False))
         self.with_ctx.checkedChanged.connect(
@@ -1093,6 +1100,8 @@ class SettingsPage(ScrollArea):
         self.mask_ph_label.setText(tr("Placeholder Protection", lang))
         self.dedup_ctx_label.setText(tr("Context-aware Dedup", lang))
         self.excel_shrink_label.setText(tr("Excel Shrink", lang))
+        self.excel_sheet_names_label.setText(tr("Excel Sheet Names", lang))
+        self.excel_sheet_names_label.setToolTip(tr("Excel Sheet Names Label", lang))
         self.with_ctx_label.setText(tr("Type Context", lang))
         self.tone_label.setText(tr("Tone", lang))
         self.length_label.setText(tr("Length", lang))

@@ -58,6 +58,7 @@ def test_xlsx_structures():
     ws2["A1"] = "Cross sheet total label"
     ws2["B1"] = "=DATA2024!B7*2"
     ws2.freeze_panes = "A2"
+    ws1["B11"] = "=売上データ!B1*2"                       # points at the sheet that gets renamed
 
     wb.save(src)
 
@@ -72,12 +73,12 @@ def test_xlsx_structures():
 
     # --- sheet names ---
     check("code-like sheet name untouched", "DATA2024" in sheets, str(sheets))
-    # Sheet-name translation is OFF by default now (config excel_translate_sheet_names),
-    # so CJK sheet names are PRESERVED, not renamed — only the cell contents are
-    # translated. Verify the original name survived.
-    check("CJK sheet name preserved (not renamed by default)",
-          "売上データ" in sheets, str(sheets))
-    s2 = wb2["売上データ"] if "売上データ" in sheets else wb2[sheets[1]]
+    # Sheet-name translation is ON by default (config excel_translate_sheet_names);
+    # the translated name goes through sanitize_sheet_name ([T] -> -T-).
+    from core.pipelines.excel_translation_pipeline import sanitize_sheet_name
+    new_name = sanitize_sheet_name(T + "売上データ")
+    check("CJK sheet name translated (on by default)", new_name in sheets, str(sheets))
+    s2 = wb2[new_name] if new_name in sheets else wb2[sheets[1]]
 
     # --- text content ---
     check("merged banner translated", s1["A1"].value == T + "Wide merged banner title",
@@ -107,12 +108,13 @@ def test_xlsx_structures():
           s1["B10"].value == 1234.5 and s1["B10"].number_format == '"$"#,##0.00',
           f"{s1['B10'].value!r} / {s1['B10'].number_format!r}")
 
-    # --- cross-sheet formula ---
-    # The referenced sheet name is non-translatable, so the formula is still
-    # valid. (Known limitation: if a referenced sheet IS renamed by
-    # translation, formulas are not rewritten to the new name.)
+    # --- cross-sheet formulas ---
+    # DATA2024 is non-translatable, so that formula is untouched; the formula
+    # pointing at the RENAMED sheet must be rewritten to the new (quoted) name.
     check("cross-sheet formula preserved verbatim",
           s2["B1"].value == "=DATA2024!B7*2", repr(s2["B1"].value))
+    check("formula pointing at the renamed sheet rewritten",
+          s1["B11"].value == f"='{new_name}'!B1*2", repr(s1["B11"].value))
 
     # --- comments / panes ---
     # Known limitation: comment text is not extracted for translation; it

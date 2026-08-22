@@ -32,6 +32,87 @@ def _excel_shrink_enabled():
         return False
 
 
+def _excel_sheet_names_enabled():
+    """Config 'excel_translate_sheet_names' (default ON): translate worksheet tab
+    names. Cross-sheet references (formulas, defined names, charts, validation,
+    hyperlinks) are rewritten to the new names by _rewrite_sheet_refs, so a
+    rename no longer leaves #REF! behind."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("excel_translate_sheet_names", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _rewrite_sheet_refs(result_path, renames):
+    """Point cross-sheet references at the translated sheet names. openpyxl's
+    rename only changes the tab: formulas, defined names, chart series, data
+    validation, conditional formatting, hyperlinks and pivot sources still say
+    the old name and Excel shows #REF! / a repair prompt. Rewrites `Old!` and
+    `'Old'!` only inside formula-bearing XML elements (never inside cell text)
+    across the whole package, which also covers the chart/drawing parts restored
+    verbatim from the original file.
+    # ponytail: VBA Sheets("Old"), external links and 3-D refs (A:B!) are not
+    # rewritten — rare, and the file still opens."""
+    from html import unescape                 # also decodes the &#NNNN; refs openpyxl emits
+    from xml.sax.saxutils import escape
+    renames = {o: n for o, n in renames.items() if o != n}
+    if not renames:
+        return
+    subs = []
+    for old, new in renames.items():
+        new_q = "'" + new.replace("'", "''") + "'!"
+        subs.append((re.compile("'" + re.escape(old.replace("'", "''")) + "'!"), new_q))
+        subs.append((re.compile(r"(?<![\w.'!:])" + re.escape(old) + "!"), new_q))
+
+    def _fix(text, attr=False):
+        plain = unescape(text)
+        t = plain
+        for pat, rep in subs:
+            t = pat.sub(lambda _m, rep=rep: rep, t)
+        return text if t == plain else escape(t, {'"': "&quot;"} if attr else {})
+
+    tag_re = re.compile(r'(<((?:\w+:)?(?:f|definedName|formula[12]?|sqref))\b[^>]*>)(.*?)(</\2>)', re.S)
+    attr_re = re.compile(r'(<(?:hyperlink|worksheetSource)\b[^>]*?\b(location|sheet)=")([^"]*)"')
+    rels_re = re.compile(r'(Target="#)([^"]*)"')      # internal hyperlink stored as a relationship
+
+    def _attr(m):
+        val = m.group(3)
+        if m.group(2) == "sheet":          # pivot source: bare name, no '!'
+            plain = unescape(val)
+            val = escape(renames[plain], {'"': "&quot;"}) if plain in renames else val
+        else:
+            val = _fix(val, attr=True)
+        return m.group(1) + val + '"'
+
+    with ZipFile(result_path, "r") as z:
+        parts = {n: z.read(n) for n in z.namelist()}
+    touched = False
+    for n, b in parts.items():
+        if not n.startswith("xl/") or n.startswith("xl/sharedStrings"):
+            continue
+        s = b.decode("utf-8")
+        if n.endswith(".rels"):
+            t = rels_re.sub(lambda m: m.group(1) + _fix(m.group(2), attr=True) + '"', s)
+        elif n.endswith(".xml"):
+            t = tag_re.sub(lambda m: m.group(1) + _fix(m.group(3)) + m.group(4), s)
+            t = attr_re.sub(_attr, t)
+        else:
+            continue
+        if t != s:
+            parts[n] = t.encode("utf-8")
+            touched = True
+    if not touched:
+        return
+    tmp = result_path + ".refs.tmp"
+    with ZipFile(tmp, "w", ZIP_DEFLATED) as zout:
+        for n, b in parts.items():
+            zout.writestr(n, b)
+    shutil.move(tmp, result_path)
+    app_logger.info(f"Rewrote cross-sheet references for renamed sheets: {renames}")
+
+
 def _apply_shrink_to_fit(cell, original_text, translated_value):
     """Set 'shrink to fit' on a cell whose translation is longer than the source, so
     it scales down to the column width. Skips cells set to wrap (Excel makes shrink &
@@ -181,19 +262,9 @@ def _extract_with_openpyxl(file_path, temp_dir):
     cell_data = []
     count = 0
 
-    # Sheet-name translation is OFF by default: openpyxl renaming a sheet does
-    # NOT update formulas / defined names / chart references that point at the old
-    # name, so it silently corrupts cross-sheet workbooks. Opt in via config
-    # excel_translate_sheet_names only if the workbook has no such references.
-    _translate_sheet_names = False
-    try:
-        from core.paths import SYSTEM_CONFIG
-        with open(SYSTEM_CONFIG, encoding="utf-8") as _f:
-            _translate_sheet_names = bool(json.load(_f).get("excel_translate_sheet_names", False))
-    except Exception:  # noqa: BLE001
-        pass
+    _translate_sheet_names = _excel_sheet_names_enabled()
 
-    # Add sheet names to the extraction process (only when explicitly enabled)
+    # Add sheet names to the extraction process (only when enabled)
     for sheet_name in workbook.sheetnames:
         # Add sheet name as a special entry only when enabled AND translatable.
         if _translate_sheet_names and should_translate(sheet_name):
@@ -427,6 +498,7 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             app_logger.error(f"Error writing data-validation text back: {str(e)}")
 
     # Final pass: Rename sheets with their translations
+    renamed_sheets = {}
     for original_name, translated_name in sheet_name_translations.items():
         if original_name in workbook.sheetnames:
             sheet = workbook[original_name]
@@ -440,7 +512,8 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
 
             try:
                 sheet.title = sanitized_name
-                app_logger.info(f"Renamed sheet from '{original_name}' to '{sanitized_name}'")
+                renamed_sheets[original_name] = sheet.title
+                app_logger.info(f"Renamed sheet from '{original_name}' to '{sheet.title}'")
             except Exception as e:
                 app_logger.error(f"Failed to rename sheet from '{original_name}' to '{sanitized_name}': {str(e)}")
                 # Keep the original name if renaming fails
@@ -573,6 +646,12 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         except Exception as e:
             app_logger.error(f"Failed to apply header/footer translations (openpyxl path): {str(e)}")
 
+    # LAST: every part above was restored/patched from the original (old names).
+    try:
+        _rewrite_sheet_refs(result_path, renamed_sheets)
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(f"Failed to rewrite cross-sheet references: {str(e)}")
+
     return result_path
 
 
@@ -593,11 +672,12 @@ def _extract_with_xlwings(file_path, temp_dir):
     try:
         wb = app.books.open(file_path)
 
-        # First, collect sheet names
+        # First, collect sheet names (Excel itself updates references on rename)
         sheets = list(wb.sheets)
+        _translate_sheet_names = _excel_sheet_names_enabled()
         for sheet in sheets:
             sheet_name = sheet.name
-            if should_translate(sheet_name):
+            if _translate_sheet_names and should_translate(sheet_name):
                 count += 1
                 cell_data.append({
                     "count_src": count,

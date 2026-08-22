@@ -683,5 +683,7 @@
   "China Mirror Hint": "Force the Tsinghua PyPI mirror for plugin/dependency downloads — turn on if the official server is too slow.",
   "China Mirror Label": "Force plugin/dependency downloads via China mirror (Tsinghua PyPI; enable on poor networks / in mainland China)",
   "Excel Shrink": "Excel: auto-shrink long text",
-  "Excel Shrink Label": "Excel: auto-shrink long text (scales the font to the column width when the translation doesn't fit; off by default)"
+  "Excel Shrink Label": "Excel: auto-shrink long text (scales the font to the column width when the translation doesn't fit; off by default)",
+  "Excel Sheet Names": "Excel: translate sheet names",
+  "Excel Sheet Names Label": "Excel: translate sheet names (cross-sheet formulas and chart references are updated to the new names; on by default)"
 }

@@ -13,6 +13,12 @@ from core.log_config import app_logger
 from core.engine.text_separator import safe_convert_to_int
 import shutil
 import tempfile
+import contextvars
+
+# (bold, color) for the translated half while a bilingual write is running, else
+# None. Read by the shared paragraph writer so body, table-cell, SDT, header/footer
+# and footnote paragraphs are all styled alike. contextvar: per-task, thread-safe.
+_BILINGUAL_STYLE = contextvars.ContextVar("word_bilingual_style", default=None)
 
 # Import bilingual helpers from separate module
 from .word.bilingual import (
@@ -2946,6 +2952,14 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
     # 《》 would be stripped / dates anglicized even for zh/ja/ko targets.
     if bilingual_mode:
         set_current_target_language(dst_lang)
+    _style = None
+    if bilingual_mode:
+        try:
+            from core.engine.bilingual_format import options
+            _style = options()            # read ONCE here, not per paragraph
+        except Exception:  # noqa: BLE001
+            _style = None
+    _style_token = _BILINGUAL_STYLE.set(_style)
 
     # Load translation data
     with open(original_json_path, "r", encoding="utf-8") as original_file:
@@ -3113,8 +3127,6 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
                 update_paragraph_with_enhanced_preservation(
                     item, text_to_apply, all_main_elements, namespaces
                 )
-                if bilingual_mode:
-                    _style_bilingual_translation_runs(item, all_main_elements, namespaces)
 
             elif item["type"] == "table_cell":
                 update_table_cell_with_enhanced_preservation(
@@ -3202,6 +3214,7 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
         return result_path
         
     finally:
+        _BILINGUAL_STYLE.reset(_style_token)
         # Clean up temp directory
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
@@ -3721,20 +3734,16 @@ def update_sdt_nested_table_cell_with_enhanced_preservation(item, translated_tex
         import traceback
         app_logger.error(f"Traceback: {traceback.format_exc()}")
 
-def _style_bilingual_translation_runs(item, all_main_elements, namespaces):
+def _style_bilingual_runs(paragraph, namespaces, bold, color):
     """Bold/color the translated half of a bilingual paragraph — the runs AFTER
     the first line break (create_bilingual_text emits 'original\\ntranslated').
-    Defensive: no-op if styling is off or no break is found, so it can never
-    corrupt the document (worst case: no styling)."""
+    Called from update_paragraph_text_with_enhanced_preservation whenever
+    _BILINGUAL_STYLE is set, so every paragraph kind (body, table cell, SDT,
+    header/footer, footnote) gets it. Defensive: no-op if styling is off or no
+    break is found, so it can never corrupt the document (worst case: no styling)."""
     try:
-        from core.engine.bilingual_format import options
-        bold, color = options()
         if not (bold or color):
             return
-        idx = item.get("element_index")
-        if idx is None or idx >= len(all_main_elements):
-            return
-        paragraph = all_main_elements[idx]
         w = namespaces["w"]
         runs = paragraph.findall(f"{{{w}}}r")     # direct child runs only
         br_at = next((i for i, r in enumerate(runs)
@@ -4420,6 +4429,10 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
         )
     else:
         add_text_with_enhanced_formatting(paragraph, new_text, namespaces, formatting)
+
+    style = _BILINGUAL_STYLE.get()
+    if style:
+        _style_bilingual_runs(paragraph, namespaces, *style)
 
 def _append_run_text(run, text, namespaces):
     """Append text to a run as w:t segments, restoring tab characters as
