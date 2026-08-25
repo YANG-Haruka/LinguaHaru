@@ -16,7 +16,7 @@ from importlib import import_module
 from core.optional_modules import IMAGE_EXTENSIONS, MEDIA_EXTENSIONS
 from core.languages_config import (
     get_language_code, get_available_languages, LABEL_TRANSLATIONS,
-    add_custom_language,
+    add_custom_language, normalize_language_code,
 )
 
 from core.paths import RUNTIME_ROOT, DATA_DIR, SYSTEM_CONFIG, API_CONFIG_DIR
@@ -689,6 +689,47 @@ _DEFAULT_GLOSSARY_HEADER = ["en", "zh", "zh-Hant", "ja", "es", "fr",
                             "de", "it", "pt", "ru", "ko", "th", "vi"]
 
 
+def _glossary_header():
+    """Columns for a NEW glossary: the built-ins in their canonical order, then
+    any custom language the user added. Without the custom column there is no
+    cell to hold that language's terms, and load_glossary just returns nothing —
+    silently, so the glossary looks configured but never applies."""
+    try:
+        codes = {language_code(n) for n in get_available_languages()}
+    except Exception:  # noqa: BLE001 — a glossary must still be creatable
+        return list(_DEFAULT_GLOSSARY_HEADER)
+    extra = sorted(c for c in codes if c and c not in _DEFAULT_GLOSSARY_HEADER)
+    return list(_DEFAULT_GLOSSARY_HEADER) + extra
+
+
+def add_glossary_column(code):
+    """Append `code` as a column to every existing glossary that lacks it, padding
+    the rows. Returns the glossary names touched.
+
+    Called when a custom language is added: fixing only NEW glossaries would leave
+    the user's existing ones (incl. Default) unable to hold terms for it."""
+    code = (code or "").strip()
+    if not code:
+        return []
+    touched = []
+    for name in get_glossary_files():
+        try:
+            header, rows = load_glossary(name)
+        except Exception:  # noqa: BLE001 — skip an unreadable glossary, never raise
+            continue
+        if not header:            # empty/corrupt file: leave it alone
+            continue
+        if code.lower() in {str(h).strip().lower() for h in header}:
+            continue
+        header = list(header) + [code]
+        rows = [list(r) + [""] * (len(header) - len(r)) for r in rows]
+        path = glossary_path(name)
+        if path:
+            _write_glossary_csv(path, header, rows)
+            touched.append(name)
+    return touched
+
+
 def _ensure_default_glossary():
     """Guarantee at least a 'Default' glossary exists. A fresh install (incl. the
     portable, which used to ship no glossary/ at all) would otherwise have an empty
@@ -700,7 +741,7 @@ def _ensure_default_glossary():
     except OSError:
         return
     _write_glossary_csv(os.path.join(GLOSSARY_DIR, "Default.csv"),
-                        _DEFAULT_GLOSSARY_HEADER, [])
+                        _glossary_header(), [])
 
 
 def get_glossary_files():
@@ -795,7 +836,7 @@ def create_glossary(glossary_name, header=None):
     name is invalid or already taken."""
     path = _validate_new_glossary(glossary_name)
     os.makedirs(GLOSSARY_DIR, exist_ok=True)
-    _write_glossary_csv(path, header or list(_DEFAULT_GLOSSARY_HEADER), [])
+    _write_glossary_csv(path, header or _glossary_header(), [])
     return glossary_name.strip()
 
 
@@ -815,7 +856,7 @@ def import_glossary(glossary_name, src_path):
         raise UnicodeDecodeError("glossary", b"", 0, 1,
                                  f"could not decode import file: {src_path}")
     os.makedirs(GLOSSARY_DIR, exist_ok=True)
-    header = rows[0] if rows else list(_DEFAULT_GLOSSARY_HEADER)
+    header = rows[0] if rows else _glossary_header()
     _write_glossary_csv(path, header, rows[1:] if len(rows) > 1 else [])
     return glossary_name.strip()
 
@@ -1196,9 +1237,12 @@ def language_code(display_name):
 
 
 def add_language(name):
-    """Add a custom target language (a prompt file named after its code).
-    Returns (ok, message)."""
-    return add_custom_language(name)
+    """Add a custom target language (a prompt file named after its code) and give
+    it a column in every existing glossary. Returns (ok, message)."""
+    ok, message = add_custom_language(name)
+    if ok:
+        add_glossary_column(normalize_language_code(name))
+    return ok, message
 
 
 def labels_for(lang="en"):

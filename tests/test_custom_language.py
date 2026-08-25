@@ -78,6 +78,59 @@ def test_custom_language():
     check("cleanup removed the language", CODE not in get_available_languages())
 
 
+def test_glossary_gets_a_column():
+    print("Custom language: gets a glossary column, in NEW and EXISTING glossaries")
+    from core import backend
+    from core.engine.text_separator import load_glossary as lookup
+
+    _cleanup()
+    existing, fresh = "__qa_existing", "__qa_new"
+    for n in (existing, fresh):
+        try:
+            backend.delete_glossary(n)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # A glossary that already exists, with a term in it, is the case that matters:
+    # fixing only new glossaries would leave the user's Default unable to hold
+    # terms for the language they just added.
+    backend.create_glossary(existing)
+    header0, _ = backend.load_glossary(existing)
+    backend.save_glossary(existing, header0,
+                          [["Server", "服务器"] + [""] * (len(header0) - 2)])
+    check("built-in glossary has no custom column yet", CODE not in header0)
+
+    ok, _msg = backend.add_language(CODE)
+    check("add_language succeeds", ok)
+
+    header1, rows1 = backend.load_glossary(existing)
+    check("existing glossary gained the column", CODE in header1, str(header1))
+    check("its rows were padded to the new width",
+          all(len(r) == len(header1) for r in rows1), str(rows1))
+    check("its existing terms survived", rows1 and rows1[0][:2] == ["Server", "服务器"],
+          str(rows1[:1]))
+
+    backend.create_glossary(fresh)
+    check("a new glossary is created with the column",
+          CODE in backend.load_glossary(fresh)[0], str(backend.load_glossary(fresh)[0]))
+
+    # The point of the column: a term in it must actually be found at translation
+    # time. Before this, load_glossary returned [] silently for a custom language.
+    idx = header1.index(CODE)
+    row = list(rows1[0])
+    row[idx] = "伺服機"
+    backend.save_glossary(existing, header1, [row])
+    path = backend.glossary_path(existing)
+    check("a custom-language term is found at translation time",
+          lookup(path, "en", CODE) == [("Server", "伺服機")], str(lookup(path, "en", CODE)))
+    check("built-in languages still resolve",
+          lookup(path, "en", "zh") == [("Server", "服务器")], str(lookup(path, "en", "zh")))
+
+    for n in (existing, fresh):
+        backend.delete_glossary(n)
+    _cleanup()
+
+
 def test_frontends_expose_it():
     print("Custom language: both frontends read the live list, not a hardcoded map")
     import inspect
@@ -101,4 +154,4 @@ def test_frontends_expose_it():
 
 
 if __name__ == "__main__":
-    run([test_custom_language, test_frontends_expose_it])
+    run([test_custom_language, test_glossary_gets_a_column, test_frontends_expose_it])
