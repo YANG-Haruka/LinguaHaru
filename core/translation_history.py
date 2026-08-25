@@ -274,10 +274,22 @@ class TranslationHistoryManager:
             app_logger.warning(f"History recovery sweep failed: {e}")
             return 0
 
+    # --- proofread data (lives OUTSIDE the DB) -------------------------------
+    # A finished translation leaves a proofread folder in the temp tree
+    # (dst_translated.json + manifest.json), which the Proofread tab lists by
+    # walking that tree — it never consults this database. Deleting a record
+    # therefore used to leave its proofread entry behind forever. The manifest
+    # carries the record's translation_id, so the two can be matched exactly.
+    #
+    # Cleanup lives HERE, inside the manager, rather than in the delete handlers:
+    # both frontends call delete_record/clear_all_records from six places, and a
+    # guard in the shared method covers all of them (and any future caller).
+
     def delete_record(self, record_id: str) -> bool:
         try:
             with self._connect() as conn:
                 conn.execute("DELETE FROM records WHERE id = ?", (record_id,))
+            delete_proofread_data({record_id})
             return True
         except Exception as e:  # noqa: BLE001
             app_logger.error(f"Error deleting translation record: {e}")
@@ -285,8 +297,10 @@ class TranslationHistoryManager:
 
     def clear_all_records(self) -> bool:
         try:
+            ids = {r.get("id") for r in self.get_all_records() if r.get("id")}
             with self._connect() as conn:
                 conn.execute("DELETE FROM records")
+            delete_proofread_data(ids)
             return True
         except Exception as e:  # noqa: BLE001
             app_logger.error(f"Error clearing translation records: {e}")
@@ -313,6 +327,62 @@ class TranslationHistoryManager:
                         app_logger.warning(f"Could not delete history file {p}: {e}")
         ok = self.clear_all_records()
         return {"records": len(records) if ok else 0, "files_deleted": deleted}
+
+
+def delete_proofread_data(record_ids) -> int:
+    """Remove the proofread folders belonging to `record_ids`. Returns the count.
+
+    Matches on manifest.json's ``translation_id``. Folders written before that
+    field existed carry no id and are left alone — the alternative (matching on
+    filename) would delete a DIFFERENT run of the same document.
+
+    Best-effort: a failure here must never prevent the record itself from being
+    deleted, so everything is wrapped and only logged.
+    """
+    ids = {str(i) for i in (record_ids or set()) if i}
+    if not ids:
+        return 0
+    removed = 0
+    try:
+        from core.backend import get_custom_paths
+        temp_dir = get_custom_paths()[0]
+        base = os.path.realpath(temp_dir)
+        if not os.path.isdir(base):
+            return 0
+        import shutil
+        for folder, dirnames, filenames in os.walk(base, topdown=False):
+            if "manifest.json" not in filenames:
+                continue
+            try:
+                with open(os.path.join(folder, "manifest.json"), encoding="utf-8") as f:
+                    tid = str(json.load(f).get("translation_id") or "")
+            except Exception:  # noqa: BLE001 — unreadable manifest: leave it
+                continue
+            if tid not in ids:
+                continue
+            if not os.path.realpath(folder).startswith(base + os.sep):
+                continue          # never step outside the temp tree
+            try:
+                shutil.rmtree(folder)
+                removed += 1
+                _prune_empty_parents(os.path.dirname(folder), base)
+            except OSError as e:
+                app_logger.warning(f"Could not delete proofread folder {folder}: {e}")
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(f"Error deleting proofread data: {e}")
+    return removed
+
+
+def _prune_empty_parents(folder, base):
+    """Drop now-empty task folders left behind, stopping at the temp root."""
+    while os.path.realpath(folder).startswith(base + os.sep):
+        try:
+            if os.listdir(folder):
+                return
+            os.rmdir(folder)
+        except OSError:
+            return
+        folder = os.path.dirname(folder)
 
 
 def create_translation_record(

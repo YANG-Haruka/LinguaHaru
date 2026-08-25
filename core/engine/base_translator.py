@@ -900,6 +900,10 @@ class DocumentTranslator:
             if not os.path.exists(copy_path) and os.path.exists(self.input_file_path):
                 shutil.copyfile(self.input_file_path, copy_path)
             manifest = {
+                # Ties this proofread folder to its history record, so deleting
+                # the record can delete this folder too (they live in separate
+                # stores: records in SQLite, proofread data in the temp tree).
+                "translation_id": getattr(self, "translation_id", ""),
                 "input_file": os.path.basename(self.input_file_path),
                 "original_copy": original_copy,
                 "file_extension": ext,
