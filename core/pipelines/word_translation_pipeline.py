@@ -8,7 +8,7 @@ from lxml import etree
 # User-supplied XML: disable entity resolution / DTD / network access (XXE)
 _SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
 from zipfile import ZipFile, ZIP_DEFLATED
-from .skip_pipeline import should_translate
+from .skip_pipeline import should_translate, is_base64_data
 from core.log_config import app_logger
 from core.engine.text_separator import safe_convert_to_int
 import shutil
@@ -2820,7 +2820,15 @@ def should_translate_enhanced(text):
     """Enhanced translation check - more inclusive than original"""
     if not text or not text.strip():
         return False
-    
+
+    # Base64 payload — checked HERE, not left to the should_translate fallback at
+    # the bottom: a blob is all letters, so the has_meaningful_content test below
+    # returns True long before that fallback is ever reached. Image alt text
+    # (pic:cNvPr/@descr) can hold an entire data: URI — 8 of them in one real
+    # document came to ~500k tokens.
+    if is_base64_data(text.strip()):
+        return False
+
     # Remove field placeholders and math placeholders for analysis
     clean_text = text.strip()
     clean_text = re.sub(r'\{\{[^}]+\}\}', '', clean_text)  # Remove field placeholders

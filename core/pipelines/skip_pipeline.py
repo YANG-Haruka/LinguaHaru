@@ -42,6 +42,21 @@ def is_multibyte(text):
     """Check if text contains multibyte characters (Chinese, Japanese, Korean, etc.)"""
     return bool(re.search(r'[\u4e00-\u9fff\u3040-\u30ff\u3400-\u4dbf\uFF00-\uFFEF]', text, re.UNICODE))
 
+def is_base64_data(text_value):
+    """Inline base64 payload — binary, not prose. Translating it burns tokens for
+    nothing (an embedded image can be ~500k tokens on its own) and corrupts the
+    data. Two shapes: a `data:<type>/<sub>;base64,` URI anywhere in the value
+    (image alt text often holds a whole one), or a bare blob.
+
+    The bare-blob test deliberately rejects any whitespace: base64 arrives as one
+    unbroken run, while a long English sentence is also just letters — allowing
+    spaces here would silently drop real prose.
+    """
+    if re.search(r'data:[\w.+-]+/[\w.+-]+;base64,', text_value, re.IGNORECASE):
+        return True
+    return len(text_value) >= 100 and bool(re.match(r'^[A-Za-z0-9+/]+={0,2}$', text_value))
+
+
 def should_translate(text_value):
     """Determine if text needs translation - Translation industry standard optimized version"""
     text_value = text_value.strip()
@@ -59,11 +74,7 @@ def should_translate(text_value):
     except Exception:
         pass
 
-    # Inline base64 data (data:image/png;base64,... or a bare blob): binary, not
-    # prose — translating it burns tokens for nothing and corrupts the image.
-    if re.search(r'data:[\w.+-]+/[\w.+-]+;base64,', text_value, re.IGNORECASE):
-        return False
-    if len(text_value) >= 100 and re.match(r'^[A-Za-z0-9+/]+={0,2}$', text_value):
+    if is_base64_data(text_value):
         return False
 
     # If contains multibyte characters (Chinese, Japanese, Korean, etc.), usually needs translation

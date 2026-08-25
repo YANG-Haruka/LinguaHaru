@@ -103,6 +103,10 @@ def _build_docx_with_alttext(path):
     cnvprs = body.findall(f".//{{{PIC}}}cNvPr")
     if cnvprs:
         cnvprs[0].set("descr", "Pic description alt text")
+        # Real-world docs (exported from some editors) carry the whole embedded
+        # image as a data: URI in an alt-text attribute. It must never reach the
+        # translator — one such document held 8 of them, ~500k tokens of base64.
+        cnvprs[0].set("title", "data:image/png;base64," + "iVBORw0KGgoAAAANSUhEUg" * 40)
     doc.save(path)
 
 
@@ -127,6 +131,9 @@ def test_docx_drawing_alttext():
     check("alttext items carry part/attr",
           all("part" in i and "attr" in i and "elem_kind" in i for i in alttext_items),
           str(alttext_items))
+    check("base64 alt text NOT extracted",
+          not any("base64" in v for v in values),
+          str([v[:60] for v in values if "base64" in v]))
 
     dst_json = fake_translate(src_json)
     out = write_translated_content_to_word(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
