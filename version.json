@@ -1,15 +1,15 @@
 {
-    "version": "6.7.1",
+    "version": "6.8",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.7.1: fixes Word translation sending embedded-image base64 to the model as if it were text. Some editors export a .docx with the whole image written into a drawing's alt-text attribute as a data:image/...;base64,... URI — not body text, so the 6.7 base64 skip never caught it. One real document held 8 of them: ~515k tokens translated for nothing. They are now skipped at extraction (that file: 2,077,000 -> 39,924 characters, 1848 -> 433 batches), while genuine alt text is still translated. / 6.7.1：修复 Word 翻译把内嵌图片的 base64 当正文送去翻译。有些编辑器导出的 docx 会把整张图以 data:image/...;base64,... 写进图片替代文字属性，它不在正文里，6.7 的 base64 跳过没拦住。实测一份文档里有 8 条这种数据、约 51.5 万 tokens 白烧；现在抽取阶段就跳过（该文档 207 万字符→4 万，切分 1848 批→433 批），真正的替代文字照常翻译。",
+    "notes": "6.8: custom target languages are back — add one from Settings by entering its code (e.g. yue) and it appears in every language menu on both frontends, no restart; restoring it also fixed a code/filename case mismatch that raised FileNotFoundError mid-translation on Linux, and a custom language silently translating to English in real-time voice. Includes the 6.7.1 fix (which this supersedes): Word no longer sends embedded-image base64 from a drawing's alt-text attribute to the model — one real document wasted ~515k tokens on it. / 6.8：自定义语言回来了——在设置里填语言代号（如 yue）即可添加，两端语言下拉立即可选，无需重启；同时修好了提示词文件名与语言代号大小写不一致（Linux 上翻译时报错）以及实时语音选自定义语言会静默翻成英语的问题。本版包含并取代 6.7.1 的修复：Word 不再把图片替代文字属性里的 base64 当正文翻译（实测一份文档白烧约 51.5 万 tokens）。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.7.1/LinguaHaru-6.7.1-web-portable.zip",
-            "sha256": "6536a1417448a5211150d724a47a225e85d60728315d6e9b2474a1628a126b23"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8/LinguaHaru-6.8-web-portable.zip",
+            "sha256": "88b472e69f497e3dac1945a51be19987f9219dc51a510070d4cc6bfe76247901"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.7.1/LinguaHaru-6.7.1-desktop-portable.zip",
-            "sha256": "27a329ac1e0785ae3c04fdec4e695f2c017e1666a2d7fb16e1066d3a7484aec4"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8/LinguaHaru-6.8-desktop-portable.zip",
+            "sha256": "5c47c166addc34ca7eb097beca45c0e0170063fd7a643d2d1e236a232f98b317"
         }
     }
 }
