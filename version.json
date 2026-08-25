@@ -1,15 +1,15 @@
 {
-    "version": "6.8",
+    "version": "6.8.1",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.8: custom target languages are back — add one from Settings by entering its code (e.g. yue) and it appears in every language menu on both frontends, no restart; restoring it also fixed a code/filename case mismatch that raised FileNotFoundError mid-translation on Linux, and a custom language silently translating to English in real-time voice. Includes the 6.7.1 fix (which this supersedes): Word no longer sends embedded-image base64 from a drawing's alt-text attribute to the model — one real document wasted ~515k tokens on it. / 6.8：自定义语言回来了——在设置里填语言代号（如 yue）即可添加，两端语言下拉立即可选，无需重启；同时修好了提示词文件名与语言代号大小写不一致（Linux 上翻译时报错）以及实时语音选自定义语言会静默翻成英语的问题。本版包含并取代 6.7.1 的修复：Word 不再把图片替代文字属性里的 base64 当正文翻译（实测一份文档白烧约 51.5 万 tokens）。",
+    "notes": "6.8.1: a custom language now works in the glossary — adding one also adds its column to every existing glossary (padding the rows) and to new ones, so a term in it is actually found during translation instead of the glossary silently not applying. Deleting a history record now deletes its proofread data too: the two lived in separate stores, so a deleted record used to leave a proofread entry behind with no way to remove it from the UI. / 6.8.1：自定义语言现在在词汇表里也能用——添加语言会给所有已有词汇表（含 Default）和新建词汇表补上该列并补齐每行，术语真的能在翻译时命中，不再静默失效。删除历史记录时会一并删除对应的校对记录：两者原本分开存储，删了历史后校对页那一条会永远留着且界面上无法删除。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8/LinguaHaru-6.8-web-portable.zip",
-            "sha256": "88b472e69f497e3dac1945a51be19987f9219dc51a510070d4cc6bfe76247901"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.1/LinguaHaru-6.8.1-web-portable.zip",
+            "sha256": "512fa1d192a81a436854397b237de4bc57c1c024e994847a792a3b6fa9ea934a"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8/LinguaHaru-6.8-desktop-portable.zip",
-            "sha256": "5c47c166addc34ca7eb097beca45c0e0170063fd7a643d2d1e236a232f98b317"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.1/LinguaHaru-6.8.1-desktop-portable.zip",
+            "sha256": "3aa9c50e4db9f6c11898864d25970b02c1cfad585de6e4dc169d27de1c1b3342"
         }
     }
 }
