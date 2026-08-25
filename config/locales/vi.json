@@ -367,5 +367,8 @@
   "Excel Shrink": "Excel: tự thu nhỏ chữ dài",
   "Excel Shrink Label": "Excel: tự thu nhỏ chữ dài (thu nhỏ phông theo độ rộng cột khi bản dịch không vừa; mặc định tắt)",
   "Excel Sheet Names": "Excel: dịch tên trang tính",
-  "Excel Sheet Names Label": "Excel: dịch tên trang tính (công thức liên trang và tham chiếu biểu đồ được cập nhật theo tên mới; mặc định bật)"
+  "Excel Sheet Names Label": "Excel: dịch tên trang tính (công thức liên trang và tham chiếu biểu đồ được cập nhật theo tên mới; mặc định bật)",
+  "Custom Language": "Ngôn ngữ tùy chỉnh",
+  "Add Custom Language": "Thêm",
+  "Custom Language Tip": "Ngôn ngữ đích không có trong danh sách tích hợp. Nhập mã của nó (ví dụ yue cho tiếng Quảng Đông); tệp prompt được tạo từ mẫu tiếng Anh và ngôn ngữ sẽ xuất hiện trong mọi menu ngôn ngữ."
 }

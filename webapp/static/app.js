@@ -1944,6 +1944,21 @@ $("glossary-new").onclick = async () => {
   } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
 };
 
+if ($("add-custom-lang")) $("add-custom-lang").onclick = async () => {
+  const el = $("set-custom-lang");
+  const name = (el.value || "").trim();
+  if (!name) return;
+  try {
+    const res = await api("/api/language", { method: "POST",
+      headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    BOOT.languages = res.languages;          // every dropdown reads this
+    fillSelect($("src-lang"), ["Auto"].concat(BOOT.languages), BOOT.config.default_src_lang || "Auto");
+    fillSelect($("dst-lang"), BOOT.languages, BOOT.config.default_dst_lang);
+    el.value = "";
+    toast(res.message, "ok");
+  } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+};
+
 $("glossary-import").onclick = () => $("glossary-import-file").click();
 $("glossary-import-file").onchange = async (ev) => {
   const f = ev.target.files[0];

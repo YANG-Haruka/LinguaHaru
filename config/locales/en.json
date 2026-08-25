@@ -685,5 +685,8 @@
   "Excel Shrink": "Excel: auto-shrink long text",
   "Excel Shrink Label": "Excel: auto-shrink long text (scales the font to the column width when the translation doesn't fit; off by default)",
   "Excel Sheet Names": "Excel: translate sheet names",
-  "Excel Sheet Names Label": "Excel: translate sheet names (cross-sheet formulas and chart references are updated to the new names; on by default)"
+  "Excel Sheet Names Label": "Excel: translate sheet names (cross-sheet formulas and chart references are updated to the new names; on by default)",
+  "Custom Language": "Custom language",
+  "Add Custom Language": "Add",
+  "Custom Language Tip": "A target language the built-in list doesn't cover. Enter its code (e.g. yue for Cantonese); a prompt file is created from the English template and the language appears in every language menu."
 }

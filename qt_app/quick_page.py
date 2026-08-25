@@ -223,6 +223,27 @@ class QuickPage(ScrollArea):
         self._update_voice_availability()
         self.reload_history()
 
+    def reload_languages(self):
+        """Re-read the language list (a custom language was just added) without
+        losing the current selection. Called by the settings page."""
+        try:
+            langs = backend.available_languages()
+            src_keep, dst_keep = self.src_combo.currentText(), self.dst_combo.currentText()
+            self.src_combo.blockSignals(True)
+            self.src_combo.clear()
+            self.src_combo.addItem(tr("Auto Detect", self._lang), userData="auto")
+            for name in langs:
+                self.src_combo.addItem(name, userData=name)
+            self.src_combo.blockSignals(False)
+            self._set_combo(self.src_combo, src_keep)
+            self.dst_combo.blockSignals(True)
+            self.dst_combo.clear()
+            self.dst_combo.addItems(langs)
+            self.dst_combo.blockSignals(False)
+            self._set_combo(self.dst_combo, dst_keep)
+        except Exception:  # noqa: BLE001 — a refresh must never break the page
+            pass
+
     # --- helpers ---
     @staticmethod
     def _set_combo(combo, value):

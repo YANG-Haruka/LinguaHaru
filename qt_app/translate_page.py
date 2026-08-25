@@ -362,6 +362,21 @@ class TranslatePage(QStackedWidget):
 
         return card
 
+    def reload_languages(self):
+        """Re-read the language list (a custom language was just added) without
+        losing the current selection. Called by the settings page."""
+        try:
+            langs = backend.available_languages()
+            for combo, items in ((self.src_combo, ["Auto"] + langs), (self.dst_combo, langs)):
+                keep = combo.currentText()
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItems(items)
+                combo.blockSignals(False)
+                self._set_combo(combo, keep)
+        except Exception:  # noqa: BLE001 — a refresh must never break the page
+            pass
+
     # --- helpers ---
     @staticmethod
     def _set_combo(combo, value):

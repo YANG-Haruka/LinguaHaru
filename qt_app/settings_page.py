@@ -368,6 +368,17 @@ class SettingsPage(ScrollArea):
         self.excel_sheet_names_label = BodyLabel(tr("Excel Sheet Names", lang))
         self.excel_sheet_names_label.setToolTip(tr("Excel Sheet Names Label", lang))
         adv_form.addRow(self.excel_sheet_names_label, self.excel_sheet_names)
+        self.custom_lang_edit = LineEdit()
+        self.custom_lang_edit.setPlaceholderText("yue")
+        self.custom_lang_edit.returnPressed.connect(self._add_custom_language)
+        self.custom_lang_btn = PushButton(tr("Add Custom Language", lang))
+        self.custom_lang_btn.clicked.connect(self._add_custom_language)
+        custom_lang_row = QHBoxLayout()
+        custom_lang_row.addWidget(self.custom_lang_edit, 1)
+        custom_lang_row.addWidget(self.custom_lang_btn)
+        self.custom_lang_label = BodyLabel(tr("Custom Language", lang))
+        self.custom_lang_label.setToolTip(tr("Custom Language Tip", lang))
+        adv_form.addRow(self.custom_lang_label, custom_lang_row)
         self.with_ctx = SwitchButton()
         self.with_ctx.setChecked(config.get("translate_with_context", False))
         self.with_ctx.checkedChanged.connect(
@@ -818,6 +829,22 @@ class SettingsPage(ScrollArea):
         header.toggled.connect(body.setVisible)
         return header, body, bl
 
+    def _add_custom_language(self):
+        """Add a custom target language, then refresh the dropdowns that read
+        the language list (they enumerate config/prompts at build time)."""
+        name = self.custom_lang_edit.text().strip()
+        if not name:
+            return
+        ok, message = backend.add_language(name)
+        self._toast(tr("Custom Language", self._lang), message, error=not ok)
+        if ok:
+            self.custom_lang_edit.clear()
+            win = self.window()
+            for page in ("translate_page", "quick_page", "live_page"):
+                p = getattr(win, page, None)
+                if p is not None and hasattr(p, "reload_languages"):
+                    p.reload_languages()
+
     def _toast(self, title, text, error=False):
         """Top-right transient notification (model install/delete result)."""
         from qfluentwidgets import InfoBar, InfoBarPosition
@@ -1102,6 +1129,9 @@ class SettingsPage(ScrollArea):
         self.excel_shrink_label.setText(tr("Excel Shrink", lang))
         self.excel_sheet_names_label.setText(tr("Excel Sheet Names", lang))
         self.excel_sheet_names_label.setToolTip(tr("Excel Sheet Names Label", lang))
+        self.custom_lang_label.setText(tr("Custom Language", lang))
+        self.custom_lang_label.setToolTip(tr("Custom Language Tip", lang))
+        self.custom_lang_btn.setText(tr("Add Custom Language", lang))
         self.with_ctx_label.setText(tr("Type Context", lang))
         self.tone_label.setText(tr("Tone", lang))
         self.length_label.setText(tr("Length", lang))

@@ -32,7 +32,7 @@ from qt_app.live_worker import (
     LiveWorker, LiveRecognizeWorker, LiveTranslateWorker,
     LiveTranslateStreamWorker, PreloadWorker)
 from core.api_keys import load_api_key_for_model
-from core.languages_config import LANGUAGE_MAP
+from core.languages_config import LANGUAGE_MAP, get_language_code
 from core.optional_modules import realtime_voice_available
 
 _GOOGLE_PROVIDER = "(Google) Live Translate"
@@ -678,6 +678,19 @@ class LivePage(ScrollArea):
         # Offer a one-click jump to the Plugins page when a plugin is missing.
         self.plugin_btn.setVisible(need_plugin)
 
+    def reload_languages(self):
+        """Re-read the language list (a custom language was just added) without
+        losing the current selection. Called by the settings page."""
+        try:
+            keep = self.target_combo.currentText()
+            self.target_combo.blockSignals(True)
+            self.target_combo.clear()
+            self.target_combo.addItems(backend.available_languages())
+            self.target_combo.blockSignals(False)
+            self._set_combo(self.target_combo, keep)
+        except Exception:  # noqa: BLE001 — a refresh must never break the page
+            pass
+
     @staticmethod
     def _set_combo(combo, value):
         idx = combo.findText(value)
@@ -801,7 +814,7 @@ class LivePage(ScrollArea):
             return
 
         if self._mode == "google":
-            target = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
+            target = get_language_code(self.target_combo.currentText())
             self._worker = LiveWorker(load_api_key_for_model(_GOOGLE_PROVIDER), target)
             self._worker.inputText.connect(self._append_input)
             self._worker.outputText.connect(self._append_output)
@@ -1420,7 +1433,7 @@ class LivePage(ScrollArea):
         online = backend.get_config("default_online", True)
         model = backend.get_active_model(online)
         api_key = load_api_key_for_model(model) if online else ""
-        dst = LANGUAGE_MAP.get(self.target_combo.currentText(), "en")
+        dst = get_language_code(self.target_combo.currentText())
         if online and backend.get_config("live_stream_translation", False):
             # Stream mode: append a placeholder line and grow it token-by-token.
             self.output_text.insertPlainText(f"[{ts}] \n")

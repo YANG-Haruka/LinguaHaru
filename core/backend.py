@@ -16,6 +16,7 @@ from importlib import import_module
 from core.optional_modules import IMAGE_EXTENSIONS, MEDIA_EXTENSIONS
 from core.languages_config import (
     get_language_code, get_available_languages, LABEL_TRANSLATIONS,
+    add_custom_language,
 )
 
 from core.paths import RUNTIME_ROOT, DATA_DIR, SYSTEM_CONFIG, API_CONFIG_DIR
@@ -1192,6 +1193,12 @@ def available_languages():
 
 def language_code(display_name):
     return get_language_code(display_name)
+
+
+def add_language(name):
+    """Add a custom target language (a prompt file named after its code).
+    Returns (ok, message)."""
+    return add_custom_language(name)
 
 
 def labels_for(lang="en"):

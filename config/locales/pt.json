@@ -367,5 +367,8 @@
   "Excel Shrink": "Excel: reduzir texto longo automaticamente",
   "Excel Shrink Label": "Excel: reduzir texto longo automaticamente (ajusta a fonte à largura da coluna quando a tradução não cabe; desativado por padrão)",
   "Excel Sheet Names": "Excel: traduzir nomes das planilhas",
-  "Excel Sheet Names Label": "Excel: traduzir nomes das planilhas (fórmulas entre planilhas e referências de gráficos são atualizadas para os novos nomes; ativado por padrão)"
+  "Excel Sheet Names Label": "Excel: traduzir nomes das planilhas (fórmulas entre planilhas e referências de gráficos são atualizadas para os novos nomes; ativado por padrão)",
+  "Custom Language": "Idioma personalizado",
+  "Add Custom Language": "Adicionar",
+  "Custom Language Tip": "Um idioma de destino que a lista integrada não cobre. Informe o código (ex.: yue para cantonês); um arquivo de prompt é criado a partir do modelo em inglês e o idioma aparece em todos os menus."
 }

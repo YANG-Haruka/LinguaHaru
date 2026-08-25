@@ -367,5 +367,8 @@
   "Excel Shrink": "Excel: langen Text automatisch verkleinern",
   "Excel Shrink Label": "Excel: langen Text automatisch verkleinern (skaliert die Schrift auf die Spaltenbreite, wenn die Übersetzung nicht passt; standardmäßig aus)",
   "Excel Sheet Names": "Excel: Blattnamen übersetzen",
-  "Excel Sheet Names Label": "Excel: Blattnamen übersetzen (blattübergreifende Formeln und Diagrammbezüge werden auf die neuen Namen aktualisiert; standardmäßig an)"
+  "Excel Sheet Names Label": "Excel: Blattnamen übersetzen (blattübergreifende Formeln und Diagrammbezüge werden auf die neuen Namen aktualisiert; standardmäßig an)",
+  "Custom Language": "Eigene Sprache",
+  "Add Custom Language": "Hinzufügen",
+  "Custom Language Tip": "Eine Zielsprache, die die integrierte Liste nicht abdeckt. Code eingeben (z. B. yue für Kantonesisch); eine Prompt-Datei wird aus der englischen Vorlage erstellt und die Sprache erscheint in allen Sprachmenüs."
 }

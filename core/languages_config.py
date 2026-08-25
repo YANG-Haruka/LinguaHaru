@@ -13,11 +13,33 @@ import shutil
 from core.paths import PROMPTS_DIR
 
 
+def normalize_language_code(name):
+    """A custom language's code, which is ALSO its prompt filename.
+
+    The two must agree exactly: load_prompt() opens ``<code>.json`` with no
+    fallback, so a file saved as "Cantonese.json" against a code of "cantonese"
+    raises FileNotFoundError at translation time on any case-sensitive
+    filesystem (Linux/Docker) — Windows only hides it.
+
+    Also the sanitizer for a name that arrives from the network: the result is
+    used as a filename, so anything outside [a-z0-9._-] is dropped and any
+    leading dot removed, which leaves no way to escape PROMPTS_DIR.
+    """
+    cleaned = "".join(c for c in (name or "").strip().lower()
+                      if c.isascii() and (c.isalnum() or c in "._-"))
+    return cleaned.lstrip(".")
+
+
 def create_custom_language_prompt_file(custom_language_name):
-    """Create a new prompt file for a custom language by copying en.json"""
+    """Create a new prompt file for a custom language by copying en.json.
+
+    en.json is the right template for ANY target language: the prompts address
+    the target via the {Text_Target_Language} placeholder, so only the language
+    the INSTRUCTIONS are written in is English."""
     prompts_dir = PROMPTS_DIR
+    code = normalize_language_code(custom_language_name)
     source_file = os.path.join(prompts_dir, "en.json")
-    target_file = os.path.join(prompts_dir, f"{custom_language_name}.json")
+    target_file = os.path.join(prompts_dir, f"{code}.json")
 
     try:
         # Ensure the prompts directory exists
@@ -26,7 +48,7 @@ def create_custom_language_prompt_file(custom_language_name):
         # Copy en.json to the new custom language file
         if os.path.exists(source_file):
             shutil.copy2(source_file, target_file)
-            return True, f"Created prompt file for {custom_language_name}"
+            return True, f"Created prompt file for {code}"
         else:
             return False, "Source file en.json not found"
     except Exception as e:
@@ -38,13 +60,18 @@ def add_custom_language(custom_language_name):
     if not custom_language_name or custom_language_name.strip() == "":
         return False, "Language name cannot be empty"
 
-    custom_language_name = custom_language_name.strip()
+    code = normalize_language_code(custom_language_name)
+    if not code:
+        return False, "Language code must contain letters or digits (a-z, 0-9)"
+
+    if os.path.exists(os.path.join(PROMPTS_DIR, f"{code}.json")):
+        return False, f"Language '{code}' already exists"
 
     # Create the prompt file
-    success, message = create_custom_language_prompt_file(custom_language_name)
+    success, message = create_custom_language_prompt_file(code)
 
     if success:
-        return True, f"Custom language '{custom_language_name}' added successfully"
+        return True, f"Custom language '{code}' added successfully"
     else:
         return False, message
 

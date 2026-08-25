@@ -858,6 +858,16 @@ async def new_glossary(payload: dict):
     return {"ok": True, "name": name, "glossaries": backend.get_glossary_files()}
 
 
+@app.post("/api/language")
+async def add_language(payload: dict):
+    """Add a custom target language. Returns the refreshed language list."""
+    _block_in_server_mode()   # writes into config/prompts — admin action
+    ok, message = backend.add_language(payload.get("name"))
+    if not ok:
+        raise HTTPException(400, message)
+    return {"ok": True, "message": message, "languages": backend.available_languages()}
+
+
 @app.post("/api/glossary/delete")
 async def delete_glossary(payload: dict):
     """Delete a glossary (Default is protected). Returns the refreshed list."""

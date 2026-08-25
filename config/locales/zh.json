@@ -696,5 +696,8 @@
   "Excel Shrink": "Excel 长文字自动缩小字体",
   "Excel Shrink Label": "Excel 长文字自动缩小字体（译文放不下时按列宽自动缩小；默认关闭）",
   "Excel Sheet Names": "Excel 翻译工作表名",
-  "Excel Sheet Names Label": "Excel 翻译工作表名（跨表公式/图表引用会同步改为新名；默认开启）"
+  "Excel Sheet Names Label": "Excel 翻译工作表名（跨表公式/图表引用会同步改为新名；默认开启）",
+  "Custom Language": "自定义语言",
+  "Add Custom Language": "添加",
+  "Custom Language Tip": "内置列表里没有的目标语言。填它的代号（如粤语填 yue）；会基于英文模板生成提示词文件，之后所有语言下拉里都能选到。"
 }
