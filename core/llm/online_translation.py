@@ -553,6 +553,31 @@ def debug_llm_io():
         return False
 
 
+# Thinking-off switch per provider family. The OpenAI-compatible world never
+# agreed on one: DeepSeek / GLM / MiniMax take thinking={"type":"disabled"};
+# Qwen hosts (DashScope, SiliconFlow) enable_thinking=false; Gemini, OpenAI and
+# local OpenAI-compatible servers reasoning_effort="none" (verified on LM Studio
+# + qwen3.5-9b: it is the ONLY one honored there — by default the model burns the
+# whole reply budget thinking and returns EMPTY content); OpenRouter its unified
+# reasoning object. Unknown hosts get the DeepSeek form. Whatever we send,
+# _create_completion retries without it if the provider rejects the param.
+_THINKING_KEYS = ("thinking", "enable_thinking", "reasoning")   # in extra_body
+_THINKING_PARAMS = ("reasoning_effort",)                          # top-level
+
+
+def _thinking_off_params(base_url):
+    """(params_update, extra_body_update) that turn thinking off for base_url."""
+    host = (base_url or "").lower()
+    if any(h in host for h in ("dashscope", "siliconflow")):
+        return {}, {"enable_thinking": False}
+    if "openrouter" in host:
+        return {}, {"reasoning": {"enabled": False}}
+    if any(h in host for h in ("googleapis", "api.openai.com",
+                               "localhost", "127.0.0.1", "0.0.0.0")):
+        return {"reasoning_effort": "none"}, {}
+    return {}, {"thinking": {"type": "disabled"}}
+
+
 def _looks_like_param_error(err):
     msg = str(err).lower()
     return any(m in msg for m in (
@@ -572,13 +597,17 @@ def _create_completion(client, params):
         retry = dict(params)
         changed = False
         eb = params.get("extra_body") or {}
-        if "thinking" in eb:
-            eb2 = {k: v for k, v in eb.items() if k != "thinking"}
+        eb2 = {k: v for k, v in eb.items() if k not in _THINKING_KEYS}
+        if eb2 != eb:
             if eb2:
                 retry["extra_body"] = eb2
             else:
                 retry.pop("extra_body", None)
             changed = True
+        for k in _THINKING_PARAMS:
+            if k in retry:
+                retry.pop(k)
+                changed = True
         if "response_format" in retry:
             retry.pop("response_format", None)
             changed = True
@@ -687,7 +716,9 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
         if thinking_type is not None:
             extra_body["thinking_type"] = thinking_type
         elif _disable_thinking_default():
-            extra_body["thinking"] = {"type": "disabled"}
+            p_upd, eb_upd = _thinking_off_params(base_url)
+            params.update(p_upd)
+            extra_body.update(eb_upd)
 
         # Add extra_body if there are non-standard parameters
         if extra_body:
@@ -809,7 +840,10 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
                 return "Empty response from API", True, token_usage
 
             # Remove unnecessary system content
-            clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+            # Also drop an UNCLOSED <think> tail: a reply truncated mid-reasoning
+            # has no </think>, and feeding that prose to the JSON parser only
+            # produces a misleading "unparseable" failure.
+            clean_translated_text = re.sub(r'<think>.*?(?:</think>|$)', '', translated_text, flags=re.DOTALL).strip()
 
             # Fix JSON format for online API responses
             fixed_json = fix_json_format(clean_translated_text)

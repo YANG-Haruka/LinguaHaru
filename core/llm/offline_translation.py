@@ -159,6 +159,8 @@ def translate_offline(messages, model):
                 " /no_think IMPORTANT: Return a single valid JSON object "
                 "containing all translations. Wrap everything in {}")
         
+        from core.llm.online_translation import _disable_thinking_default
+
         # Sampling temperature from the active translation mode (was a fixed
         # 0.7 for LM Studio, which is high for document translation). Default
         # mode "precise" -> ~0.1 for stable, consistent output.
@@ -182,6 +184,14 @@ def translate_offline(messages, model):
                 },
                 "stream": False
             }
+            # Ollama enables thinking by default for every Qwen3 size. A thinking
+            # model then spends the reply budget reasoning and the JSON comes back
+            # truncated or empty — the reported "whole PDF kept untranslated". The
+            # `/no_think` text switch above is NOT honored by qwen3.5 (verified);
+            # the API field is the real switch (Ollama >= 0.9; older servers
+            # ignore unknown fields, so it is safe to always send).
+            if _disable_thinking_default():
+                payload["think"] = False
             
             # Check if Ollama is running
             if not is_ollama_running():
@@ -212,6 +222,12 @@ def translate_offline(messages, model):
                 "max_tokens": out_cap,
                 "stream": False
             }
+            # Verified on LM Studio + qwen3.5-9b: by default the model burns the
+            # entire max_tokens budget thinking and returns EMPTY content
+            # (finish_reason=length); `/no_think` and chat_template_kwargs are
+            # ignored; reasoning_effort="none" is honored (7 tokens, clean JSON).
+            if _disable_thinking_default():
+                payload["reasoning_effort"] = "none"
             
             # Check if LM Studio is running
             if not is_lm_studio_running():
@@ -274,7 +290,9 @@ def translate_offline(messages, model):
             if not translated_text:
                 return f"Empty content from {service}", True, token_usage
 
-            clean_translated_text = re.sub(r'<think>.*?</think>', '', translated_text, flags=re.DOTALL).strip()
+            # Also drop an UNCLOSED <think> tail (reply truncated mid-reasoning):
+            # otherwise that prose reaches the JSON parser as "unparseable".
+            clean_translated_text = re.sub(r'<think>.*?(?:</think>|$)', '', translated_text, flags=re.DOTALL).strip()
 
             # Process the text to ensure it's valid JSON
             fixed_json = fix_json_format(clean_translated_text)

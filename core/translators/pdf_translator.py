@@ -331,13 +331,22 @@ class PdfTranslator(DocumentTranslator):
                 break
 
             result = self._parse_single_translation(translated_text)
+            if result is None:
+                app_logger.warning(
+                    f"Unparseable translation output for paragraph {paragraph_index} "
+                    f"(attempt {attempt + 1}): {str(translated_text)[:100]}")
+                continue
             # Apply the SAME validation as the document path: drop placeholders/
             # formula markers, copied source, or wrong-language output -> retry,
             # then keep the source paragraph rather than shipping a broken one.
-            if result and not is_translation_valid(stripped, result, self.src_lang, self.dst_lang):
+            # This output PARSED, so it must not fall through to the "unparseable"
+            # message (it used to, sending diagnosis down the wrong path). Log
+            # the rejected text: the usual cause is the model echoing the source.
+            if not is_translation_valid(stripped, result, self.src_lang, self.dst_lang):
                 app_logger.warning(
-                    f"Paragraph {paragraph_index} failed validation (attempt {attempt + 1})")
-                result = None
+                    f"Paragraph {paragraph_index} failed validation (attempt {attempt + 1}): "
+                    f"{result[:100]!r}")
+                continue
             if result:
                 # Optional polish second pass (same gating as the document path).
                 if self.topts.get("params", {}).get("second_pass"):
@@ -363,10 +372,6 @@ class PdfTranslator(DocumentTranslator):
                 with self.lock:
                     self._qa_pairs.append((stripped, result))
                 return result
-            app_logger.warning(
-                f"Unparseable translation output for paragraph {paragraph_index} "
-                f"(attempt {attempt + 1}): {str(translated_text)[:100]}"
-            )
 
         with self.lock:
             self._failed_paragraphs.append(paragraph_index)
