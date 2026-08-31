@@ -1,15 +1,15 @@
 {
-    "version": "6.8.1",
+    "version": "6.8.2",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.8.1: a custom language now works in the glossary — adding one also adds its column to every existing glossary (padding the rows) and to new ones, so a term in it is actually found during translation instead of the glossary silently not applying. Deleting a history record now deletes its proofread data too: the two lived in separate stores, so a deleted record used to leave a proofread entry behind with no way to remove it from the UI. / 6.8.1：自定义语言现在在词汇表里也能用——添加语言会给所有已有词汇表（含 Default）和新建词汇表补上该列并补齐每行，术语真的能在翻译时命中，不再静默失效。删除历史记录时会一并删除对应的校对记录：两者原本分开存储，删了历史后校对页那一条会永远留着且界面上无法删除。",
+    "notes": "6.8.2: thinking/reasoning is now really OFF by default on every backend. Local thinking models (Ollama, LM Studio) used to burn the whole reply budget reasoning, so a text PDF came back largely untranslated; the /no_think prompt switch is not honored by qwen3/qwen3.5. Ollama now gets think=false, LM Studio reasoning_effort=none, and online providers each get the switch they accept (DeepSeek/GLM, DashScope/SiliconFlow, Gemini/OpenAI, OpenRouter). Measured: 1198-2048 tokens and 10-18 s per paragraph -> 16-23 tokens and 0.3 s. Set disable_thinking=false in system_config.json to opt out. / 6.8.2：思考模式现在在所有后端真正默认关闭。本地思考型模型（Ollama、LM Studio）此前会把回复预算全烧在推理上，导致 PDF 大片保留原文；/no_think 文本开关 qwen3/qwen3.5 并不认。现 Ollama 用 think=false、LM Studio 用 reasoning_effort=none、在线各家用各自生效的参数。实测每段 1198-2048 token、10-18 秒 -> 16-23 token、0.3 秒。如需思考，在 system_config.json 里把 disable_thinking 设为 false。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.1/LinguaHaru-6.8.1-web-portable.zip",
-            "sha256": "512fa1d192a81a436854397b237de4bc57c1c024e994847a792a3b6fa9ea934a"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.2/LinguaHaru-6.8.2-web-portable.zip",
+            "sha256": "0870679b981026b7628299cea531641de8ee7eb515feb25c4b9b562319b6005b"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.1/LinguaHaru-6.8.1-desktop-portable.zip",
-            "sha256": "3aa9c50e4db9f6c11898864d25970b02c1cfad585de6e4dc169d27de1c1b3342"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.2/LinguaHaru-6.8.2-desktop-portable.zip",
+            "sha256": "ae5684d48440644895b31b61edb42c4444426493d7eeb13ab72c667176be0ca0"
         }
     }
 }
