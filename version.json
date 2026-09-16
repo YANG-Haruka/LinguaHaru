@@ -1,15 +1,15 @@
 {
-    "version": "6.8.3",
+    "version": "6.9",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.8.3: real-time voice captions no longer show a sentence twice (an utterance's recognition result could land after the next utterance began and re-commit the whole thing). Video subtitle tasks: the GPU queue wait is stated in the log instead of looking hung for 20+ minutes, symbol-only \"…\" cues are dropped (643 of 1974 in one real file), sources over 256 MB are no longer copied into the working folder (one 4-video batch copied 24 GB; temp had grown past 100 GB) and that folder is now kept under 20 GB. Repeated subtitle lines are translated per scene instead of sharing one translation. / 6.8.3：实时语音翻译不再出现同一句显示两遍（上一句的识别结果可能在下一句开始后才回来，导致整段被重新提交）。视频字幕任务：等待 GPU 时日志会写明排队情况，不再像卡死二十多分钟；纯符号「…」字幕不再写进结果（实测一个文件 1974 条里有 643 条）；超过 256 MB 的源文件不再复制进临时目录（一批四个视频曾复制 24 GB，临时目录堆到上百 GB），并将该目录控制在 20 GB 以内。字幕中重复的台词现在按场景分别翻译，不再共用同一个译文。",
+    "notes": "6.9: subtitle, audio and video content now uses the purpose-built \"subtitle\" translation mode automatically (short spoken-style lines plus a display-length check) whenever you are still on the default mode; an explicit Precise/Natural/Polish choice is always respected, and documents are unaffected. The DeepSeek entry is renamed DeepSeek-V4.1-Flash and now sends the canonical model id — the old \"deepseek-v4-flash\" was only a legacy alias for the same model, so this is not a capability change and no key re-entry is needed. Also carries everything from 6.8.1-6.8.3: no duplicated real-time captions, visible GPU queue for video tasks, no lone \"…\" cues, no >256 MB source copies (temp kept under 20 GB), per-scene translation of repeated subtitle lines, custom languages in the glossary, deleting a history record deletes its proofread data, and thinking mode off by default on every backend. / 6.9：字幕、音频和视频现在自动使用「字幕」翻译模式（要求译文简洁口语化，并检查每行长度是否适合显示）——前提是你还停在默认模式；若你明确选过「精确」「自然」「润色」，一律按你选的来，文档不受影响。DeepSeek 条目更名为 DeepSeek-V4.1-Flash 并改用官方的规范模型名——原来的 \"deepseek-v4-flash\" 只是指向同一模型的旧别名，所以这不是能力变化，也不需要重新填写密钥。本版同时包含 6.8.1 至 6.8.3 的全部修复：实时字幕不再重复、视频任务会说明正在排队等待 GPU、不再写入孤零零的「…」字幕、不再复制超过 256 MB 的源文件（临时目录控制在 20 GB 以内）、字幕中重复的台词按场景分别翻译、自定义语言可用于术语表、删除历史记录时一并删除校对记录、所有后端默认关闭思考模式。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.3/LinguaHaru-6.8.3-web-portable.zip",
-            "sha256": "b379a10fa88caea4f99b9ade63f84418c428f064247b1f6db72e675de13ee61d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.9/LinguaHaru-6.9-web-portable.zip",
+            "sha256": "4c1143b5dd7f6e51dfbd5af79cbb8217e8440fea31dafb46a336a48fdd969529"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.3/LinguaHaru-6.8.3-desktop-portable.zip",
-            "sha256": "31200dedcb4ff930b667e9af32605f4b6559af09406c3aeed90cbe787afe12f6"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.9/LinguaHaru-6.9-desktop-portable.zip",
+            "sha256": "4da22288834f862b328c1ae7c32d2ef45b964b39d501461efcb44f671038dfdb"
         }
     }
 }
