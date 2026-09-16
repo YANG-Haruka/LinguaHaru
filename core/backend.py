@@ -1138,6 +1138,15 @@ def export_proofread_doc(doc_name):
     dst_json = os.path.join(folder, "dst_translated.json")
     original_copy = os.path.join(
         folder, manifest.get("original_copy", f"{os.path.basename(doc_name)}{ext}"))
+    # Big inputs (video) are referenced in place rather than copied into temp.
+    if not os.path.exists(original_copy) and manifest.get("source_path"):
+        src_in_place = str(manifest["source_path"])
+        if os.path.exists(src_in_place):
+            original_copy = src_in_place
+        else:
+            raise FileNotFoundError(
+                f"The original file was moved or deleted, so this translation "
+                f"cannot be re-exported: {src_in_place}")
 
     # PDF re-export re-renders via BabelDOC from the edited translations (it has
     # no in-place text writer like the other formats), so it takes its own path.

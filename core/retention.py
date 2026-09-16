@@ -10,6 +10,7 @@ retention must never crash a launch.
 """
 
 import os
+import shutil
 import time
 
 from core.log_config import app_logger
@@ -125,6 +126,62 @@ def prune_results(result_dir, max_size_mb=0):
     return removed
 
 
+def prune_temp(temp_dir, max_size_mb=0, keep_newest=3):
+    """Keep the working-folder tree under `max_size_mb` by deleting the OLDEST
+    per-run folders first, always keeping the `keep_newest` most recent ones.
+
+    Intermediates are the bulk of the disk use (extracted audio, page images,
+    checkpoints) while the actual outputs live in result/ and are tiny. Nothing
+    pruned them, so one machine reached 110 GB across 42 stale run folders.
+    Bounded by SIZE, not age, and mirroring prune_results: a user whose files
+    are small never loses anything, and the newest runs stay proofreadable /
+    resumable no matter what. Whole folders only — a half-deleted working folder
+    would break resume and proofread in confusing ways.
+
+    Returns the number of folders removed.
+    """
+    if not max_size_mb or not os.path.isdir(temp_dir):
+        return 0
+    limit = max_size_mb * 1024 * 1024
+
+    def _size(path):
+        total = 0
+        for dirpath, _d, files in os.walk(path):
+            for fn in files:
+                try:
+                    total += os.path.getsize(os.path.join(dirpath, fn))
+                except OSError:
+                    pass
+        return total
+
+    try:
+        dirs = [os.path.join(temp_dir, n) for n in os.listdir(temp_dir)]
+    except OSError:
+        return 0
+    dirs = [d for d in dirs if os.path.isdir(d)]
+    sized = []
+    for d in dirs:
+        try:
+            sized.append((os.path.getmtime(d), _size(d), d))
+        except OSError:
+            pass
+    total = sum(s for _m, s, _d in sized)
+    if total <= limit:
+        return 0
+    sized.sort(reverse=True)                      # newest first
+    removed = 0
+    for _m, size, d in sized[max(0, int(keep_newest)):][::-1]:   # oldest first
+        if total <= limit:
+            break
+        try:
+            shutil.rmtree(d)
+            total -= size
+            removed += 1
+        except OSError as e:
+            app_logger.warning(f"Could not prune temp folder {d}: {e}")
+    return removed
+
+
 def run_retention():
     """Apply log + result retention from config. Best-effort; never raises."""
     try:
@@ -134,7 +191,7 @@ def run_retention():
         # Per-project logs live in the result folders now; this only sweeps any
         # legacy top-level .log files. system.log (log/) is self-bounded.
         log_dir = os.path.join(RUNTIME_ROOT, "log")
-        _, result_dir, _ = backend.get_custom_paths()
+        temp_dir, result_dir, _ = backend.get_custom_paths()
         prune_logs(
             log_dir,
             max_files=int(cfg.get("log_max_files", 0) or 0),
@@ -142,5 +199,12 @@ def run_retention():
             max_size_mb=int(cfg.get("log_max_size_mb", 0) or 0),
         )
         prune_results(result_dir, max_size_mb=int(cfg.get("result_max_size_mb", 0) or 0))
+        # Working folders: off unless configured, and the newest few are always
+        # kept so Proofread/Continue still work for recent runs.
+        n = prune_temp(temp_dir,
+                       max_size_mb=int(cfg.get("temp_max_size_mb", 20000) or 0),
+                       keep_newest=int(cfg.get("temp_keep_newest", 3) or 0))
+        if n:
+            app_logger.info(f"Retention: removed {n} stale working folder(s) from temp")
     except Exception as e:  # noqa: BLE001 — retention must never block startup
         app_logger.warning(f"Retention sweep skipped: {e}")

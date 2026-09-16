@@ -658,8 +658,15 @@ def _dedup_use_context():
         return False
 
 
-def deduplicate_translation_content(src_json_path):
-    """Deduplicate content and maintain mapping"""
+def deduplicate_translation_content(src_json_path, enabled=True):
+    """Deduplicate content and maintain mapping.
+
+    ``enabled=False`` keeps every item (1:1 mapping) but produces the same
+    shape, so the split/translate/restore chain downstream is unchanged. Used
+    for SUBTITLES: in a film the same short line recurs dozens of times and its
+    right translation depends on the scene, while a document's repeated
+    headings/cells genuinely want one consistent translation.
+    """
     with open(src_json_path, 'r', encoding='utf-8') as f:
         json_data = json.load(f)
 
@@ -671,7 +678,9 @@ def deduplicate_translation_content(src_json_path):
     next_count_deduped = 1
 
     app_logger.info(f"Deduplicating {len(json_data)} items"
-                    + (" (context-aware)" if use_context else ""))
+                    + (" (context-aware)" if use_context else "")
+                    if enabled else
+                    f"Keeping all {len(json_data)} items (dedup off for this format)")
 
     for item in json_data:
         if not isinstance(item, dict):
@@ -684,7 +693,8 @@ def deduplicate_translation_content(src_json_path):
         if count_src is None:
             continue
 
-        key = (item_type, value) if use_context else value
+        # enabled=False -> a key that never collides, i.e. keep every item.
+        key = count_src if not enabled else ((item_type, value) if use_context else value)
         # Check if content exists
         if key in content_to_deduped_count:
             # Use existing count_deduped

@@ -126,6 +126,25 @@ class DocumentTranslator:
         except Exception:  # noqa: BLE001
             self.topts = {"params": {}, "with_context": False}
 
+    # Formats whose repeated lines must NOT share one translation. Measured on
+    # four real ja->zh films: 16-25% of the word-bearing cues are repeats, and
+    # EVERY dedup group collapsed to exactly one translation — so a short line
+    # ("はい") got the same Chinese in every scene. The LLM pass is ~1% of a
+    # video task's wall time (transcription is ~96%), so translating each
+    # occurrence costs pennies and seconds. Documents keep dedup: their repeats
+    # are headings/cells that genuinely want one consistent translation.
+    _NO_DEDUP_EXTS = (".srt", ".vtt", ".ass", ".ssa", ".lrc")
+
+    def _dedup_enabled(self):
+        ext = os.path.splitext(self.input_file_path)[1].lower()
+        if ext in self._NO_DEDUP_EXTS:
+            return False
+        try:
+            from core.optional_modules import MEDIA_EXTENSIONS
+            return ext not in MEDIA_EXTENSIONS      # video/audio -> subtitle cues
+        except Exception:  # noqa: BLE001
+            return True
+
     def check_for_stop(self):
         """Check if translation should stop"""
         if self.check_stop_requested and callable(self.check_stop_requested):
@@ -884,6 +903,10 @@ class DocumentTranslator:
         except Exception:
             return base_desc
 
+    # Inputs at or below this size are copied into the proofread folder; bigger
+    # ones are referenced in place (see _write_manifest).
+    _MANIFEST_COPY_MAX_BYTES = 256 * 1024 * 1024
+
     def _write_manifest(self, file_extension):
         """Persist what the Proofread tab needs to re-export this document:
         a copy of the original input file plus a small manifest.json inside
@@ -897,9 +920,28 @@ class DocumentTranslator:
             base_name = os.path.splitext(os.path.basename(self.input_file_path))[0]
             original_copy = f"{base_name}{ext}"
             copy_path = os.path.join(self.file_dir, original_copy)
-            if not os.path.exists(copy_path) and os.path.exists(self.input_file_path):
-                shutil.copyfile(self.input_file_path, copy_path)
+            # Copy only what is cheap to keep. A document is a few MB, but a video
+            # is GIGABYTES: copying every input here grew one machine's temp tree
+            # to 110 GB (three source videos alone were 24 GB) purely so the
+            # Proofread tab could re-export. Above the cap, record the source PATH
+            # instead — re-export reads it from there, and only breaks if the user
+            # later moves or deletes the original (it then says so).
+            source_path = os.path.abspath(self.input_file_path)
+            copied = os.path.exists(copy_path)
+            if not copied and os.path.exists(self.input_file_path):
+                if os.path.getsize(self.input_file_path) <= self._MANIFEST_COPY_MAX_BYTES:
+                    shutil.copyfile(self.input_file_path, copy_path)
+                    copied = True
+                else:
+                    app_logger.info(
+                        f"Proofread manifest: referencing the source in place "
+                        f"({os.path.getsize(self.input_file_path) / 1e9:.1f} GB) "
+                        f"instead of copying it into temp")
             manifest = {
+                # Where re-export reads the original from when it was too big to
+                # copy (absolute; may be gone by then, which re-export reports).
+                "source_path": source_path,
+                "original_copied": copied,
                 # Ties this proofread folder to its history record, so deleting
                 # the record can delete this folder too (they live in separate
                 # stores: records in SQLite, proofread data in the temp tree).
@@ -1112,11 +1154,13 @@ class DocumentTranslator:
                 app_logger.info("Deduped files not found, deduplicating...")
                 self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Preparing content')}...")
 
-                deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(self.src_json_path)
+                deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(
+                    self.src_json_path, enabled=self._dedup_enabled())
                 create_deduped_json_for_translation(deduped_data, self.src_deduped_json_path)
             else:
                 # Reconstruct mapping
-                deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(self.src_json_path)
+                deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(
+                    self.src_json_path, enabled=self._dedup_enabled())
 
             # Check split files
             if not os.path.exists(self.src_split_json_path):
@@ -1162,7 +1206,8 @@ class DocumentTranslator:
 
             app_logger.info("Deduplicating content...")
             self.update_ui_safely(progress_callback, 0, f"{self._get_status_message('Removing duplicates')}...")
-            deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(self.src_json_path)
+            deduped_data, self.count_src_to_deduped_map = deduplicate_translation_content(
+                self.src_json_path, enabled=self._dedup_enabled())
             create_deduped_json_for_translation(deduped_data, self.src_deduped_json_path)
 
             app_logger.info("Splitting content...")

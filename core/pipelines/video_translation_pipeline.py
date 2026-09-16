@@ -1160,6 +1160,12 @@ _ANIME_GEN_KW = {"language": "Japanese", "max_new_tokens": 256}
 _ANIME_BATCH = 8   # VAD segments per pipeline batch (GPU throughput vs resume granularity)
 
 
+# A cue must carry at least one WORD character (latin/digit, kana, CJK, hangul,
+# cyrillic, thai) to be worth a subtitle line. Twin of live_page._WORDLIKE.
+_WORDLIKE = re.compile(r"[0-9A-Za-z\u3040-\u30ff\u3400-\u9fff"
+                       r"\uac00-\ud7af\u0400-\u04ff\u0e00-\u0e7f]")
+
+
 def _anime_infer_oom_safe(pipe, clips):
     """Run the anime-whisper pipeline over `clips`, halving the batch size on a
     CUDA out-of-memory error (8→4→2→1) instead of crashing. Returns a list of
@@ -1851,12 +1857,24 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
         # see the stop flag until it finally gets the GPU.
         got_lock = GPU_LOCK.acquire(blocking=False)
         if not got_lock:
-            if progress_callback:
-                progress_callback(0.02, desc=f"{_tr('Waiting for compute', session_lang)}...")
-            while not got_lock:
-                if check_stop:
-                    check_stop()   # raises on stop / blocks while paused (still queued)
-                got_lock = GPU_LOCK.acquire(timeout=0.3)
+            # Log the wait, not just the UI hint: the run log used to jump
+            # straight from "Extracting content" to the transcription start with
+            # nothing in between, so a file queued behind three other videos
+            # looked hung for 20+ minutes.
+            from core.compute_lock import queued
+            _wait_t0 = time.time()
+            with queued() as _n:
+                app_logger.info(
+                    f"Waiting for the GPU — transcription is serialized across tasks "
+                    f"({_n} queued)")
+                if progress_callback:
+                    progress_callback(0.02, desc=(
+                        f"{_tr('Waiting for compute', session_lang)}... ({_n})"))
+                while not got_lock:
+                    if check_stop:
+                        check_stop()   # raises on stop / blocks while paused (still queued)
+                    got_lock = GPU_LOCK.acquire(timeout=0.3)
+            app_logger.info(f"GPU acquired after waiting {time.time() - _wait_t0:.0f}s")
         try:
             if check_stop:
                 check_stop()   # bail right after acquiring, before the heavy model load
@@ -1889,6 +1907,18 @@ def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callba
     # Re-segment cues for readability (split over-long / fast cues at the best
     # word/punctuation boundary using word timestamps; merge flicker-short ones).
     triples = _resegment_cues(triples, src_lang)
+
+    # Drop cues with NO word character. Whisper emits a bare "…" for breathing /
+    # background / non-verbal audio: one real file had 643 of them out of 1974
+    # cues (40%), each a flickering "…" on screen, and since the translator
+    # rightly refuses to translate them they also showed up in the coverage
+    # report as "untranslated" and made a clean run look 40% failed. Same rule
+    # the live captions already apply to their commit units.
+    before_wordless = len(triples)
+    triples = [c for c in triples if _WORDLIKE.search(c[2] or "")]
+    if len(triples) < before_wordless:
+        app_logger.info(f"Dropped {before_wordless - len(triples)} non-verbal cue(s) "
+                        f"(no word characters, e.g. a bare \u2026)")
 
     srt_lines = []
     for i, (start, end, text, _w) in enumerate(triples, start=1):

@@ -17,6 +17,27 @@ Usage:
     with GPU_LOCK:
         ...heavy inference...
 """
+import contextlib
 import threading
 
 GPU_LOCK = threading.Lock()
+
+_waiters = 0
+_waiters_mu = threading.Lock()
+
+
+@contextlib.contextmanager
+def queued():
+    """Count this thread while it waits for GPU_LOCK, yielding how many tasks
+    (including this one) are queued. A plain Lock exposes no queue length, and
+    without it a file that sits 20 minutes behind three other transcriptions
+    looks indistinguishable from one that is stuck."""
+    global _waiters
+    with _waiters_mu:
+        _waiters += 1
+        n = _waiters
+    try:
+        yield n
+    finally:
+        with _waiters_mu:
+            _waiters -= 1
