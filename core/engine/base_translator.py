@@ -122,7 +122,8 @@ class DocumentTranslator:
         # task's sampling / second pass / QA / context behavior.
         try:
             from core import translation_modes
-            self.topts = translation_modes.snapshot()
+            self.topts = translation_modes.snapshot(
+                os.path.splitext(input_file_path)[1].lower())
         except Exception:  # noqa: BLE001
             self.topts = {"params": {}, "with_context": False}
 
@@ -133,15 +134,10 @@ class DocumentTranslator:
     # video task's wall time (transcription is ~96%), so translating each
     # occurrence costs pennies and seconds. Documents keep dedup: their repeats
     # are headings/cells that genuinely want one consistent translation.
-    _NO_DEDUP_EXTS = (".srt", ".vtt", ".ass", ".ssa", ".lrc")
-
     def _dedup_enabled(self):
-        ext = os.path.splitext(self.input_file_path)[1].lower()
-        if ext in self._NO_DEDUP_EXTS:
-            return False
         try:
-            from core.optional_modules import MEDIA_EXTENSIONS
-            return ext not in MEDIA_EXTENSIONS      # video/audio -> subtitle cues
+            from core.optional_modules import is_subtitle_content
+            return not is_subtitle_content(self.input_file_path)
         except Exception:  # noqa: BLE001
             return True
 

@@ -22,6 +22,8 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tests.corpus_common import check, run
 
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 
 def test_gpu_queue_is_countable():
     print("Video: the GPU wait exposes a queue length (a plain Lock has none)")
@@ -110,7 +112,7 @@ def test_subtitles_are_not_deduplicated():
     from core.engine.base_translator import DocumentTranslator
     from core.engine.text_separator import deduplicate_translation_content
 
-    fake = types.SimpleNamespace(_NO_DEDUP_EXTS=DocumentTranslator._NO_DEDUP_EXTS)
+    fake = types.SimpleNamespace()
     fake._dedup_enabled = types.MethodType(DocumentTranslator._dedup_enabled, fake)
     for name in ("a.srt", "a.vtt", "a.ass", "a.lrc", "a.mp4", "a.mkv", "a.mp3"):
         fake.input_file_path = name
@@ -138,7 +140,54 @@ def test_subtitles_are_not_deduplicated():
     shutil.rmtree(d, ignore_errors=True)
 
 
+def test_subtitle_content_uses_the_subtitle_mode():
+    print("Subtitles: the purpose-built mode is used unless the user picked one")
+    from core import backend, translation_modes as tm
+    from core.optional_modules import is_subtitle_content
+
+    for f in ("a.mp4", "a.srt", "a.mkv", "a.mp3", "a.ass"):
+        check(f"subtitle-shaped: {f}", is_subtitle_content(f))
+    for f in ("a.docx", "a.xlsx", "a.pdf", "a.txt"):
+        check(f"document: {f}", not is_subtitle_content(f))
+
+    saved = backend.get_config("translation_mode", "standard")
+    try:
+        backend.set_config("translation_mode", "standard")   # i.e. user chose nothing
+        check("video gets the subtitle mode", tm.snapshot("a.mp4")["mode"] == "subtitle")
+        check("document keeps the default", tm.snapshot("a.docx")["mode"] == "standard")
+        p = tm.snapshot("a.srt")["params"]
+        check("and its subtitle-length QA", "subtitle_length" in (p.get("qa") or []), str(p.get("qa")))
+        # An explicit choice must survive — otherwise the setting would be a lie.
+        backend.set_config("translation_mode", "polish")
+        check("explicit mode is never overridden", tm.snapshot("a.mp4")["mode"] == "polish")
+        check("no ext -> unchanged behavior", tm.snapshot()["mode"] == "polish")
+    finally:
+        backend.set_config("translation_mode", saved)
+
+
+def test_deepseek_model_is_the_canonical_name():
+    print("Models: the DeepSeek Flash entry uses the canonical id, not the alias")
+    import glob
+    import json
+    import os
+    cfgs = glob.glob(os.path.join(ROOT, "config", "api_config", "*Flash*.json"))
+    check("exactly one Flash entry", len(cfgs) == 1, str([os.path.basename(c) for c in cfgs]))
+    with open(cfgs[0], encoding="utf-8") as f:
+        d = json.load(f)
+    # `deepseek-v4-flash` is a legacy alias that routes to `deepseek-flash`
+    # (DeepSeek-V4.1-Flash); the alias may be retired.
+    check("model id is deepseek-flash", d.get("model") == "deepseek-flash", str(d.get("model")))
+    check("label says V4.1", "V4.1" in os.path.basename(cfgs[0]), os.path.basename(cfgs[0]))
+    with open(os.path.join(ROOT, "config", "system_config.default.json"), encoding="utf-8") as f:
+        seed = json.load(f)
+    check("the shipped default points at it",
+          seed.get("default_online_model") == "(Deepseek) DeepSeek-V4.1-Flash",
+          str(seed.get("default_online_model")))
+
+
 if __name__ == "__main__":
     run([test_gpu_queue_is_countable, test_wordless_cues_are_dropped,
          test_big_input_is_not_copied_into_temp, test_temp_retention_is_size_bounded,
-         test_subtitles_are_not_deduplicated])
+         test_subtitles_are_not_deduplicated,
+         test_subtitle_content_uses_the_subtitle_mode,
+         test_deepseek_model_is_the_canonical_name])

@@ -10,6 +10,20 @@ from core import plugins_registry
 
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"]
 MEDIA_EXTENSIONS = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".m4a", ".flac"]
+SUBTITLE_EXTENSIONS = [".srt", ".vtt", ".ass", ".ssa", ".lrc"]
+
+
+def is_subtitle_content(path_or_ext):
+    """True for a subtitle file, or for audio/video (which becomes subtitle cues).
+
+    Such content is translated line-by-line as spoken dialogue, which changes
+    two decisions: the "subtitle" translation mode fits it, and its repeated
+    lines must not be deduplicated. One predicate so those two never drift.
+    """
+    ext = (path_or_ext or "").lower()
+    if not ext.startswith("."):
+        ext = os.path.splitext(ext)[1].lower()
+    return ext in SUBTITLE_EXTENSIONS or ext in MEDIA_EXTENSIONS
 
 
 def ffmpeg_exe():

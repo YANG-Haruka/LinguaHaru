@@ -92,19 +92,33 @@ def resolve_sampling(model_config, cfg_temp, cfg_top_p, params=None):
     return temp, top_p
 
 
-def snapshot():
+def snapshot(file_ext=None):
     """Capture the active translation options ONCE (at task start), so a
     concurrent task — or another LAN user changing the global config mid-run —
     can't perturb this task's sampling, second pass, QA, or context behavior.
-    Low layers should use this snapshot instead of re-reading global config."""
+    Low layers should use this snapshot instead of re-reading global config.
+
+    `file_ext` (or a path) lets subtitle/audio/video content use the
+    purpose-built "subtitle" mode — short spoken-style lines plus a subtitle
+    length check, which "standard" has no notion of. Only when the user is
+    still on the DEFAULT mode: an explicit choice is always respected.
+    """
     try:
         from core import backend
         cfg = backend.read_config()
     except Exception:  # noqa: BLE001
         cfg = {}
+    mode = get_active_mode()
+    if file_ext and mode == DEFAULT_MODE and "subtitle" in load_modes():
+        try:
+            from core.optional_modules import is_subtitle_content
+            if is_subtitle_content(file_ext):
+                mode = "subtitle"
+        except Exception:  # noqa: BLE001 — never block a task over this
+            pass
     return {
-        "mode": get_active_mode(),
-        "params": dict(active_params()),
+        "mode": mode,
+        "params": dict(load_modes().get(mode, _BUILTIN[DEFAULT_MODE])),
         "tone": str(cfg.get("translation_tone", "") or ""),
         "length": str(cfg.get("translation_length", "") or ""),
         "style": str(cfg.get("translation_style", "") or "").strip(),
