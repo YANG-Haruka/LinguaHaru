@@ -1,15 +1,15 @@
 {
-    "version": "6.8.2",
+    "version": "6.8.3",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "6.8.2: thinking/reasoning is now really OFF by default on every backend. Local thinking models (Ollama, LM Studio) used to burn the whole reply budget reasoning, so a text PDF came back largely untranslated; the /no_think prompt switch is not honored by qwen3/qwen3.5. Ollama now gets think=false, LM Studio reasoning_effort=none, and online providers each get the switch they accept (DeepSeek/GLM, DashScope/SiliconFlow, Gemini/OpenAI, OpenRouter). Measured: 1198-2048 tokens and 10-18 s per paragraph -> 16-23 tokens and 0.3 s. Set disable_thinking=false in system_config.json to opt out. / 6.8.2：思考模式现在在所有后端真正默认关闭。本地思考型模型（Ollama、LM Studio）此前会把回复预算全烧在推理上，导致 PDF 大片保留原文；/no_think 文本开关 qwen3/qwen3.5 并不认。现 Ollama 用 think=false、LM Studio 用 reasoning_effort=none、在线各家用各自生效的参数。实测每段 1198-2048 token、10-18 秒 -> 16-23 token、0.3 秒。如需思考，在 system_config.json 里把 disable_thinking 设为 false。",
+    "notes": "6.8.3: real-time voice captions no longer show a sentence twice (an utterance's recognition result could land after the next utterance began and re-commit the whole thing). Video subtitle tasks: the GPU queue wait is stated in the log instead of looking hung for 20+ minutes, symbol-only \"…\" cues are dropped (643 of 1974 in one real file), sources over 256 MB are no longer copied into the working folder (one 4-video batch copied 24 GB; temp had grown past 100 GB) and that folder is now kept under 20 GB. Repeated subtitle lines are translated per scene instead of sharing one translation. / 6.8.3：实时语音翻译不再出现同一句显示两遍（上一句的识别结果可能在下一句开始后才回来，导致整段被重新提交）。视频字幕任务：等待 GPU 时日志会写明排队情况，不再像卡死二十多分钟；纯符号「…」字幕不再写进结果（实测一个文件 1974 条里有 643 条）；超过 256 MB 的源文件不再复制进临时目录（一批四个视频曾复制 24 GB，临时目录堆到上百 GB），并将该目录控制在 20 GB 以内。字幕中重复的台词现在按场景分别翻译，不再共用同一个译文。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.2/LinguaHaru-6.8.2-web-portable.zip",
-            "sha256": "0870679b981026b7628299cea531641de8ee7eb515feb25c4b9b562319b6005b"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.3/LinguaHaru-6.8.3-web-portable.zip",
+            "sha256": "b379a10fa88caea4f99b9ade63f84418c428f064247b1f6db72e675de13ee61d"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.2/LinguaHaru-6.8.2-desktop-portable.zip",
-            "sha256": "ae5684d48440644895b31b61edb42c4444426493d7eeb13ab72c667176be0ca0"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v6.8.3/LinguaHaru-6.8.3-desktop-portable.zip",
+            "sha256": "31200dedcb4ff930b667e9af32605f4b6559af09406c3aeed90cbe787afe12f6"
         }
     }
 }
