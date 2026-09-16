@@ -499,7 +499,7 @@ class LivePage(ScrollArea):
         self._ctx_history = []          # recent committed source lines (translation coherence)
         self._session_tokens = 0        # tokens used this session (for the thanks card)
         self._recog_busy = False        # one STT worker in flight at a time
-        self._recog_pending = None      # (pcm, is_final) — latest-wins while busy
+        self._recog_pending = []        # queued (pcm, is_final); finals never dropped
         self._stream_detected = "auto"
         self._det_hist = []             # recent detections (majority-vote lock)
         self._stream_text = {}          # ts -> cumulative streamed translation
@@ -1104,8 +1104,10 @@ class LivePage(ScrollArea):
         self._partial_ms = 0.0
         self._stream_committed = ""
         self._stream_last = ""
+        self._stream_detected = "auto"
+        self._det_hist = []
         self._ctx_history = []
-        self._recog_pending = None
+        self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
         # audio behind a stale busy flag (a late result is ignored via the
@@ -1162,12 +1164,13 @@ class LivePage(ScrollArea):
                     self._vad_on = True
                     self._vad_sil_ms = 0.0
                     self._partial_ms = 0.0
-                    self._stream_committed = ""     # new utterance
-                    self._stream_last = ""
-                    self._stream_detected = "auto"
-                    self._det_hist = []   # vote within ONE utterance: a bilingual
-                    # conversation may switch language at every turn, so the lock
-                    # must not persist across utterances.
+                    # The per-utterance stream state (committed text, last
+                    # partial, language vote) is NOT reset here: the previous
+                    # utterance's final STT result may still be in flight, and
+                    # resetting now made it re-commit that WHOLE utterance —
+                    # every sentence shown and translated twice, worst when
+                    # speech runs into the 30 s cap and the next utterance starts
+                    # at once. It is reset where that final is processed.
                     self._vad_buf = bytearray(self._vad_preroll)
             else:
                 self._vad_voice_ms = 0.0
@@ -1193,6 +1196,11 @@ class LivePage(ScrollArea):
                 self._vad_on = False
                 self._vad_voice_ms = 0.0
                 self._vad_buf = bytearray()
+                # The pre-roll still holds this utterance's last 500 ms. After a
+                # silence end that is only silence, but after the 30 s cap the
+                # next utterance starts at once and would re-recognize it — the
+                # same words twice at the seam ("图像。" then "像啊…").
+                self._vad_preroll = bytearray()
                 if dur_ms >= _VAD_MIN_MS:
                     self._dispatch_recognize(utt, is_final=True)   # flush remainder
             elif self._partial_ms >= _VAD_PARTIAL_MS and dur_ms >= _VAD_MIN_MS:
@@ -1201,14 +1209,18 @@ class LivePage(ScrollArea):
 
     def _dispatch_recognize(self, pcm, is_final):
         """Run one STT pass (partial or final) on the utterance-so-far. Only one
-        worker is in flight; while busy the newest request is queued (a final
-        overrides a pending partial) so we never lag behind fast speech."""
+        worker is in flight; while busy requests queue in order, stale partials
+        dropped, so we never lag behind fast speech."""
         if not self._is_listening():
             return   # session stopped — don't start new STT work
         if self._recog_busy:
-            if (is_final or self._recog_pending is None
-                    or not self._recog_pending[1]):
-                self._recog_pending = (pcm, is_final)
+            # Results must come back in dispatch order and a FINAL must never be
+            # dropped: it covers its whole utterance, and processing it is what
+            # closes that utterance's stream state. (The old single slot let a
+            # second final overwrite the first.) Queued partials go stale as soon
+            # as anything newer arrives, so drop those; finals stay in line.
+            self._recog_pending = [q for q in self._recog_pending if q[1]]
+            self._recog_pending.append((pcm, is_final))
             return
         self._recog_busy = True
         w = LiveRecognizeWorker(pcm, _IN_RATE, is_final)
@@ -1368,8 +1380,13 @@ class LivePage(ScrollArea):
             units, _ = self._split_scored(self._uncommitted_tail(text), True)
             for s in units:
                 self._commit_stream_sentence(s)
+            # The utterance is closed: reset its stream state HERE, in result
+            # order — never at the next utterance's onset (see _vad_step).
             self._stream_committed = ""
             self._stream_last = ""
+            self._stream_detected = "auto"
+            self._det_hist = []   # vote within ONE utterance: a bilingual
+            # conversation may switch language at every turn.
             self._set_caption_interim("")
             if self._is_listening():
                 self.status_label.setText(tr("Listening", self._lang))
@@ -1384,9 +1401,8 @@ class LivePage(ScrollArea):
                 self._commit_stream_sentence(s)
             self._stream_committed += stable[:consumed]
             self._set_caption_interim(tail[consumed:])
-        if self._recog_pending is not None:        # process the freshest queued audio
-            pcm, fin = self._recog_pending
-            self._recog_pending = None
+        if self._recog_pending:                    # next queued request, in order
+            pcm, fin = self._recog_pending.pop(0)
             self._dispatch_recognize(pcm, fin)
 
     def _note_detected(self, detected):

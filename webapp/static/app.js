@@ -2474,6 +2474,9 @@ async function startLocal() {
   // is actually running before wiring up the mic graph.
   if (liveCtx.state === "suspended") { try { await liveCtx.resume(); } catch (e) {} }
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
+  // Fresh per-utterance stream state (no longer reset at every speechstart).
+  liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = "";
+  liveRecogBusy = false; liveRecogQueue = [];
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
   try {
     if (useSilero) await startSileroVad();
@@ -2493,7 +2496,7 @@ async function startLocal() {
 // more sensitive (picks up softer speech); higher = needs a louder voice.
 const VAD_SENS = { high: [0.004, 0.0026], standard: [0.006, 0.004], low: [0.010, 0.0066] };
 async function startWorkletVad() {
-  await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260616A");
+  await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260911A");
   const cfg = BOOT.config || {};
   const hangMs = cfg.live_vad_hang_ms || 900;
   const maxSegMs = cfg.live_vad_max_seg_ms || 30000;
@@ -2543,7 +2546,9 @@ async function startSileroVad() {
   liveSilero = await window.vad.AudioNodeVAD.new(liveCtx, {
     baseAssetPath: "/static/vad/", onnxWASMBasePath: "/static/vad/", model: "legacy",
     onSpeechStart() {
-      liveSileroSpeaking = true; liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = ""; liveDetHist = []; liveDetHist = [];
+      // Stream state is reset when the previous utterance's FINAL is processed,
+      // not here — that final may still be in flight (see dispatchRecognize).
+      liveSileroSpeaking = true;
       liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus(_label("识别中…", "识别中…"));
     },
     onFrameProcessed(_probs, frame) {
@@ -2588,7 +2593,7 @@ function liveContext() {
   if (!liveCtxHistory.length) return "";
   return liveCtxHistory.slice(-3).join(" ").slice(-200);
 }
-let livePartialBusy = false, livePendingPcm = null;
+let liveRecogBusy = false, liveRecogQueue = [];   // one STT in flight + ordered queue
 let liveLastDetected = "auto";
 // Majority-vote the per-window language detections WITHIN one utterance: a
 // single noisy ~360ms window mis-detecting (zh<->ja) must not flip the
@@ -2612,7 +2617,8 @@ function noteDetected(d) {
 function onVadMessage(e) {
   const m = e.data || {};
   if (m.type === "speechstart") {
-    liveCommittedText = ""; liveLastText = ""; livePendingPcm = null; pipInterim = "";
+    // Don't reset the stream state here: the previous utterance's final may
+    // still be in flight (see dispatchRecognize).
     setLiveStatus(_label("识别中…", "识别中…"));
   } else if (m.type === "partial") {
     streamPartial(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
@@ -2725,9 +2731,29 @@ async function recognizeInt16(int16, final) {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body) });
 }
-async function streamPartial(int16) {
-  if (livePartialBusy) { livePendingPcm = int16; return; }   // latest-wins
-  livePartialBusy = true;
+// ONE recognition in flight, results processed strictly in dispatch order. The
+// final used to bypass this and race the partials: its result could land after
+// the NEXT utterance's speechstart had reset the committed text, re-committing
+// (showing + translating) the whole previous utterance a second time, and its
+// own reset then wiped the new utterance's progress. A queued final is never
+// dropped; queued partials go stale once anything newer arrives.
+// Twin of Qt live_page._dispatch_recognize.
+function dispatchRecognize(int16, final) {
+  if (liveRecogBusy) {
+    liveRecogQueue = liveRecogQueue.filter((q) => q.final);
+    liveRecogQueue.push({ int16, final });
+    return;
+  }
+  liveRecogBusy = true;
+  (final ? runFinal(int16) : runPartial(int16)).finally(() => {
+    liveRecogBusy = false;
+    const next = liveRecogQueue.shift();
+    if (next) dispatchRecognize(next.int16, next.final);
+  });
+}
+function streamPartial(int16) { dispatchRecognize(int16, false); }
+function finalizeUtterance(int16) { dispatchRecognize(int16, true); }
+async function runPartial(int16) {
   try {
     const r = await recognizeInt16(int16, false);
     if (r.busy) return;   // server dropped this partial under load — keep state, retry next
@@ -2747,13 +2773,8 @@ async function streamPartial(int16) {
     updatePipCaption();
     if (liveRunning && pipInterim) setLiveStatus(_label("识别中…", "识别中…") + " " + pipInterim);
   } catch (e) { /* transient; next partial retries */ }
-  finally {
-    livePartialBusy = false;
-    if (livePendingPcm) { const p = livePendingPcm; livePendingPcm = null; streamPartial(p); }
-  }
 }
-async function finalizeUtterance(int16) {
-  livePendingPcm = null;
+async function runFinal(int16) {
   try {
     const r = await recognizeInt16(int16, true);
     noteDetected(r.detected);
@@ -2763,7 +2784,8 @@ async function finalizeUtterance(int16) {
     const { units } = splitScored(uncommittedTail(text, liveCommittedText), true);
     for (const u of units) commitLiveSentence(u);
   } catch (e) { /* drop */ }
-  liveCommittedText = ""; liveLastText = ""; pipInterim = ""; updatePipCaption();
+  // The utterance is closed: reset its stream state HERE, in result order.
+  liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; updatePipCaption();
   if (liveRunning) setLiveStatus(liveListenMsg());
 }
 // Finalize one sentence: show the source line now, then translate it. Commits
@@ -3469,7 +3491,7 @@ async function quickMic() {
   _quickRecCtx = new AudioContext();
   _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
   try {
-    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260616A");
+    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260911A");
     _quickRecNode = new AudioWorkletNode(_quickRecCtx, "vad-processor",
       { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 900, minSegMs: 280, maxSegMs: 30000,
                             onAbs: 0.006, offAbs: 0.004 } });

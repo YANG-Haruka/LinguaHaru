@@ -73,6 +73,10 @@ class VADProcessor extends AudioWorkletProcessor {
     const pcm = new Float32Array(total);
     let o = 0; for (let i = 0; i < this.seg.length; i++) { pcm.set(this.seg[i], o); o += this.seg[i].length; }
     this.capturing = false; this.seg = []; this.segN = 0; this.voiceMs = 0; this.silenceMs = 0;
+    // The pre-roll ring still holds this segment's last 500 ms; after the 30 s
+    // cap the next segment starts at once and would re-send it (the same words
+    // twice at the seam). Restart the ring from here. Twin of Qt _vad_step.
+    this.ringPos = 0; this.ringFull = false;
     if (durMs < this.minSegMs || total === 0) { this.port.postMessage({ type: 'drop', reason: 'too-short' }); return; }
     this.port.postMessage({ type: 'segment', sampleRate: this.sr, pcm: pcm.buffer }, [pcm.buffer]);
   }
