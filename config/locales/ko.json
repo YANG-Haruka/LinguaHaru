@@ -198,6 +198,8 @@
   "Total tokens used": "총 사용 토큰",
   "Translate": "번역",
   "Translate Subtitles": "Translate subtitles (off = transcribe only)",
+  "Subtitle Same Name": "원본 파일과 같은 이름",
+  "Subtitle Same Name Hint": "movie.mp4 → movie.srt 로 저장되어 플레이어가 자동으로 불러옵니다(끄면 movie_en2zh.srt). 출력 폴더의 같은 이름 자막은 덮어씁니다.",
   "Translated Text": "번역문",
   "Translating": "번역 중",
   "Translating content": "콘텐츠 번역 중",

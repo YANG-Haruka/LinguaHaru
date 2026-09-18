@@ -391,6 +391,8 @@
   "Translate": "翻译",
   "Translate Page Subtitle": "上传文档、字幕、表格或媒体一键翻译，或对着麦克风实时口译 —— 都在这一页。",
   "Translate Subtitles": "翻译字幕（不勾选则仅转写）",
+  "Subtitle Same Name": "与原文件同名",
+  "Subtitle Same Name Hint": "movie.mp4 → movie.srt，播放器可自动加载（关闭则为 movie_en2zh.srt）。输出目录中同名的字幕会被覆盖。",
   "Translate To": "翻译到",
   "Translated Text": "译文",
   "Translating": "翻译中",

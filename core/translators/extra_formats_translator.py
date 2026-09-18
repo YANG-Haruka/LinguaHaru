@@ -23,8 +23,10 @@ class _SimpleTranslator(DocumentTranslator):
         return type(self)._extract(self.input_file_path, self.temp_dir)
 
     def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
-        type(self)._write(self.input_file_path, json_path, translated_json_path,
-                          self.temp_dir, self.result_dir, self.src_lang, self.dst_lang)
+        # The writer picks the filename (subtitles may match the source) -> report it.
+        self._written_output_path = type(self)._write(
+            self.input_file_path, json_path, translated_json_path,
+            self.temp_dir, self.result_dir, self.src_lang, self.dst_lang)
 
 
 class HtmlTranslator(_SimpleTranslator):
@@ -38,9 +40,10 @@ class HtmlTranslator(_SimpleTranslator):
         self.bilingual_mode = bilingual_mode
 
     def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
-        write_translated_content_to_html(self.input_file_path, json_path, translated_json_path,
-                                         self.temp_dir, self.result_dir, self.src_lang, self.dst_lang,
-                                         bilingual_mode=self.bilingual_mode)
+        self._written_output_path = write_translated_content_to_html(
+            self.input_file_path, json_path, translated_json_path,
+            self.temp_dir, self.result_dir, self.src_lang, self.dst_lang,
+            bilingual_mode=self.bilingual_mode)
 
 
 class OdtTranslator(_SimpleTranslator):
@@ -63,9 +66,10 @@ class VttTranslator(_SimpleTranslator):
         self.bilingual_mode = bilingual_mode
 
     def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
-        write_translated_content_to_vtt(self.input_file_path, json_path, translated_json_path,
-                                        self.temp_dir, self.result_dir, self.src_lang, self.dst_lang,
-                                        bilingual_mode=self.bilingual_mode)
+        self._written_output_path = write_translated_content_to_vtt(
+            self.input_file_path, json_path, translated_json_path,
+            self.temp_dir, self.result_dir, self.src_lang, self.dst_lang,
+            bilingual_mode=self.bilingual_mode)
 
 
 class AssTranslator(_SimpleTranslator):

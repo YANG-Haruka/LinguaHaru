@@ -198,6 +198,8 @@
   "Total tokens used": "Tổng số token đã sử dụng",
   "Translate": "Dịch",
   "Translate Subtitles": "Translate subtitles (off = transcribe only)",
+  "Subtitle Same Name": "Cùng tên với tệp gốc",
+  "Subtitle Same Name Hint": "movie.mp4 -> movie.srt để trình phát tự tải (tắt: movie_en2zh.srt). Phụ đề cùng tên sẽ bị ghi đè.",
   "Translated Text": "Bản dịch",
   "Translating": "Đang dịch",
   "Translating content": "Đang dịch nội dung",

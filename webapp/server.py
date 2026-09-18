@@ -501,6 +501,7 @@ def bootstrap():
             "stt_model": get_selected_stt_model(),
             "ocr_model_size": get_selected_ocr_model(),
             "translate_subtitles": config.get("translate_subtitles", True),
+            "subtitle_match_source_name": config.get("subtitle_match_source_name", True),
             "max_retries": config.get("max_retries", 4),
             # Show the RPM that's actually in effect: an explicit user value, or
             # the safety-net default when unset (so the UI isn't misleading).
@@ -634,7 +635,7 @@ async def update_config(payload: dict):
     allowed = {"default_online", "default_online_model", "default_src_lang",
                "default_dst_lang", "default_glossary", "stt_model",
                "live_stt_model", "quick_stt_model", "ocr_model_size",
-               "translate_subtitles",
+               "translate_subtitles", "subtitle_match_source_name",
                "max_retries", "rpm_limit",
                "auto_extract_glossary", "translation_mode",
                "translation_tone", "translation_length", "translation_style",

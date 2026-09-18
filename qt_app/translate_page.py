@@ -39,7 +39,7 @@ from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP
 from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, get_stt_model, SENSEVOICE_SUPPORTED_CODES)
-from core.optional_modules import MEDIA_EXTENSIONS
+from core.optional_modules import MEDIA_EXTENSIONS, is_subtitle_content
 
 
 class TranslatePage(QStackedWidget):
@@ -190,6 +190,12 @@ class TranslatePage(QStackedWidget):
         self.media_card.setVisible(False)
         layout.addWidget(self.media_card)
 
+        # --- Subtitle output naming (subtitle files and video/audio both
+        #     produce a subtitle file) ---
+        self.subs_name_card = self._build_subs_name_card(lang, config)
+        self.subs_name_card.setVisible(False)
+        layout.addWidget(self.subs_name_card)
+
         # --- Contextual PDF options (shown only when a PDF is selected) ---
         self.pdf_card = self._build_pdf_card(lang, config)
         self.pdf_card.setVisible(False)
@@ -246,6 +252,8 @@ class TranslatePage(QStackedWidget):
         self.bilingual_label.setText(tr("Bilingual Comparison", lang))
         self.stt_label.setText(tr("Speech-to-Text Model", lang))
         self.translate_subs_label.setText(tr("Translate Subtitles", lang))
+        self.subs_name_label.setText(tr("Subtitle Same Name", lang))
+        self.subs_name_caption.setText(tr("Subtitle Same Name Hint", lang))
         self.stt_empty_hint.setText(tr("No STT downloaded", lang))
         self.pdf_title.setText(tr("PDF Options", lang))
         for label, label_key, caption, hint_key in self._pdf_label_specs:
@@ -265,6 +273,31 @@ class TranslatePage(QStackedWidget):
         drop-zone background marquee. Kept so page-change / theme / retranslate
         callers don't need to special-case it."""
         pass
+
+    def _build_subs_name_card(self, lang, config):
+        """Name the translated subtitle after its source so a player loads it
+        next to the video. Shown for subtitle/audio/video input."""
+        card = CardWidget()
+        v = QVBoxLayout(card)
+        v.setContentsMargins(20, 14, 20, 14)
+        v.setSpacing(2)
+        row = QHBoxLayout()
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        self.subs_name_label = BodyLabel(tr("Subtitle Same Name", lang))
+        self.subs_name_caption = CaptionLabel(tr("Subtitle Same Name Hint", lang))
+        self.subs_name_caption.setTextColor("#606060", "#a0a0a0")
+        self.subs_name_caption.setWordWrap(True)
+        col.addWidget(self.subs_name_label)
+        col.addWidget(self.subs_name_caption)
+        row.addLayout(col, 1)
+        self.subs_name_switch = SwitchButton()
+        self.subs_name_switch.setChecked(config.get("subtitle_match_source_name", True))
+        self.subs_name_switch.checkedChanged.connect(
+            lambda val: backend.set_config("subtitle_match_source_name", val))
+        row.addWidget(self.subs_name_switch)
+        v.addLayout(row)
+        return card
 
     def _build_manga_card(self, lang, config):
         """漫画模式 toggle — shown when a PDF or image is selected. Bubble-groups
@@ -451,6 +484,9 @@ class TranslatePage(QStackedWidget):
         self.media_card.setVisible(has_media)
         if has_media and 0 <= self.stt_combo.currentIndex() < len(self._stt_ids):
             self._apply_stt_language_restriction(self._stt_ids[self.stt_combo.currentIndex()])
+        # Subtitle naming applies to subtitle files and to media (both output
+        # a subtitle file).
+        self.subs_name_card.setVisible(any(is_subtitle_content(p) for p in paths))
         # Show PDF options only when the selection includes a PDF.
         has_pdf = any(os.path.splitext(p)[1].lower() == ".pdf" for p in paths)
         self.pdf_card.setVisible(has_pdf)

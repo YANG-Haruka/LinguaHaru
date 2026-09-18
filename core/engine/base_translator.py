@@ -1324,6 +1324,12 @@ class DocumentTranslator:
         # Writers emit lowercase extensions; keep the returned path consistent
         # (matters on case-sensitive filesystems when the upload was .DOCX etc.)
         final_output_path = os.path.join(result_folder, f"{base_name}_{lang_suffix}{file_extension.lower()}")
+        # A writer that chooses its own filename (a subtitle may be named after
+        # the source) reports it back; that is the file history must point at.
+        # Without this, a video task recorded a "<name>_en2zh.mp4" that no step
+        # ever wrote, so History -> open/download found nothing.
+        if getattr(self, "_written_output_path", None):
+            final_output_path = self._written_output_path
 
         # Translation coverage report (best-effort; must never break a run)
         self._write_coverage_report()

@@ -41,7 +41,7 @@ class VideoTranslator(DocumentTranslator):
         return extract_srt_content_to_json(self._generated_srt_path, self.temp_dir)
 
     def write_translated_json_to_file(self, json_path, translated_json_path, progress_callback=None):
-        self._result_srt_path = write_translated_content_to_srt(
+        self._written_output_path = write_translated_content_to_srt(
             self._generated_srt_path, json_path, translated_json_path,
             self.result_dir, self.src_lang, self.dst_lang,
             bilingual_mode=self.bilingual_mode)
@@ -67,9 +67,9 @@ class VideoTranslator(DocumentTranslator):
             if progress_callback:
                 progress_callback(1.0, desc=self._get_status_message("Translation completed"))
             base = os.path.splitext(os.path.basename(self.input_file_path))[0]
-            self._result_srt_path = os.path.join(self.result_dir, f"{base}_transcribed.srt")
-            return self._result_srt_path, {}
+            self._written_output_path = os.path.join(self.result_dir, f"{base}_transcribed.srt")
+            return self._written_output_path, {}
 
         _, missing_counts = super()._process_impl(file_name, file_extension, progress_callback)
         # The deliverable is the translated subtitle file, not a media file
-        return self._result_srt_path, missing_counts
+        return self._written_output_path, missing_counts

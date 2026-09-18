@@ -379,6 +379,8 @@
   "Translate": "Translate",
   "Translate Page Subtitle": "Upload a document, subtitle, sheet or media file for one-click translation — or interpret live from your microphone, all on this page.",
   "Translate Subtitles": "Translate subtitles (off = transcribe only)",
+  "Subtitle Same Name": "Same filename as the source",
+  "Subtitle Same Name Hint": "movie.mp4 -> movie.srt, so a player loads it automatically (off: movie_en2zh.srt). An existing subtitle of that name is replaced.",
   "Translate To": "Translate to",
   "Translated Text": "Translation",
   "Translating": "Translating",

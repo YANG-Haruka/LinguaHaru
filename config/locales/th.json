@@ -198,6 +198,8 @@
   "Total tokens used": "โทเค็นทั้งหมดที่ใช้",
   "Translate": "แปล",
   "Translate Subtitles": "Translate subtitles (off = transcribe only)",
+  "Subtitle Same Name": "ใช้ชื่อเดียวกับไฟล์ต้นฉบับ",
+  "Subtitle Same Name Hint": "movie.mp4 -> movie.srt เพื่อให้โปรแกรมเล่นโหลดเอง (ปิด: movie_en2zh.srt) ไฟล์คำบรรยายชื่อเดียวกันจะถูกเขียนทับ",
   "Translated Text": "คำแปล",
   "Translating": "กำลังแปล",
   "Translating content": "กำลังแปลเนื้อหา",

@@ -41,11 +41,31 @@ def _load_for_writeback(file_path, temp_dir, original_json_path, translated_json
     return layout, original_data, translations
 
 
-def _result_path(file_path, result_dir, src_lang, dst_lang, extension=None):
+def _match_source_name_enabled():
+    """Config `subtitle_match_source_name` (default ON)."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return bool(json.load(f).get("subtitle_match_source_name", True))
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def subtitle_result_path(file_path, result_dir, src_lang, dst_lang, extension=None):
+    """Where a translated subtitle lands. Shared with the SRT pipeline.
+
+    A player only auto-loads a subtitle that carries the video's own name
+    (`movie.mp4` -> `movie.srt`), so that is the default; the result folder then
+    holds ONE subtitle per video and a second run for another language replaces
+    it. Unticking the option restores the `_<src>2<dst>` suffix, which keeps
+    several languages side by side.
+    """
     os.makedirs(result_dir, exist_ok=True)
-    lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
     filename = os.path.splitext(os.path.basename(file_path))[0]
     extension = extension or os.path.splitext(file_path)[1].lower()
+    if _match_source_name_enabled():
+        return os.path.join(result_dir, f"{filename}{extension}")
+    lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
     return os.path.join(result_dir, f"{filename}_{lang_suffix}{extension}")
 
 
@@ -138,7 +158,7 @@ def write_translated_content_to_vtt(file_path, original_json_path, translated_js
     # Remove tail lines that were merged into a grouped unit
     out_lines = [ln for idx, ln in enumerate(lines) if idx not in drop]
 
-    result_path = _result_path(file_path, result_dir, src_lang, dst_lang)
+    result_path = subtitle_result_path(file_path, result_dir, src_lang, dst_lang)
     with open(result_path, "w", encoding="utf-8") as f:
         f.write("\n".join(out_lines) + "\n")
     app_logger.info(f"Translated VTT saved to: {result_path}")
@@ -225,7 +245,7 @@ def write_translated_content_to_ass(file_path, original_json_path, translated_js
             text = text.replace(f"{{{{ASS_{tag_index}}}}}", tag)
         lines[int(line_index)] = info["prefix"] + text
 
-    result_path = _result_path(file_path, result_dir, src_lang, dst_lang)
+    result_path = subtitle_result_path(file_path, result_dir, src_lang, dst_lang)
     with open(result_path, "w", encoding="utf-8-sig") as f:
         f.write("\n".join(lines) + "\n")
     app_logger.info(f"Translated ASS saved to: {result_path}")
@@ -269,7 +289,7 @@ def write_translated_content_to_lrc(file_path, original_json_path, translated_js
         if translated:
             lines[int(line_index)] = info["prefix"] + translated.replace("␊", " ")
 
-    result_path = _result_path(file_path, result_dir, src_lang, dst_lang)
+    result_path = subtitle_result_path(file_path, result_dir, src_lang, dst_lang)
     with open(result_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     app_logger.info(f"Translated LRC saved to: {result_path}")

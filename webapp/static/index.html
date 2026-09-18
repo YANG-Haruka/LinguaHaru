@@ -321,6 +321,12 @@
           <div class="muted" id="media-note"></div>
         </div>
 
+        <!-- Subtitle output naming (subtitle files + video/audio) -->
+        <div class="card" id="subtitle-options" hidden>
+          <label class="check"><input type="checkbox" id="subs-same-name" checked /> <span data-i18n="Subtitle Same Name">与原文件同名</span></label>
+          <div class="muted" data-i18n="Subtitle Same Name Hint">movie.mp4 → movie.srt，播放器可自动加载（关闭则为 movie_en2zh.srt）。输出目录中同名的字幕会被覆盖。</div>
+        </div>
+
         <!-- PDF options (shown only when a PDF is selected) -->
         <div class="card pdf-options" id="pdf-options" hidden>
           <div class="pdf-options-head" data-i18n="PDF Options">PDF 选项</div>
@@ -861,6 +867,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20260911A"></script>
+  <script src="/static/app.js?v=20260918A"></script>
 </body>
 </html>

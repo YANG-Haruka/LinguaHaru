@@ -213,6 +213,8 @@
   "Translate": "翻訳",
   "Translate Page Subtitle": "ドキュメント・字幕・表・メディアをワンクリック翻訳、またはマイクでライブ通訳 — すべてこのページで。",
   "Translate Subtitles": "字幕を翻訳（オフ=文字起こしのみ）",
+  "Subtitle Same Name": "元ファイルと同じ名前にする",
+  "Subtitle Same Name Hint": "movie.mp4 → movie.srt。プレーヤーが自動で読み込みます（オフなら movie_en2zh.srt）。出力フォルダー内の同名字幕は上書きされます。",
   "Translated Text": "訳文",
   "Translating": "翻訳中",
   "Translating content": "コンテンツを翻訳中",

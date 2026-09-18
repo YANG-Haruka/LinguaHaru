@@ -2,6 +2,7 @@ import json
 import os
 import re
 from .txt_translation_pipeline import read_file_with_encoding
+from .subtitle_formats_pipeline import subtitle_result_path
 from core.log_config import app_logger
 
 
@@ -114,14 +115,7 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
         ts_line = f"{start_time} --> {end_time}" + (f" {extra}" if extra else "")
         output_srt_lines.append(f"{count}\n{ts_line}\n{translated_text}\n\n")
 
-    result_folder = result_dir
-    os.makedirs(result_folder, exist_ok=True)
-    # Use source_lang2target_lang format if available, otherwise fallback to _translated
-    if src_lang and dst_lang:
-        lang_suffix = f"{src_lang}2{dst_lang}"
-    else:
-        lang_suffix = "translated"
-    result_path = os.path.join(result_folder, f"{os.path.splitext(os.path.basename(file_path))[0]}_{lang_suffix}.srt")
+    result_path = subtitle_result_path(file_path, result_dir, src_lang, dst_lang, ".srt")
     
     with open(result_path, "w", encoding="utf-8") as result_file:
         result_file.writelines(output_srt_lines)

@@ -43,6 +43,7 @@ let currentFiles = [];
 let currentTask = null;
 const MEDIA_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm", ".mp3", ".wav", ".m4a", ".flac"];
 const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".bmp", ".webp"];
+const SUBTITLE_EXTS = [".srt", ".vtt", ".ass", ".ssa", ".lrc"];
 const VIDEO_EXTS = [".mp4", ".mkv", ".mov", ".avi", ".webm"];  // extract audio client-side
 
 // ---- ffmpeg.wasm: extract the audio track in the browser so we upload a few
@@ -571,6 +572,7 @@ async function boot() {
   fillSelect($("glossary"), BOOT.glossaries, c.default_glossary);
   refreshSttPicker();   // only DOWNLOADED STT models are offered
   $("translate-subs").checked = c.translate_subtitles;
+  if ($("subs-same-name")) $("subs-same-name").checked = c.subtitle_match_source_name !== false;
 
   // settings (per-model key/RPM/thread/retries now live in Interface Management)
   $("set-lan").checked = !!c.lan_mode;
@@ -950,6 +952,7 @@ $("stt-model").onchange = () => {
   refreshMediaNote();
 };
 $("translate-subs").onchange = () => saveConfig({ translate_subtitles: $("translate-subs").checked });
+if ($("subs-same-name")) $("subs-same-name").onchange = () => saveConfig({ subtitle_match_source_name: $("subs-same-name").checked });
 
 function isSenseVoice(sttId) {
   return (sttId || "").startsWith("sensevoice");
@@ -1008,6 +1011,7 @@ function setFiles(list) {
       currentFiles = [];
       $("drop-text").textContent = _label("Drop Files Here", "将文件拖放到此处，或点击上传");
       $("media-options").hidden = true; $("pdf-options").hidden = true;
+      if ($("subtitle-options")) $("subtitle-options").hidden = true;
       if ($("manga-options")) $("manga-options").hidden = true;
       return;
     }
@@ -1021,6 +1025,10 @@ function setFiles(list) {
   const anyMedia = list.some((f) => MEDIA_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
   $("media-options").hidden = !anyMedia;
   if (anyMedia) { refreshSttPicker().then(applySenseVoiceRestriction); }
+  // Subtitle naming applies to subtitle files and to media (both output a
+  // subtitle file).
+  const anySub = list.some((f) => SUBTITLE_EXTS.includes("." + f.name.split(".").pop().toLowerCase()));
+  if ($("subtitle-options")) $("subtitle-options").hidden = !(anyMedia || anySub);
   const anyPdf = list.some((f) => f.name.split(".").pop().toLowerCase() === "pdf");
   $("pdf-options").hidden = !anyPdf;
   // 漫画模式 applies to PDFs and images (bubble-group + vertical typeset).

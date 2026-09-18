@@ -198,6 +198,8 @@
   "Total tokens used": "Token totali utilizzati",
   "Translate": "Traduci",
   "Translate Subtitles": "Translate subtitles (off = transcribe only)",
+  "Subtitle Same Name": "Stesso nome del file di origine",
+  "Subtitle Same Name Hint": "movie.mp4 -> movie.srt, così il player lo carica da solo (disattivato: movie_en2zh.srt). Un sottotitolo con quel nome viene sostituito.",
   "Translated Text": "Traduzione",
   "Translating": "Traduzione",
   "Translating content": "Traduzione del contenuto",
