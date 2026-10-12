@@ -1156,7 +1156,14 @@ class LivePage(ScrollArea):
             return False
 
         want_in = self._audio_fmt(_IN_RATE)
-        self._in_fmt = want_in if in_dev.isFormatSupported(want_in) else in_dev.preferredFormat()
+        # macOS: Qt claims 16 kHz but its CoreAudio conversion delivers ~22k
+        # frames/s labeled as 16k (slowed, low-pitched audio -> bad STT).
+        # Capture the device's native format and resample ourselves instead.
+        import sys
+        if sys.platform == "darwin" or not in_dev.isFormatSupported(want_in):
+            self._in_fmt = in_dev.preferredFormat()
+        else:
+            self._in_fmt = want_in
         self._source = QAudioSource(in_dev, self._in_fmt)
         self._mic_io = self._source.start()
         if self._mic_io is None:
@@ -1308,7 +1315,7 @@ class LivePage(ScrollArea):
         """Save the just-finished session (source + translation) to history."""
         src = [ln for ln in self.input_text.toPlainText().splitlines() if ln.strip()]
         dst = [ln for ln in self.output_text.toPlainText().splitlines() if ln.strip()]
-        if not src and not dst:
+        if not src and not dst and not audio_path:
             return
         try:
             from core.translation_history import save_live_session

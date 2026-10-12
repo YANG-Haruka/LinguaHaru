@@ -472,8 +472,8 @@ def save_live_session(
 
     src = [ln.strip() for ln in (source_lines or []) if ln and ln.strip()]
     dst = [ln.strip() for ln in (translated_lines or []) if ln and ln.strip()]
-    if not src and not dst:
-        return None
+    if not src and not dst and not audio_path:
+        return None   # nothing heard and nothing recorded
     end_time = end_time or datetime.now()
     start_time = start_time or end_time
 
@@ -508,6 +508,15 @@ def save_live_session(
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"Could not write live transcript: {e}")
         out_path = ""
+
+    # Give the recording the transcript's name so the pair sits together.
+    if audio_path and out_path and os.path.isfile(audio_path):
+        paired = os.path.splitext(out_path)[0] + ".wav"
+        try:
+            os.replace(audio_path, paired)
+            audio_path = paired
+        except OSError:
+            pass
 
     rec = create_translation_record(
         translation_id=uuid.uuid4().hex[:12],

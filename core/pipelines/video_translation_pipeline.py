@@ -749,6 +749,18 @@ def _get_sensevoice(model_name):
 _vad_only = None  # fsmn-vad loaded standalone (so Qwen needn't load SenseVoice)
 
 
+def _fsmn_vad_model():
+    """fsmn-vad's cached local dir if present, else its hub name. Loading by name
+    makes modelscope re-check the hub on EVERY load (~3s+, worse on slow nets)."""
+    base = os.path.join(os.environ.get("MODELSCOPE_CACHE", ""), "models")
+    for local in (os.path.join(base, "iic--speech_fsmn_vad_zh-cn-16k-common-pytorch",
+                               "snapshots", "master"),          # newer modelscope
+                  os.path.join(base, "iic", "speech_fsmn_vad_zh-cn-16k-common-pytorch")):
+        if os.path.isfile(os.path.join(local, "model.pt")):
+            return local
+    return "fsmn-vad"
+
+
 def _get_vad():
     """fsmn-vad on its own (used to time-segment audio for the Qwen engine)."""
     global _vad_only
@@ -757,7 +769,7 @@ def _get_vad():
     with _LOAD_LOCK:
         if _vad_only is None:   # double-check inside the lock
             from funasr import AutoModel
-            _vad_only = AutoModel(model="fsmn-vad", disable_update=True,
+            _vad_only = AutoModel(model=_fsmn_vad_model(), disable_update=True,
                                   device=_stt_device(),
                                   vad_kwargs={"max_single_segment_time": 30000})
     return _vad_only

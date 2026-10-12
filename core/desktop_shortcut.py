@@ -41,9 +41,9 @@ def _mac():
     contents = os.path.join(app, "Contents")
     os.makedirs(os.path.join(contents, "MacOS"), exist_ok=True)
     os.makedirs(os.path.join(contents, "Resources"), exist_ok=True)
+    import shutil
     icns = os.path.join(ROOT, "assets", "img", "icon.icns")
     if os.path.isfile(icns):
-        import shutil
         shutil.copy2(icns, os.path.join(contents, "Resources", "icon.icns"))
     with open(os.path.join(contents, "Info.plist"), "w", encoding="utf-8") as f:
         f.write("""<?xml version="1.0" encoding="UTF-8"?>
@@ -54,17 +54,22 @@ def _mac():
 <key>CFBundleExecutable</key><string>LinguaHaru</string>
 <key>CFBundleIconFile</key><string>icon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>NSMicrophoneUsageDescription</key><string>Real-time voice translation listens to the microphone.</string>
+<key>NSMicrophoneUsageDescription</key><string>LinguaHaru listens to the microphone for real-time voice translation. / LinguaHaru 需要麦克风进行实时语音翻译。</string>
+<key>NSAudioCaptureUsageDescription</key><string>LinguaHaru captures system audio for real-time voice translation. / LinguaHaru 需要系统声音进行实时语音翻译。</string>
 </dict></plist>
 """)
+    # A NATIVE launcher (tools/macos_launcher.c) that spawns python as a child:
+    # with a script that exec()s python, macOS attributes the microphone /
+    # screen-recording permission to python or Terminal and never prompts for
+    # LinguaHaru.app. It finds the install via Resources/root.txt.
     exe = os.path.join(contents, "MacOS", "LinguaHaru")
-    root = ROOT.replace('"', '\\"')
-    with open(exe, "w", encoding="utf-8") as f:
-        f.write("#!/bin/bash\n"
-                f'cd "{root}"\n'
-                "export PYTHONNOUSERSITE=1\nunset PYTHONPATH\n"
-                f'exec "{root}/python/bin/python3" app_qt.py\n')
+    shutil.copy2(os.path.join(ROOT, "assets", "macos", "LinguaHaru-launcher"), exe)
     os.chmod(exe, 0o755)
+    with open(os.path.join(contents, "Resources", "root.txt"), "w", encoding="utf-8") as f:
+        f.write(ROOT + "\n")
+    # Ad-hoc sign the bundle so macOS ties permissions to it (best-effort).
+    subprocess.run(["codesign", "--force", "--sign", "-", app],
+                   capture_output=True, timeout=60, check=False)
 
 
 def ensure_desktop_shortcut():
