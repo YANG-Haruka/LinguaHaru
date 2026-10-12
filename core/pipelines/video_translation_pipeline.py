@@ -289,7 +289,8 @@ def _resolve_stt_engine(model_def):
     # torch-free whisper instead of crashing with ModuleNotFoundError: torch.
     has_whisper = importlib.util.find_spec("faster_whisper") is not None
     has_funasr = (importlib.util.find_spec("funasr") is not None) and has_torch
-    has_qwen = (importlib.util.find_spec("qwen_asr") is not None) and has_torch
+    has_qwen = ((importlib.util.find_spec("qwen_asr") is not None) and has_torch) \
+        or _mlx_qwen_ok()
     has_transformers = (importlib.util.find_spec("transformers") is not None) and has_torch
     engine, size = model_def["engine"], model_def["size"]
     if engine == "animewhisper" and not has_transformers:
@@ -956,10 +957,77 @@ def _qwen_accel_kwargs():
     return kw
 
 
+# Apple Silicon: run Qwen3-ASR through MLX (Metal GPU, 8-bit weights) instead of
+# torch-on-CPU. Measured on an M5: a 15 s window takes ~0.9 s (0.6B) / ~1.6 s
+# (1.7B); loading 0.6B takes 4 s instead of 57 s. 4-bit is avoided on purpose:
+# it degrades Japanese noticeably (FLEURS-ja CER 8.6 -> 16).
+_MLX_QWEN_REPO = {"Qwen/Qwen3-ASR-0.6B": "mlx-community/Qwen3-ASR-0.6B-8bit",
+                  "Qwen/Qwen3-ASR-1.7B": "mlx-community/Qwen3-ASR-1.7B-8bit"}
+_mlx_executor = None   # MLX streams are per-thread: every MLX call runs on ONE thread
+
+
+def _mlx_qwen_ok():
+    import importlib.util
+    import platform
+    import sys
+    return (sys.platform == "darwin" and platform.machine() == "arm64"
+            and importlib.util.find_spec("mlx_qwen3_asr") is not None)
+
+
+def _mlx_call(fn, *args, **kwargs):
+    """Run fn on the single MLX thread (load + every transcribe), so the model's
+    Metal stream is never used from a thread that didn't create it (the app
+    loads in PreloadWorker but recognizes in LiveRecognizeWorker)."""
+    global _mlx_executor
+    if _mlx_executor is None:
+        from concurrent.futures import ThreadPoolExecutor
+        _mlx_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mlx-qwen")
+    return _mlx_executor.submit(fn, *args, **kwargs).result()
+
+
+class _MlxQwen:
+    """Duck-types qwen_asr.Qwen3ASRModel.transcribe(): takes one (audio, sr) /
+    path or a list of them, returns a list of results with .text/.language —
+    so _recognize_qwen / _transcribe_qwen / recognizer_ready need no changes."""
+    max_new_tokens = 512   # a fast 30 s subtitle segment can exceed 256
+
+    def __init__(self, model):
+        self._model = model
+
+    def transcribe(self, audio, language=None):
+        import mlx_qwen3_asr as mq
+        batch = audio if isinstance(audio, list) else [audio]
+        return _mlx_call(lambda: [mq.transcribe(a, model=self._model, language=language,
+                                                max_new_tokens=self.max_new_tokens)
+                                  for a in batch])
+
+
+def _load_mlx_qwen(model_name):
+    import mlx_qwen3_asr as mq
+    from huggingface_hub import snapshot_download
+    repo = _MLX_QWEN_REPO[model_name]
+    try:   # local-first: no network round-trip when cached (HF_HOME = models dir)
+        path = snapshot_download(repo, local_files_only=True)
+    except Exception:  # noqa: BLE001 — not cached yet -> download
+        path = snapshot_download(repo)
+    model, _cfg = _mlx_call(mq.load_model, path)
+    _mlx_call(lambda: mq.transcribe(__import__("numpy").zeros(16000, "float32"),
+                                    model=model, max_new_tokens=8))   # warm-up (Metal kernels)
+    return _MlxQwen(model)
+
+
 def _get_qwen(model_name):
     if model_name in _qwen_models:
         return _qwen_models[model_name]
     with _LOAD_LOCK:
+        if model_name not in _qwen_models and _mlx_qwen_ok() and model_name in _MLX_QWEN_REPO:
+            _t0 = time.time()
+            try:
+                _qwen_models[model_name] = _load_mlx_qwen(model_name)
+                app_logger.info(f"{model_name} loaded via MLX (8-bit) in {time.time() - _t0:.1f}s")
+            except Exception as e:  # noqa: BLE001 — fall back to the torch path
+                app_logger.warning(f"Qwen3-ASR MLX load failed ({e}); using qwen-asr/torch "
+                                   "(slow on a Mac CPU)")
         if model_name not in _qwen_models:   # double-check inside the lock
             from qwen_asr import Qwen3ASRModel
             dm = "cuda:0" if _stt_device() == "cuda" else "cpu"

@@ -37,3 +37,6 @@ ten-vad>=1.0.0
 # models gracefully fall back to SenseVoice/Whisper. Pins transformers==4.57.6,
 # which is compatible with the rest of the stack (paddlex needs transformers<5).
 qwen-asr>=0.0.6
+# Apple Silicon: Qwen3-ASR on the Metal GPU via MLX (8-bit weights), used instead
+# of the torch-on-CPU path when present.
+mlx-qwen3-asr>=0.4.4; sys_platform == "darwin" and platform_machine == "arm64"
