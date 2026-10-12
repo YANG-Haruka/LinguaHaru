@@ -97,6 +97,6 @@ def ensure_desktop_shortcut():
         else:
             return
         backend.set_config(_DONE_KEY, True)
-        app_logger.info("Desktop shortcut created")
+        app_logger.info("Desktop shortcut created (or one already existed)")
     except Exception as e:  # noqa: BLE001 — a shortcut must never block startup
         app_logger.warning(f"Desktop shortcut not created: {e}")

@@ -19,6 +19,9 @@ New-Item -ItemType Directory -Force $out | Out-Null
 # shared textline-orientation model). Unused Paddle extras are NOT packaged.
 $VAD = "modelscope/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
 $TEXTLINE = "paddlex/official_models/PP-LCNet_x1_0_textline_ori"
+# RapidOCR (the primary OCR engine) runs the same PP-OCRv6 models as ONNX files
+# from models/rapidocr; the paddlex dirs serve the PaddleOCR fallback.
+$RAPID_CLS = "rapidocr/ch_ppocr_mobile_v2.0_cls_mobile.onnx"
 $MANIFEST = [ordered]@{
   # --- STT (video subtitles / real-time voice) ---
   "stt-sensevoice-small"   = @{ paths = @("models--FunAudioLLM--SenseVoiceSmall", $VAD); note = "SenseVoice Small (+fsmn-vad). zh/en/ja/ko/yue, fast." }
@@ -30,10 +33,15 @@ $MANIFEST = [ordered]@{
   "stt-anime-whisper"      = @{ paths = @("hub/models--litagin--anime-whisper"); note = "Anime-Whisper, expressive Japanese (~3GB)" }
   "stt-qwen3-asr-0.6b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-0.6B"); note = "Qwen3-ASR 0.6B (~1.9GB)" }
   "stt-qwen3-asr-1.7b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-1.7B"); note = "Qwen3-ASR 1.7B, most accurate (~4.7GB)" }
+  # MLX packs are built ON A MAC: its HF cache snapshot files are symlinks into
+  # ../../blobs (xet layout), so `zip -y` ships dangling links — copy the
+  # snapshot dereferenced (cp -RL) and zip the regular files instead.
+  "stt-qwen3-asr-1.7b-mlx" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-1.7B-8bit"); note = "Qwen3-ASR 1.7B for Mac (Apple Silicon, MLX 8-bit, ~2.4GB) - Mac default" }
+  "stt-qwen3-asr-0.6b-mlx" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-0.6B-8bit"); note = "Qwen3-ASR 0.6B for Mac (Apple Silicon, MLX 8-bit, ~1GB)" }
   # --- OCR (image translation); each size = det + rec + shared textline model ---
-  "ocr-tiny"   = @{ paths = @("paddlex/official_models/PP-OCRv6_tiny_det",   "paddlex/official_models/PP-OCRv6_tiny_rec",   $TEXTLINE); note = "PP-OCRv6 tiny (fastest)" }
-  "ocr-small"  = @{ paths = @("paddlex/official_models/PP-OCRv6_small_det",  "paddlex/official_models/PP-OCRv6_small_rec",  $TEXTLINE); note = "PP-OCRv6 small (default)" }
-  "ocr-medium" = @{ paths = @("paddlex/official_models/PP-OCRv6_medium_det", "paddlex/official_models/PP-OCRv6_medium_rec", $TEXTLINE); note = "PP-OCRv6 medium (most accurate)" }
+  "ocr-tiny"   = @{ paths = @("paddlex/official_models/PP-OCRv6_tiny_det",   "paddlex/official_models/PP-OCRv6_tiny_rec", "rapidocr/PP-OCRv6_det_tiny.onnx", "rapidocr/PP-OCRv6_rec_tiny.onnx", $RAPID_CLS,   $TEXTLINE); note = "PP-OCRv6 tiny (fastest)" }
+  "ocr-small"  = @{ paths = @("paddlex/official_models/PP-OCRv6_small_det",  "paddlex/official_models/PP-OCRv6_small_rec", "rapidocr/PP-OCRv6_det_small.onnx", "rapidocr/PP-OCRv6_rec_small.onnx", $RAPID_CLS,  $TEXTLINE); note = "PP-OCRv6 small (default)" }
+  "ocr-medium" = @{ paths = @("paddlex/official_models/PP-OCRv6_medium_det", "paddlex/official_models/PP-OCRv6_medium_rec", "rapidocr/PP-OCRv6_det_medium.onnx", "rapidocr/PP-OCRv6_rec_medium.onnx", $RAPID_CLS, $TEXTLINE); note = "PP-OCRv6 medium (most accurate)" }
   # --- PDF layout (BabelDOC) + image inpaint (LaMa) ---
   # EVERYTHING the PDF plugin needs (BabelDOC layout model + fonts + cmaps +
   # tiktoken) — run tools/babeldoc_offline_assets.py first so the cache is

@@ -372,5 +372,8 @@
   "Excel Sheet Names Label": "Excel: Blattnamen übersetzen (blattübergreifende Formeln und Diagrammbezüge werden auf die neuen Namen aktualisiert; standardmäßig an)",
   "Custom Language": "Eigene Sprache",
   "Add Custom Language": "Hinzufügen",
-  "Custom Language Tip": "Eine Zielsprache, die die integrierte Liste nicht abdeckt. Code eingeben (z. B. yue für Kantonesisch); eine Prompt-Datei wird aus der englischen Vorlage erstellt und die Sprache erscheint in allen Sprachmenüs."
+  "Custom Language Tip": "Eine Zielsprache, die die integrierte Liste nicht abdeckt. Code eingeben (z. B. yue für Kantonesisch); eine Prompt-Datei wird aus der englischen Vorlage erstellt und die Sprache erscheint in allen Sprachmenüs.",
+  "Downloading model": "Modell wird heruntergeladen",
+  "Model Download Failed Network": "Modell-Download fehlgeschlagen: Netzwerkproblem. Verbindung/Proxy prüfen oder das Modellpaket in den Ordner models entpacken.",
+  "Model Load Failed": "Modell konnte nicht geladen werden"
 }

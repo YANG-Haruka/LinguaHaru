@@ -21,11 +21,13 @@ _STT_LOCK = threading.Lock()
 
 class PreloadWorker(QObject):
     """Load the local STT model up front so the first utterance isn't blocked on
-    a multi-second model load. Emits done(ready).
+    a multi-second model load. Emits progress(download line) while a missing
+    model downloads, then done(ready).
 
     A DAEMON thread, not a QThread: it starts as soon as the page is opened, and
     the app may be closed mid-load — a running QThread would abort Qt at exit
     ('Destroyed while thread is still running'), a daemon thread just dies."""
+    progress = Signal(str)
     done = Signal(bool)
 
     def __init__(self, parent=None):
@@ -44,8 +46,17 @@ class PreloadWorker(QObject):
 
     def _run(self):
         try:
+            from core.optional_modules import format_download_line
             from core.pipelines.video_translation_pipeline import preload_recognizer
-            ok = bool(preload_recognizer())
+
+            def _cb(line):
+                text = format_download_line(line)
+                if text:
+                    try:
+                        self.progress.emit(text)
+                    except RuntimeError:  # page destroyed mid-download
+                        pass
+            ok = bool(preload_recognizer(progress_cb=_cb))
         except Exception:  # noqa: BLE001
             ok = False
         try:

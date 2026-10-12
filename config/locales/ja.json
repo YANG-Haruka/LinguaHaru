@@ -411,5 +411,8 @@
   "Summarize": "要約する",
   "Summarizing": "要約中…",
   "System Audio Permission": "システム音声の取得には許可が必要です：「システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオ録音」で LinguaHaru を許可し、LinguaHaru を再起動してください。",
-  "Listening System Audio": "システム音声を聞き取り中…"
+  "Listening System Audio": "システム音声を聞き取り中…",
+  "Downloading model": "モデルをダウンロード中",
+  "Model Download Failed Network": "モデルのダウンロードに失敗しました（ネットワークの問題）。接続/プロキシを確認するか、モデルパックを models フォルダに展開してください。",
+  "Model Load Failed": "モデルの読み込みに失敗しました"
 }

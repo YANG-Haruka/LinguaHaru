@@ -4,6 +4,7 @@
 # requirements/ocr.txt, requirements/video.txt).
 import importlib.util
 import os
+import re
 import shutil
 
 from core import plugins_registry
@@ -158,7 +159,7 @@ _STT_TAGS = {
     "whisper-large-v2":       ["Tag HighAccuracy"],
     "anime-whisper":          ["Tag CJKStrong"],
     "qwen3-asr-0.6b":         ["Tag Experimental"],
-    "qwen3-asr-1.7b":         ["Tag Experimental"],
+    "qwen3-asr-1.7b":         ["Tag HighAccuracy"],
 }
 
 # model id -> folder-name substrings identifying its files on disk (for the
@@ -317,19 +318,90 @@ class _capture_progress:
         self._saved = (sys.stderr, sys.stdout)
         sys.stderr = _ProgressTee(sys.stderr, self._cb, only_thread=me)
         sys.stdout = _ProgressTee(sys.stdout, self._cb, only_thread=me)
+        self._stop = threading.Event()
+        threading.Thread(target=self._watch_disk, daemon=True).start()
         return self
 
     def __exit__(self, *exc):
         import sys
         if self._saved is not None:
+            self._stop.set()
             sys.stderr, sys.stdout = self._saved
         return False
+
+    def _watch_disk(self):
+        """tqdm hides the per-file BYTE bars when stderr isn't a terminal (always,
+        in the GUI), so a multi-GB download showed nothing but "Fetching 4 files
+        25%". Report the bytes actually landing in the models dir + speed."""
+        import time
+        from core import model_store
+        root = model_store.current_dir()
+
+        def size():   # ponytail: full walk per tick (~80 ms on 500 files / 20 GB)
+            total = 0
+            for r, dirs, files in os.walk(root):
+                if r == root and "xet" in dirs:
+                    dirs.remove("xet")   # hf_xet's chunk cache would double-count
+                for n in files:
+                    try:
+                        total += os.path.getsize(os.path.join(r, n))
+                    except OSError:
+                        pass
+            return total
+        base = last = size()
+        t_last = time.time()
+        while not self._stop.wait(1.5):
+            cur, now = size(), time.time()
+            if cur > base:
+                rate = max(0, cur - last) / max(now - t_last, 0.001)
+                try:
+                    self._cb(f"{DISK_PROGRESS}{model_store.human_size(cur - base)}"
+                             f" · {model_store.human_size(rate)}/s")
+                except Exception:  # noqa: BLE001 — progress must never break a download
+                    pass
+            last, t_last = cur, now
+
+
+DISK_PROGRESS = "↓ "   # prefix of _watch_disk lines ("↓ 1.2 GB · 35.0 MB/s")
+
+
+_TQDM_LINE = re.compile(r"^(?P<desc>.*?):?\s*(?P<pct>\d{1,3})%\|[^|]*\|\s*(?P<n>[\d.]+\s*\w*)"
+                        r"/(?P<t>[\d.]+\s*\w*)(?:\s*\[[^,\]]*,?\s*(?P<rate>[^\]]*)\])?")
+
+
+def format_download_line(line):
+    """A tqdm download bar -> 'model.safetensors 45% · 1.2G/2.6G · 35.1MB/s',
+    or None for anything that isn't one (so log noise never reaches the UI).
+    The on-disk byte counter (DISK_PROGRESS lines) passes through as is."""
+    if (line or "").startswith(DISK_PROGRESS):
+        return line
+    m = _TQDM_LINE.search(line or "")
+    if not m:
+        return None
+    parts = [f"{m['desc'].strip()} {m['pct']}%".strip(), f"{m['n'].strip()}/{m['t'].strip()}"]
+    if m["rate"] and "?" not in m["rate"]:
+        parts.append(m["rate"].strip())
+    return " · ".join(parts)
+
+
+def is_network_error(msg):
+    """True when a model load/download failure looks like a network problem."""
+    s = (msg or "").lower()
+    return any(k in s for k in ("connect", "timeout", "timed out", "maxretry", "getaddrinfo",
+                                "name resolution", "ssl", "localentrynotfound", "offline",
+                                "http error", "502", "503", "504", "proxy"))
+
+
+last_download_error = ""   # why the last download_plugin_model() failed, for the UI
 
 
 def download_plugin_model(name, model_id=None, progress_cb=None):
     """Download (and warm) a plugin's model. If model_id is given it is persisted
     first. Heavy + blocking — callers run it in a background thread. Returns bool.
-    progress_cb(str), if given, receives live tqdm download lines."""
+    progress_cb(str), if given, receives live tqdm download lines. On failure the
+    reason is left in `last_download_error`."""
+    global last_download_error
+    last_download_error = ""
     spec = _plugin_model_specs().get(name)
     if model_id and spec:
         set_plugin_model(name, model_id)
@@ -345,8 +417,10 @@ def download_plugin_model(name, model_id=None, progress_cb=None):
         if name in ("Video/Audio", "Real-Time Voice", "翻译语音输入"):
             # Download the default STT model so voice input is ready (TTS/edge-tts
             # is online, needs no model).
-            from core.pipelines.video_translation_pipeline import preload_recognizer
-            return bool(preload_recognizer(plugin_current_model(name)))
+            from core.pipelines import video_translation_pipeline as vtp
+            ok = bool(vtp.preload_recognizer(plugin_current_model(name)))
+            last_download_error = "" if ok else vtp.last_preload_error
+            return ok
         if name == "PDF":
             from core import model_store
             model_store.redirect_babeldoc_cache()
@@ -359,6 +433,7 @@ def download_plugin_model(name, model_id=None, progress_cb=None):
             warmup()
             return True
     except Exception as e:  # noqa: BLE001
+        last_download_error = f"{type(e).__name__}: {e}"[:400]
         from core.log_config import app_logger
         app_logger.warning(f"download_plugin_model({name}) failed: {e}")
     return False

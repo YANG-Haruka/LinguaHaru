@@ -556,6 +556,11 @@ def _get_whisper_model(size):
                     size, device=dev, compute_type=ctype,
                     download_root=whisper_dir(), local_files_only=True)
             except Exception:  # noqa: BLE001 — not cached yet -> download
+                # faster-whisper hard-codes a silent tqdm, so the UI got no
+                # download progress; it reads the name at call time -> swap it.
+                import faster_whisper.utils as _fwu
+                from huggingface_hub.utils import tqdm as _hf_tqdm
+                _fwu.disabled_tqdm = _hf_tqdm
                 _whisper_models[size] = WhisperModel(
                     size, device=dev, compute_type=ctype, download_root=whisper_dir())
     return _whisper_models[size]
@@ -1009,14 +1014,25 @@ class _MlxQwen:
                                   for a in batch])
 
 
+def _hf_local(repo):
+    """The cached snapshot DIR of an HF repo, or the repo id if not cached yet.
+    Loading from a dir makes zero network calls; loading by repo id makes
+    transformers HEAD the hub for every config file on EVERY load — even with
+    local_files_only on the model, qwen_asr loads its AutoProcessor by id
+    without it, so a slow/blocked link stalled the load for minutes."""
+    try:
+        from huggingface_hub import snapshot_download
+        return snapshot_download(repo, local_files_only=True)
+    except Exception:  # noqa: BLE001 — not cached -> caller downloads by id
+        return repo
+
+
 def _load_mlx_qwen(model_name):
     import mlx_qwen3_asr as mq
     from huggingface_hub import snapshot_download
-    repo = _MLX_QWEN_REPO[model_name]
-    try:   # local-first: no network round-trip when cached (HF_HOME = models dir)
-        path = snapshot_download(repo, local_files_only=True)
-    except Exception:  # noqa: BLE001 — not cached yet -> download
-        path = snapshot_download(repo)
+    path = _hf_local(_MLX_QWEN_REPO[model_name])
+    if path == _MLX_QWEN_REPO[model_name]:   # not cached yet -> download
+        path = snapshot_download(path)
     model, _cfg = _mlx_call(mq.load_model, path)
     _mlx_call(lambda: mq.transcribe(__import__("numpy").zeros(16000, "float32"),
                                     model=model, max_new_tokens=8))   # warm-up (Metal kernels)
@@ -1043,19 +1059,16 @@ def _get_qwen(model_name):
                             f"({accel.get('attn_implementation', 'default')}, "
                             f"{'bf16' if accel.get('dtype') is not None else 'default dtype'})...")
 
+            src = _hf_local(model_name)   # local dir -> no hub checks at all
+
             def _load(extra):
-                # Local-first: skip the network metadata check when cached.
-                try:
-                    return Qwen3ASRModel.from_pretrained(
-                        model_name, device_map=dm, local_files_only=True, **extra)
-                except TypeError:
-                    raise   # bad kwarg -> let the caller retry with fewer
-                except Exception:  # noqa: BLE001 — not cached yet -> download
-                    return Qwen3ASRModel.from_pretrained(model_name, device_map=dm, **extra)
+                return Qwen3ASRModel.from_pretrained(src, device_map=dm, **extra)
 
             _t0 = time.time()
             try:
                 _qwen_models[model_name] = _load(accel)
+            except OSError:
+                raise   # download/file problem — retrying without accel can't help
             except Exception as e:  # noqa: BLE001 — accel kwarg unsupported (old pkg / no flash)
                 app_logger.warning(f"Qwen3-ASR accel load failed ({e}); loading without it")
                 _qwen_models[model_name] = _load({})
@@ -1244,7 +1257,7 @@ def _get_animewhisper(model_name):
             dtype = torch.float16 if dev == "cuda" else torch.float32
             app_logger.info(f"Loading anime-whisper ({model_name}) on {dev}...")
             _animewhisper_models[model_name] = pipeline(
-                "automatic-speech-recognition", model=model_name,
+                "automatic-speech-recognition", model=_hf_local(model_name),
                 device=dev, torch_dtype=dtype, chunk_length_s=30, batch_size=1)
     return _animewhisper_models[model_name]
 
@@ -1481,57 +1494,71 @@ def recognizer_ready(getter=None):
         return False
 
 
-def preload_recognizer(model_id=None):
+last_preload_error = ""   # why the last preload_recognizer() failed ("" = it didn't)
+
+
+def preload_recognizer(model_id=None, progress_cb=None):
     """Load the real-time-voice STT model now (downloads on first use) + warm up,
     so the first utterance isn't blocked. model_id defaults to the live-voice
-    selection; the engine degrades gracefully if its dep is missing. True=ready."""
-    import time
+    selection; the engine degrades gracefully if its dep is missing. True=ready.
+    progress_cb(str), if given, receives the live download progress lines; on
+    failure the reason is left in `last_preload_error` for the UI."""
+    global last_preload_error
+    from core.optional_modules import _capture_progress
+    last_preload_error = ""
     try:
-        release_unused_stt_models()   # free models no feature selects anymore
-        model_def = get_stt_model(model_id or get_selected_live_stt_model())
-        engine, size = _resolve_stt_engine(model_def)
-        if engine == "sensevoice":
-            t0 = time.time()
-            _get_sensevoice(model_def["size"])
-            app_logger.info(f"SenseVoice loaded in {time.time() - t0:.1f}s; warming up…")
-            def _warm(tag=""):
-                import numpy as np
-                asr, _vad = _sensevoice
-                t1 = time.time()
-                asr.generate(input=np.zeros(16000, dtype=np.float32), fs=16000,
-                             language="auto", use_itn=True)
-                app_logger.info(f"SenseVoice warm-up done{tag} in {time.time() - t1:.1f}s")
-            try:
-                _warm()
-            except Exception as e:  # noqa: BLE001
-                # The warm-up is exactly where a "GPU can't run this torch" failure
-                # first surfaces (e.g. RTX 50xx on a too-old torch). Reload on CPU so
-                # real-time voice actually produces results instead of nothing.
-                if _stt_device() == "cuda" and _is_cuda_runtime_error(e):
-                    _fall_back_to_cpu_stt(str(e).splitlines()[0] if str(e) else type(e).__name__)
-                    try:
-                        _get_sensevoice(model_def["size"])   # rebuilds on CPU now
-                        _warm(" (CPU)")
-                    except Exception as e2:  # noqa: BLE001
-                        app_logger.warning(f"SenseVoice CPU warm-up skipped: {e2}")
-                else:
-                    app_logger.warning(f"SenseVoice warm-up skipped: {e}")
-            return True
-        if engine == "qwen3asr":
-            t0 = time.time()
-            _get_qwen(size)
-            app_logger.info(f"Qwen3-ASR ({size}) loaded in {time.time() - t0:.1f}s")
-            return True
-        if engine == "animewhisper":
-            t0 = time.time()
-            _get_animewhisper(size)
-            app_logger.info(f"anime-whisper loaded in {time.time() - t0:.1f}s")
-            return True
-        _get_whisper_model(size)
-        return True
+        with _capture_progress(progress_cb):
+            return _preload_recognizer(model_id)
     except Exception as e:  # noqa: BLE001
+        last_preload_error = f"{type(e).__name__}: {e}"[:400]
         app_logger.error(f"Preload recognizer failed: {e}")
     return False
+
+
+def _preload_recognizer(model_id):
+    import time
+    release_unused_stt_models()   # free models no feature selects anymore
+    model_def = get_stt_model(model_id or get_selected_live_stt_model())
+    engine, size = _resolve_stt_engine(model_def)
+    if engine == "sensevoice":
+        t0 = time.time()
+        _get_sensevoice(model_def["size"])
+        app_logger.info(f"SenseVoice loaded in {time.time() - t0:.1f}s; warming up…")
+        def _warm(tag=""):
+            import numpy as np
+            asr, _vad = _sensevoice
+            t1 = time.time()
+            asr.generate(input=np.zeros(16000, dtype=np.float32), fs=16000,
+                         language="auto", use_itn=True)
+            app_logger.info(f"SenseVoice warm-up done{tag} in {time.time() - t1:.1f}s")
+        try:
+            _warm()
+        except Exception as e:  # noqa: BLE001
+            # The warm-up is exactly where a "GPU can't run this torch" failure
+            # first surfaces (e.g. RTX 50xx on a too-old torch). Reload on CPU so
+            # real-time voice actually produces results instead of nothing.
+            if _stt_device() == "cuda" and _is_cuda_runtime_error(e):
+                _fall_back_to_cpu_stt(str(e).splitlines()[0] if str(e) else type(e).__name__)
+                try:
+                    _get_sensevoice(model_def["size"])   # rebuilds on CPU now
+                    _warm(" (CPU)")
+                except Exception as e2:  # noqa: BLE001
+                    app_logger.warning(f"SenseVoice CPU warm-up skipped: {e2}")
+            else:
+                app_logger.warning(f"SenseVoice warm-up skipped: {e}")
+        return True
+    if engine == "qwen3asr":
+        t0 = time.time()
+        _get_qwen(size)
+        app_logger.info(f"Qwen3-ASR ({size}) loaded in {time.time() - t0:.1f}s")
+        return True
+    if engine == "animewhisper":
+        t0 = time.time()
+        _get_animewhisper(size)
+        app_logger.info(f"anime-whisper loaded in {time.time() - t0:.1f}s")
+        return True
+    _get_whisper_model(size)
+    return True
 
 
 def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=None):

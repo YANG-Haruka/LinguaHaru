@@ -104,6 +104,14 @@ class _BuiltinChip(SimpleCardWidget):
         layout.addLayout(col, 1)
 
 
+def _download_error_text(lang):
+    """Why the last model download failed; network problems get their own hint."""
+    from core import optional_modules as om
+    err = om.last_download_error
+    key = "Model Download Failed Network" if om.is_network_error(err) else "Model Download Failed Hint"
+    return f"{tr(key, lang)}\n{err}".strip()
+
+
 class _ModelPickerDialog(MessageBoxBase):
     """Per-model management for a plugin: each model shows its install status +
     disk size with an Install / Delete button (white row = installed → Delete,
@@ -181,10 +189,17 @@ class _ModelPickerDialog(MessageBoxBase):
         self._workers.append(w)
         w.progress.connect(lambda f, s: self.titleLabel.setText(
             tr("Downloading Model", self._lang) + f" {int(max(0.0, min(1.0, f)) * 100)}%"))
-        w.finished_ok.connect(lambda ok: (
+        w.detail.connect(lambda t: self.titleLabel.setText(
+            tr("Downloading Model", self._lang) + f" {t}"))
+
+        def _done(ok):
             self.titleLabel.setText(tr("Select Model", self._lang) if ok
-                                    else tr("Download Failed", self._lang)),
-            self._build()))
+                                    else tr("Download Failed", self._lang))
+            if not ok:
+                InfoBar.error(tr("Download Failed", self._lang), _download_error_text(self._lang),
+                              duration=-1, position=InfoBarPosition.TOP, parent=self.window())
+            self._build()
+        w.finished_ok.connect(_done)
         w.start()
         self._build()   # reflect "downloading" by re-reading state shortly
 
@@ -381,6 +396,11 @@ class OptionalPluginCard(CardWidget):
         verb = (tr("Downloading Model", self._lang) if stage == "downloading"
                 else tr("Installing", self._lang))
         self.status_caption.setText(f"{verb} {int(max(0.0, min(1.0, frac)) * 100)}%")
+
+    def set_progress_detail(self, text):
+        """Live download line (file / % / size / speed) instead of a bare %."""
+        if self.status_caption is not None:
+            self.status_caption.setText(f"{tr('Downloading Model', self._lang)} {text}")
 
     def set_model_ready(self, ok):
         if self.model_link is not None:
@@ -666,6 +686,7 @@ class PluginsPage(ScrollArea):
         worker = ModelDownloadWorker(card._mod["name"], model_id)
         self._dl_workers.append(worker)
         worker.progress.connect(lambda f, s, c=card: c.set_progress(f, s))
+        worker.detail.connect(lambda t, c=card: c.set_progress_detail(t))
         worker.finished_ok.connect(
             lambda ok, c=card, w=worker: self._model_download_done(c, ok, w))
         worker.start()
@@ -673,8 +694,7 @@ class PluginsPage(ScrollArea):
     def _model_download_done(self, card, ok, worker):
         card.set_model_ready(ok)
         if not ok:
-            self._info(card._mod["name"],
-                       tr("Model Download Failed Hint", self._lang), error=True)
+            self._info(card._mod["name"], _download_error_text(self._lang), error=True)
         if worker in self._dl_workers:
             self._dl_workers.remove(worker)
         self._drain_install_queue()

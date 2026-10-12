@@ -372,5 +372,8 @@
   "Excel Sheet Names Label": "Excel: 시트 이름 번역(시트 간 수식·차트 참조도 새 이름으로 갱신; 기본 켜짐)",
   "Custom Language": "사용자 지정 언어",
   "Add Custom Language": "추가",
-  "Custom Language Tip": "기본 목록에 없는 대상 언어입니다. 코드를 입력하세요(예: 광둥어는 yue). 영어 템플릿에서 프롬프트 파일을 만들고 모든 언어 메뉴에 표시됩니다."
+  "Custom Language Tip": "기본 목록에 없는 대상 언어입니다. 코드를 입력하세요(예: 광둥어는 yue). 영어 템플릿에서 프롬프트 파일을 만들고 모든 언어 메뉴에 표시됩니다.",
+  "Downloading model": "모델 다운로드 중",
+  "Model Download Failed Network": "모델 다운로드 실패: 네트워크 문제입니다. 연결/프록시를 확인하거나 모델 팩을 models 폴더에 압축 해제하세요.",
+  "Model Load Failed": "모델 로드 실패"
 }

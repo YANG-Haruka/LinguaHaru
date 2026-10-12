@@ -707,5 +707,8 @@
   "Summarize": "Summarize",
   "Summarizing": "Summarizing…",
   "System Audio Permission": "System audio needs permission: open System Settings > Privacy & Security > Screen & System Audio Recording, allow LinguaHaru, then restart LinguaHaru.",
-  "Listening System Audio": "Listening to the system audio…"
+  "Listening System Audio": "Listening to the system audio…",
+  "Downloading model": "Downloading model",
+  "Model Download Failed Network": "Model download failed — network problem. Check your connection/proxy, or download the model pack and unzip it into the models folder.",
+  "Model Load Failed": "Model failed to load"
 }

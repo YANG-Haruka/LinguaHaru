@@ -1758,15 +1758,17 @@ async function pickerInstall(m, s, chipText) {
     try { j = await api("/api/modules/status?name=" + encodeURIComponent(m.name)); }
     catch (e) { return; }
     if (j.status === "queued" || j.status === "running") {
-      const pct = (j.progress != null) ? " " + Math.round(j.progress * 100) + "%" : "";
+      const pct = j.detail ? " " + j.detail
+        : (j.progress != null) ? " " + Math.round(j.progress * 100) + "%" : "";
       status.innerHTML = pill("busy", (j.status === "queued"
         ? _label("Status Queued", "排队中")
-        : _label("Downloading Model", "正在下载模型…")) + pct, "");
+        : _label("Downloading Model", "正在下载模型…")) + pct.replace(/[<>&]/g, ""), "");
       return;
     }
     clearInterval(poll);
     if (j.status === "error") {
       status.innerHTML = pill("bad", _label("Download Failed", "下载失败,请检查网络后重试"), ICON.cross);
+      if (j.output) toast(sttLoadErrorText({ network: j.network, error: j.output }), "bad");
     } else {
       status.textContent = "";
     }
@@ -2456,6 +2458,25 @@ function showModelLoading(text) {
 function hideModelLoading() {
   const o = $("model-loading-overlay"); if (o) o.hidden = true;
 }
+// Preload an STT model; while a missing one downloads, poll and show its live
+// progress (file / % / size / speed). Returns {ready, error, network}, or null
+// if the request itself failed (then the model just loads lazily, as before).
+async function preloadSttModel(scope) {
+  const timer = setInterval(async () => {
+    try {
+      const p = await api("/api/live-preload-progress");
+      if (p && p.line) showModelLoading(_label("Downloading model", "正在下载模型") + "\n" + p.line);
+    } catch (e) { /* keep the previous text */ }
+  }, 800);
+  try {
+    return await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope }) });
+  } catch (e) { return null; }
+  finally { clearInterval(timer); hideModelLoading(); }
+}
+function sttLoadErrorText(r) {
+  const key = r.network ? "Model Download Failed Network" : "Model Load Failed";
+  return _label(key, key) + "：" + (r.error || "");
+}
 
 async function startLocal() {
   liveSessionTokens = 0;
@@ -2475,9 +2496,8 @@ async function startLocal() {
   // Preload the local model so the first sentence isn't blocked on a slow load.
   setLiveStatus(_label("正在加载本地模型…（首次需下载/加载，请稍候）", "正在加载本地模型…（首次需下载/加载，请稍候）"));
   showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
-  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "live" }) }); }
-  catch (e) { /* load lazily */ }
-  finally { hideModelLoading(); }
+  const pre = await preloadSttModel("live");
+  if (pre && !pre.ready) { stopLocal(); setLiveStatus(sttLoadErrorText(pre)); return; }
   // The long await may have dropped the gesture activation; ensure the context
   // is actually running before wiring up the mic graph.
   if (liveCtx.state === "suspended") { try { await liveCtx.resume(); } catch (e) {} }
@@ -3493,9 +3513,8 @@ async function quickMic() {
   $("quick-status").textContent = _label("正在加载本地模型…", "正在加载本地模型…");
   // Quick voice uses its own STT model (quick_stt_model) — preload THAT, not live.
   showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
-  try { await api("/api/live-preload", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "quick" }) }); }
-  catch (e) { /* lazy load */ }
-  finally { hideModelLoading(); }
+  const pre = await preloadSttModel("quick");
+  if (pre && !pre.ready) { $("quick-status").textContent = sttLoadErrorText(pre); stopQuickMic(); return; }
   _quickRecCtx = new AudioContext();
   _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
   try {

@@ -30,8 +30,11 @@ from fastapi.staticfiles import StaticFiles
 
 from core import backend
 from core import sysmon
-from core.model_store import setup_model_env
-setup_model_env()  # unify model cache dirs before whisper/funasr/babeldoc import
+from core.model_store import setup_model_env, finish_model_env_setup
+setup_model_env(defer_network=True)  # unify model cache dirs before whisper/funasr/babeldoc import
+# The HF-endpoint probe is a network call that can stall on a bad link; only
+# downloads need its answer, so keep it off the startup path (as the desktop app does).
+threading.Thread(target=finish_model_env_setup, daemon=True).start()
 try:   # let downloaded market plugins hook into the app (best-effort)
     from core import plugins_registry as _pr
     _pr.activate_downloaded_plugins()
@@ -2027,16 +2030,30 @@ def _run_model_job(name, model_id):
                 j["stage"] = stage
     with _MODULE_JOB_LOCK:
         try:
-            from core.optional_modules import set_plugin_model, download_plugin_model
+            from core.optional_modules import (set_plugin_model, download_plugin_model,
+                                               format_download_line)
+            parser = make_progress_parser(_set_prog, 0.0, 1.0)
+
+            def _feed(line):
+                parser.feed(line)
+                text = format_download_line(line)   # file / % / size / speed
+                if text:
+                    with _TASKS_LOCK:
+                        j = MODULE_JOBS.get(name)
+                        if j is not None:
+                            j["detail"] = text
             set_plugin_model(name, model_id)
-            ok = download_plugin_model(name, model_id,
-                                       progress_cb=make_progress_parser(_set_prog, 0.0, 1.0).feed)
+            ok = download_plugin_model(name, model_id, progress_cb=_feed)
         except Exception as e:  # noqa: BLE001
             ok = False
             app_logger.error(f"Model download job crashed for {name}/{model_id}: {e}")
         finally:
+            from core import optional_modules as om
+            from core.optional_modules import is_network_error
+            err = "" if ok else om.last_download_error
             with _TASKS_LOCK:
-                MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": ""}
+                MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": err,
+                                     "network": is_network_error(err)}
 
 
 @app.post("/api/modules/model")
@@ -2277,9 +2294,30 @@ async def live_preload(payload: dict = None):
                 else get_selected_live_stt_model())
     if scope == "live" and recognizer_ready():
         return {"ready": True}
+    from core.optional_modules import format_download_line, is_network_error
+
+    def _cb(line):
+        text = format_download_line(line)
+        if text:
+            _PRELOAD_PROGRESS["line"] = text
+    _PRELOAD_PROGRESS["line"] = ""
     loop = asyncio.get_event_loop()
-    ready = await loop.run_in_executor(None, lambda: preload_recognizer(model_id))
-    return {"ready": bool(ready)}
+    ready = await loop.run_in_executor(None, lambda: preload_recognizer(model_id, progress_cb=_cb))
+    _PRELOAD_PROGRESS["line"] = ""
+    if ready:
+        return {"ready": True}
+    from core.pipelines import video_translation_pipeline as vtp
+    err = vtp.last_preload_error
+    return {"ready": False, "error": err, "network": is_network_error(err)}
+
+
+_PRELOAD_PROGRESS = {"line": ""}   # latest STT-model download line (one load at a time)
+
+
+@app.get("/api/live-preload-progress")
+def live_preload_progress():
+    """Polled by the page while /api/live-preload downloads a missing model."""
+    return _PRELOAD_PROGRESS
 
 
 @app.post("/api/live-recognize")

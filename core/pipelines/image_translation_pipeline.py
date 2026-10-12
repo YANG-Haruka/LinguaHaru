@@ -129,6 +129,26 @@ def _rapidocr_v6_lang(src_lang):
     return lang if lang in PP_OCRV6_LANGS else "ch"
 
 
+def _rapidocr_root():
+    """RapidOCR keeps its ONNX models in its own package dir by default — outside
+    models/, so the netdisk OCR packs couldn't supply them and every fresh
+    install re-downloaded. Pin it to models/rapidocr, moving over any models
+    the package dir already holds (so existing installs don't re-download)."""
+    import shutil
+    from core.model_store import current_dir
+    root = os.path.join(current_dir(), "rapidocr")
+    os.makedirs(root, exist_ok=True)
+    try:
+        import rapidocr
+        pkg = os.path.join(os.path.dirname(rapidocr.__file__), "models")
+        for name in os.listdir(pkg):
+            if name.endswith(".onnx") and not os.path.exists(os.path.join(root, name)):
+                shutil.move(os.path.join(pkg, name), os.path.join(root, name))
+    except Exception:  # noqa: BLE001 — best-effort; RapidOCR downloads what's missing
+        pass
+    return root
+
+
 def _build_rapidocr_v6(v6_lang, size):
     """Build a PP-OCRv6 RapidOCR engine (GPU when available). Same v6 models as
     PaddleOCR, run via onnxruntime so the GPU is usable on Windows without the
@@ -143,6 +163,7 @@ def _build_rapidocr_v6(v6_lang, size):
         f"Loading RapidOCR PP-OCRv6 ({v6_lang}, {mt.value}, "
         f"{'GPU' if use_cuda else 'CPU'})...")
     params = {
+        "Global.model_root_dir": _rapidocr_root(),
         "EngineConfig.onnxruntime.use_cuda": use_cuda,
         "Det.ocr_version": OCRVersion.PPOCRV6, "Det.lang_type": v6_lang, "Det.model_type": mt,
         "Rec.ocr_version": OCRVersion.PPOCRV6, "Rec.lang_type": v6_lang, "Rec.model_type": mt,
@@ -241,7 +262,8 @@ def _load_ocr_engine(key, v6_lang, lang, size):
         if not isinstance(e, ImportError):
             app_logger.warning(f"PaddleOCR unavailable ({e}), falling back to RapidOCR")
         from rapidocr.utils.typings import OCRVersion
-        params = {"Det.ocr_version": OCRVersion.PPOCRV5,
+        params = {"Global.model_root_dir": _rapidocr_root(),
+                  "Det.ocr_version": OCRVersion.PPOCRV5,
                   "Rec.ocr_version": OCRVersion.PPOCRV5}
         if lang:
             params["Rec.lang_type"] = lang[0]

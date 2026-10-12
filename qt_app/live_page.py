@@ -1067,6 +1067,7 @@ class LivePage(ScrollArea):
         if self._preloader is not None and self._preloader.isRunning():
             return
         self._preloader = PreloadWorker(self)
+        self._preloader.progress.connect(self._on_preload_progress)
         self._preloader.done.connect(self._on_preload_done)
         self._preloader.start()
 
@@ -1653,10 +1654,28 @@ class LivePage(ScrollArea):
         if w in self._local_workers:
             self._local_workers.remove(w)
 
+    def _on_preload_progress(self, text):
+        """A missing model is downloading: show file / % / size / speed live."""
+        head = tr("Downloading model", self._lang)
+        self.status_label.setText(f"{head}  {text}")
+        if self._overlay is not None and self._overlay.isVisible():
+            self._overlay.show_with(f"{head}\n{text}")
+
     def _on_preload_done(self, ready):
         self._hide_loading()
+        if not ready:
+            from core.optional_modules import is_network_error
+            from core.pipelines.video_translation_pipeline import last_preload_error as err
+            key = "Model Download Failed Network" if is_network_error(err) else "Model Load Failed"
+            self.status_label.setText(tr(key, self._lang))
+            self._info(f"{tr(key, self._lang)}\n{err}", error=True, duration=-1)
+            if self._is_listening():
+                self.on_stop()
+            return
         if self._is_listening():
             self.status_label.setText(self._listening_text())
+        elif self.status_label.text().startswith(tr("Downloading model", self._lang)):
+            self.status_label.setText("")
 
     def _show_loading(self, text=None):
         """Glass-lock the whole window while the STT model loads."""

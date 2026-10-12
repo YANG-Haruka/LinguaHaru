@@ -372,5 +372,8 @@
   "Excel Sheet Names Label": "Excel : traduire les noms de feuilles (les formules inter-feuilles et les références de graphiques sont mises à jour ; activé par défaut)",
   "Custom Language": "Langue personnalisée",
   "Add Custom Language": "Ajouter",
-  "Custom Language Tip": "Une langue cible absente de la liste intégrée. Saisissez son code (p. ex. yue pour le cantonais) ; un fichier de prompt est créé depuis le modèle anglais et la langue apparaît dans tous les menus."
+  "Custom Language Tip": "Une langue cible absente de la liste intégrée. Saisissez son code (p. ex. yue pour le cantonais) ; un fichier de prompt est créé depuis le modèle anglais et la langue apparaît dans tous les menus.",
+  "Downloading model": "Téléchargement du modèle",
+  "Model Download Failed Network": "Échec du téléchargement du modèle : problème réseau. Vérifiez la connexion/le proxy, ou décompressez le pack du modèle dans le dossier models.",
+  "Model Load Failed": "Échec du chargement du modèle"
 }

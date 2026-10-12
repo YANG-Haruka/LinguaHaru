@@ -372,5 +372,8 @@
   "Excel Sheet Names Label": "Excel: dịch tên trang tính (công thức liên trang và tham chiếu biểu đồ được cập nhật theo tên mới; mặc định bật)",
   "Custom Language": "Ngôn ngữ tùy chỉnh",
   "Add Custom Language": "Thêm",
-  "Custom Language Tip": "Ngôn ngữ đích không có trong danh sách tích hợp. Nhập mã của nó (ví dụ yue cho tiếng Quảng Đông); tệp prompt được tạo từ mẫu tiếng Anh và ngôn ngữ sẽ xuất hiện trong mọi menu ngôn ngữ."
+  "Custom Language Tip": "Ngôn ngữ đích không có trong danh sách tích hợp. Nhập mã của nó (ví dụ yue cho tiếng Quảng Đông); tệp prompt được tạo từ mẫu tiếng Anh và ngôn ngữ sẽ xuất hiện trong mọi menu ngôn ngữ.",
+  "Downloading model": "Đang tải mô hình",
+  "Model Download Failed Network": "Tải mô hình thất bại: lỗi mạng. Hãy kiểm tra kết nối/proxy, hoặc giải nén gói mô hình vào thư mục models.",
+  "Model Load Failed": "Không tải được mô hình"
 }

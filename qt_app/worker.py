@@ -103,10 +103,13 @@ class ModelDownloadWorker(QThread):
 
     Signals:
         progress(float, str) -- download fraction (0..1) + stage word
-        finished_ok(bool) -- True if the model is ready
+        detail(str) -- live download line: file / % / size / speed
+        finished_ok(bool) -- True if the model is ready (else see
+            optional_modules.last_download_error)
     """
 
     progress = Signal(float, str)
+    detail = Signal(str)
     finished_ok = Signal(bool)
 
     def __init__(self, module_name, model_id=None, parent=None):
@@ -115,13 +118,20 @@ class ModelDownloadWorker(QThread):
         self.model_id = model_id
 
     def run(self):
-        from core.optional_modules import download_plugin_model
+        from core.optional_modules import download_plugin_model, format_download_line
         from core import module_manager
         parser = module_manager.make_progress_parser(
             lambda f, s: self.progress.emit(float(f), s), 0.0, 1.0)
+
+        def _feed(line):
+            text = format_download_line(line)
+            if text:
+                self.detail.emit(text)
+            else:
+                parser.feed(line)
         try:
             ok = bool(download_plugin_model(
-                self.module_name, self.model_id, progress_cb=parser.feed))
+                self.module_name, self.model_id, progress_cb=_feed))
         except Exception:  # noqa: BLE001 - a failed download just reports not-ready
             ok = False
         self.finished_ok.emit(ok)
