@@ -221,7 +221,7 @@ MAC_LAUNCHER = """#!/bin/bash
 # "Start" file). Starting python from here would make macOS attribute the
 # microphone / screen-recording permission to Terminal instead of LinguaHaru.
 cd "$(dirname "$0")"
-xattr -dr com.apple.quarantine . 2>/dev/null
+xattr -dr com.apple.quarantine ./LinguaHaru.app 2>/dev/null   # this app only
 open ./LinguaHaru.app
 """
 MAC_README = """LinguaHaru for macOS (13 Ventura or newer, Apple Silicon M1 or later)
