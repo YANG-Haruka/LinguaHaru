@@ -72,7 +72,7 @@ Python も CUDA 設定も不要。ダウンロードして解凍、ダブルク�
 
 1. [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) からダウンロード：
    - `LinguaHaru-*-desktop-portable.zip` —— ネイティブデスクトップ版（Windows）
-   - `LinguaHaru-*-desktop-mac.zip` —— macOS 版（macOS 13 以降・Apple シリコン。`LinguaHaru.app` を開く。詳細は同梱の README-Mac.txt）
+   - `LinguaHaru-*-desktop-mac.zip` —— macOS 版（macOS 13 以降・Apple シリコン。`LinguaHaru.app` を開く。初回のダイアログではグレーの「完了」を押し（「ゴミ箱に入れる」ではなく）、「システム設定 > プライバシーとセキュリティ」で「このまま開く」）
    - `LinguaHaru-*-web-portable.zip` —— Web 版（ブラウザが自動で開きます）
 2. 任意の場所に解凍し、`Start-Desktop.bat` または `Start-Web.bat` を実行。
 3. **インターフェース管理** でインターフェースを追加（例：DeepSeek）、API キーを貼り付けてカードをクリックして有効化。

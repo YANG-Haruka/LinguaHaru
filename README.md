@@ -72,7 +72,7 @@ No Python, no CUDA setup. Download, unzip, double-click.
 
 1. Grab a package from [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest):
    - `LinguaHaru-*-desktop-portable.zip` — native desktop app (Windows)
-   - `LinguaHaru-*-desktop-mac.zip` — native desktop app for macOS 13+ on Apple Silicon (open `LinguaHaru.app`; see README-Mac.txt inside)
+   - `LinguaHaru-*-desktop-mac.zip` — native desktop app for macOS 13+ on Apple Silicon (open `LinguaHaru.app`; the first time, click the grey **Done** — not Move to Trash — then System Settings > Privacy & Security > **Open Anyway**)
    - `LinguaHaru-*-web-portable.zip` — web console (opens your browser automatically)
 2. Unzip anywhere, then run `Start-Desktop.bat` or `Start-Web.bat`.
 3. In **Interface Management**, add an interface (e.g. DeepSeek), paste your API key, click the card to activate.

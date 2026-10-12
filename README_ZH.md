@@ -72,7 +72,7 @@
 
 1. 从 [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) 下载：
    - `LinguaHaru-*-desktop-portable.zip` —— 原生桌面端（Windows）
-   - `LinguaHaru-*-desktop-mac.zip` —— macOS 桌面端（macOS 13 以上、M 系列芯片；打开 `LinguaHaru.app`，说明见包内 README-Mac.txt）
+   - `LinguaHaru-*-desktop-mac.zip` —— macOS 桌面端（macOS 13 以上、M 系列芯片；打开 `LinguaHaru.app`。第一次弹窗时点灰色的「完成」，**不要点「移到废纸篓」**，然后在「系统设置 > 隐私与安全性」里点「仍要打开」）
    - `LinguaHaru-*-web-portable.zip` —— Web 端（自动打开浏览器）
 2. 解压到任意位置，运行 `Start-Desktop.bat` 或 `Start-Web.bat`。
 3. 在 **接口管理** 添加接口（如 DeepSeek），粘贴 API 密钥，点击卡片激活。

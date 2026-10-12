@@ -227,9 +227,10 @@ open ./LinguaHaru.app
 MAC_README = """LinguaHaru for macOS (13 Ventura or newer, Apple Silicon M1 or later)
 
 1. Unzip, then double-click "LinguaHaru.app".
-   The first time, macOS blocks it ("can't verify the developer"). Click Done,
-   open System Settings > Privacy & Security, scroll down and click
-   "Open Anyway" next to LinguaHaru, then confirm. (On macOS 14 and older,
+   The first time, macOS says it can't verify the app. Click the GREY "Done"
+   button — NOT the blue "Move to Trash" — then open System Settings >
+   Privacy & Security, scroll to the bottom and click "Open Anyway" next to
+   LinguaHaru, then confirm. (On macOS 14 and older,
    right-click LinguaHaru.app > Open also works.)
 2. On first start LinguaHaru asks for the Microphone and for Screen & System
    Audio Recording (needed to translate what your Mac is playing) — click
@@ -238,9 +239,9 @@ MAC_README = """LinguaHaru for macOS (13 Ventura or newer, Apple Silicon M1 or l
    folder afterwards, or the shortcut breaks.
 
 macOS 13 以上、M 系列芯片。
-1. 解压后双击 LinguaHaru.app。第一次会被系统拦截（「无法验证开发者」）：
-   点「完成」，打开「系统设置 > 隐私与安全性」，滚到底部，在 LinguaHaru 旁点
-   「仍要打开」并确认。（macOS 14 及更早版本也可以右键 > 打开。）
+1. 解压后双击 LinguaHaru.app。第一次会弹出「Apple 无法验证…」：
+   点左边灰色的「完成」，不要点蓝色的「移到废纸篓」；然后打开「系统设置 >
+   隐私与安全性」，拉到最下面，在 LinguaHaru 旁点「仍要打开」并确认。（macOS 14 及更早版本也可以右键 > 打开。）
 2. 首次启动会请求「麦克风」和「屏幕与系统录音」（翻译电脑正在播放的声音需要）
    权限，点允许，然后重启一次 LinguaHaru。
 3. 桌面上也会生成 LinguaHaru 快捷方式。之后不要再移动本文件夹。
