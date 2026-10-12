@@ -2050,7 +2050,7 @@ def _run_model_job(name, model_id):
         finally:
             from core import optional_modules as om
             from core.optional_modules import is_network_error
-            err = "" if ok else om.last_download_error
+            err = "" if ok else _public_error(om.last_download_error)
             with _TASKS_LOCK:
                 MODULE_JOBS[name] = {"status": "done" if ok else "error", "output": err,
                                      "network": is_network_error(err)}
@@ -2307,11 +2307,19 @@ async def live_preload(payload: dict = None):
     if ready:
         return {"ready": True}
     from core.pipelines import video_translation_pipeline as vtp
-    err = vtp.last_preload_error
+    err = _public_error(vtp.last_preload_error)
     return {"ready": False, "error": err, "network": is_network_error(err)}
 
 
 _PRELOAD_PROGRESS = {"line": ""}   # latest STT-model download line (one load at a time)
+
+
+def _public_error(err):
+    """A load/download error for the browser, with local filesystem paths masked:
+    LAN users must not learn the host's directory layout from an exception."""
+    import re as _re
+    return _re.sub(r"(?<!\w)[A-Za-z]:[\\/][^\s'\"]*|(?<![\w.])/(?:Users|home|root|var|tmp|opt|mnt)/[^\s'\"]*",
+                   "<path>", err or "")
 
 
 @app.get("/api/live-preload-progress")

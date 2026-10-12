@@ -32,3 +32,11 @@ def test_hf_local_falls_back_to_repo_id(tmp_path, monkeypatch):
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
     from core.pipelines.video_translation_pipeline import _hf_local
     assert _hf_local("nobody/not-a-cached-repo") == "nobody/not-a-cached-repo"
+
+
+def test_public_error_masks_local_paths():
+    from webapp.server import _public_error
+    out = _public_error(r"OSError: no file F:\workspace\LinguaHaru\models\hub\x or /Users/me/models/y")
+    assert "workspace" not in out and "/Users/me" not in out and out.count("<path>") == 2
+    url = "OSError: We couldn't connect to 'https://hf-mirror.com' to load the files"
+    assert _public_error(url) == url
