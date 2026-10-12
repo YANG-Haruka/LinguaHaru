@@ -34,7 +34,20 @@ from core.model_store import setup_model_env, finish_model_env_setup
 setup_model_env(defer_network=True)  # unify model cache dirs before whisper/funasr/babeldoc import
 # The HF-endpoint probe is a network call that can stall on a bad link; only
 # downloads need its answer, so keep it off the startup path (as the desktop app does).
-threading.Thread(target=finish_model_env_setup, daemon=True).start()
+def _startup_warmup():
+    finish_model_env_setup()
+    # Pre-import the real-time STT engine (funasr alone is ~8 s) so opening
+    # Real-Time Voice only waits for the model itself. No model / VRAM.
+    try:
+        from core.optional_modules import realtime_voice_available
+        if realtime_voice_available():
+            from core.pipelines.video_translation_pipeline import warm_import_live_engine
+            warm_import_live_engine()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+threading.Thread(target=_startup_warmup, daemon=True).start()
 try:   # let downloaded market plugins hook into the app (best-effort)
     from core import plugins_registry as _pr
     _pr.activate_downloaded_plugins()

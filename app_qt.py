@@ -155,6 +155,16 @@ def _start_background_warmup(window):
             # First run of the portable: drop a shortcut on the desktop.
             from core.desktop_shortcut import ensure_desktop_shortcut
             ensure_desktop_shortcut()
+            # Pre-import the real-time STT engine (funasr alone is ~8 s) on a
+            # daemon thread: this QThread is waited on at close, an import isn't.
+            try:
+                from core.optional_modules import realtime_voice_available
+                if realtime_voice_available():
+                    import threading
+                    from core.pipelines.video_translation_pipeline import warm_import_live_engine
+                    threading.Thread(target=warm_import_live_engine, daemon=True).start()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _refresh():
         # Reflect any local models found + the resolved active interface.

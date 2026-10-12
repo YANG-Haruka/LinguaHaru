@@ -1494,6 +1494,26 @@ def recognizer_ready(getter=None):
         return False
 
 
+def warm_import_live_engine():
+    """Import the real-time STT engine's libraries ahead of time (call in a
+    background thread at app start). Measured cold: `import funasr` takes ~8 s
+    (it imports every model it ships) and qwen_asr ~6 s, vs ~3 s / ~5 s for the
+    model itself — so this moves most of the first Real-Time Voice wait off the
+    click. Imports only: no model, no VRAM."""
+    try:
+        import importlib
+        engine, _ = _resolve_stt_engine(get_stt_model(get_selected_live_stt_model()))
+        mod = {"sensevoice": "funasr", "animewhisper": "transformers",
+               "whisper": "faster_whisper",
+               "qwen3asr": "mlx_qwen3_asr" if _mlx_qwen_ok() else "qwen_asr"}.get(engine)
+        if mod:
+            t0 = time.time()
+            importlib.import_module(mod)
+            app_logger.info(f"Real-time STT engine '{mod}' pre-imported in {time.time() - t0:.1f}s")
+    except Exception as e:  # noqa: BLE001 — an optimization; the real load still works
+        app_logger.debug(f"STT engine pre-import skipped: {e}")
+
+
 last_preload_error = ""   # why the last preload_recognizer() failed ("" = it didn't)
 
 
@@ -1549,8 +1569,16 @@ def _preload_recognizer(model_id):
         return True
     if engine == "qwen3asr":
         t0 = time.time()
-        _get_qwen(size)
+        model = _get_qwen(size)
         app_logger.info(f"Qwen3-ASR ({size}) loaded in {time.time() - t0:.1f}s")
+        if not isinstance(model, _MlxQwen):   # MLX warms up in _load_mlx_qwen
+            # The first transcribe pays ~1.3 s of CUDA kernel setup (measured on
+            # 1.7B) — spend it here instead of on the first spoken sentence.
+            import numpy as np
+            try:
+                model.transcribe((np.zeros(16000, dtype=np.float32), 16000))
+            except Exception as e:  # noqa: BLE001
+                app_logger.warning(f"Qwen3-ASR warm-up skipped: {e}")
         return True
     if engine == "animewhisper":
         t0 = time.time()
