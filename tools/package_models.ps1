@@ -5,7 +5,8 @@ relative to models/, so the user unzips it INTO the app's models/ folder and the
 model lands at the right place — ready to use, no Hugging Face needed.
 
 Usage:  pwsh -File tools/package_models.ps1
-Output: dist_models/<id>.zip  (+ dist_models/SHA256SUMS.txt)
+Output: dist_models/<group>/<id>.zip, group = common (Windows + Mac) | windows | mac,
+        plus dist_models/SHA256SUMS.txt and README.md (tools/models_README.md).
 #>
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -14,7 +15,8 @@ $models = Join-Path $repo "models"
 $out = Join-Path $repo "dist_models"
 New-Item -ItemType Directory -Force $out | Out-Null
 
-# id -> @{ paths = <dirs relative to models/>; note = <what it's for> }
+# id -> @{ paths = <dirs relative to models/>; note = <what it's for>;
+#          group = windows | mac (omitted = common, works on both) }
 # Deps are bundled together (SenseVoice needs fsmn-vad; each OCR size needs the
 # shared textline-orientation model). Unused Paddle extras are NOT packaged.
 $VAD = "modelscope/models/iic/speech_fsmn_vad_zh-cn-16k-common-pytorch"
@@ -31,13 +33,15 @@ $MANIFEST = [ordered]@{
   "stt-whisper-large-v3-turbo" = @{ paths = @("whisper/models--mobiuslabsgmbh--faster-whisper-large-v3-turbo"); note = "faster-whisper large-v3-turbo (~1.6GB)" }
   "stt-whisper-large-v2"   = @{ paths = @("whisper/models--Systran--faster-whisper-large-v2"); note = "faster-whisper large-v2 (~3GB)" }
   "stt-anime-whisper"      = @{ paths = @("hub/models--litagin--anime-whisper"); note = "Anime-Whisper, expressive Japanese (~3GB)" }
-  "stt-qwen3-asr-0.6b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-0.6B"); note = "Qwen3-ASR 0.6B (~1.9GB)" }
-  "stt-qwen3-asr-1.7b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-1.7B"); note = "Qwen3-ASR 1.7B, most accurate (~4.7GB)" }
-  # MLX packs are built ON A MAC: its HF cache snapshot files are symlinks into
-  # ../../blobs (xet layout), so `zip -y` ships dangling links — copy the
-  # snapshot dereferenced (cp -RL) and zip the regular files instead.
-  "stt-qwen3-asr-1.7b-mlx" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-1.7B-8bit"); note = "Qwen3-ASR 1.7B for Mac (Apple Silicon, MLX 8-bit, ~2.4GB) - Mac default" }
-  "stt-qwen3-asr-0.6b-mlx" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-0.6B-8bit"); note = "Qwen3-ASR 0.6B for Mac (Apple Silicon, MLX 8-bit, ~1GB)" }
+  # Qwen3-ASR exists twice: PyTorch weights (Windows / NVIDIA or CPU) and MLX
+  # 8-bit weights (Apple Silicon GPU). Not interchangeable -> separate groups.
+  "stt-qwen3-asr-0.6b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-0.6B"); group = "windows"; note = "Qwen3-ASR 0.6B (~1.9GB)" }
+  "stt-qwen3-asr-1.7b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-1.7B"); group = "windows"; note = "Qwen3-ASR 1.7B, most accurate (~4.7GB)" }
+  # Built fine on Windows (no symlinks there: real files). Built on a Mac, the HF
+  # cache snapshot files are symlinks into ../../blobs, so `zip -y` would ship
+  # dangling links — copy the snapshot dereferenced (cp -RL) first.
+  "stt-qwen3-asr-1.7b-mac" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-1.7B-8bit"); group = "mac"; note = "Qwen3-ASR 1.7B for Mac (Apple Silicon, MLX 8-bit, ~2.4GB) - Mac default" }
+  "stt-qwen3-asr-0.6b-mac" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-0.6B-8bit"); group = "mac"; note = "Qwen3-ASR 0.6B for Mac (Apple Silicon, MLX 8-bit, ~1GB)" }
   # --- OCR (image translation); each size = det + rec + shared textline model ---
   "ocr-tiny"   = @{ paths = @("paddlex/official_models/PP-OCRv6_tiny_det",   "paddlex/official_models/PP-OCRv6_tiny_rec", "rapidocr/PP-OCRv6_det_tiny.onnx", "rapidocr/PP-OCRv6_rec_tiny.onnx", $RAPID_CLS,   $TEXTLINE); note = "PP-OCRv6 tiny (fastest)" }
   "ocr-small"  = @{ paths = @("paddlex/official_models/PP-OCRv6_small_det",  "paddlex/official_models/PP-OCRv6_small_rec", "rapidocr/PP-OCRv6_det_small.onnx", "rapidocr/PP-OCRv6_rec_small.onnx", $RAPID_CLS,  $TEXTLINE); note = "PP-OCRv6 small (default)" }
@@ -54,10 +58,13 @@ $MANIFEST = [ordered]@{
 $sums = @()
 foreach ($id in $MANIFEST.Keys) {
   $entry = $MANIFEST[$id]
-  $zip = Join-Path $out "$id.zip"
+  $group = if ($entry.group) { $entry.group } else { "common" }
+  New-Item -ItemType Directory -Force (Join-Path $out $group) | Out-Null
+  $zip = Join-Path (Join-Path $out $group) "$id.zip"
+  $rel = "$group/$id.zip"
   if (Test-Path $zip) {   # skip already-built (resume after a failure) BEFORE staging GBs
     $h0 = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-    $line = "{0,-32} {1,10}  {2}" -f "$id.zip", ("{0:N0} MB" -f ((Get-Item $zip).Length/1MB)), $h0
+    $line = "{0,-40} {1,10}  {2}" -f $rel, ("{0:N0} MB" -f ((Get-Item $zip).Length/1MB)), $h0
     $sums += $line; Write-Output ">>> (exists) $line"; continue
   }
   # Stage the model under a tree rooted at models/ so the zip preserves relative
@@ -87,9 +94,10 @@ foreach ($id in $MANIFEST.Keys) {
   Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
   $h = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
   $mb = "{0:N0} MB" -f ((Get-Item $zip).Length / 1MB)
-  $line = "{0,-32} {1,10}  {2}" -f "$id.zip", $mb, $h
+  $line = "{0,-40} {1,10}  {2}" -f $rel, $mb, $h
   $sums += $line
   Write-Output ">>> $line"
 }
 $sums | Set-Content (Join-Path $out "SHA256SUMS.txt") -Encoding ascii
+Copy-Item -Force (Join-Path $PSScriptRoot "models_README.md") (Join-Path $out "README.md")
 Write-Output ">>> DONE. Per-model zips in: $out"
