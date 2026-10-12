@@ -790,12 +790,39 @@ if ($("update-now")) $("update-now").onclick = async () => {
     if (s.status === "running") return;
     clearInterval(poll);
     btn.disabled = false;
-    $("update-text").textContent = s.status === "done"
-      ? `${_label("Update Done Restart", "更新完成，请重启程序")}`
-      : `${_label("Update Failed", "更新失败")}: ${(s.message || "").slice(-200)}`;
-    if (s.status === "done") btn.hidden = true;
+    if (s.status === "done") { btn.hidden = true; restartAfterUpdate(5); return; }
+    $("update-text").textContent = `${_label("Update Failed", "更新失败")}: ${(s.message || "").slice(-200)}`;
   }, 1000);
 };
+// Count down, ask the server to restart into the new version (it waits while a
+// translation runs), then reload once the new server answers.
+function restartAfterUpdate(seconds) {
+  const txt = $("update-text");
+  let left = seconds;
+  const tick = setInterval(async () => {
+    if (left > 0) {
+      txt.textContent = `${_label("Update Done", "更新完成")} — ${_label("Restart In Seconds", "{n} 秒后自动重启…").replace("{n}", left)}`;
+      left -= 1;
+      return;
+    }
+    clearInterval(tick);
+    let r;
+    try { r = await api("/api/self-update/restart", { method: "POST" }); }
+    catch (e) { txt.textContent = _label("Update Done Restart", "更新完成，请重启程序"); return; }
+    if (r && r.busy) {
+      txt.textContent = `${_label("Update Done", "更新完成")} — ${_label("Restart After Task", "当前任务结束后将自动重启")}`;
+      setTimeout(() => restartAfterUpdate(0), 5000);
+      return;
+    }
+    let wentDown = false;
+    const wait = setInterval(async () => {
+      try {
+        await fetch("/api/bootstrap", { cache: "no-store" }).then((x) => { if (!x.ok) throw 0; });
+        if (wentDown) { clearInterval(wait); location.reload(); }
+      } catch (e) { wentDown = true; }
+    }, 1000);
+  }, 1000);
+}
 
 // In public-deploy (server) mode the server owns the model + key, so hide the
 // admin/settings UI and the per-translate model picker. Inline display:none

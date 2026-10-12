@@ -257,6 +257,43 @@ def _asset_candidates(asset_url, asset_urls):
 _PRESERVE_IN_CONFIG = ["api_config", "system_config.json", "text_rules.json"]
 
 
+# Runs in a tiny detached Python: wait for the old app (argv[1] = its pid) to
+# exit — so it has released its port / files — then start the new one.
+_RELAUNCH_WAITER = r"""
+import os, subprocess, sys, time
+pid, flags, cmd = int(sys.argv[1]), int(sys.argv[2]), sys.argv[3:]
+if os.name == "nt":
+    import ctypes
+    k = ctypes.windll.kernel32
+    h = k.OpenProcess(0x00100000, False, pid)   # SYNCHRONIZE
+    if h:
+        k.WaitForSingleObject(h, 60000)
+        k.CloseHandle(h)
+else:
+    for _ in range(600):
+        try:
+            os.kill(pid, 0)
+            time.sleep(0.1)
+        except OSError:
+            break
+subprocess.Popen(cmd, creationflags=flags)
+"""
+
+
+def relaunch_after_exit(cmd, cwd=None, env=None, new_console=False):
+    """Start `cmd` once THIS process has exited (used to restart into a just-
+    applied update). The caller must exit right after. new_console: give the
+    new process its own console window (Windows; the Web server's log window)."""
+    nt = os.name == "nt"
+    flags = 0x00000010 if (nt and new_console) else 0   # CREATE_NEW_CONSOLE
+    subprocess.Popen(
+        [sys.executable, "-c", _RELAUNCH_WAITER, str(os.getpid()), str(flags), *cmd],
+        cwd=cwd or os.getcwd(), env=env, close_fds=True,
+        # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP: outlive the parent, no console
+        creationflags=(0x00000008 | 0x00000200) if nt else 0,
+        start_new_session=not nt)
+
+
 def download_and_apply(asset_url, sha256=None, progress_cb=None, asset_urls=None):
     """Download the release zip and overlay the SOURCE layer onto the portable
     install — verified, transactional, and preserving user data. Preserves python/
@@ -314,8 +351,10 @@ def download_and_apply(asset_url, sha256=None, progress_cb=None, asset_urls=None
                 dst = os.path.join(new_cfg, keep)
                 if os.path.exists(old):
                     if os.path.isdir(old):
-                        shutil.rmtree(dst, ignore_errors=True)
-                        shutil.copytree(old, dst)
+                        # MERGE, don't replace: the user's files win, but presets
+                        # new in this release (e.g. new api_config interfaces)
+                        # still arrive — replacing the dir used to drop them.
+                        shutil.copytree(old, dst, dirs_exist_ok=True)
                     else:
                         shutil.copy2(old, dst)
 

@@ -140,6 +140,9 @@ def _make_release_zip(tmp, version="5.2.0"):
     os.makedirs(os.path.join(src, "config"))
     io.open(os.path.join(src, "config", "system_config.json"), "w").write('{"shipped": 1}')
     io.open(os.path.join(src, "config", "locales.json"), "w").write("NEW-LOCALES")
+    os.makedirs(os.path.join(src, "config", "api_config"))   # a release ships new presets
+    io.open(os.path.join(src, "config", "api_config", "(New) Preset.json"), "w").write("{}")
+    io.open(os.path.join(src, "config", "api_config", "Custom.json"), "w").write('{"shipped": 1}')
     io.open(os.path.join(src, "version.json"), "w").write(json.dumps({"version": version}))
     zpath = os.path.join(tmp, "release.zip")
     with zipfile.ZipFile(zpath, "w", zipfile.ZIP_DEFLATED) as z:
@@ -181,7 +184,8 @@ def test_download_and_apply_e2e():
             "source layer must be REPLACED, not merged"
         # user-owned config survives; shipped config is refreshed
         assert io.open(os.path.join(root, "config", "system_config.json")).read() == '{"mine": 1}'
-        assert os.path.exists(os.path.join(root, "config", "api_config", "Custom.json"))
+        assert io.open(os.path.join(root, "config", "api_config", "Custom.json")).read() == "{}",             "the user's own interface file wins"
+        assert os.path.exists(os.path.join(root, "config", "api_config", "(New) Preset.json")),             "presets new in the release must still arrive (dir is merged, not replaced)"
         assert io.open(os.path.join(root, "config", "locales.json")).read() == "NEW-LOCALES"
         # data/ + python/ untouched
         assert io.open(os.path.join(root, "data", "user.db")).read() == "USERDATA"

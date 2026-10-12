@@ -2704,6 +2704,28 @@ def self_update_status():
     return dict(_SELF_UPDATE)
 
 
+@app.post("/api/self-update/restart")
+def self_update_restart():
+    """Restart the server into the just-applied update, on the SAME port, so the
+    open page can reconnect and reload. Only after a successful self-update, and
+    never while a translation is running (any session's: LAN users included)."""
+    _block_in_server_mode()
+    if _SELF_UPDATE["status"] != "done":
+        raise HTTPException(409, "No applied update to restart into.")
+    with _TASKS_LOCK:
+        if any(t.get("status") == "running" for t in TASKS.values()):
+            return {"restarting": False, "busy": True}
+    port = globals().get("_SERVED_PORT")
+    if not port:
+        raise HTTPException(409, "Server port unknown; restart the app manually.")
+    from core.updater import relaunch_after_exit
+    env = dict(os.environ, PORT=str(port), LINGUAHARU_NO_BROWSER="1")
+    relaunch_after_exit([sys.executable, "-m", "webapp.server"], env=env, new_console=True)
+    # Exit after this response is sent; the waiter starts the new server once we're gone.
+    threading.Timer(0.5, lambda: os._exit(0)).start()
+    return {"restarting": True}
+
+
 class _NoCacheStatic(StaticFiles):
     """StaticFiles that asks browsers to revalidate every time, so UI edits to
     style.css / app.js show up on reload instead of serving a stale cached copy
@@ -2801,6 +2823,7 @@ if __name__ == "__main__":
     # Freeze the security posture to the ACTUAL bind: config may change at
     # runtime, the listening socket can't (see _bound_externally).
     globals()["_SERVED_EXTERNALLY"] = not _is_loopback(host)
+    globals()["_SERVED_PORT"] = port   # the update restart comes back on this port
     url = f"http://{'127.0.0.1' if host == '0.0.0.0' else host}:{port}"
     print(f"LinguaHaru Web → {url}")
     # Auto-open the browser for a local desktop launch (double-click Start-Web.bat),

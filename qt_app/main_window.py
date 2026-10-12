@@ -496,8 +496,7 @@ class MainWindow(FluentWindow):
                 self._update_tip = None
             pos = InfoBarPosition.TOP
             if ok:
-                InfoBar.success(tr("Update Done Restart", self._lang), "",
-                                duration=-1, position=pos, parent=self)
+                self._restart_after_update()
             else:
                 InfoBar.error(tr("Update Failed", self._lang), str(msg)[-200:],
                               duration=8000, position=pos, parent=self)
@@ -505,6 +504,57 @@ class MainWindow(FluentWindow):
         self._self_update_worker.progress.connect(on_prog)
         self._self_update_worker.finished_ok.connect(on_done)
         self._self_update_worker.start()
+
+    def _app_busy(self):
+        """A translation or real-time session is running — restarting would kill it."""
+        tp, lp = self.translate_page, self.live_page
+        return bool((tp and getattr(tp, "_workers", None)) or (lp and lp._is_listening()))
+
+    def _restart_after_update(self, seconds=5):
+        """The update is applied: count down, then restart into the new version.
+        Waits for a running translation / live session to finish first."""
+        from PySide6.QtCore import QTimer
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        bar = InfoBar.success(tr("Update Done", self._lang),
+                              tr("Restart In Seconds", self._lang).format(n=seconds),
+                              duration=-1, position=InfoBarPosition.TOP, parent=self)
+        left = [seconds]
+        timer = QTimer(self)
+
+        def tick():
+            if self._app_busy():   # hold the countdown until the task is done
+                bar.contentLabel.setText(tr("Restart After Task", self._lang))
+                left[0] = seconds
+                return
+            if left[0] <= 0:
+                timer.stop()
+                self._relaunch()
+                return
+            bar.contentLabel.setText(tr("Restart In Seconds", self._lang).format(n=left[0]))
+            left[0] -= 1
+        timer.timeout.connect(tick)
+        timer.start(1000)
+        self._restart_timer = timer
+        tick()
+
+    def _relaunch(self):
+        from core.updater import relaunch_after_exit
+        exe = sys.executable
+        if os.name == "nt":   # no console window for the GUI (like the desktop shortcut)
+            w = os.path.join(os.path.dirname(exe), "pythonw.exe")
+            exe = w if os.path.exists(w) else exe
+        cmd = [exe] + (["-s"] if sys.flags.no_user_site else []) \
+            + [os.path.abspath(sys.argv[0])] + sys.argv[1:]
+        try:
+            relaunch_after_exit(cmd)
+        except Exception as e:  # noqa: BLE001 — fall back to asking for a manual restart
+            from qfluentwidgets import InfoBar, InfoBarPosition
+            InfoBar.warning(tr("Update Done Restart", self._lang), str(e)[-200:], duration=-1,
+                            position=InfoBarPosition.TOP, parent=self)
+            return
+        self.close()
+        from PySide6.QtWidgets import QApplication
+        QApplication.quit()
 
     def _show_lang_menu(self):
         """Dropdown of interface languages, opened from the bottom nav item."""

@@ -375,5 +375,8 @@
   "Custom Language Tip": "Eine Zielsprache, die die integrierte Liste nicht abdeckt. Code eingeben (z. B. yue für Kantonesisch); eine Prompt-Datei wird aus der englischen Vorlage erstellt und die Sprache erscheint in allen Sprachmenüs.",
   "Downloading model": "Modell wird heruntergeladen",
   "Model Download Failed Network": "Modell-Download fehlgeschlagen: Netzwerkproblem. Verbindung/Proxy prüfen oder das Modellpaket in den Ordner models entpacken.",
-  "Model Load Failed": "Modell konnte nicht geladen werden"
+  "Model Load Failed": "Modell konnte nicht geladen werden",
+  "Update Done": "Update abgeschlossen",
+  "Restart In Seconds": "Neustart in {n} s…",
+  "Restart After Task": "Startet neu, sobald die aktuelle Aufgabe fertig ist"
 }

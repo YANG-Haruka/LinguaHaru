@@ -375,5 +375,8 @@
   "Custom Language Tip": "Une langue cible absente de la liste intégrée. Saisissez son code (p. ex. yue pour le cantonais) ; un fichier de prompt est créé depuis le modèle anglais et la langue apparaît dans tous les menus.",
   "Downloading model": "Téléchargement du modèle",
   "Model Download Failed Network": "Échec du téléchargement du modèle : problème réseau. Vérifiez la connexion/le proxy, ou décompressez le pack du modèle dans le dossier models.",
-  "Model Load Failed": "Échec du chargement du modèle"
+  "Model Load Failed": "Échec du chargement du modèle",
+  "Update Done": "Mise à jour terminée",
+  "Restart In Seconds": "Redémarrage dans {n} s…",
+  "Restart After Task": "Redémarrera à la fin de la tâche en cours"
 }

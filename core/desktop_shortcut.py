@@ -72,7 +72,11 @@ def write_mac_app(app, src_root=ROOT, root=None):
         # bound, resources sealed). Unsigned, a downloaded copy is reported as
         # "damaged" with no way to open it, and TCC keys permissions to the
         # launcher instead of the app. Builds made on Windows sign with rcodesign.
-        subprocess.run(["codesign", "--force", "--sign", "-", app],
+        # The DR is the bundle id, not the cdhash: otherwise this Desktop copy and
+        # the unzipped app (and every new version) are different apps to TCC, and
+        # the user was asked again for screen/system-audio access on every launch.
+        subprocess.run(["codesign", "--force", "--sign", "-",
+                        '-r=designated => identifier "com.linguaharu.desktop"', app],
                        capture_output=True, timeout=60, check=False)
 
 

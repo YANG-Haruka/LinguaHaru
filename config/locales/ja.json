@@ -410,9 +410,12 @@
   "Play Recording": "録音を再生",
   "Summarize": "要約する",
   "Summarizing": "要約中…",
-  "System Audio Permission": "システム音声の取得には許可が必要です：「システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオ録音」で LinguaHaru を許可し、LinguaHaru を再起動してください。",
+  "System Audio Permission": "システム音声の取得には許可が必要です：「システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオ録音」で LinguaHaru を許可し、LinguaHaru を再起動してください。許可したのにまだ表示される場合は、一覧から「−」で LinguaHaru を削除して、もう一度許可してください（1回だけ）。",
   "Listening System Audio": "システム音声を聞き取り中…",
   "Downloading model": "モデルをダウンロード中",
   "Model Download Failed Network": "モデルのダウンロードに失敗しました（ネットワークの問題）。接続/プロキシを確認するか、モデルパックを models フォルダに展開してください。",
-  "Model Load Failed": "モデルの読み込みに失敗しました"
+  "Model Load Failed": "モデルの読み込みに失敗しました",
+  "Update Done": "アップデート完了",
+  "Restart In Seconds": "{n} 秒後に自動で再起動します…",
+  "Restart After Task": "現在のタスクが終わったら自動で再起動します"
 }

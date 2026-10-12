@@ -450,9 +450,12 @@
   "Play Recording": "播放錄音",
   "Summarize": "產生摘要",
   "Summarizing": "正在產生摘要…",
-  "System Audio Permission": "監聽系統聲音需要權限：打開「系統設定 → 隱私權與安全性 → 螢幕與系統錄音」，允許 LinguaHaru，然後重新啟動 LinguaHaru。",
+  "System Audio Permission": "監聽系統聲音需要權限：打開「系統設定 → 隱私權與安全性 → 螢幕與系統錄音」，允許 LinguaHaru，然後重新啟動 LinguaHaru。若已經允許仍然提示，請在該列表中用「−」刪除 LinguaHaru 後重新允許（只需一次）。",
   "Listening System Audio": "正在聆聽系統聲音…",
   "Downloading model": "正在下載模型",
   "Model Download Failed Network": "模型下載失敗：網路連線有問題。請檢查網路/代理，或下載模型包解壓到 models 資料夾。",
-  "Model Load Failed": "模型載入失敗"
+  "Model Load Failed": "模型載入失敗",
+  "Update Done": "更新完成",
+  "Restart In Seconds": "{n} 秒後自動重新啟動…",
+  "Restart After Task": "目前任務結束後將自動重新啟動"
 }

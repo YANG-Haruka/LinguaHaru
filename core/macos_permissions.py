@@ -27,12 +27,21 @@ def _request_screen_capture():
     """CoreGraphics via ctypes — no pyobjc needed. Request shows the system
     prompt and adds LinguaHaru to the Screen & System Audio Recording list."""
     import ctypes
+    from core import backend
+    # Ask at most ONCE, ever. CGPreflightScreenCaptureAccess() checks full SCREEN
+    # capture, so it stays False for a user who granted only "System Audio
+    # Recording" (all we need) — re-requesting on that popped the system dialog on
+    # every launch even after the user had allowed it. The live page still shows
+    # its own hint if system-audio capture is actually denied.
+    if backend.get_config("mac_screen_capture_asked", False):
+        return
     cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
     cg.CGPreflightScreenCaptureAccess.restype = ctypes.c_bool
     cg.CGRequestScreenCaptureAccess.restype = ctypes.c_bool
     if not cg.CGPreflightScreenCaptureAccess():
         cg.CGRequestScreenCaptureAccess()
         app_logger.info("Requested Screen & System Audio Recording access")
+    backend.set_config("mac_screen_capture_asked", True)
 
 
 def request_permissions():

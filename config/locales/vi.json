@@ -375,5 +375,8 @@
   "Custom Language Tip": "Ngôn ngữ đích không có trong danh sách tích hợp. Nhập mã của nó (ví dụ yue cho tiếng Quảng Đông); tệp prompt được tạo từ mẫu tiếng Anh và ngôn ngữ sẽ xuất hiện trong mọi menu ngôn ngữ.",
   "Downloading model": "Đang tải mô hình",
   "Model Download Failed Network": "Tải mô hình thất bại: lỗi mạng. Hãy kiểm tra kết nối/proxy, hoặc giải nén gói mô hình vào thư mục models.",
-  "Model Load Failed": "Không tải được mô hình"
+  "Model Load Failed": "Không tải được mô hình",
+  "Update Done": "Cập nhật xong",
+  "Restart In Seconds": "Khởi động lại sau {n} giây…",
+  "Restart After Task": "Sẽ khởi động lại khi tác vụ hiện tại xong"
 }

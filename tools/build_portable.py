@@ -273,11 +273,20 @@ def _rcodesign():
 def _sign_mac_app(app):
     """Ad-hoc sign the whole bundle. A downloaded app whose bundle isn't signed
     is reported as "damaged" on Apple Silicon (no "Open Anyway"), and TCC would
-    key permissions to the bare launcher instead of com.linguaharu.desktop."""
+    key permissions to the bare launcher instead of com.linguaharu.desktop.
+    The designated requirement is the bundle id, not the default cdhash, so TCC
+    grants survive the Desktop copy and every update (a cdhash DR made each copy
+    and version a different app: the user was re-asked on every launch)."""
     if sys.platform == "darwin":
-        subprocess.run(["codesign", "--force", "--sign", "-", app], check=True)
+        subprocess.run(["codesign", "--force", "--sign", "-",
+                        f"-r={MAC_DESIGNATED_REQ}", app], check=True)
     else:
-        subprocess.run([_rcodesign(), "sign", app], check=True)
+        # rcodesign wants the COMPILED requirement (csreq -b of MAC_DESIGNATED_REQ).
+        req = os.path.join(ROOT, "assets", "macos", "designated.req")
+        subprocess.run([_rcodesign(), "sign", "--code-requirements-file", req, app], check=True)
+
+
+MAC_DESIGNATED_REQ = 'designated => identifier "com.linguaharu.desktop"'
 
 
 def _uv():

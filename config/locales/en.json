@@ -706,9 +706,12 @@
   "Play Recording": "Play recording",
   "Summarize": "Summarize",
   "Summarizing": "Summarizing…",
-  "System Audio Permission": "System audio needs permission: open System Settings > Privacy & Security > Screen & System Audio Recording, allow LinguaHaru, then restart LinguaHaru.",
+  "System Audio Permission": "System audio needs permission: open System Settings > Privacy & Security > Screen & System Audio Recording, allow LinguaHaru, then restart LinguaHaru. If it still asks after you allowed it, remove LinguaHaru from that list with \"−\" and allow it again (once).",
   "Listening System Audio": "Listening to the system audio…",
   "Downloading model": "Downloading model",
   "Model Download Failed Network": "Model download failed — network problem. Check your connection/proxy, or download the model pack and unzip it into the models folder.",
-  "Model Load Failed": "Model failed to load"
+  "Model Load Failed": "Model failed to load",
+  "Update Done": "Update complete",
+  "Restart In Seconds": "Restarting in {n} s…",
+  "Restart After Task": "Will restart when the current task finishes"
 }
