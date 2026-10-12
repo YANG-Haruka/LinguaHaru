@@ -154,7 +154,7 @@
   "Local Interfaces Subtitle": "Ollama / LM Studio models on this machine",
   "Local Model Warning": "Local models translate noticeably worse — quality is not guaranteed.",
   "Local Network Mode (Restart to Apply)": "Local Network Mode (Restart to Apply)",
-  "Local Voice Mode": "Local Model (SenseVoice + LLM)",
+  "Local Voice Mode": "Local Model ({stt} + LLM)",
   "Local Voice Needs Plugin": "Local mode needs the Audio/Video plugin (SenseVoice). Install it on the Plugins page.",
   "MD Bilingual": "Enable Markdown Bilingual Mode",
   "Max Retries": "Max Retries",
@@ -698,12 +698,13 @@
   "Caption Font": "Font / style / size…",
   "Reset Style": "Reset to default",
   "Default Output Device": "default output device",
-  "Save Recording": "Save recording & summary",
-  "Save Recording Tip": "Keep this session's audio (WAV) and transcript, and summarize it automatically when you stop. Find them in History.",
+  "Save Recording": "Save recording",
+  "Save Recording Tip": "Keep this session's audio (WAV) next to its transcript. Find it in History, where you can also summarize the session.",
   "Summary Saved": "Summary saved — see History",
   "Summary Failed": "Couldn't summarize (check the model / API key)",
   "Open Transcript": "Open transcript",
   "Play Recording": "Play recording",
   "Summarize": "Summarize",
-  "Summarizing": "Summarizing…"
+  "Summarizing": "Summarizing…",
+  "System Audio Permission": "System audio needs permission: open System Settings > Privacy & Security > Screen & System Audio Recording, allow LinguaHaru, then restart LinguaHaru."
 }

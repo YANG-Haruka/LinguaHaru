@@ -30,7 +30,7 @@ from core import backend
 from qt_app.i18n import tr
 from qt_app.live_worker import (
     LiveWorker, LiveRecognizeWorker, LiveTranslateWorker,
-    LiveTranslateStreamWorker, PreloadWorker, SummaryWorker)
+    LiveTranslateStreamWorker, PreloadWorker)
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP, get_language_code
 from core.optional_modules import realtime_voice_available
@@ -731,7 +731,6 @@ class LivePage(ScrollArea):
         self._rec = None                # wave writer while "Save Recording" is on
         self._rec_path = ""
         self._rec_start = None
-        self._summarizers = []          # keep SummaryWorkers alive until done
 
         self.setWidgetResizable(True)
         self.enableTransparentBackground()
@@ -765,7 +764,7 @@ class LivePage(ScrollArea):
         self.mode_label = BodyLabel(tr("Live Mode", lang))
         row1.addWidget(self.mode_label)
         self.mode_combo = ComboBox()
-        self.mode_combo.addItems([tr("Local Voice Mode", lang), tr("Google Voice Mode", lang)])
+        self.mode_combo.addItems(self._mode_items())
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         row1.addWidget(self.mode_combo, 1)
         self.mic_label = BodyLabel(tr("Input", lang))
@@ -811,15 +810,15 @@ class LivePage(ScrollArea):
         self.caption_btn = ToggleButton(FluentIcon.VIEW, tr("Floating Captions", lang))
         self.caption_btn.toggled.connect(self._on_caption_toggled)
         cap_row.addWidget(self.caption_btn)
-        # Keep this session's audio (WAV) + transcript and auto-summarize it;
-        # all three show up in History.
+        cap_row.addStretch(1)
+        # Keep this session's audio (WAV) next to its transcript; History plays
+        # it and summarizes the session on demand.
         self.save_rec_cb = CheckBox(tr("Save Recording", lang))
         self.save_rec_cb.setToolTip(tr("Save Recording Tip", lang))
         self.save_rec_cb.setChecked(bool(config.get("live_save_recording", False)))
         self.save_rec_cb.toggled.connect(
             lambda on: backend.set_config("live_save_recording", bool(on)))
         cap_row.addWidget(self.save_rec_cb)
-        cap_row.addStretch(1)
         ctrl.addLayout(cap_row)
         layout.addWidget(ctrl_card)
 
@@ -881,7 +880,7 @@ class LivePage(ScrollArea):
         cur = self.mode_combo.currentIndex()
         self.mode_combo.blockSignals(True)
         self.mode_combo.clear()
-        self.mode_combo.addItems([tr("Local Voice Mode", lang), tr("Google Voice Mode", lang)])
+        self.mode_combo.addItems(self._mode_items())
         self.mode_combo.setCurrentIndex(max(0, cur))
         self.mode_combo.blockSignals(False)
         self.target_label.setText(tr("Target Language", lang))
@@ -896,6 +895,18 @@ class LivePage(ScrollArea):
         self.plugin_btn.setText(tr("Go to Plugins", lang))
         self._refresh_model_sub()
         self._update_hint()
+
+    def _mode_items(self):
+        """Mode combo labels; the local one names the STT model actually in use
+        (it said "SenseVoice" even while Qwen3-ASR was running)."""
+        try:
+            from core.pipelines.video_translation_pipeline import (
+                get_selected_live_stt_model, get_stt_model)
+            stt = get_stt_model(get_selected_live_stt_model())["label"].split(" — ")[0]
+        except Exception:  # noqa: BLE001 — plugin missing: keep a generic name
+            stt = "ASR"
+        return [tr("Local Voice Mode", self._lang).replace("{stt}", stt),
+                tr("Google Voice Mode", self._lang)]
 
     def _on_mode_changed(self, index):
         if 0 <= index < len(self._mode_ids):
@@ -960,6 +971,7 @@ class LivePage(ScrollArea):
                 name = tr("Default Output Device", self._lang)
             self.mic_combo.addItem(f"{tr('System Audio', self._lang)}: {name}")
             self._mic_loopback_ids.append(sid)
+        prev = prev or backend.get_config("live_input", "")
         idx = self.mic_combo.findText(prev)
         self.mic_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.mic_combo.blockSignals(False)
@@ -1023,6 +1035,13 @@ class LivePage(ScrollArea):
         if self._source is None:
             self._populate_mics()
         self._refresh_model_sub()
+        if not self._is_listening():
+            cur = self.mode_combo.currentIndex()
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.clear()
+            self.mode_combo.addItems(self._mode_items())
+            self.mode_combo.setCurrentIndex(max(0, cur))
+            self.mode_combo.blockSignals(False)
         # Warm the local STT model in the background as soon as the page is
         # opened, so pressing Start doesn't sit through the library import +
         # model load (~10 s on a cold start).
@@ -1209,6 +1228,7 @@ class LivePage(ScrollArea):
         listening, swap just the capture device on the fly (keep worker/VAD/
         transcript). Otherwise it's just a stored selection (used at next start).
         Fail-safe: if the new device won't open, stop the whole session."""
+        backend.set_config("live_input", self.mic_combo.currentText())
         if not self._is_listening():
             return
         self._stop_input()
@@ -1325,30 +1345,16 @@ class LivePage(ScrollArea):
             tokens = int(self._session_tokens or 0)
             # history_dir(), the DB the History page reads — the legacy log_dir
             # made every desktop real-time session invisible in History.
-            rec = save_live_session(src, dst, "Auto",
+            save_live_session(src, dst, "Auto",
                                     self.target_combo.currentText(), model, online,
                                     result_dir, backend.history_dir(), total_tokens=tokens,
                                     cost_amount=None, cost_currency=None,
                                     start_time=self._rec_start, audio_path=audio_path)
-            # Saving was asked for -> also summarize it (in the target language).
-            out = (rec or {}).get("output_file_path")
-            if self.save_rec_cb.isChecked() and out:
-                w = SummaryWorker(out, self.target_combo.currentText(), self)
-                w.done.connect(lambda ok, w=w: self._on_summary_done(w, ok))
-                self._summarizers.append(w)
-                w.start()
             if not getattr(self, "_shutting_down", False):   # no modal during app close
                 from qt_app.thanks import show_thanks
                 show_thanks(self.window(), self._lang, tokens)
         except Exception:  # noqa: BLE001 — history is best-effort
             pass
-
-    def _on_summary_done(self, worker, ok):
-        if worker in self._summarizers:
-            self._summarizers.remove(worker)
-        if not getattr(self, "_shutting_down", False):
-            self._info(tr("Summary Saved" if ok else "Summary Failed", self._lang),
-                       error=not ok)
 
     def hideEvent(self, event):
         # Leaving the page must not keep the mic/loopback hot or the bar open.
@@ -1407,10 +1413,17 @@ class LivePage(ScrollArea):
             self._vad_feed(pcm)
 
     def _on_loopback_failed(self, msg):
-        """Fail safe: report the error and stop cleanly (no crash)."""
-        self.status_label.setText("error: " + msg)
+        """Fail safe: stop cleanly, THEN say why. (Setting the status first let
+        on_stop overwrite it with "Connection closed" — the reason never showed
+        and nothing was logged.)"""
+        from core.log_config import app_logger
+        app_logger.warning(f"System audio capture failed: {msg}")
         if self._is_listening():
             self.on_stop()
+        if "-3801" in msg or "TCC" in msg or "Screen Recording" in msg:
+            msg = tr("System Audio Permission", self._lang)   # macOS privacy denial
+        self.status_label.setText("⚠ " + msg)
+        self._info(msg, error=True, duration=-1)              # stays until closed
 
     def _update_level(self, pcm):
         """Feed the waveform from the chunk's RMS (visual 'I hear you')."""
@@ -2072,7 +2085,7 @@ class LivePage(ScrollArea):
         if self._caption_bar is not None:
             self._caption_bar.set_interim(text)
 
-    def _info(self, text, error=False):
+    def _info(self, text, error=False, duration=4000):
         bar = InfoBar.error if error else InfoBar.success
         bar(tr("Real-Time Voice", self._lang), text, orient=1, isClosable=True,
-            position=InfoBarPosition.TOP, duration=4000, parent=self)
+            position=InfoBarPosition.TOP, duration=duration, parent=self)

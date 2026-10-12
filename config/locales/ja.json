@@ -112,7 +112,7 @@
   "Local Interfaces Subtitle": "このマシンの Ollama / LM Studio モデル",
   "Local Model Warning": "ローカルモデルは翻訳品質が劣ります。品質は保証されません。",
   "Local Network Mode (Restart to Apply)": "ローカルネットワークモード（再起動後に適用）",
-  "Local Voice Mode": "ローカルモデル（SenseVoice + LLM）",
+  "Local Voice Mode": "ローカルモデル（{stt} + LLM）",
   "Local Voice Needs Plugin": "ローカルモードには「音声・動画」プラグイン（SenseVoice）が必要です。プラグインページからインストールしてください。",
   "MD Bilingual": "Markdown二言語対照を有効にする",
   "Max Retries": "最大再試行回数",
@@ -402,12 +402,13 @@
   "Caption Font": "フォント / スタイル / サイズ…",
   "Reset Style": "既定に戻す",
   "Default Output Device": "既定の出力デバイス",
-  "Save Recording": "録音と要約を保存",
-  "Save Recording Tip": "このセッションの録音（WAV）と文字起こしを保存し、停止時に自動で要約します。「履歴」から確認できます。",
+  "Save Recording": "録音を保存",
+  "Save Recording Tip": "このセッションの録音（WAV）を文字起こしと一緒に保存します。「履歴」で再生・要約できます。",
   "Summary Saved": "要約を保存しました（履歴で確認できます）",
   "Summary Failed": "要約できませんでした（モデル / API キーを確認してください）",
   "Open Transcript": "文字起こしを開く",
   "Play Recording": "録音を再生",
   "Summarize": "要約する",
-  "Summarizing": "要約中…"
+  "Summarizing": "要約中…",
+  "System Audio Permission": "システム音声の取得には許可が必要です：「システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオ録音」で LinguaHaru を許可し、LinguaHaru を再起動してください。"
 }

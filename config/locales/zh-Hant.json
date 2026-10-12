@@ -137,7 +137,7 @@
   "Local Interfaces Subtitle": "本機上的 Ollama / LM Studio 模型",
   "Local Model Warning": "本地模型翻譯品質較差，不保證翻譯效果。",
   "Local Network Mode (Restart to Apply)": "區域網路模式（重新啟動後生效）",
-  "Local Voice Mode": "本機模型（SenseVoice + 大模型）",
+  "Local Voice Mode": "本機模型（{stt} + 大模型）",
   "Local Voice Needs Plugin": "本機模式需要「音視訊」外掛（SenseVoice），請在「外掛」頁面安裝。",
   "MD Bilingual": "Markdown 雙語對照",
   "Max Retries": "最大重試次數",
@@ -442,12 +442,13 @@
   "Caption Font": "字型 / 字形 / 字級…",
   "Reset Style": "恢復預設",
   "Default Output Device": "預設輸出裝置",
-  "Save Recording": "儲存錄音和摘要",
-  "Save Recording Tip": "儲存本次的錄音（WAV）和文字轉寫，停止時自動產生摘要。可在「歷史紀錄」中找到。",
+  "Save Recording": "儲存錄音",
+  "Save Recording Tip": "儲存本次的錄音（WAV），和文字紀錄放在一起。可在「歷史紀錄」中播放並產生摘要。",
   "Summary Saved": "摘要已儲存，可在歷史紀錄中查看",
   "Summary Failed": "摘要失敗（請檢查模型 / API 金鑰）",
   "Open Transcript": "開啟文字紀錄",
   "Play Recording": "播放錄音",
   "Summarize": "產生摘要",
-  "Summarizing": "正在產生摘要…"
+  "Summarizing": "正在產生摘要…",
+  "System Audio Permission": "監聽系統聲音需要權限：打開「系統設定 → 隱私權與安全性 → 螢幕與系統錄音」，允許 LinguaHaru，然後重新啟動 LinguaHaru。"
 }

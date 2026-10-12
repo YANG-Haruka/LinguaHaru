@@ -103,7 +103,7 @@
   "Local Interfaces Subtitle": "Ollama / LM Studio models on this machine",
   "Local Model Warning": "Local models translate noticeably worse — quality is not guaranteed.",
   "Local Network Mode (Restart to Apply)": "로컬 네트워크 모드 (적용하려면 재시작)",
-  "Local Voice Mode": "Local Model (SenseVoice + LLM)",
+  "Local Voice Mode": "Local Model ({stt} + LLM)",
   "Local Voice Needs Plugin": "Local mode needs the Audio/Video plugin (SenseVoice). Install it on the Plugins page.",
   "MD Bilingual": "Markdown 이중 언어 모드 활성화",
   "Max Retries": "최대 재시도 횟수",
