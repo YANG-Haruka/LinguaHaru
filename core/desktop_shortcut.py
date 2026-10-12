@@ -5,8 +5,6 @@ import os
 import subprocess
 import sys
 
-from core.log_config import app_logger
-
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DONE_KEY = "desktop_shortcut_done"
 
@@ -69,6 +67,13 @@ def write_mac_app(app, src_root=ROOT, root=None):
     if root:
         with open(os.path.join(contents, "Resources", "root.txt"), "w", encoding="utf-8") as f:
             f.write(root + "\n")
+    if sys.platform == "darwin":
+        # Ad-hoc sign the BUNDLE (identifier com.linguaharu.desktop, Info.plist
+        # bound, resources sealed). Unsigned, a downloaded copy is reported as
+        # "damaged" with no way to open it, and TCC keys permissions to the
+        # launcher instead of the app. Builds made on Windows sign with rcodesign.
+        subprocess.run(["codesign", "--force", "--sign", "-", app],
+                       capture_output=True, timeout=60, check=False)
 
 
 def _mac():
@@ -76,13 +81,11 @@ def _mac():
     if os.path.exists(app):      # never overwrite a launcher the user already has
         return
     write_mac_app(app, root=ROOT)
-    # Ad-hoc sign the bundle so macOS ties permissions to it (best-effort).
-    subprocess.run(["codesign", "--force", "--sign", "-", app],
-                   capture_output=True, timeout=60, check=False)
 
 
 def ensure_desktop_shortcut():
     """Create the shortcut once (portable builds only). Best-effort."""
+    from core.log_config import app_logger
     try:
         from core import backend
         if not _is_portable() or backend.get_config(_DONE_KEY, False):

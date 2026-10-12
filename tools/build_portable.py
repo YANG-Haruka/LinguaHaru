@@ -227,9 +227,10 @@ open ./LinguaHaru.app
 MAC_README = """LinguaHaru for macOS (13 Ventura or newer, Apple Silicon M1 or later)
 
 1. Unzip, then double-click "LinguaHaru.app".
-   macOS blocks apps downloaded from the internet the first time:
-   - right-click LinguaHaru.app > Open > Open, or
-   - System Settings > Privacy & Security > scroll down > "Open Anyway".
+   The first time, macOS blocks it ("can't verify the developer"). Click Done,
+   open System Settings > Privacy & Security, scroll down and click
+   "Open Anyway" next to LinguaHaru, then confirm. (On macOS 14 and older,
+   right-click LinguaHaru.app > Open also works.)
 2. On first start LinguaHaru asks for the Microphone and for Screen & System
    Audio Recording (needed to translate what your Mac is playing) — click
    Allow, then restart LinguaHaru once.
@@ -237,12 +238,45 @@ MAC_README = """LinguaHaru for macOS (13 Ventura or newer, Apple Silicon M1 or l
    folder afterwards, or the shortcut breaks.
 
 macOS 13 以上、M 系列芯片。
-1. 解压后双击 LinguaHaru.app。第一次会被系统拦截：右键 > 打开，或在
-   「系统设置 > 隐私与安全性」里点「仍要打开」。
+1. 解压后双击 LinguaHaru.app。第一次会被系统拦截（「无法验证开发者」）：
+   点「完成」，打开「系统设置 > 隐私与安全性」，滚到底部，在 LinguaHaru 旁点
+   「仍要打开」并确认。（macOS 14 及更早版本也可以右键 > 打开。）
 2. 首次启动会请求「麦克风」和「屏幕与系统录音」（翻译电脑正在播放的声音需要）
    权限，点允许，然后重启一次 LinguaHaru。
 3. 桌面上也会生成 LinguaHaru 快捷方式。之后不要再移动本文件夹。
 """
+
+
+# Ad-hoc bundle signing on Windows (no codesign there): rcodesign, pinned + verified.
+RCODESIGN_URL = ("https://github.com/indygreg/apple-platform-rs/releases/download/"
+                 "apple-codesign%2F0.29.0/apple-codesign-0.29.0-x86_64-pc-windows-msvc.zip")
+RCODESIGN_SHA256 = "54bb500e2da7a8de02fcae0f331d1cac6e6d7173b4281042ff9c528ba3159aaa"
+
+
+def _rcodesign():
+    import hashlib
+    tool_dir = os.path.join(OUT_ROOT, ".tools", "rcodesign-0.29.0")
+    exe = os.path.join(tool_dir, "rcodesign.exe")
+    if not os.path.exists(exe):
+        data = _download(RCODESIGN_URL)
+        if hashlib.sha256(data).hexdigest() != RCODESIGN_SHA256:
+            raise RuntimeError("rcodesign download failed its SHA-256 check")
+        os.makedirs(tool_dir, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            member = next(n for n in z.namelist() if n.endswith("/rcodesign.exe"))
+            with open(exe, "wb") as f:
+                f.write(z.read(member))
+    return exe
+
+
+def _sign_mac_app(app):
+    """Ad-hoc sign the whole bundle. A downloaded app whose bundle isn't signed
+    is reported as "damaged" on Apple Silicon (no "Open Anyway"), and TCC would
+    key permissions to the bare launcher instead of com.linguaharu.desktop."""
+    if sys.platform == "darwin":
+        subprocess.run(["codesign", "--force", "--sign", "-", app], check=True)
+    else:
+        subprocess.run([_rcodesign(), "sign", app], check=True)
 
 
 def _uv():
@@ -314,6 +348,7 @@ def build_mac(variant):
     sys.path.insert(0, ROOT)
     from core.desktop_shortcut import write_mac_app
     write_mac_app(os.path.join(dest, "LinguaHaru.app"), src_root=dest)
+    _sign_mac_app(os.path.join(dest, "LinguaHaru.app"))
 
     print("[5/6] launcher")
     with open(os.path.join(dest, "Start-Desktop.command"), "w", newline="\n") as f:
