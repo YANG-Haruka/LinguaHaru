@@ -1546,8 +1546,15 @@ class LivePage(ScrollArea):
                 # at this exact frame split words in half ("大家好" -> "大"+"今…").
                 # Cut at the quietest moment of the last 2 s instead, and carry
                 # the audio after the cut into the next utterance — nothing is
-                # dropped or recognized twice.
-                cut = self._quiet_cut(self._vad_buf)
+                # dropped or recognized twice. No real dip there (continuous
+                # Japanese: "プロジェク"/"トを…")? Keep listening for one, up to
+                # 1.5x the cap, then cut at the quietest point anyway.
+                cut, depth = self._quiet_cut(self._vad_buf)
+                if depth > 0.15 and dur_ms < 1.5 * getattr(self, "_max_seg_ms", _VAD_MAX_MS):
+                    if self._partial_ms >= _VAD_PARTIAL_MS:
+                        self._partial_ms = 0.0
+                        self._dispatch_recognize(bytes(self._vad_buf), is_final=False)
+                    return
                 utt = bytes(self._vad_buf[:cut])
                 self._vad_buf = bytearray(self._vad_buf[cut:])
                 self._partial_ms = 0.0
@@ -1571,18 +1578,21 @@ class LivePage(ScrollArea):
 
     @staticmethod
     def _quiet_cut(buf):
-        """Byte offset of the quietest ~80 ms window in the last 2 s (and the
-        back half) of PCM16 ``buf`` — where a forced cut is least likely to
-        split a word."""
+        """(byte offset, depth) of the quietest ~80 ms window in the last 2 s
+        (and the back half) of PCM16 ``buf`` — where a forced cut is least likely
+        to split a word. depth = that window's energy / the median window's:
+        near 0 is a real pause, near 1 means there's no pause to cut at."""
         import numpy as np
         a = np.frombuffer(bytes(buf), dtype=np.int16).astype(np.float32)
         win = _VAD_FRAME * 5
         lo = max(len(a) - _IN_RATE * 2, len(a) // 2)
         n = (len(a) - lo) // win
         if n < 2:
-            return len(buf)
+            return len(buf), 0.0
         energy = (a[lo:lo + n * win].reshape(n, win) ** 2).mean(axis=1)
-        return (lo + int(energy.argmin()) * win + win // 2) * 2
+        k = int(energy.argmin())
+        depth = float(energy[k] / max(float(np.median(energy)), 1e-9))
+        return (lo + k * win + win // 2) * 2, depth
 
     def _dispatch_recognize(self, pcm, is_final):
         """Run one STT pass (partial or final) on the utterance-so-far. Only one
@@ -1638,6 +1648,10 @@ class LivePage(ScrollArea):
                     "不過", "而且", "还有", "還有", "其实", "其實", "因此", "于是",
                     "於是", "可是", "虽然", "雖然", "这样", "這樣")
     _MIN_CELLS, _TARGET_CELLS, _HARD_CELLS = 24, 60, 88
+    # SenseVoice ends EVERY partial with "。", so a bare full stop is weak
+    # evidence: it ends a unit only after >= 8 cells, and in a partial only when
+    # more agreed text follows it (else "…多分。"/"あのアプリの。" fragments).
+    _SENT_MIN_CELLS = 8
 
     @staticmethod
     def _cell(ch):
@@ -1655,7 +1669,8 @@ class LivePage(ScrollArea):
         for i in range(start, len(text)):
             ch = text[i]
             w += cls._cell(ch)
-            if ch in cls._SENT_END:
+            if ch in cls._SENT_END and w >= cls._SENT_MIN_CELLS and (
+                    final or i + 1 < len(text)):
                 return i + 1                       # best: a full stop
             if w >= cls._MIN_CELLS:
                 if ch in cls._CLAUSE:
@@ -1837,9 +1852,10 @@ class LivePage(ScrollArea):
         source = (source or "").strip()
         if not source or not self._WORDLIKE.search(source):
             return
-        # A lone latin letter ("H.", "I.") is noise SenseVoice hallucinated on
-        # a short VAD blip — real sessions were littered with them.
-        if len(re.findall(r"[A-Za-z]", source)) < 2 and not re.search(r"[^\x00-\x7f]", source):
+        # A lone latin letter ("H.", "I.") or a single kana/CJK char ("の。",
+        # "あ。") is noise or a filler SenseVoice split off — real sessions were
+        # littered with them.
+        if sum(ch.isalpha() for ch in source) < 2:
             return
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")

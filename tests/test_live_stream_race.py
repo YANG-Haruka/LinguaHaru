@@ -104,7 +104,8 @@ def test_final_after_next_onset_is_not_recommitted():
     deliver("好的。我们出发吧", False)
     deliver("好的。我们出发吧。", True)
     check("utterance 2 committed once, nothing duplicated",
-          page.commits == ["今天天气很好。", "我们去公园吧。", "明天见。", "好的。", "我们出发吧。"],
+          # "好的。" alone is too short to end a unit -> rides with its sentence
+          page.commits == ["今天天气很好。", "我们去公园吧。", "明天见。", "好的。我们出发吧。"],
           str(page.commits))
 
 
@@ -170,6 +171,47 @@ def test_redecode_spacing_neither_repeats_nor_drops():
           repr(page._uncommitted_tail("えっと今作業していました。")))
 
 
+def test_fragments_and_soft_cap():
+    print("Live: no fragments from SenseVoice's trailing 。, fillers dropped, no cut without a pause")
+    import numpy as np
+    page, lp = _page()
+    deliver = lambda text, fin: page._on_recognized_stream(text, "ja", fin)
+    # Every partial ends with 。 — agreeing on "…多分。" must NOT commit it yet.
+    deliver("データベースの設定とか多分。", False)
+    deliver("データベースの設定とか多分。", False)
+    check("a full stop at the end of the partial isn't a boundary yet", page.commits == [],
+          str(page.commits))
+    deliver("データベースの設定とか多分、あのアプリの開発も半分ぐらい。", True)
+    check("the sentence commits whole once it's complete",
+          page.commits == ["データベースの設定とか多分、あのアプリの開発も半分ぐらい。"], str(page.commits))
+    # Filler / noise units are not committed (real commit path, stubbed sink).
+    P = lp.LivePage
+    kept = []
+    stub = types.SimpleNamespace(input_text=None)
+    for s in ("の。", "あ。", "H.", "No.", "はい、そうです。"):
+        stub2 = types.SimpleNamespace(_WORDLIKE=P._WORDLIKE)
+        try:
+            P._commit_stream_sentence(stub2, s)
+        except AttributeError:      # got past the filters -> would be committed
+            kept.append(s)
+    check("fillers dropped, real words kept", kept == ["No.", "はい、そうです。"], str(kept))
+    # Soft cap: continuous sound with no dip -> keep listening past the cap.
+    page2, _ = _page()
+    page2._hang_ms, page2._max_seg_ms = 900.0, 3000.0
+    page2._frame_is_speech = lambda _f: True
+    rng = np.random.default_rng(1)
+    for i in range(int(3000 * 1.3 / 16)):
+        fr = (rng.standard_normal(lp._VAD_FRAME) * 8000).astype(np.int16).tobytes()
+        page2._vad_step(fr, np.frombuffer(fr, dtype=np.int16))
+    check("no forced cut at the cap when there's no pause (waits up to 1.5x)",
+          not any(f for _, f in page2.dispatched + page2._recog_pending))
+    for i in range(int(3000 * 0.3 / 16)):
+        fr = (rng.standard_normal(lp._VAD_FRAME) * 8000).astype(np.int16).tobytes()
+        page2._vad_step(fr, np.frombuffer(fr, dtype=np.int16))
+    check("…but it does cut by 1.5x the cap",
+          any(f for _, f in page2.dispatched + page2._recog_pending))
+
+
 def test_web_twin_has_the_same_fix():
     print("Live (web): the real app.js code, run against a slow-final race, commits cleanly")
     node = shutil.which("node")
@@ -192,4 +234,5 @@ if __name__ == "__main__":
          test_queue_keeps_order_and_never_drops_a_final,
          test_hard_cap_cuts_at_a_pause_without_loss_or_overlap,
          test_redecode_spacing_neither_repeats_nor_drops,
+         test_fragments_and_soft_cap,
          test_web_twin_has_the_same_fix])
