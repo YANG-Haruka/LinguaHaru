@@ -19,16 +19,14 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
     StrongBodyLabel, PrimaryPushButton, PillPushButton, FluentIcon, FlowLayout,
-    SimpleCardWidget, CardWidget, IconWidget, InfoBar, InfoBarPosition, MessageBoxBase,
-    LineEdit, PasswordLineEdit, RoundMenu, Action,
+    SimpleCardWidget, IconWidget, InfoBar, InfoBarPosition, MessageBoxBase,
+    LineEdit, RoundMenu, Action,
 )
 
 from core import backend
 from qt_app.i18n import tr
 from qt_app.widgets import EntryCard
 from core.api_keys import load_api_key_for_model, save_api_key_for_model
-
-_GOOGLE_PROVIDER = "(Google) Live Translate"
 
 
 class AddInterfaceDialog(MessageBoxBase):
@@ -209,31 +207,9 @@ class InterfacePage(ScrollArea):
         layout.addWidget(self.local_group)
         layout.addWidget(self.official_group)
         layout.addWidget(self.custom_group)
-
-        # --- Google realtime-voice key (Gemini Live), its own card ---
-        self.google_section = StrongBodyLabel(tr("Realtime Voice", lang))
-        layout.addWidget(self.google_section)
-        google_card = CardWidget()
-        g_form = QFormLayout(google_card)
-        g_form.setContentsMargins(20, 16, 20, 16)
-        g_form.setSpacing(12)
-        self.google_key_edit = PasswordLineEdit()
-        self.google_key_edit.setText(load_api_key_for_model(_GOOGLE_PROVIDER))
-        self.google_key_edit.setPlaceholderText("AIza... / AQ...")
-        self.google_key_edit.editingFinished.connect(self._save_google_key)
-        self.google_key_label = BodyLabel(tr("Google API Key", lang))
-        g_form.addRow(self.google_key_label, self.google_key_edit)
-        self.google_hint = BodyLabel(tr("Google API Key Hint", lang))
-        self.google_hint.setWordWrap(True)
-        g_form.addRow("", self.google_hint)
-        layout.addWidget(google_card)
         layout.addStretch(1)
 
         self.reload()
-
-    def _save_google_key(self):
-        save_api_key_for_model(_GOOGLE_PROVIDER, self.google_key_edit.text().strip())
-        self._info(tr("Google key saved", self._lang))
 
     # --- i18n ---
     def retranslate(self, lang):
@@ -247,9 +223,6 @@ class InterfacePage(ScrollArea):
         self.official_group.subtitle.setText(tr("Official Interfaces Subtitle", lang))
         self.custom_group.title.setText(tr("Custom Interfaces", lang))
         self.custom_group.subtitle.setText(tr("Custom Interfaces Subtitle", lang))
-        self.google_section.setText(tr("Realtime Voice", lang))
-        self.google_key_label.setText(tr("Google API Key", lang))
-        self.google_hint.setText(tr("Google API Key Hint", lang))
         self.reload()
 
     # --- data ---

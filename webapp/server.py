@@ -22,7 +22,7 @@ import contextvars
 from datetime import datetime
 
 from fastapi import (
-    FastAPI, UploadFile, Form, HTTPException, WebSocket, WebSocketDisconnect,
+    FastAPI, UploadFile, Form, HTTPException,
     Request)
 from fastapi.responses import (
     FileResponse, StreamingResponse, HTMLResponse, JSONResponse)
@@ -2187,118 +2187,12 @@ async def module_action(action: str, payload: dict):
 
 
 # --------------------------------------------------------------------------- #
-# Real-time voice translation (Gemini 3.5 Live Translate, proxied so the
-# Google key stays server-side). Browser streams 16k PCM, gets back 24k PCM
-# audio + input/output transcripts.
-# --------------------------------------------------------------------------- #
-GEMINI_LIVE_URL = ("wss://generativelanguage.googleapis.com/ws/"
-                   "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
-GEMINI_LIVE_MODEL = "models/gemini-3.5-live-translate-preview"
-
-
-@app.websocket("/ws/live-translate")
-async def live_translate(ws: WebSocket):
-    # Reject cross-origin browser connections (CSWSH): this endpoint spends the
-    # server-side Google key, so only same-origin pages may open it. Non-browser
-    # clients send no Origin and aren't subject to CSRF.
-    if not _origin_allowed(ws.headers.get("origin"), ws.headers.get("host", "")):
-        await ws.close(code=1008)
-        return
-    await ws.accept()
-    # Concurrency cap — refuse if too many live sessions already spend the key.
-    global _live_ws_count
-    with _live_ws_count_lock:
-        if _live_ws_count >= _LIVE_WS_MAX:
-            await ws.send_json({"type": "error",
-                                "message": f"实时语音并发已满（最多 {_LIVE_WS_MAX} 路），请稍后再试。"})
-            await ws.close(code=1013)
-            return
-        _live_ws_count += 1
-    target = ws.query_params.get("target", "zh")
-    key = load_api_key_for_model("(Google) Live Translate")  # provider "Google"
-    if not key:
-        await ws.send_json({"type": "error", "message": "Google API key not set (Settings)."})
-        await ws.close()
-        with _live_ws_count_lock:
-            _live_ws_count -= 1
-        return
-    try:
-        import websockets
-    except Exception:
-        await ws.send_json({"type": "error", "message": "websockets package missing."})
-        await ws.close()
-        with _live_ws_count_lock:
-            _live_ws_count -= 1
-        return
-
-    try:
-        async with websockets.connect(f"{GEMINI_LIVE_URL}?key={key}", max_size=None) as gws:
-            await gws.send(json.dumps({"setup": {
-                "model": GEMINI_LIVE_MODEL,
-                "generationConfig": {
-                    "responseModalities": ["AUDIO"],
-                    "translationConfig": {"targetLanguageCode": target, "echoTargetLanguage": True},
-                },
-                "inputAudioTranscription": {},
-                "outputAudioTranscription": {},
-            }}))
-
-            async def client_to_gemini():
-                try:
-                    while True:
-                        d = json.loads(await ws.receive_text())
-                        if "audio" in d:
-                            await gws.send(json.dumps({"realtimeInput": {
-                                "audio": {"data": d["audio"], "mimeType": "audio/pcm;rate=16000"}}}))
-                        elif d.get("end"):
-                            await gws.send(json.dumps({"realtimeInput": {"audioStreamEnd": True}}))
-                except (WebSocketDisconnect, RuntimeError):
-                    pass
-
-            async def gemini_to_client():
-                async for raw in gws:
-                    await ws.send_text(raw if isinstance(raw, str) else raw.decode("utf-8", "replace"))
-
-            # Hard cap the session length so a forgotten tab can't stream (and
-            # spend the key) indefinitely.
-            await asyncio.wait_for(
-                asyncio.gather(client_to_gemini(), gemini_to_client()),
-                timeout=_LIVE_WS_MAX_SECONDS)
-    except asyncio.TimeoutError:
-        try:
-            await ws.send_json({"type": "error", "message": "实时语音会话已达最长时长，请重新开始。"})
-        except Exception:
-            pass
-    except Exception as e:  # noqa: BLE001
-        try:
-            await ws.send_json({"type": "error", "message": str(e)[:300]})
-        except Exception:
-            pass
-    finally:
-        with _live_ws_count_lock:
-            _live_ws_count -= 1
-        try:
-            await ws.close()
-        except Exception:
-            pass
-
-
-# --------------------------------------------------------------------------- #
 # Real-time voice translation — LOCAL path (SenseVoice STT + LLM translate).
 # The client does VAD and POSTs one complete utterance (16 kHz mono PCM16,
-# base64); we recognize it locally then translate with the active model. No
-# Google key needed; requires the Video/Audio plugin (funasr).
+# base64); we recognize it locally then translate with the active model.
+# Requires a speech-recognition plugin.
 # --------------------------------------------------------------------------- #
 _STT_LOCK = threading.Lock()  # funasr is not thread-safe — serialize recognition
-
-# Google Live WS guards: this endpoint spends the server-side Google key, so cap
-# concurrent sessions and the max session length (esp. for LAN deploys where one
-# user could open many tabs and stream forever).
-_LIVE_WS_MAX = 3
-_LIVE_WS_MAX_SECONDS = 1800   # 30 min hard cap per session
-_live_ws_count = 0
-_live_ws_count_lock = threading.Lock()
-
 
 @app.post("/api/live-preload")
 async def live_preload(payload: dict = None):

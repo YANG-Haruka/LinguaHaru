@@ -1,13 +1,10 @@
-"""Real-time voice translation page (Gemini 3.5 Live Translate).
+"""Real-time voice translation page: on-device STT (SenseVoice / Whisper /
+Qwen3-ASR) + the active translation interface. Mirrors the Web "实时语音" tab.
 
-Mirrors the Web "实时语音" tab, but the desktop app talks to Gemini directly via
-LiveWorker (the Google key is local, so no proxy is needed). The mic is captured
-with QAudioSource and the translated speech is played through QAudioSink.
-
-Gemini Live needs 16 kHz mono PCM16 in and emits 24 kHz mono PCM16 out. Real
-audio devices rarely offer exactly that, and numpy isn't a base dependency, so
-the small pure-Python helpers below decode/resample/re-encode with the stdlib
-``array`` module. Transcripts arrive as incremental fragments and are appended.
+The mic (QAudioSource) or system audio is fed to the recognizer as 16 kHz mono
+PCM16. Real audio devices rarely offer exactly that, and numpy isn't a base
+dependency, so the small pure-Python helpers below decode/resample/re-encode
+with the stdlib ``array`` module.
 """
 
 import array
@@ -29,15 +26,12 @@ from qfluentwidgets import (
 from core import backend
 from qt_app.i18n import tr
 from qt_app.live_worker import (
-    LiveWorker, LiveRecognizeWorker, LiveTranslateWorker,
-    LiveTranslateStreamWorker, PreloadWorker)
+    LiveRecognizeWorker, LiveTranslateWorker, LiveTranslateStreamWorker, PreloadWorker)
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP, get_language_code
 from core.optional_modules import realtime_voice_available
 
-_GOOGLE_PROVIDER = "(Google) Live Translate"
-_IN_RATE = 16000   # Gemini input / SenseVoice input
-_OUT_RATE = 24000  # Gemini output
+_IN_RATE = 16000   # recognizer input
 
 # Energy-VAD thresholds for the local mode (mirror the Web vad-worklet).
 # Lowered so a soft voice still trips onset (the adaptive floor guards noise).
@@ -458,7 +452,7 @@ class _CaptionBar(QWidget):
             else:
                 return              # its source already scrolled out of the buffer
         else:
-            # Keyless (Google mode): pair with the OLDEST source still waiting.
+            # Keyless: pair with the OLDEST source still waiting.
             for e in self._entries:
                 if e.get("src") and not e.get("dst"):
                     e["dst"] = text
@@ -707,9 +701,7 @@ class LivePage(ScrollArea):
         super().__init__(parent)
         self.setObjectName("LivePage")
         self._lang = lang
-        self._mode = "local"    # "local" (SenseVoice+LLM) | "google" (Gemini Live)
         self.on_open_plugins = None  # set by MainWindow -> jump to Plugins page
-        self._worker = None
         self._preloader = None
         self._local_workers = []
         self._source = None     # QAudioSource (mic)
@@ -717,10 +709,7 @@ class LivePage(ScrollArea):
         self._loopback = None    # _LoopbackWorker (system-audio capture)
         self._caption_bar = None  # _CaptionBar (floating subtitles)
         self._overlay = None     # LoadingOverlay (model-loading glass lock)
-        self._sink = None       # QAudioSink (playback)
-        self._play_io = None
         self._in_fmt = None
-        self._out_fmt = None
         # local-mode neural-VAD state (TEN-VAD, energy fallback)
         self._vad_on = False
         self._vad_buf = bytearray()
@@ -762,9 +751,8 @@ class LivePage(ScrollArea):
         layout.addWidget(self.subtitle)
 
         # --- Controls (two rows, like the Web layout) ---
-        #   Row 1: voice mode + microphone
+        #   Row 1: input source
         #   Row 2: target language + volume meter + round start/stop button
-        self._mode_ids = ["local", "google"]
         config = backend.read_config()
         ctrl_card = CardWidget()
         ctrl = QVBoxLayout(ctrl_card)
@@ -773,12 +761,6 @@ class LivePage(ScrollArea):
 
         row1 = QHBoxLayout()
         row1.setSpacing(10)
-        self.mode_label = BodyLabel(tr("Live Mode", lang))
-        row1.addWidget(self.mode_label)
-        self.mode_combo = ComboBox()
-        self.mode_combo.addItems(self._mode_items())
-        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-        row1.addWidget(self.mode_combo, 1)
         self.mic_label = BodyLabel(tr("Input", lang))
         row1.addWidget(self.mic_label)
         self.mic_combo = ComboBox()
@@ -888,13 +870,6 @@ class LivePage(ScrollArea):
         self._lang = lang
         self.title.setText(tr("Real-Time Voice", lang))
         self.subtitle.setText(tr("Real-Time Voice Subtitle", lang))
-        self.mode_label.setText(tr("Live Mode", lang))
-        cur = self.mode_combo.currentIndex()
-        self.mode_combo.blockSignals(True)
-        self.mode_combo.clear()
-        self.mode_combo.addItems(self._mode_items())
-        self.mode_combo.setCurrentIndex(max(0, cur))
-        self.mode_combo.blockSignals(False)
         self.target_label.setText(tr("Target Language", lang))
         self.mic_label.setText(tr("Input", lang))
         self.caption_btn.setText(tr("Floating Captions", lang))
@@ -908,35 +883,10 @@ class LivePage(ScrollArea):
         self._refresh_model_sub()
         self._update_hint()
 
-    def _mode_items(self):
-        """Mode combo labels; the local one names the STT model actually in use
-        (it said "SenseVoice" even while Qwen3-ASR was running)."""
-        try:
-            from core.pipelines.video_translation_pipeline import (
-                get_selected_live_stt_model, get_stt_model)
-            stt = get_stt_model(get_selected_live_stt_model())["label"].split(" — ")[0]
-        except Exception:  # noqa: BLE001 — plugin missing: keep a generic name
-            stt = "ASR"
-        return [tr("Local Voice Mode", self._lang).replace("{stt}", stt),
-                tr("Google Voice Mode", self._lang)]
-
-    def _on_mode_changed(self, index):
-        if 0 <= index < len(self._mode_ids):
-            self._mode = self._mode_ids[index]
-        self._update_hint()
-
     def _update_hint(self):
-        """Show a hint when the chosen mode isn't ready (no plugin / no key)."""
-        msg = ""
-        need_plugin = False
-        if self._mode == "local":
-            if not realtime_voice_available():
-                msg = tr("Local Voice Needs Plugin", self._lang)
-                need_plugin = True
-        else:
-            if not load_api_key_for_model(_GOOGLE_PROVIDER):
-                msg = tr("Google key not set", self._lang)
-        self.hint_label.setText(msg)
+        """Show a hint (and a jump to Plugins) when the STT plugin is missing."""
+        need_plugin = not realtime_voice_available()
+        self.hint_label.setText(tr("Local Voice Needs Plugin", self._lang) if need_plugin else "")
         # Offer a one-click jump to the Plugins page when a plugin is missing.
         self.plugin_btn.setVisible(need_plugin)
 
@@ -1047,17 +997,10 @@ class LivePage(ScrollArea):
         if self._source is None:
             self._populate_mics()
         self._refresh_model_sub()
-        if not self._is_listening():
-            cur = self.mode_combo.currentIndex()
-            self.mode_combo.blockSignals(True)
-            self.mode_combo.clear()
-            self.mode_combo.addItems(self._mode_items())
-            self.mode_combo.setCurrentIndex(max(0, cur))
-            self.mode_combo.blockSignals(False)
         # Warm the local STT model in the background as soon as the page is
         # opened, so pressing Start doesn't sit through the library import +
         # model load (~10 s on a cold start).
-        if self._mode == "local" and realtime_voice_available():
+        if realtime_voice_available():
             from core.pipelines.video_translation_pipeline import recognizer_ready
             if not recognizer_ready():
                 self._start_preload()
@@ -1101,10 +1044,7 @@ class LivePage(ScrollArea):
     def on_start(self):
         if self._is_listening():
             return
-        if self._mode == "google" and not load_api_key_for_model(_GOOGLE_PROVIDER):
-            self._info(tr("Google key not set", self._lang), error=True)
-            return
-        if self._mode == "local" and not realtime_voice_available():
+        if not realtime_voice_available():
             self._info(tr("Local Voice Needs Plugin", self._lang), error=True)
             return
 
@@ -1116,34 +1056,20 @@ class LivePage(ScrollArea):
         self._out_rows = []
         self._reset_vad()
 
-        # Google mode needs playback (it returns spoken audio); local mode is
-        # text-only, so skip the speaker.
-        # Google mode speaks its translation aloud — but not while capturing the
-        # system audio, or it would hear (and re-translate) itself.
-        if not self._start_audio(with_playback=(self._mode == "google"
-                                                and self._selected_loopback_id() is None)):
+        if not self._open_input():
             return
 
         self._start_recording()
 
-        if self._mode == "google":
-            target = get_language_code(self.target_combo.currentText())
-            self._worker = LiveWorker(load_api_key_for_model(_GOOGLE_PROVIDER), target)
-            self._worker.inputText.connect(self._append_input)
-            self._worker.outputText.connect(self._append_output)
-            self._worker.audio.connect(self._play_audio)
-            self._worker.status.connect(self._on_status)
-            self._worker.start()
+        # Preload the model first and show a loading hint, so the first sentence
+        # isn't silently blocked on a slow model load.
+        from core.pipelines.video_translation_pipeline import recognizer_ready
+        if recognizer_ready():
+            self.status_label.setText(self._listening_text())
         else:
-            # Local mode: preload the model first and show a loading hint, so the
-            # first sentence isn't silently blocked on a slow model load.
-            from core.pipelines.video_translation_pipeline import recognizer_ready
-            if recognizer_ready():
-                self.status_label.setText(self._listening_text())
-            else:
-                self.status_label.setText(tr("Loading model", self._lang))
-                self._show_loading()
-                self._start_preload()   # joins a background preload already running
+            self.status_label.setText(tr("Loading model", self._lang))
+            self._show_loading()
+            self._start_preload()   # joins a background preload already running
 
         # Real-time voice is in progress -> keep the system awake (and, with the
         # process-wide opt-out, un-throttled) until on_stop.
@@ -1156,7 +1082,6 @@ class LivePage(ScrollArea):
 
         self._style_go(True)
         self.target_combo.setEnabled(False)
-        self.mode_combo.setEnabled(False)
 
     @staticmethod
     def _audio_fmt(rate):
@@ -1170,7 +1095,7 @@ class LivePage(ScrollArea):
     def _open_input(self):
         """Open ONLY the currently-selected capture device (mic QAudioSource OR
         the soundcard loopback worker) and wire it to the pipeline. Returns True
-        on success. Reused by both _start_audio and live input switching, so it
+        on success. Used by on_start and by live input switching, so it
         must not touch playback/worker/VAD state. Assumes any prior input was
         already torn down by the caller."""
         try:
@@ -1224,25 +1149,6 @@ class LivePage(ScrollArea):
             self._loopback.wait(2000)
             self._loopback = None
 
-    def _start_audio(self, with_playback=True):
-        """Open the mic (QAudioSource); also the speaker (QAudioSink) if needed."""
-        if not self._open_input():
-            return False
-
-        if with_playback:
-            try:
-                from PySide6.QtMultimedia import QAudioSink, QMediaDevices
-            except Exception as e:  # noqa: BLE001
-                self._info(f"QtMultimedia unavailable: {e}", error=True)
-                return False
-            out_dev = QMediaDevices.defaultAudioOutput()
-            want_out = self._audio_fmt(_OUT_RATE)
-            self._out_fmt = (want_out if out_dev.isFormatSupported(want_out)
-                             else out_dev.preferredFormat())
-            self._sink = QAudioSink(out_dev, self._out_fmt)
-            self._play_io = self._sink.start()
-        return True
-
     def _on_mic_changed(self, index):
         """User picked a different input source. If a session is currently
         listening, swap just the capture device on the fly (keep worker/VAD/
@@ -1266,11 +1172,7 @@ class LivePage(ScrollArea):
         # on_stop also runs on app close / page leave; only a session that was
         # actually running gets saved (closing the app used to save the last,
         # already-saved session a second time).
-        was_live = self._is_listening() or self._worker is not None
-        if self._worker is not None:
-            self._worker.stop()
-            self._worker.wait(2000)
-            self._worker = None
+        was_live = self._is_listening()
         if self._preloader is not None:
             self._preloader.wait(2000)
             self._preloader = None
@@ -1293,15 +1195,10 @@ class LivePage(ScrollArea):
             self._loopback.stop()
             self._loopback.wait(2000)
             self._loopback = None
-        if self._sink is not None:
-            self._sink.stop()
-            self._sink = None
-            self._play_io = None
         self._reset_vad()
         self.waveform.clear()
         self._style_go(False)
         self.target_combo.setEnabled(True)
-        self.mode_combo.setEnabled(True)
         self.status_label.setText(tr("Connection closed", self._lang))
         if getattr(self, "_power_held", False):   # balance begin_activity()
             self._power_held = False
@@ -1412,11 +1309,7 @@ class LivePage(ScrollArea):
             pcm = _encode_from_mono_float(samples, QAudioFormat.SampleFormat.Int16, 1)
         self._record(pcm)
         self._update_level(pcm)
-        if self._mode == "google":
-            if self._worker is not None:
-                self._worker.send_audio(pcm)
-        else:
-            self._vad_feed(pcm)
+        self._vad_feed(pcm)
 
     def _on_loopback_pcm(self, pcm):
         """System-audio loopback chunk (already 16 kHz mono PCM16). Feeds the
@@ -1426,11 +1319,7 @@ class LivePage(ScrollArea):
             return
         self._record(pcm)
         self._update_level(pcm)
-        if self._mode == "google":
-            if self._worker is not None:
-                self._worker.send_audio(pcm)
-        else:
-            self._vad_feed(pcm)
+        self._vad_feed(pcm)
 
     def _on_loopback_failed(self, msg):
         """Fail safe: stop cleanly, THEN say why. (Setting the status first let
@@ -2044,47 +1933,6 @@ class LivePage(ScrollArea):
             self._set_out_row(key, final)
         self._push_caption(translated=final, key=key)
         self._set_caption_interim("")
-
-    def _play_audio(self, data):
-        if self._play_io is None:
-            return
-        fmt = self._out_fmt
-        from PySide6.QtMultimedia import QAudioFormat
-        if (fmt.sampleRate() == _OUT_RATE and fmt.channelCount() == 1
-                and fmt.sampleFormat() == QAudioFormat.SampleFormat.Int16):
-            out = data
-        else:
-            samples = _decode_to_mono_float(
-                data, QAudioFormat.SampleFormat.Int16, 1)
-            samples = _resample(samples, _OUT_RATE, fmt.sampleRate())
-            out = _encode_from_mono_float(samples, fmt.sampleFormat(), fmt.channelCount())
-        self._play_io.write(out)
-
-    # --- worker signals ---
-    def _append_input(self, text):
-        self.input_text.insertPlainText(text)
-        self.input_text.ensureCursorVisible()
-        # Google fragments are incremental: mirror the panel's last line.
-        self._push_caption(source=self._last_line(self.input_text))
-
-    def _append_output(self, text):
-        self.output_text.insertPlainText(text)
-        self.output_text.ensureCursorVisible()
-        self._push_caption(translated=self._last_line(self.output_text))
-
-    @staticmethod
-    def _last_line(text_edit):
-        lines = [ln for ln in text_edit.toPlainText().splitlines() if ln.strip()]
-        return lines[-1] if lines else ""
-
-    def _on_status(self, status):
-        if status == "listening":
-            self.status_label.setText(self._listening_text())
-        elif status == "closed":
-            self.status_label.setText(tr("Connection closed", self._lang))
-        elif status.startswith("error:"):
-            self.status_label.setText(status)
-            self._info(status, error=True)
 
     # --- floating captions ---
     def _on_caption_toggled(self, checked):
