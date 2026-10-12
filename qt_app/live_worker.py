@@ -149,6 +149,11 @@ class LiveTranslateWorker(QThread):
                     self._source, self._src or "auto", self._dst, self._model,
                     self._online, self._key, context=ctx)
                 tokens += int((usage or {}).get("total_tokens", 0) or 0)
+                # Much longer than its source -> the model translated the context
+                # too; redo this one without context.
+                if ok and ctx and len(translated or "") > max(60, 5 * len(self._source)):
+                    ctx = ""
+                    continue
                 if ok or attempt:
                     break
                 self.msleep(1500)

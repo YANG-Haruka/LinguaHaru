@@ -21,7 +21,8 @@ def _windows():
         return "'" + s.replace("'", "''") + "'"
     ps = (
         "$d=[Environment]::GetFolderPath('Desktop');"   # honors OneDrive redirection
-        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut((Join-Path $d 'LinguaHaru.lnk'));"
+        "$p=Join-Path $d 'LinguaHaru.lnk'; if (Test-Path $p) { exit 0 };"   # never overwrite
+        "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($p);"
         # pythonw: no console window. -s: ignore the user's site-packages
         # (what Start-Desktop.bat does with PYTHONNOUSERSITE).
         f"$s.TargetPath={q(os.path.join(ROOT, 'python', 'pythonw.exe'))};"
@@ -35,6 +36,8 @@ def _windows():
 
 def _mac():
     app = os.path.join(os.path.expanduser("~/Desktop"), "LinguaHaru.app")
+    if os.path.exists(app):      # never overwrite a launcher the user already has
+        return
     contents = os.path.join(app, "Contents")
     os.makedirs(os.path.join(contents, "MacOS"), exist_ok=True)
     os.makedirs(os.path.join(contents, "Resources"), exist_ok=True)

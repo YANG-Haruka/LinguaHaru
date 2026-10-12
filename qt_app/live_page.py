@@ -1830,6 +1830,10 @@ class LivePage(ScrollArea):
         source = (source or "").strip()
         if not source or not self._WORDLIKE.search(source):
             return
+        # A lone latin letter ("H.", "I.") is noise SenseVoice hallucinated on
+        # a short VAD blip — real sessions were littered with them.
+        if len(re.findall(r"[A-Za-z]", source)) < 2 and not re.search(r"[^\x00-\x7f]", source):
+            return
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")
         # Unique per-sentence key: two sentences committed in the same second
@@ -1844,7 +1848,9 @@ class LivePage(ScrollArea):
         # their sources in order even when replies come back out of order.
         self._out_rows.append([key, ""])
         self._render_output()
-        ctx = self._live_context()
+        # No context for very short/garbled lines: the model then "translates"
+        # the context instead and the line gets content its source never had.
+        ctx = self._live_context() if len(source) >= 12 else ""
         self._ctx_history.append(source)   # after building ctx (don't include self)
         del self._ctx_history[:-6]         # keep only the last few lines
         online = backend.get_config("default_online", True)
