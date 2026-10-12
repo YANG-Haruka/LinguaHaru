@@ -27,6 +27,7 @@
     <div class="brand">
       <img class="brand-logo" src="/assets/img/logo.png" alt="LinguaHaru" />
       <span class="brand-sub mono">Translation Console</span>
+      <span class="brand-sub mono" id="brand-version"></span>
     </div>
 
     <nav class="nav" id="tabs">
@@ -128,15 +129,6 @@
       <div class="iface-group"><h3 data-i18n="Local Interfaces">本地接口</h3><div class="iface-cards" id="iface-local"></div></div>
       <div class="iface-group"><h3 data-i18n="Official Interfaces">官方接口</h3><div class="iface-cards" id="iface-official"></div></div>
       <div class="iface-group"><h3 data-i18n="Custom Interfaces">自定义接口</h3><div class="iface-cards" id="iface-custom"></div></div>
-      <div class="iface-group">
-        <h3 data-i18n="Realtime Voice">实时语音</h3>
-        <div class="card" style="max-width:520px">
-          <div class="if-name" style="font-weight:600">Google Gemini · <span data-i18n="Realtime Voice">实时语音</span></div>
-          <div class="if-sub mono" style="color:var(--muted);margin:2px 0 12px">gemini-live-translate</div>
-          <div class="field"><label data-i18n="Google API Key">Google API 密钥</label><input type="password" id="iface-google-key" placeholder="AQ... / AIza..." /></div>
-          <div class="muted" style="margin-top:8px" data-i18n="Google API Key Hint">用于「实时语音」的 Gemini Live Translate。</div>
-        </div>
-      </div>
     </section>
 
     <!-- Support / contact dialog -->
@@ -431,16 +423,6 @@
 
       <!-- Sub-pane: live voice -->
       <div class="subpane" data-sub="live">
-        <div class="segmented" id="live-mode" role="tablist" style="margin-bottom:14px">
-          <button class="seg active" data-mode="local" role="tab">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 9h6v6H9z"/></svg>
-            <span data-i18n="Local Mode Label">本地模型 · SenseVoice + LLM</span>
-          </button>
-          <button class="seg" data-mode="google" role="tab">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.5 2.6 2.5 14.8 0 18M12 3c-2.5 2.6-2.5 14.8 0 18"/></svg>
-            <span data-i18n="Google Live Label">Google 实时翻译 · Gemini Live</span>
-          </button>
-        </div>
         <div id="live-hint" class="warn" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.3 4l-8 14a1.5 1.5 0 0 0 1.3 2.2h16.8a1.5 1.5 0 0 0 1.3-2.2l-8-14a1.5 1.5 0 0 0-2.6 0z"/></svg>
           <span id="live-hint-text"></span>
@@ -893,6 +875,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20261013A"></script>
+  <script src="/static/app.js?v=20261013D"></script>
 </body>
 </html>

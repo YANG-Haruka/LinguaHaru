@@ -431,5 +431,7 @@
   "OCR Server URL Tip": "PaddleOCR / PaddleX のサービス URL。例：paddlex --serve --pipeline OCR --port 8080 で起動",
   "OCR Server Token": "アクセストークン（任意）",
   "Baidu OCR Key Tip": "Baidu AI Cloud コンソール → 文字認識 → アプリを作成 → API Key と Secret Key をコピー（位置付きの汎用文字認識）。",
-  "Saved Placeholder": "設定済み（空欄なら変更しない）"
+  "Saved Placeholder": "設定済み（空欄なら変更しない）",
+  "Up To Date": "最新です",
+  "New Version": "新しいバージョン"
 }

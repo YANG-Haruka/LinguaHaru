@@ -392,5 +392,7 @@
   "OCR Server URL Tip": "บริการ PaddleOCR / PaddleX เช่น เริ่มด้วย: paddlex --serve --pipeline OCR --port 8080",
   "OCR Server Token": "โทเค็นการเข้าถึง (ไม่บังคับ)",
   "Baidu OCR Key Tip": "คอนโซล Baidu AI Cloud → การจดจำข้อความ → สร้างแอป → คัดลอก API Key และ Secret Key (OCR ทั่วไปแบบมีตำแหน่ง)",
-  "Saved Placeholder": "บันทึกแล้ว (เว้นว่างไว้เพื่อคงค่าเดิม)"
+  "Saved Placeholder": "บันทึกแล้ว (เว้นว่างไว้เพื่อคงค่าเดิม)",
+  "Up To Date": "เป็นเวอร์ชันล่าสุด",
+  "New Version": "มีเวอร์ชันใหม่"
 }

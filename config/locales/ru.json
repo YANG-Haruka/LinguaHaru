@@ -392,5 +392,7 @@
   "OCR Server URL Tip": "Сервис PaddleOCR / PaddleX, например запущенный командой: paddlex --serve --pipeline OCR --port 8080",
   "OCR Server Token": "Токен доступа (необязательно)",
   "Baidu OCR Key Tip": "Консоль Baidu AI Cloud → Распознавание текста → создайте приложение → скопируйте его API Key и Secret Key (общий OCR с координатами).",
-  "Saved Placeholder": "Сохранено (оставьте пустым, чтобы не менять)"
+  "Saved Placeholder": "Сохранено (оставьте пустым, чтобы не менять)",
+  "Up To Date": "Актуальная версия",
+  "New Version": "Новая версия"
 }

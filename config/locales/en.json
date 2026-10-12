@@ -727,5 +727,7 @@
   "OCR Server URL Tip": "A PaddleOCR / PaddleX serving endpoint, e.g. started with: paddlex --serve --pipeline OCR --port 8080",
   "OCR Server Token": "Access token (optional)",
   "Baidu OCR Key Tip": "Baidu AI Cloud console → Text Recognition → create an app → copy its API Key and Secret Key (general OCR with positions).",
-  "Saved Placeholder": "Saved (leave empty to keep)"
+  "Saved Placeholder": "Saved (leave empty to keep)",
+  "Up To Date": "Up to date",
+  "New Version": "New version"
 }

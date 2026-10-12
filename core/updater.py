@@ -103,7 +103,11 @@ def check_for_update():
 # this is portable-only; frozen users use the "open download page" path.
 _SOURCE_LAYER = ["core", "webapp", "qt_app", "config", "plugins", "assets",
                  "requirements", "version.json", "app_qt.py",
-                 "README.md", "README_ZH.md", "README_JP.md", "LICENSE"]
+                 "README.md", "README_ZH.md", "README_JP.md", "LICENSE",
+                 # macOS package only (absent from the Windows zips -> skipped): the
+                 # signed app bundle + launcher must update too, or a Mac user who
+                 # updates in-app keeps the old launcher / code signature forever.
+                 "LinguaHaru.app", "Start-Desktop.command", "README-Mac.txt"]
 
 
 def portable_root():
@@ -123,8 +127,12 @@ def _portable_python(root):
 
 
 def flavor():
-    """'desktop' if the Qt UI package is present, else 'web'."""
-    return "desktop" if os.path.isdir(os.path.join(RUNTIME_ROOT, "qt_app")) else "web"
+    """version.json asset key: 'desktop-mac' (macOS desktop package), 'desktop'
+    (Windows Qt package) or 'web'. The Mac must get the Mac zip: the Windows one
+    has no LinguaHaru.app, so the launcher and its signature never updated."""
+    if not os.path.isdir(os.path.join(RUNTIME_ROOT, "qt_app")):
+        return "web"
+    return "desktop-mac" if sys.platform == "darwin" else "desktop"
 
 
 def _download(url, dst, progress_cb=None, base=0.0, span=0.7):
@@ -220,6 +228,13 @@ def _safe_extract(zpath, ex):
             if (info.external_attr >> 16) & 0o170000 == 0o120000:
                 raise ValueError(f"symlink in zip: {name}")
         z.extractall(ex)
+        if os.name != "nt":
+            # zipfile drops unix permissions: restore the exec bits (the macOS
+            # launcher, Start-Desktop.command), or the updated app can't start.
+            for info in z.infolist():
+                mode = (info.external_attr >> 16) & 0o777
+                if mode & 0o111:
+                    os.chmod(os.path.join(ex, info.filename), mode)
 
 
 def _sha256(path):

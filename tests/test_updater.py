@@ -216,6 +216,40 @@ def test_plugin_update_check_china_fallback():
     ok("plugin update check + installs have a China mirror")
 
 
+def test_mac_update_replaces_app_bundle():
+    """The Mac asks for its own asset and the update replaces LinguaHaru.app
+    (launcher + signature) with exec bits intact — before, a Mac pulled the
+    Windows zip and the bundle never updated."""
+    tmp = tempfile.mkdtemp()
+    real_root, real_sync, real_plat = updater.portable_root, updater._sync_base_deps, sys.platform
+    try:
+        root = _make_fake_portable(tmp)
+        os.makedirs(os.path.join(root, "qt_app"))
+        old_exe = os.path.join(root, "LinguaHaru.app", "Contents", "MacOS", "LinguaHaru")
+        os.makedirs(os.path.dirname(old_exe))
+        io.open(old_exe, "w").write("OLD-LAUNCHER")
+        zpath = os.path.join(tmp, "mac.zip")
+        with zipfile.ZipFile(zpath, "w") as z:
+            z.writestr("LinguaHaru-desktop-mac/version.json", json.dumps({"version": "9.0"}))
+            z.writestr("LinguaHaru-desktop-mac/core/new.py", "NEW")
+            exe = zipfile.ZipInfo("LinguaHaru-desktop-mac/LinguaHaru.app/Contents/MacOS/LinguaHaru")
+            exe.external_attr = (0o100755 & 0xFFFF) << 16
+            z.writestr(exe, "NEW-LAUNCHER")
+        updater.portable_root = lambda: root
+        updater._sync_base_deps = lambda r: True
+        okk, msg = updater.download_and_apply(_file_url(zpath), updater._sha256(zpath))
+        assert okk, msg
+        assert io.open(old_exe).read() == "NEW-LAUNCHER", "LinguaHaru.app must be replaced"
+        if os.name != "nt":
+            assert os.stat(old_exe).st_mode & 0o111, "launcher lost its exec bit"
+        sys.platform = "darwin"
+        assert updater.flavor() in ("desktop-mac", "web")   # RUNTIME_ROOT is the repo here
+        ok("mac: own asset key, app bundle replaced, exec bit kept")
+    finally:
+        updater.portable_root, updater._sync_base_deps, sys.platform = real_root, real_sync, real_plat
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 if __name__ == "__main__":
     test_version_tuple_compare()
     test_asset_candidates_order_and_dedup()

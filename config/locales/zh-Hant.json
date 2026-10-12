@@ -471,5 +471,7 @@
   "OCR Server URL Tip": "PaddleOCR / PaddleX 的服務位址，例如用以下指令啟動：paddlex --serve --pipeline OCR --port 8080",
   "OCR Server Token": "存取權杖（可選）",
   "Baidu OCR Key Tip": "百度智能雲主控台 → 文字辨識 → 建立應用 → 複製該應用的 API Key 與 Secret Key（使用通用文字辨識·含位置版）。",
-  "Saved Placeholder": "已設定（留空則不修改）"
+  "Saved Placeholder": "已設定（留空則不修改）",
+  "Up To Date": "已是最新",
+  "New Version": "有新版本"
 }

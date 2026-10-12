@@ -397,7 +397,6 @@ async function loadInterfaces() {
   renderIfaceGroup("iface-local", (d.local || []).map((n) => ({ name: n, sub: "Ollama / LM Studio", online: false })));
   renderIfaceGroup("iface-official", (d.online || []).filter((i) => i.official).map((i) => ({ name: i.name, sub: i.model, online: true })));
   renderIfaceGroup("iface-custom", (d.online || []).filter((i) => !i.official).map((i) => ({ name: i.name, sub: i.model, online: true })));
-  refreshGoogleKeyPlaceholder();
 }
 function renderIfaceGroup(id, items) {
   const box = $(id);
@@ -742,10 +741,14 @@ if ($("tour-next")) $("tour-next").onclick = () => {
 };
 
 // ----- update banner -----
-function _fillVersion() {
+function _fillVersion(state) {
   const v = BOOT && BOOT.version ? "v" + BOOT.version : "";
   if (v) { const a = $("app-version"), b = $("app-version-2");
     if (a) a.textContent = v; if (b) b.textContent = v; }
+  // Sidebar: the running version + whether it's the latest (once checked).
+  const bv = $("brand-version");
+  if (bv && v) bv.textContent = v + (state === "latest" ? " · " + _label("Up To Date", "已是最新")
+    : state ? " · " + _label("New Version", "有新版本") + " " + state : "");
 }
 // Returns "update" | "latest" | "fail". Startup calls it and ignores the result;
 // the Settings "Check for Updates" button uses it to report the outcome.
@@ -759,9 +762,11 @@ async function checkUpdate() {
       $("update-link").href = u.url;
       if ($("update-now")) $("update-now").hidden = !u.asset_url;
       $("update-banner").hidden = false;
+      _fillVersion("v" + u.latest);
       return "update";
     }
-    return (u && u.current) ? "latest" : "fail";
+    if (u && u.current) { _fillVersion("latest"); return "latest"; }
+    return "fail";
   } catch (e) { return "fail"; }
 }
 if ($("check-update-btn")) $("check-update-btn").onclick = async () => {
@@ -2207,13 +2212,11 @@ $("proofread-export").onclick = async () => {
   } catch (e) { $("proofread-status").textContent = _label("导出失败：", "导出失败：") + e.message; }
 };
 
-// ----- live voice translation (dual mode) -----
-//  · local : client VAD (vad-worklet) -> POST /api/live-recognize then
-//            /api/live-translate-text (SenseVoice + LLM), source shown first
-//  · google: stream 16k PCM over /ws/live-translate (Gemini 3.5 Live Translate)
-let liveWS = null, liveCtx = null, liveSrc = null, liveProc = null, liveStream = null;
-let playCtx = null, playTime = 0;
-let liveMode = "local", liveNode = null, liveRunning = false;
+// ----- live voice translation -----
+//  client VAD (vad-worklet) -> POST /api/live-recognize then
+//  /api/live-translate-text (on-device STT + LLM), source shown first
+let liveCtx = null, liveSrc = null, liveStream = null;
+let liveNode = null, liveRunning = false;
 // Floating captions via Document Picture-in-Picture (Chrome 116+).
 let pipWin = null, pipMode = "both", pipFont = 24;
 // Rolling buffer of recent utterances {src, dst}. The caption window shows as
@@ -2402,30 +2405,13 @@ if ($("live-pip")) {
   if (!("documentPictureInPicture" in window)) $("live-pip").style.display = "none";
 }
 
-// Mode switch (disabled while a session is running).
-document.querySelectorAll("#live-mode .seg").forEach((s) => {
-  s.onclick = () => {
-    if (liveRunning) return;
-    document.querySelectorAll("#live-mode .seg").forEach((x) => x.classList.remove("active"));
-    s.classList.add("active");
-    liveMode = s.dataset.mode;
-    updateLiveHint();
-  };
-});
-
-// Show a hint when the chosen mode isn't ready (no plugin / no Google key).
+// Show a hint (click -> Plugins) when the speech plugin isn't installed.
 let _liveHintIsPlugin = false;
 async function updateLiveHint() {
   let msg = "";
-  _liveHintIsPlugin = false;
-  if (liveMode === "local") {
-    if (!BOOT.local_live_available) {
-      msg = _label("Local Mode Needs Plugin", "本地模式需要「语音」插件（SenseVoice）。点此前往「插件」安装。");
-      _liveHintIsPlugin = true;
-    }
-  } else {
-    const st = await api("/api/apikey?model=" + encodeURIComponent("(Google) Live Translate")).catch(() => ({ has_key: false }));
-    if (!st.has_key) msg = _label("Google Live Needs Key", "Google 实时翻译需要 Google API Key。请在「接口管理」中填写。");
+  _liveHintIsPlugin = !BOOT.local_live_available;
+  if (_liveHintIsPlugin) {
+    msg = _label("Local Mode Needs Plugin", "本地模式需要「语音」插件（SenseVoice）。点此前往「插件」安装。");
   }
   $("live-hint-text").textContent = msg;
   $("live-hint").hidden = !msg;
@@ -2439,54 +2425,15 @@ if ($("live-hint")) $("live-hint").onclick = () => {
 
 // One round button toggles start/stop (green play -> red stop).
 $("live-go").onclick = async () => {
-  if (liveRunning) { if (liveMode === "google") stopGoogle(); else stopLocal(); return; }
+  if (liveRunning) { stopLocal(); return; }
   if (!(await updateLiveHint())) return;   // blocked: hint already shown
-  if (liveMode === "google") startGoogle(); else startLocal();
+  startLocal();
 };
 
 // Show the model the live translation will use (the active interface's).
 function refreshLiveModel() {
   const el = $("live-model");
   if (el) el.textContent = (BOOT.config && BOOT.config.default_online_model) || "—";
-}
-
-// --- Google (Gemini Live): continuous 16k PCM over WS, plays 24k reply audio ---
-async function startGoogle() {
-  try {
-    liveStream = await acquireLiveStream();
-  } catch (e) { setLiveStatus(_label("无法访问输入设备：", "无法访问输入设备：") + e.message); return; }
-  $("live-input").textContent = ""; $("live-output").textContent = "";
-  liveCtx = new AudioContext();
-  const srcRate = liveCtx.sampleRate;
-  liveSrc = liveCtx.createMediaStreamSource(liveStream);
-  liveProc = liveCtx.createScriptProcessor(4096, 1, 1);
-  playCtx = new AudioContext({ sampleRate: 24000 }); playTime = 0;
-
-  const proto = location.protocol === "https:" ? "wss:" : "ws:";
-  liveWS = new WebSocket(`${proto}//${location.host}/ws/live-translate?target=${encodeURIComponent($("live-target").value)}`);
-  liveWS.onopen = () => setLiveStatus(liveListenMsg());
-  liveWS.onmessage = onLiveMessage;
-  liveWS.onclose = () => { setLiveStatus(_label("连接已关闭", "连接已关闭")); liveRunning = false; setLiveBusy(false); };
-  liveWS.onerror = () => setLiveStatus(_label("连接错误", "连接错误"));
-
-  liveProc.onaudioprocess = (e) => {
-    if (!liveWS || liveWS.readyState !== 1) return;
-    liveWS.send(JSON.stringify({ audio: int16ToB64(downsamplePCM16(e.inputBuffer.getChannelData(0), srcRate)) }));
-  };
-  liveSrc.connect(liveProc); liveProc.connect(liveCtx.destination);
-  liveRunning = true; setLiveBusy(true); startMicMeter();
-}
-function stopGoogle() {
-  saveLiveHistory();
-  stopMicMeter();
-  try { if (liveProc) liveProc.disconnect(); if (liveSrc) liveSrc.disconnect(); } catch (e) { /* */ }
-  if (liveStream) liveStream.getTracks().forEach((t) => t.stop());
-  if (liveWS && liveWS.readyState === 1) { try { liveWS.send(JSON.stringify({ end: true })); } catch (e) {} liveWS.close(); }
-  if (liveCtx) { try { liveCtx.close(); } catch (e) {} liveCtx = null; }
-  // Also release the 24k playback context (browsers cap live AudioContexts; not
-  // closing it leaked one per Google session until the cap threw).
-  if (playCtx) { try { playCtx.close(); } catch (e) {} playCtx = null; }
-  liveRunning = false; setLiveBusy(false); setLiveStatus(_label("已停止", "已停止"));
 }
 
 // --- Local (SenseVoice + LLM): audio-thread VAD segments -> POST per utterance ---
@@ -2985,17 +2932,6 @@ function int16ToB64(int16) {
   let bin = ""; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
-function onLiveMessage(ev) {
-  let d; try { d = JSON.parse(ev.data); } catch (e) { return; }
-  if (d.type === "error") { setLiveStatus(_label("错误：", "错误：") + d.message); return; }
-  const sc = d.serverContent;
-  if (!sc) return;
-  if (sc.inputTranscription && sc.inputTranscription.text) appendLive("live-input", sc.inputTranscription.text);
-  if (sc.outputTranscription && sc.outputTranscription.text) appendLive("live-output", sc.outputTranscription.text);
-  if (sc.modelTurn && sc.modelTurn.parts) {
-    for (const p of sc.modelTurn.parts) if (p.inlineData && p.inlineData.data) playPCM24k(p.inlineData.data);
-  }
-}
 function appendLive(id, text) {
   const el = $(id); el.textContent += text; el.scrollTop = el.scrollHeight;
   // Feed the floating-caption buffer with the latest line (timestamp stripped).
@@ -3028,7 +2964,7 @@ async function switchLiveInput() {
     liveStream = newStream;
     liveSrc = liveCtx.createMediaStreamSource(liveStream);
     if (liveSilero) liveSilero.receive(liveSrc);            // neural VAD
-    else liveSrc.connect(liveMode === "google" ? liveProc : liveNode);
+    else liveSrc.connect(liveNode);
     stopMicMeter(); startMicMeter();   // re-bind the level meter to the new stream
     setLiveStatus(_label("已切换输入 · 正在聆听…", "已切换输入 · 正在聆听…"));
   } catch (e) { setLiveStatus(_label("切换输入失败：", "切换输入失败：") + e.message); }
@@ -3108,37 +3044,6 @@ async function toggleLivePip() {
   pipWin.addEventListener("pagehide", () => { pipWin = null; });
   updatePipCaption();
 }
-function playPCM24k(b64) {
-  const bin = atob(b64), bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  const int16 = new Int16Array(bytes.buffer), f32 = new Float32Array(int16.length);
-  for (let i = 0; i < int16.length; i++) f32[i] = int16[i] / 32768;
-  const buf = playCtx.createBuffer(1, f32.length, 24000);
-  buf.getChannelData(0).set(f32);
-  const node = playCtx.createBufferSource(); node.buffer = buf; node.connect(playCtx.destination);
-  if (playTime < playCtx.currentTime) playTime = playCtx.currentTime;
-  node.start(playTime); playTime += buf.duration;
-}
-
-// Google realtime-voice key now lives on the Interface Management page.
-async function refreshGoogleKeyPlaceholder() {
-  if (BOOT.server_mode || !$("iface-google-key")) return;
-  try {
-    const st = await api("/api/apikey?model=" + encodeURIComponent("(Google) Live Translate"));
-    $("iface-google-key").value = "";
-    $("iface-google-key").placeholder = st.has_key ? _label("已设置（留空则不修改）", "已设置（留空则不修改）") : "AQ... / AIza...";
-  } catch {}
-}
-if ($("iface-google-key")) $("iface-google-key").onchange = async () => {
-  const key = $("iface-google-key").value;
-  if (!key) return;
-  await api("/api/apikey", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "(Google) Live Translate", api_key: key }) });
-  $("iface-google-key").value = "";
-  $("iface-google-key").placeholder = _label("已设置（留空则不修改）", "已设置（留空则不修改）");
-  updateLiveHint && updateLiveHint();
-};
-
 // ----- history -----
 // Compact rows (status / file / type / time); clicking a row expands a detail
 // panel with the full record + actions: Download (output), Continue (interrupted

@@ -86,7 +86,11 @@ LIGHT_BG = "#eaf1fa"             # light: clearly light-blue
 DARK_BG = "#04070e"             # dark: deep navy-black
 
 
-_MAC_LIGHTS_W = 76   # px reserved for the macOS close/minimize/zoom buttons
+# macOS keeps its native close/minimize/zoom buttons top-left, centered in the
+# standard 28 pt title strip and ending at x=60. Our title (icon + name) sits in
+# that strip right after them; the nav's back/menu buttons start just below it.
+_MAC_TITLE_H = 28
+_MAC_TITLE_X = 68    # 60 (end of the zoom button) + an ~8 pt gap
 
 
 class MainWindow(FluentWindow):
@@ -102,8 +106,9 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
         if sys.platform == "darwin":
-            # ...and push the nav's back/menu buttons below them (see resizeEvent).
-            self.navigationInterface.panel.vBoxLayout.setContentsMargins(0, 36, 0, 5)
+            self.titleBar.setFixedHeight(_MAC_TITLE_H)
+            self.titleBar.hBoxLayout.setContentsMargins(0, 0, 0, 0)
+            self.navigationInterface.panel.vBoxLayout.setContentsMargins(0, _MAC_TITLE_H, 0, 5)
 
         # Apply persisted theme + accent before building pages.
         self._theme_dark = backend.get_config("qt_theme", "light") == "dark"
@@ -122,7 +127,8 @@ class MainWindow(FluentWindow):
         if self._lang not in UI_LANGS:
             self._lang = "zh"
 
-        self.setWindowTitle("LinguaHaru")
+        self._update_state = None   # None = not checked yet | "latest" | "v<x.y>"
+        self._set_title()
         self.resize(1200, 800)
         # Allow the window to shrink enough that the nav auto-collapses (the
         # format row + pages scroll, so a narrow window is fine).
@@ -395,10 +401,9 @@ class MainWindow(FluentWindow):
     def resizeEvent(self, e):
         super().resizeEvent(e)
         if sys.platform == "darwin":
-            # macOS draws its traffic lights top-left (Windows puts its buttons
-            # top-right): start the title (icon + name) to their right...
-            self.titleBar.move(_MAC_LIGHTS_W, 0)
-            self.titleBar.resize(self.width() - _MAC_LIGHTS_W, self.titleBar.height())
+            # Title right of the traffic lights (Windows has its buttons top-right).
+            self.titleBar.move(_MAC_TITLE_X, 0)
+            self.titleBar.resize(self.width() - _MAC_TITLE_X, self.titleBar.height())
         if hasattr(self, "_sky"):
             self._sky.setGeometry(0, 0, self.width(), self.height())
             self._sky.lower()
@@ -431,7 +436,21 @@ class MainWindow(FluentWindow):
         except Exception:
             pass
 
+    def _set_title(self):
+        """Title bar: the running version, plus whether it's the latest once the
+        background update check has answered."""
+        from core.version import __version__
+        t = f"LinguaHaru v{__version__}"
+        if self._update_state == "latest":
+            t += f"  ·  {tr('Up To Date', self._lang)}"
+        elif self._update_state:
+            t += f"  ·  {tr('New Version', self._lang)} {self._update_state}"
+        self.setWindowTitle(t)
+
     def _on_update_checked(self, info):
+        if info and info.get("latest"):
+            self._update_state = (f"v{info['latest']}" if info.get("update") else "latest")
+            self._set_title()
         if not info or not info.get("update"):
             return
         title = tr("Update Available", self._lang)
@@ -468,6 +487,8 @@ class MainWindow(FluentWindow):
             if info and info.get("update"):
                 self._on_update_checked(info)
             elif info and info.get("latest"):
+                self._update_state = "latest"
+                self._set_title()
                 InfoBar.success(tr("Already Latest", self._lang), "", duration=3000,
                                 position=InfoBarPosition.TOP, parent=self)
             else:
@@ -545,6 +566,13 @@ class MainWindow(FluentWindow):
             exe = w if os.path.exists(w) else exe
         cmd = [exe] + (["-s"] if sys.flags.no_user_site else []) \
             + [os.path.abspath(sys.argv[0])] + sys.argv[1:]
+        if sys.platform == "darwin":
+            # Through the (just-updated) app bundle, not bare python: TCC grants
+            # mic / system-audio to the responsible app, i.e. LinguaHaru.app.
+            from core.updater import portable_root
+            app = os.path.join(portable_root() or "", "LinguaHaru.app")
+            if os.path.isdir(app):
+                cmd = ["/usr/bin/open", "-n", app]
         try:
             relaunch_after_exit(cmd)
         except Exception as e:  # noqa: BLE001 — fall back to asking for a manual restart
@@ -668,6 +696,7 @@ class MainWindow(FluentWindow):
             return
         self._lang = lang
         backend.set_config("qt_ui_lang", lang)
+        self._set_title()
         # Re-localize each page.
         for page in (self.interface_page, self.translate_page, self.quick_page,
                      self.live_page, self.settings_page, self.history_page,
