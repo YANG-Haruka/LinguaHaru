@@ -598,6 +598,18 @@ class _LoopbackWorker(QThread):
             self.failed.emit(f"macOS system audio needs macOS 13+ and the Real-Time "
                              f"Voice plugin reinstalled (pyobjc ScreenCaptureKit): {e}")
             return
+        # Without an explicit request macOS denies silently (-3801), never
+        # prompts, and LinguaHaru isn't even listed under Screen & System Audio
+        # Recording — a dead end. Requesting shows the prompt and lists the app;
+        # the grant only applies after a restart.
+        try:
+            import Quartz
+            if not Quartz.CGPreflightScreenCaptureAccess():
+                Quartz.CGRequestScreenCaptureAccess()
+                self.failed.emit("Screen Recording permission requested (TCC)")
+                return
+        except Exception:  # noqa: BLE001 — no Quartz: SCK reports the denial itself
+            pass
         got, ev = {}, threading.Event()
 
         def _content(content, err):
