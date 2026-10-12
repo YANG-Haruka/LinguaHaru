@@ -450,5 +450,6 @@
   "Play Recording": "播放錄音",
   "Summarize": "產生摘要",
   "Summarizing": "正在產生摘要…",
-  "System Audio Permission": "監聽系統聲音需要權限：打開「系統設定 → 隱私權與安全性 → 螢幕與系統錄音」，允許 LinguaHaru，然後重新啟動 LinguaHaru。"
+  "System Audio Permission": "監聽系統聲音需要權限：打開「系統設定 → 隱私權與安全性 → 螢幕與系統錄音」，允許 LinguaHaru，然後重新啟動 LinguaHaru。",
+  "Listening System Audio": "正在聆聽系統聲音…"
 }

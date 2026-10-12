@@ -5,9 +5,10 @@
 // attribute microphone / screen-recording requests to python or Terminal
 // instead of LinguaHaru.app, and the permission prompt would not show up.
 //
-// The install root is read from Contents/Resources/root.txt, written by
-// core/desktop_shortcut.py when it creates the desktop app. Output goes to
-// ~/Library/Logs/LinguaHaru.log.
+// The install root is read from Contents/Resources/root.txt (written by
+// core/desktop_shortcut.py for the Desktop copy). Without it — the
+// LinguaHaru.app shipped inside the download — the root is the folder that
+// holds the .app. Output goes to ~/Library/Logs/LinguaHaru.log.
 //
 // Prebuilt into assets/macos/LinguaHaru-launcher (cross-compiled on Windows):
 //   python -m ziglang cc -target aarch64-macos -O2 -o assets/macos/LinguaHaru-launcher tools/macos_launcher.c
@@ -36,10 +37,27 @@ int main(void) {
     }
     snprintf(cfg, sizeof cfg, "%s/Resources/root.txt", exe);
     FILE *f = fopen(cfg, "r");
-    if (!f || !fgets(root, sizeof root, f)) return 1;
-    fclose(f);
-    root[strcspn(root, "\r\n")] = 0;
+    if (f && fgets(root, sizeof root, f)) {
+        root[strcspn(root, "\r\n")] = 0;
+    } else {                        // .../X/LinguaHaru.app/Contents -> .../X
+        for (int i = 0; i < 2; i++) {
+            char *slash = strrchr(exe, '/');
+            if (!slash) return 1;
+            *slash = 0;
+        }
+        snprintf(root, sizeof root, "%s", exe);
+    }
+    if (f) fclose(f);
     if (chdir(root) != 0) return 1;
+
+    // Clear the download quarantine so the bundled Python may run (no-op when
+    // there is none, e.g. for the Desktop copy).
+    pid_t xp;
+    char *xargv[] = {"/usr/bin/xattr", "-dr", "com.apple.quarantine", root, NULL};
+    if (posix_spawn(&xp, xargv[0], NULL, NULL, xargv, environ) == 0) {
+        int xs;
+        waitpid(xp, &xs, 0);
+    }
 
     snprintf(py, sizeof py, "%s/python/bin/python3", root);
     const char *home = getenv("HOME");

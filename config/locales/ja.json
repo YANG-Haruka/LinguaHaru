@@ -410,5 +410,6 @@
   "Play Recording": "録音を再生",
   "Summarize": "要約する",
   "Summarizing": "要約中…",
-  "System Audio Permission": "システム音声の取得には許可が必要です：「システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオ録音」で LinguaHaru を許可し、LinguaHaru を再起動してください。"
+  "System Audio Permission": "システム音声の取得には許可が必要です：「システム設定 → プライバシーとセキュリティ → 画面とシステムオーディオ録音」で LinguaHaru を許可し、LinguaHaru を再起動してください。",
+  "Listening System Audio": "システム音声を聞き取り中…"
 }

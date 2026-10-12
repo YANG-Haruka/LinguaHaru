@@ -125,6 +125,10 @@ def main():
     # (HF-endpoint probe, legacy-cache migration, local-model scan, disk retention)
     # and refresh the affected pages when done — so startup feels instant.
     _start_background_warmup(window)
+    if sys.platform == "darwin":   # mic + system-audio prompts up front (no-op if decided)
+        from PySide6.QtCore import QTimer
+        from core.macos_permissions import request_permissions
+        QTimer.singleShot(1500, request_permissions)
     sys.exit(app.exec())
 
 

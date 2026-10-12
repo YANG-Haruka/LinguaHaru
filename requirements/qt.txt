@@ -4,3 +4,6 @@ PySide6>=6.7
 PySide6-Fluent-Widgets>=1.7
 # Real-time voice translation (Gemini Live) client
 websockets>=12
+# macOS: ask for Microphone up front (core/macos_permissions.py); without it the
+# mic prompt still appears, just later on first capture.
+pyobjc-framework-AVFoundation>=10.0; sys_platform == "darwin"

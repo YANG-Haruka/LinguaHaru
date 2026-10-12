@@ -217,32 +217,31 @@ _PYSIDE6_MAC_PRUNE = [
 _MACH_O = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
 
 MAC_LAUNCHER = """#!/bin/bash
-# Double-click to start LinguaHaru (macOS). First time: right-click > Open
-# (or System Settings > Privacy & Security > Open Anyway).
+# Same as double-clicking LinguaHaru.app (kept for people who look for a
+# "Start" file). Starting python from here would make macOS attribute the
+# microphone / screen-recording permission to Terminal instead of LinguaHaru.
 cd "$(dirname "$0")"
-# Clear the download quarantine once so macOS lets the bundled Python run.
 xattr -dr com.apple.quarantine . 2>/dev/null
-export PYTHONNOUSERSITE=1
-unset PYTHONPATH
-exec ./python/bin/python3 app_qt.py "$@"
+open ./LinguaHaru.app
 """
 MAC_README = """LinguaHaru for macOS (13 Ventura or newer, Apple Silicon M1 or later)
 
-1. Unzip, then double-click "Start-Desktop.command".
+1. Unzip, then double-click "LinguaHaru.app".
    macOS blocks apps downloaded from the internet the first time:
-   - right-click Start-Desktop.command > Open > Open, or
+   - right-click LinguaHaru.app > Open > Open, or
    - System Settings > Privacy & Security > scroll down > "Open Anyway".
-   Or run once in Terminal:  xattr -dr com.apple.quarantine <this folder>
-2. On first start a "LinguaHaru" shortcut is added to your Desktop — use it
-   from then on (don't move this folder afterwards, or the shortcut breaks).
-3. Real-time voice from system audio (what your Mac is playing) needs
-   System Settings > Privacy & Security > Screen & System Audio Recording:
-   allow LinguaHaru (or Terminal, if you started it from the .command file).
+2. On first start LinguaHaru asks for the Microphone and for Screen & System
+   Audio Recording (needed to translate what your Mac is playing) — click
+   Allow, then restart LinguaHaru once.
+3. A "LinguaHaru" shortcut is also added to your Desktop. Don't move this
+   folder afterwards, or the shortcut breaks.
 
-macOS 13 以上、M 系列芯片。解压后双击 Start-Desktop.command；第一次会被系统拦截，请右键 >
-打开，或在「系统设置 > 隐私与安全性」里点「仍要打开」。首次启动会在桌面生成
-LinguaHaru 快捷方式，之后用它启动（不要再移动本文件夹）。实时语音监听系统声音
-需要在「隐私与安全性 > 屏幕与系统录音」里允许 LinguaHaru（或"终端"）。
+macOS 13 以上、M 系列芯片。
+1. 解压后双击 LinguaHaru.app。第一次会被系统拦截：右键 > 打开，或在
+   「系统设置 > 隐私与安全性」里点「仍要打开」。
+2. 首次启动会请求「麦克风」和「屏幕与系统录音」（翻译电脑正在播放的声音需要）
+   权限，点允许，然后重启一次 LinguaHaru。
+3. 桌面上也会生成 LinguaHaru 快捷方式。之后不要再移动本文件夹。
 """
 
 
@@ -310,6 +309,11 @@ def build_mac(variant):
     for fn in APP_FILES + v.get("files", []):
         shutil.copy2(os.path.join(ROOT, fn), os.path.join(dest, fn))
     _mac_icon(dest)
+    # The app ships as LinguaHaru.app (native launcher): opening it — even the
+    # very first time — attributes mic / screen-recording permission to it.
+    sys.path.insert(0, ROOT)
+    from core.desktop_shortcut import write_mac_app
+    write_mac_app(os.path.join(dest, "LinguaHaru.app"), src_root=dest)
 
     print("[5/6] launcher")
     with open(os.path.join(dest, "Start-Desktop.command"), "w", newline="\n") as f:

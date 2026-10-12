@@ -11,6 +11,7 @@ language under "qt_ui_lang". The Settings-page language selector drives a global
 retranslate of every page + nav label."""
 
 import os
+import sys
 
 from PySide6.QtCore import QThread, Signal, QUrl
 from PySide6.QtGui import QIcon, QColor, QCursor, QDesktopServices
@@ -85,6 +86,9 @@ LIGHT_BG = "#eaf1fa"             # light: clearly light-blue
 DARK_BG = "#04070e"             # dark: deep navy-black
 
 
+_MAC_LIGHTS_W = 76   # px reserved for the macOS close/minimize/zoom buttons
+
+
 class MainWindow(FluentWindow):
     def __init__(self):
         super().__init__()
@@ -97,6 +101,9 @@ class MainWindow(FluentWindow):
             self.setMicaEffectEnabled(False)
         except Exception:
             pass
+        if sys.platform == "darwin":
+            # ...and push the nav's back/menu buttons below them (see resizeEvent).
+            self.navigationInterface.panel.vBoxLayout.setContentsMargins(0, 36, 0, 5)
 
         # Apply persisted theme + accent before building pages.
         self._theme_dark = backend.get_config("qt_theme", "light") == "dark"
@@ -387,6 +394,11 @@ class MainWindow(FluentWindow):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
+        if sys.platform == "darwin":
+            # macOS draws its traffic lights top-left (Windows puts its buttons
+            # top-right): start the title (icon + name) to their right...
+            self.titleBar.move(_MAC_LIGHTS_W, 0)
+            self.titleBar.resize(self.width() - _MAC_LIGHTS_W, self.titleBar.height())
         if hasattr(self, "_sky"):
             self._sky.setGeometry(0, 0, self.width(), self.height())
             self._sky.lower()

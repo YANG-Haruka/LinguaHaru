@@ -34,15 +34,16 @@ def _windows():
                    check=True, timeout=30, creationflags=0x08000000)  # CREATE_NO_WINDOW
 
 
-def _mac():
-    app = os.path.join(os.path.expanduser("~/Desktop"), "LinguaHaru.app")
-    if os.path.exists(app):      # never overwrite a launcher the user already has
-        return
+def write_mac_app(app, src_root=ROOT, root=None):
+    """Write a LinguaHaru.app bundle at `app`, taking the launcher + icon from
+    `src_root`. With `root`, the launcher starts that install (root.txt — the
+    Desktop copy); without it, the install is the folder holding the .app (the
+    copy shipped inside the download, built by tools/build_portable.py)."""
     contents = os.path.join(app, "Contents")
     os.makedirs(os.path.join(contents, "MacOS"), exist_ok=True)
     os.makedirs(os.path.join(contents, "Resources"), exist_ok=True)
     import shutil
-    icns = os.path.join(ROOT, "assets", "img", "icon.icns")
+    icns = os.path.join(src_root, "assets", "img", "icon.icns")
     if os.path.isfile(icns):
         shutil.copy2(icns, os.path.join(contents, "Resources", "icon.icns"))
     with open(os.path.join(contents, "Info.plist"), "w", encoding="utf-8") as f:
@@ -61,12 +62,20 @@ def _mac():
     # A NATIVE launcher (tools/macos_launcher.c) that spawns python as a child:
     # with a script that exec()s python, macOS attributes the microphone /
     # screen-recording permission to python or Terminal and never prompts for
-    # LinguaHaru.app. It finds the install via Resources/root.txt.
+    # LinguaHaru.app.
     exe = os.path.join(contents, "MacOS", "LinguaHaru")
-    shutil.copy2(os.path.join(ROOT, "assets", "macos", "LinguaHaru-launcher"), exe)
+    shutil.copy2(os.path.join(src_root, "assets", "macos", "LinguaHaru-launcher"), exe)
     os.chmod(exe, 0o755)
-    with open(os.path.join(contents, "Resources", "root.txt"), "w", encoding="utf-8") as f:
-        f.write(ROOT + "\n")
+    if root:
+        with open(os.path.join(contents, "Resources", "root.txt"), "w", encoding="utf-8") as f:
+            f.write(root + "\n")
+
+
+def _mac():
+    app = os.path.join(os.path.expanduser("~/Desktop"), "LinguaHaru.app")
+    if os.path.exists(app):      # never overwrite a launcher the user already has
+        return
+    write_mac_app(app, root=ROOT)
     # Ad-hoc sign the bundle so macOS ties permissions to it (best-effort).
     subprocess.run(["codesign", "--force", "--sign", "-", app],
                    capture_output=True, timeout=60, check=False)

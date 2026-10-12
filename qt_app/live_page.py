@@ -1080,6 +1080,12 @@ class LivePage(ScrollArea):
             "font-size:17px;font-weight:600;}"
             "QPushButton:hover{background:%s;}" % (color, hover))
 
+    def _listening_text(self):
+        """Status while listening — "speak into the microphone" was wrong while
+        capturing the system audio."""
+        key = "Listening System Audio" if self._loopback is not None else "Listening"
+        return tr(key, self._lang)
+
     def _is_listening(self):
         """True while either the mic (QAudioSource) or the system-audio
         loopback worker is active."""
@@ -1101,6 +1107,7 @@ class LivePage(ScrollArea):
             self._info(tr("Local Voice Needs Plugin", self._lang), error=True)
             return
 
+        backend.set_config("live_input", self.mic_combo.currentText())   # restored next launch
         self.input_text.clear()
         self.output_text.clear()
         self._session_tokens = 0
@@ -1131,7 +1138,7 @@ class LivePage(ScrollArea):
             # first sentence isn't silently blocked on a slow model load.
             from core.pipelines.video_translation_pipeline import recognizer_ready
             if recognizer_ready():
-                self.status_label.setText(tr("Listening", self._lang))
+                self.status_label.setText(self._listening_text())
             else:
                 self.status_label.setText(tr("Loading model", self._lang))
                 self._show_loading()
@@ -1252,7 +1259,7 @@ class LivePage(ScrollArea):
             # _open_input already surfaced the error; stop cleanly.
             self.on_stop()
             return
-        self.status_label.setText(tr("Listening", self._lang))
+        self.status_label.setText(self._listening_text())
 
     def on_stop(self):
         # on_stop also runs on app close / page leave; only a session that was
@@ -1649,7 +1656,7 @@ class LivePage(ScrollArea):
     def _on_preload_done(self, ready):
         self._hide_loading()
         if self._is_listening():
-            self.status_label.setText(tr("Listening", self._lang))
+            self.status_label.setText(self._listening_text())
 
     def _show_loading(self, text=None):
         """Glass-lock the whole window while the STT model loads."""
@@ -1868,7 +1875,7 @@ class LivePage(ScrollArea):
             # conversation may switch language at every turn.
             self._set_caption_interim("")
             if self._is_listening():
-                self.status_label.setText(tr("Listening", self._lang))
+                self.status_label.setText(self._listening_text())
         else:
             tail = self._uncommitted_tail(text)
             last_tail = self._uncommitted_tail(self._stream_last) \
@@ -2053,7 +2060,7 @@ class LivePage(ScrollArea):
 
     def _on_status(self, status):
         if status == "listening":
-            self.status_label.setText(tr("Listening", self._lang))
+            self.status_label.setText(self._listening_text())
         elif status == "closed":
             self.status_label.setText(tr("Connection closed", self._lang))
         elif status.startswith("error:"):

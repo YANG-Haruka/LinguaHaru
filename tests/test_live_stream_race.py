@@ -38,6 +38,7 @@ def _page():
     page._split_scored, page._find_boundary = P._split_scored, P._find_boundary
     page._quiet_cut = P._quiet_cut
     page._norm_map, page._NORM_SKIP = P._norm_map, P._NORM_SKIP
+    page._listening_text = lambda: ""
     page._common_prefix, page._WORDLIKE = P._common_prefix, P._WORDLIKE
     page._is_listening = lambda: True
     page._lang = "zh"

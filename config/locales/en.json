@@ -706,5 +706,6 @@
   "Play Recording": "Play recording",
   "Summarize": "Summarize",
   "Summarizing": "Summarizing…",
-  "System Audio Permission": "System audio needs permission: open System Settings > Privacy & Security > Screen & System Audio Recording, allow LinguaHaru, then restart LinguaHaru."
+  "System Audio Permission": "System audio needs permission: open System Settings > Privacy & Security > Screen & System Audio Recording, allow LinguaHaru, then restart LinguaHaru.",
+  "Listening System Audio": "Listening to the system audio…"
 }
