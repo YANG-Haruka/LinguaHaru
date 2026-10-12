@@ -1,15 +1,19 @@
 {
-    "version": "7.0.2",
+    "version": "7.0.3",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.2: Real-Time Voice is ready in about 2-3 s (was ~10 s). New presets: OpenAI, Claude, Qwen, Gemini, llama.cpp; local interfaces need no key. Image translation can use a vision model, a self-hosted PaddleOCR server or Baidu OCR, and AMD / Intel Arc GPUs accelerate OCR via DirectML. Updates now restart the app by themselves after 5 s. The Mac no longer asks for screen recording on every launch. / 7.0.2：实时语音约 2–3 秒即可使用（原约 10 秒）。新增 OpenAI、Claude、千问、Gemini、llama.cpp 预设接口，本机接口无需 Key。图片翻译可选视觉大模型、自部署 PaddleOCR 或百度 OCR，AMD / Intel Arc 显卡可通过 DirectML 加速 OCR。更新完成后 5 秒自动重启。Mac 不再每次启动都提示录屏权限。",
+    "notes": "7.0.3: the title bar shows your version and whether it's the latest. One-click updates now work on the Mac (its own package, LinguaHaru.app included), and the Mac title bar is tidied up. Presets are trimmed to one translation-friendly model per provider. Real-time voice drops the Google (Gemini Live) mode. / 7.0.3：标题栏显示当前版本以及是否为最新版。Mac 可以一键更新（下载 Mac 自己的安装包，连同 LinguaHaru.app 一起更新），Mac 左上角标题栏重新排版。预设接口精简为每家一个最适合翻译的型号。实时语音去掉了 Google（Gemini Live）模式。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.2/LinguaHaru-7.0.2-web-portable.zip",
-            "sha256": "5c189594ea3a4c716f2a1357a713ad8ba99425e4deb1ae40277a02e432b7086b"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.3/LinguaHaru-7.0.3-web-portable.zip",
+            "sha256": "7f75722181ecf6ce6178a77f8ee5f9761d0ffee19afaef499580e2d5f40823a1"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.2/LinguaHaru-7.0.2-desktop-portable.zip",
-            "sha256": "6bf93ff26082e4732eca2fdf4aa8a59d594eaf90c8bab31bf4069c95ef16c181"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.3/LinguaHaru-7.0.3-desktop-portable.zip",
+            "sha256": "40538ffc82b956e3ee12a9e03a715424c50b9f619958366e34026ac0f97b1f73"
+        },
+        "desktop-mac": {
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.3/LinguaHaru-7.0.3-desktop-mac.zip",
+            "sha256": "2cff21f042768b5c16ed689ba9e698dbd2b76c86274031ee08681d735448ac5c"
         }
     }
 }
