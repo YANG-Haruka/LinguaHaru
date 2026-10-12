@@ -212,6 +212,23 @@ def test_fragments_and_soft_cap():
           any(f for _, f in page2.dispatched + page2._recog_pending))
 
 
+def test_runon_japanese_breaks_at_a_particle():
+    print("Live: unpunctuated Japanese run-on breaks at a particle, never inside a katakana word")
+    _page()
+    from qt_app.live_page import LivePage as P
+    run = "今日はデータベースの設計について説明させていただいてそのあとでプロジェクトマネジメントのスケジュールを確認します"
+    units, _ = P._split_scored(run, False)
+    check("a unit was cut from the run-on", len(units) >= 1, str(units))
+    first = units[0]
+    nxt = run[len(first):]
+    check("the cut is at a hiragana -> kanji/katakana boundary",
+          P._script(first[-1]) == "H" and P._script(nxt[0]) in "CK", repr((first[-3:], nxt[:3])))
+    run2 = "あ" * 30 + "プロジェクトマネジメントスケジュール" + "です"
+    u2, _ = P._split_scored(run2, False)
+    check("never splits a katakana run", all(not (P._script(u[-1]) == "K" and P._script(run2[len(u)]) == "K")
+                                              for u in u2[:1]), str(u2))
+
+
 def test_web_twin_has_the_same_fix():
     print("Live (web): the real app.js code, run against a slow-final race, commits cleanly")
     node = shutil.which("node")
@@ -235,4 +252,5 @@ if __name__ == "__main__":
          test_hard_cap_cuts_at_a_pause_without_loss_or_overlap,
          test_redecode_spacing_neither_repeats_nor_drops,
          test_fragments_and_soft_cap,
+         test_runon_japanese_breaks_at_a_particle,
          test_web_twin_has_the_same_fix])

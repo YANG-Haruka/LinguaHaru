@@ -1686,7 +1686,7 @@ class LivePage(ScrollArea):
                     return space
                 if conn > 0:
                     return conn
-                return i + 1                        # hard cut
+                return cls._soft_cut(text, start, i + 1)   # no punctuation at all
         if not final and w >= cls._TARGET_CELLS:
             if comma > 0:
                 return comma
@@ -1695,6 +1695,38 @@ class LivePage(ScrollArea):
             if conn > 0:
                 return conn
         return -1
+
+    # Small kana / long-vowel mark: never start a unit with one.
+    _SMALL_KANA = "ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮー"
+
+    @staticmethod
+    def _script(ch):
+        o = ord(ch)
+        if 0x3040 <= o <= 0x309F:
+            return "H"                     # hiragana
+        if 0x30A0 <= o <= 0x30FF:
+            return "K"                     # katakana
+        if 0x3400 <= o <= 0x9FFF:
+            return "C"                     # kanji / hanzi
+        return "O"
+
+    @classmethod
+    def _soft_cut(cls, text, start, end):
+        """Hard-length break for unpunctuated run-on speech (SenseVoice leaves
+        Japanese monologue without punctuation): instead of cutting at exactly
+        `end` — which split katakana loanwords and verb chains ("…せて|いただいて")
+        — cut at the last hiragana -> kanji/katakana transition in the final 16
+        chars (a particle boundary: "…の|会議", "…を|開始"). Failing that, never
+        cut inside a katakana run."""
+        for j in range(end - 1, max(start + 1, end - 16) - 1, -1):
+            if (cls._script(text[j - 1]) == "H" and cls._script(text[j]) in "CK"
+                    and text[j] not in cls._SMALL_KANA):
+                return j
+        k = end
+        while (k > start + 1 and k < len(text) and cls._script(text[k - 1]) == "K"
+               and cls._script(text[k]) == "K"):
+            k -= 1
+        return k
 
     @classmethod
     def _split_scored(cls, text, final):
@@ -1856,6 +1888,12 @@ class LivePage(ScrollArea):
         # "あ。") is noise or a filler SenseVoice split off — real sessions were
         # littered with them.
         if sum(ch.isalpha() for ch in source) < 2:
+            return
+        # A seam re-emitting the last few kana of the previous line
+        # ("…分けてる。" then "けてる。") — drop it.
+        ns, _ = self._norm_map(source)
+        prev = self._ctx_history[-1] if getattr(self, "_ctx_history", None) else ""
+        if len(ns) <= 4 and prev and self._norm_map(prev)[0].endswith(ns):
             return
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")
