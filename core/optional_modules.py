@@ -158,7 +158,7 @@ _STT_TAGS = {
     "whisper-large-v3-turbo": ["Tag HighAccuracy"],
     "whisper-large-v2":       ["Tag HighAccuracy"],
     "anime-whisper":          ["Tag CJKStrong"],
-    "qwen3-asr-0.6b":         ["Tag Experimental"],
+    "qwen3-asr-0.6b":         ["Tag Lightweight"],
     "qwen3-asr-1.7b":         ["Tag HighAccuracy"],
 }
 
@@ -191,17 +191,32 @@ def get_selected_ocr_model():
     return backend.get_config("ocr_model_size", "small")
 
 
+# Apple Silicon runs Qwen3-ASR as MLX 8-bit weights: (disk, unified memory).
+_MLX_QWEN_SIZES = {"qwen3-asr-0.6b": ("~1GB", "~1.6GB"), "qwen3-asr-1.7b": ("~2.4GB", "~3.2GB")}
+
+
 def _stt_catalog():
-    from core.pipelines.video_translation_pipeline import STT_MODELS
-    return [{"id": m["id"], "label": m["label"], "tags": _STT_TAGS.get(m["id"], []),
-             "size": m.get("disk", ""), "vram": m.get("vram", ""),
-             "info": f"{m.get('disk', '')} · 显存 {m.get('vram', '')}".strip(" ·")}
-            for m in STT_MODELS]
+    from core.pipelines.video_translation_pipeline import STT_MODELS, _mlx_qwen_ok
+    mlx = _mlx_qwen_ok()
+    out = []
+    for m in STT_MODELS:
+        disk, vram = (_MLX_QWEN_SIZES[m["id"]] if mlx and m["id"] in _MLX_QWEN_SIZES
+                      else (m.get("disk", ""), m.get("vram", "")))
+        out.append({"id": m["id"], "label": m["label"], "tags": _STT_TAGS.get(m["id"], []),
+                    "size": disk, "vram": vram, "info": f"{disk} · 显存 {vram}".strip(" ·")})
+    return out
 
 
 def _stt_default():
     from core.pipelines.video_translation_pipeline import DEFAULT_STT_MODEL
     return DEFAULT_STT_MODEL
+
+
+def _live_stt_default():
+    """Must match get_selected_live_stt_model()'s default (Qwen3-ASR 1.7B on Apple
+    Silicon), or the plugin card shows/downloads a model the page doesn't use."""
+    from core.pipelines.video_translation_pipeline import _mlx_qwen_ok
+    return "qwen3-asr-1.7b" if _mlx_qwen_ok() else _stt_default()
 
 
 # name -> {config_key, default, models()}  (only plugins that have a model choice)
@@ -216,7 +231,7 @@ def _plugin_model_specs():
                             "models": list(_OCR_MODELS)},
         "Video/Audio":     {"config_key": "stt_model",      "default": _stt_default(),
                             "models": _stt_catalog()},
-        "Real-Time Voice": {"config_key": "live_stt_model", "default": _stt_default(),
+        "Real-Time Voice": {"config_key": "live_stt_model", "default": _live_stt_default(),
                             "models": _stt_catalog()},
         "翻译语音输入":      {"config_key": "quick_stt_model", "default": _stt_default(),
                             "models": _stt_catalog()},

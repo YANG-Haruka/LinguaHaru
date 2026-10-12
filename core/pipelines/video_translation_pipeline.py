@@ -1024,7 +1024,21 @@ def _hf_local(repo):
         from huggingface_hub import snapshot_download
         return snapshot_download(repo, local_files_only=True)
     except Exception:  # noqa: BLE001 — not cached -> caller downloads by id
-        return repo
+        pass
+    # About to download: fail in seconds on a dead network instead of waiting
+    # out the OS TCP timeout (huggingface_hub's repo_info call has none — a
+    # black-holed link took ~75 s per attempt to report anything).
+    import urllib.request
+    endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co").rstrip("/")
+    try:
+        urllib.request.urlopen(urllib.request.Request(
+            f"{endpoint}/api/models/{repo}", method="HEAD",
+            headers={"User-Agent": "LinguaHaru"}), timeout=8).close()
+    except urllib.error.HTTPError:
+        pass   # the host answered — let the real download report the details
+    except Exception as e:  # noqa: BLE001
+        raise ConnectionError(f"Cannot reach {endpoint} to download {repo}: {e}") from e
+    return repo
 
 
 def _load_mlx_qwen(model_name):
@@ -1048,7 +1062,11 @@ def _get_qwen(model_name):
             try:
                 _qwen_models[model_name] = _load_mlx_qwen(model_name)
                 app_logger.info(f"{model_name} loaded via MLX (8-bit) in {time.time() - _t0:.1f}s")
-            except Exception as e:  # noqa: BLE001 — fall back to the torch path
+            except OSError:
+                # Download/network failure: the torch path would just try to
+                # download ANOTHER (bigger) copy of the model and fail the same way.
+                raise
+            except Exception as e:  # noqa: BLE001 — MLX itself broken -> torch path
                 app_logger.warning(f"Qwen3-ASR MLX load failed ({e}); using qwen-asr/torch "
                                    "(slow on a Mac CPU)")
         if model_name not in _qwen_models:   # double-check inside the lock

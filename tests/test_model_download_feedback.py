@@ -27,11 +27,24 @@ def test_is_network_error():
     assert not is_network_error("")
 
 
-def test_hf_local_falls_back_to_repo_id(tmp_path, monkeypatch):
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+def test_hf_local_not_cached(tmp_path, monkeypatch):
+    import urllib.request
+    import pytest
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
     from core.pipelines.video_translation_pipeline import _hf_local
-    assert _hf_local("nobody/not-a-cached-repo") == "nobody/not-a-cached-repo"
+
+    class _Ok:
+        def close(self):
+            pass
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _Ok())
+    assert _hf_local("nobody/not-a-cached-repo") == "nobody/not-a-cached-repo"   # -> download
+
+    def _dead(*a, **k):
+        raise OSError("timed out")
+    monkeypatch.setattr(urllib.request, "urlopen", _dead)
+    with pytest.raises(ConnectionError):   # dead network fails fast, flagged as network
+        _hf_local("nobody/not-a-cached-repo")
+    assert is_network_error("ConnectionError: Cannot reach https://huggingface.co to download x")
 
 
 def test_public_error_masks_local_paths():
