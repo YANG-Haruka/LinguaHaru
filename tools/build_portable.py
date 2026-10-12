@@ -282,8 +282,29 @@ def _sign_mac_app(app):
                         f"-r={MAC_DESIGNATED_REQ}", app], check=True)
     else:
         # rcodesign wants the COMPILED requirement (csreq -b of MAC_DESIGNATED_REQ).
-        req = os.path.join(ROOT, "assets", "macos", "designated.req")
-        subprocess.run([_rcodesign(), "sign", "--code-requirements-file", req, app], check=True)
+        # rcodesign reads "<scope>:<value>", so a Windows path's drive letter
+        # ("F:\...") was taken as a scope and the requirement silently landed on a
+        # nested path "F" ("main:" is ALSO read as a path in 0.29): the app kept a
+        # cdhash DR. A colon-free RELATIVE path, run from ROOT, is unambiguous.
+        subprocess.run([_rcodesign(), "sign", "--code-requirements-file",
+                        "assets/macos/designated.req", app], check=True, cwd=ROOT)
+        _check_mac_designated(app)
+
+
+def _check_mac_designated(app):
+    """Fail the build unless the main executable's designated requirement is the
+    bundle id (a cdhash DR re-breaks every TCC grant on each copy / update)."""
+    import re
+    out = subprocess.run([_rcodesign(), "print-signature-info", app],
+                         capture_output=True, text=True, check=True).stdout
+    main = out.split("path: Contents\\MacOS\\LinguaHaru", 1)[-1].split("- path:", 1)[0]
+    m = re.search(r"slot: RequirementSet \(2\)\s+magic: \w+\s+length: (\d+)", main)
+    # An EMPTY requirement set is just its 12-byte header -> macOS falls back to
+    # a cdhash DR. Ours holds the 44-byte identifier requirement.
+    if not m or int(m.group(1)) <= 12:
+        raise SystemExit("mac signing: designated requirement NOT applied to the main "
+                         f"executable (RequirementSet length {m and m.group(1)})")
+    print(f"  designated requirement OK (RequirementSet {m.group(1)} bytes)")
 
 
 MAC_DESIGNATED_REQ = 'designated => identifier "com.linguaharu.desktop"'
