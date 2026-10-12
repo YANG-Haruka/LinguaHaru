@@ -54,6 +54,12 @@ $MANIFEST = [ordered]@{
 $sums = @()
 foreach ($id in $MANIFEST.Keys) {
   $entry = $MANIFEST[$id]
+  $zip = Join-Path $out "$id.zip"
+  if (Test-Path $zip) {   # skip already-built (resume after a failure) BEFORE staging GBs
+    $h0 = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+    $line = "{0,-32} {1,10}  {2}" -f "$id.zip", ("{0:N0} MB" -f ((Get-Item $zip).Length/1MB)), $h0
+    $sums += $line; Write-Output ">>> (exists) $line"; continue
+  }
   # Stage the model under a tree rooted at models/ so the zip preserves relative
   # paths (unzip into models/ -> lands correctly).
   $stage = Join-Path $out "_stage_$id"
@@ -72,13 +78,6 @@ foreach ($id in $MANIFEST.Keys) {
       $p = Join-Path $stage $ex
       if (Test-Path $p) { Remove-Item -Recurse -Force $p }
     }
-  }
-  $zip = Join-Path $out "$id.zip"
-  if (Test-Path $zip) {   # skip already-built (resume after a failure)
-    Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
-    $h0 = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-    $line = "{0,-32} {1,10}  {2}" -f "$id.zip", ("{0:N0} MB" -f ((Get-Item $zip).Length/1MB)), $h0
-    $sums += $line; Write-Output ">>> (exists) $line"; continue
   }
   # ZipFile.CreateFromDirectory streams to disk + supports Zip64 (Compress-Archive
   # fails on >2GB with "Stream was too long"). Fastest: model weights are already
