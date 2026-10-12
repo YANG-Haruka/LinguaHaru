@@ -543,6 +543,12 @@ def bootstrap():
             "pdf_pages": config.get("pdf_pages", ""),
             "pdf_only_translated_pages": config.get("pdf_only_translated_pages", False),
             "manga_mode": config.get("manga_mode", False),
+            "ocr_engine": config.get("ocr_engine", "local"),
+            "ocr_vlm_interface": config.get("ocr_vlm_interface", ""),
+            "ocr_server_url": config.get("ocr_server_url", ""),
+            # Secrets are write-only: the page only learns whether they're set.
+            "ocr_server_token_set": bool(config.get("ocr_server_token")),
+            "ocr_baidu_set": _baidu_ocr_keys_set(),
             "lan_mode": config.get("lan_mode", False),
             "has_lan_admin": bool(config.get("lan_admin_password_hash")),  # never expose the value
             # Feature tabs the admin has hidden from normal (non-admin) LAN users,
@@ -644,6 +650,11 @@ async def model_delete(payload: dict):
     return {"ok": bool(delete_plugin_model(name, model_id))}
 
 
+def _baidu_ocr_keys_set():
+    from core.pipelines.ocr_remote import BAIDU_AK, BAIDU_SK
+    return bool(load_api_key_for_model(BAIDU_AK) and load_api_key_for_model(BAIDU_SK))
+
+
 @app.post("/api/config")
 async def update_config(payload: dict):
     """Persist arbitrary settings keys (whitelisted)."""
@@ -667,7 +678,8 @@ async def update_config(payload: dict):
                "default_thread_count_online", "default_thread_count_offline",
                "max_api_concurrency",
                "pdf_translate_table", "pdf_ocr_scanned", "pdf_dual_alternating",
-               "pdf_pages", "pdf_only_translated_pages", "manga_mode"}
+               "pdf_pages", "pdf_only_translated_pages", "manga_mode",
+               "ocr_engine", "ocr_vlm_interface", "ocr_server_url", "ocr_server_token"}
     config = backend.read_config()
     for k, v in payload.items():
         # The LAN admin password is stored ONLY as a hash (system_config.json is

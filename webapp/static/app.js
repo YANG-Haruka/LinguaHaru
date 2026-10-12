@@ -611,6 +611,7 @@ async function boot() {
   if ($("set-vad-hang")) $("set-vad-hang").value = String(c.live_vad_hang_ms || 900);
   if ($("set-vad-sens")) $("set-vad-sens").value = c.live_vad_sensitivity || "standard";
   if ($("set-vad-maxseg")) $("set-vad-maxseg").value = String(c.live_vad_max_seg_ms || 15000);
+  fillOcrSettings(c);
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
@@ -998,6 +999,53 @@ function applySenseVoiceRestriction() {
 function refreshMediaNote() {
   $("media-note").textContent = isSenseVoice($("stt-model").value)
     ? "SenseVoice 仅支持 中/繁/英/日/韩，源语言已自动限制。" : "";
+}
+
+// --- Image OCR engine (on-device / vision LLM / self-hosted PaddleOCR / Baidu) ---
+// Secrets (server token, Baidu keys) are write-only: the server only says
+// whether they're set, so the inputs show a placeholder instead of the value.
+function fillOcrSettings(c) {
+  if (!$("set-ocr-engine")) return;
+  $("set-ocr-engine").value = c.ocr_engine || "local";
+  const sel = $("set-ocr-vlm");
+  sel.innerHTML = "";
+  for (const name of (BOOT.online_models || [])) {
+    const o = document.createElement("option"); o.value = o.textContent = name; sel.appendChild(o);
+  }
+  sel.value = c.ocr_vlm_interface || "";
+  $("set-ocr-url").value = c.ocr_server_url || "";
+  const setMark = _label("Saved Placeholder", "已设置（留空则不修改）");
+  $("set-ocr-token").placeholder = c.ocr_server_token_set ? setMark : "";
+  $("set-ocr-ak").placeholder = $("set-ocr-sk").placeholder = c.ocr_baidu_set ? setMark : "";
+  syncOcrRows();
+}
+function syncOcrRows() {
+  const e = $("set-ocr-engine").value;
+  $("ocr-vlm-row").style.display = e === "vlm" ? "flex" : "none";
+  $("ocr-server-row").style.display = e === "paddle_server" ? "" : "none";
+  $("ocr-baidu-row").style.display = e === "baidu" ? "" : "none";
+  // Picking the vision engine with no interface chosen yet -> take the first one.
+  if (e === "vlm" && !(BOOT.config || {}).ocr_vlm_interface && $("set-ocr-vlm").value) {
+    saveConfig({ ocr_vlm_interface: $("set-ocr-vlm").value });
+  }
+}
+if ($("set-ocr-engine")) {
+  $("set-ocr-engine").onchange = () => { saveConfig({ ocr_engine: $("set-ocr-engine").value }); syncOcrRows(); };
+  $("set-ocr-vlm").onchange = () => saveConfig({ ocr_vlm_interface: $("set-ocr-vlm").value });
+  $("set-ocr-url").onchange = () => saveConfig({ ocr_server_url: $("set-ocr-url").value.trim() });
+  $("set-ocr-token").onchange = () => {
+    const v = $("set-ocr-token").value.trim();
+    if (v) { saveConfig({ ocr_server_token: v }); $("set-ocr-token").value = ""; $("set-ocr-token").placeholder = _label("Saved Placeholder", "已设置（留空则不修改）"); }
+  };
+  for (const [id, model] of [["set-ocr-ak", "BaiduOCR-APIKey"], ["set-ocr-sk", "BaiduOCR-SecretKey"]]) {
+    $(id).onchange = async () => {
+      const v = $(id).value.trim();
+      if (!v) return;
+      try { await api("/api/apikey", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ model, api_key: v }) }); }
+      catch (err) { toast((err.message || "failed").slice(-160), "bad"); return; }
+      $(id).value = ""; $(id).placeholder = _label("Saved Placeholder", "已设置（留空则不修改）");
+    };
+  }
 }
 
 async function saveConfig(obj) {

@@ -836,8 +836,8 @@ _ORT_CUDA12_NVIDIA = ["nvidia-cudnn-cu12==9.5.1.17", "nvidia-cublas-cu12==12.6.4
                       "nvidia-curand-cu12==10.3.7.77", "nvidia-cusparse-cu12==12.5.4.2"]
 
 
-def _onnxruntime_is_gpu():
-    """True if the INSTALLED onnxruntime exposes the CUDA execution provider.
+def _onnxruntime_is_gpu(provider="CUDAExecutionProvider"):
+    """True if the INSTALLED onnxruntime exposes the given (default CUDA) execution provider.
 
     Checks in a FRESH subprocess, not in-process: the running app likely already
     imported onnxruntime at startup (the CPU build), and Python caches imports, so
@@ -848,7 +848,7 @@ def _onnxruntime_is_gpu():
         r = subprocess.run(
             [sys.executable, "-c",
              "import onnxruntime,sys;"
-             "sys.exit(0 if 'CUDAExecutionProvider' in onnxruntime.get_available_providers() else 1)"],
+             f"sys.exit(0 if {provider!r} in onnxruntime.get_available_providers() else 1)"],
             cwd=REPO_ROOT, timeout=120,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
@@ -904,6 +904,56 @@ def _maybe_install_cuda_onnxruntime(name):
     app_logger.warning("CUDA onnxruntime unavailable; restoring CPU onnxruntime for OCR.")
     _emit("GPU OCR 运行时不可用，已恢复 CPU onnxruntime。/ CUDA onnxruntime unavailable; restored CPU onnxruntime.")
     _run([sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime-gpu"])
+    _pip("--index-url", pypi, "onnxruntime")
+
+
+def _amd_or_intel_gpu_present():
+    """Windows: an AMD (Radeon) or Intel Arc GPU — DirectML runs OCR on it."""
+    if os.name != "nt":
+        return False
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command",
+             "(Get-CimInstance Win32_VideoController).Name"],
+            capture_output=True, text=True, timeout=20,
+            creationflags=subprocess.CREATE_NO_WINDOW).stdout.lower()
+    except Exception:  # noqa: BLE001
+        return False
+    return any(k in out for k in ("radeon", "amd", "intel(r) arc", "intel arc"))
+
+
+def _maybe_install_directml_onnxruntime(name):
+    """The non-NVIDIA twin of _maybe_install_cuda_onnxruntime: on Windows with an
+    AMD / Intel Arc GPU (and no NVIDIA), swap CPU onnxruntime for
+    onnxruntime-directml so RapidOCR runs PP-OCRv6 on that GPU (DirectML = any
+    DX12 GPU, no CUDA). Same safety net: verify the DML provider loads, else
+    restore CPU onnxruntime. Opt out with config 'ocr_gpu' = false."""
+    m = plugins_registry.get(name)
+    pkgs = (set(m.get("packages", [])) | set(m.get("shared_packages", []))) if m else set()
+    if not ({"onnxruntime", "onnxruntime-gpu", "rapidocr"} & pkgs):
+        return
+    if os.name != "nt" or _nvidia_gpu_present() or not _config_get("ocr_gpu", True):
+        return
+    if _onnxruntime_is_gpu("DmlExecutionProvider") or not _amd_or_intel_gpu_present():
+        return
+    pypi = pick_pypi_index()
+    uv = _uv_exe()
+    app_logger.info("AMD/Intel GPU detected — installing onnxruntime-directml for GPU OCR")
+    _emit("检测到 AMD/Intel 显卡，正在安装 DirectML 版 OCR 运行时… / installing DirectML onnxruntime for OCR…")
+
+    def _pip(*args):
+        gcon = _global_constraint_args()
+        if uv:
+            return _run([uv, "pip", "install", "--python", sys.executable, *gcon, *args])[0]
+        return _run([sys.executable, "-m", "pip", "install", *gcon, *args])[0]
+
+    # Same import name as CPU onnxruntime -> they can't coexist (see the CUDA swap).
+    _run([sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime", "onnxruntime-gpu"])
+    if _pip("--index-url", pypi, "onnxruntime-directml") and _onnxruntime_is_gpu("DmlExecutionProvider"):
+        return   # GPU OCR ready
+    app_logger.warning("DirectML onnxruntime unavailable; restoring CPU onnxruntime for OCR.")
+    _emit("DirectML OCR 运行时不可用，已恢复 CPU onnxruntime。/ DirectML onnxruntime unavailable; restored CPU onnxruntime.")
+    _run([sys.executable, "-m", "pip", "uninstall", "-y", "onnxruntime-directml"])
     _pip("--index-url", pypi, "onnxruntime")
 
 
@@ -987,6 +1037,7 @@ def install_module(name):
         _normalize_opencv()
         # AFTER the reqs (which pull CPU onnxruntime): swap in CUDA onnxruntime for GPU OCR.
         _maybe_install_cuda_onnxruntime(name)
+        _maybe_install_directml_onnxruntime(name)   # AMD / Intel Arc (no NVIDIA)
     if ok and m:
         _record_install_delta(m["key"], before)   # for full cleanup on uninstall
         _refresh_after_change()

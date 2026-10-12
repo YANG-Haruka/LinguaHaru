@@ -799,6 +799,32 @@
               </label>
             </div>
           </details>
+
+          <!-- IMAGE OCR: on-device / vision LLM / self-hosted PaddleOCR / Baidu. -->
+          <details style="margin-top:12px">
+            <summary style="cursor:pointer; color:var(--text-2); font-size:0.9rem" data-i18n="Image OCR">图片 OCR</summary>
+            <div style="margin-top:10px; display:flex; flex-direction:column; gap:10px">
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="OCR Engine" data-i18n-title="OCR Engine Tip">识别引擎</span>
+                <select id="set-ocr-engine" style="width:auto">
+                  <option value="local" data-i18n="OCR Engine Local">本机（PP-OCRv6）</option>
+                  <option value="vlm" data-i18n="OCR Engine VLM">视觉大模型（接口）</option>
+                  <option value="paddle_server" data-i18n="OCR Engine Paddle Server">自部署 PaddleOCR 服务</option>
+                  <option value="baidu" data-i18n="OCR Engine Baidu">百度 OCR</option>
+                </select>
+              </label>
+              <label id="ocr-vlm-row" style="display:flex; align-items:center; gap:8px; color:var(--text-2); font-size:0.9rem"><span data-i18n="OCR Vision Interface" data-i18n-title="OCR Vision Interface Tip">视觉模型接口</span>
+                <select id="set-ocr-vlm" style="width:auto"></select>
+              </label>
+              <div id="ocr-server-row" class="row-2">
+                <div class="field"><label data-i18n="OCR Server URL" data-i18n-title="OCR Server URL Tip">服务地址</label><input type="text" id="set-ocr-url" placeholder="http://192.168.1.10:8080" /></div>
+                <div class="field"><label data-i18n="OCR Server Token">访问令牌（可选）</label><input type="password" id="set-ocr-token" autocomplete="off" /></div>
+              </div>
+              <div id="ocr-baidu-row" class="row-2">
+                <div class="field"><label data-i18n-title="Baidu OCR Key Tip">API Key</label><input type="password" id="set-ocr-ak" autocomplete="off" /></div>
+                <div class="field"><label>Secret Key</label><input type="password" id="set-ocr-sk" autocomplete="off" /></div>
+              </div>
+            </div>
+          </details>
         </div>
       </details>
       <details class="card set-card">
@@ -867,6 +893,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20261012B"></script>
+  <script src="/static/app.js?v=20261013A"></script>
 </body>
 </html>

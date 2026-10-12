@@ -378,5 +378,19 @@
   "Model Load Failed": "모델 로드 실패",
   "Update Done": "업데이트 완료",
   "Restart In Seconds": "{n}초 후 자동으로 다시 시작합니다…",
-  "Restart After Task": "현재 작업이 끝나면 자동으로 다시 시작합니다"
+  "Restart After Task": "현재 작업이 끝나면 자동으로 다시 시작합니다",
+  "Image OCR": "이미지 OCR",
+  "OCR Engine": "인식 엔진",
+  "OCR Engine Tip": "이미지·만화 속 글자를 무엇으로 읽을지 선택합니다. 이 기기는 오프라인으로 동작하며, 나머지는 빠른 GPU가 없거나 더 높은 정확도가 필요할 때 쓰세요. 원격 엔진이 실패하면 이 기기 OCR로 자동 전환됩니다.",
+  "OCR Engine Local": "이 기기 (PP-OCRv6)",
+  "OCR Engine VLM": "비전 모델 (인터페이스)",
+  "OCR Engine Paddle Server": "자체 호스팅 PaddleOCR 서버",
+  "OCR Engine Baidu": "Baidu OCR",
+  "OCR Vision Interface": "비전 모델 인터페이스",
+  "OCR Vision Interface Tip": "인터페이스 관리에서 이미지를 읽을 수 있는 모델(GPT, Claude, Qwen-VL, Gemini, LM Studio / Ollama의 비전 모델)을 고르세요. 글자 위치는 이 기기에서 찾고, 모델은 각 줄의 글자만 읽습니다.",
+  "OCR Server URL": "서버 URL",
+  "OCR Server URL Tip": "PaddleOCR / PaddleX 서비스 주소. 예: paddlex --serve --pipeline OCR --port 8080 으로 시작",
+  "OCR Server Token": "액세스 토큰 (선택)",
+  "Baidu OCR Key Tip": "Baidu AI Cloud 콘솔 → 문자 인식 → 앱 생성 → API Key와 Secret Key 복사 (위치 포함 일반 문자 인식).",
+  "Saved Placeholder": "저장됨 (비워 두면 유지)"
 }

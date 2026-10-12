@@ -518,6 +518,9 @@ class SettingsPage(ScrollArea):
         self.card_live = _SubSection(tr("Real-Time Voice", lang))
         self.card_live.body.addLayout(live_form)
         self.card_options.body.addWidget(self.card_live)
+        self.card_ocr = _SubSection(tr("Image OCR", lang))
+        self.card_ocr.body.addLayout(self._build_ocr_form(config, lang))
+        self.card_options.body.addWidget(self.card_ocr)
 
         # --- Card 3: Data & Storage (output folder + history retention/clear) ---
         self.card_data = _CollapsibleCard(tr("Data & Storage", lang))
@@ -1103,8 +1106,97 @@ class SettingsPage(ScrollArea):
                     control.installEventFilter(self._tip_filters[-1])
                     control._has_tip_filter = True
 
+    # --- Image OCR engine: on-device / vision LLM / self-hosted PaddleOCR / Baidu ---
+    _OCR_ENGINES = (("local", "OCR Engine Local"), ("vlm", "OCR Engine VLM"),
+                    ("paddle_server", "OCR Engine Paddle Server"), ("baidu", "OCR Engine Baidu"))
+
+    def _build_ocr_form(self, config, lang):
+        from core.api_keys import load_api_key_for_model, save_api_key_for_model
+        from core.pipelines.ocr_remote import BAIDU_AK, BAIDU_SK
+        form = QFormLayout()
+        self._ocr_form = form
+        self.ocr_engine_combo = ComboBox()
+        for _v, key in self._OCR_ENGINES:
+            self.ocr_engine_combo.addItem(tr(key, lang))
+        cur = config.get("ocr_engine", "local")
+        self.ocr_engine_combo.setCurrentIndex(
+            next((i for i, (v, _k) in enumerate(self._OCR_ENGINES) if v == cur), 0))
+        self.ocr_engine_combo.currentIndexChanged.connect(self._on_ocr_engine_changed)
+        self.ocr_engine_label = BodyLabel(tr("OCR Engine", lang))
+        self.ocr_engine_label.setToolTip(tr("OCR Engine Tip", lang))
+        form.addRow(self.ocr_engine_label, self.ocr_engine_combo)
+
+        self.ocr_vlm_combo = ComboBox()
+        self.ocr_vlm_combo.currentTextChanged.connect(
+            lambda t: t and backend.set_config("ocr_vlm_interface", t))
+        self.ocr_vlm_label = BodyLabel(tr("OCR Vision Interface", lang))
+        self.ocr_vlm_label.setToolTip(tr("OCR Vision Interface Tip", lang))
+        form.addRow(self.ocr_vlm_label, self.ocr_vlm_combo)
+
+        def _edit(value, key, secret=False, save=None):
+            e = LineEdit()
+            e.setText(value or "")
+            e.setClearButtonEnabled(True)
+            if secret:
+                e.setEchoMode(QLineEdit.Password)
+            e.editingFinished.connect(lambda: (save or (lambda v: backend.set_config(key, v)))(
+                e.text().strip()))
+            return e
+        self.ocr_url_edit = _edit(config.get("ocr_server_url", ""), "ocr_server_url")
+        self.ocr_url_edit.setPlaceholderText("http://192.168.1.10:8080")
+        self.ocr_url_label = BodyLabel(tr("OCR Server URL", lang))
+        self.ocr_url_label.setToolTip(tr("OCR Server URL Tip", lang))
+        form.addRow(self.ocr_url_label, self.ocr_url_edit)
+        self.ocr_token_edit = _edit(config.get("ocr_server_token", ""), "ocr_server_token", secret=True)
+        self.ocr_token_label = BodyLabel(tr("OCR Server Token", lang))
+        form.addRow(self.ocr_token_label, self.ocr_token_edit)
+        self.ocr_ak_edit = _edit(load_api_key_for_model(BAIDU_AK), None, secret=True,
+                                 save=lambda v: save_api_key_for_model(BAIDU_AK, v))
+        self.ocr_ak_label = BodyLabel("API Key")
+        self.ocr_ak_label.setToolTip(tr("Baidu OCR Key Tip", lang))
+        form.addRow(self.ocr_ak_label, self.ocr_ak_edit)
+        self.ocr_sk_edit = _edit(load_api_key_for_model(BAIDU_SK), None, secret=True,
+                                 save=lambda v: save_api_key_for_model(BAIDU_SK, v))
+        self.ocr_sk_label = BodyLabel("Secret Key")
+        form.addRow(self.ocr_sk_label, self.ocr_sk_edit)
+        self._sync_ocr_rows()
+        return form
+
+    def _on_ocr_engine_changed(self, i):
+        if 0 <= i < len(self._OCR_ENGINES):
+            backend.set_config("ocr_engine", self._OCR_ENGINES[i][0])
+        self._sync_ocr_rows()
+
+    def _sync_ocr_rows(self):
+        """Show only the fields the selected engine needs."""
+        i = self.ocr_engine_combo.currentIndex()
+        eng = self._OCR_ENGINES[i][0] if 0 <= i < len(self._OCR_ENGINES) else "local"
+        if eng == "vlm":   # re-list: interfaces may have been added since the page was built
+            names = [x["name"] for x in backend.list_online_interfaces()]
+            cur = backend.get_config("ocr_vlm_interface", "") or (names[0] if names else "")
+            self.ocr_vlm_combo.blockSignals(True)
+            self.ocr_vlm_combo.clear()
+            self.ocr_vlm_combo.addItems(names)
+            if cur in names:
+                self.ocr_vlm_combo.setCurrentText(cur)
+            self.ocr_vlm_combo.blockSignals(False)
+            if cur in names:
+                backend.set_config("ocr_vlm_interface", cur)
+        for w, show in ((self.ocr_vlm_combo, eng == "vlm"),
+                        (self.ocr_url_edit, eng == "paddle_server"),
+                        (self.ocr_token_edit, eng == "paddle_server"),
+                        (self.ocr_ak_edit, eng == "baidu"), (self.ocr_sk_edit, eng == "baidu")):
+            self._ocr_form.setRowVisible(w, show)
+
     def retranslate(self, lang):
         self._lang = lang
+        self.card_ocr.set_title(tr("Image OCR", lang))
+        self.ocr_engine_label.setText(tr("OCR Engine", lang))
+        self.ocr_vlm_label.setText(tr("OCR Vision Interface", lang))
+        self.ocr_url_label.setText(tr("OCR Server URL", lang))
+        self.ocr_token_label.setText(tr("OCR Server Token", lang))
+        for i, (_v, key) in enumerate(self._OCR_ENGINES):
+            self.ocr_engine_combo.setItemText(i, tr(key, lang))
         self.section_translation.setText(tr("Settings", lang))
         self.per_model_hint.setText(tr("Per Model Hint", lang))
         self.card_run.set_title(tr("Run Mode", lang))

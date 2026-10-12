@@ -27,27 +27,40 @@ def _request_screen_capture():
     """CoreGraphics via ctypes — no pyobjc needed. Request shows the system
     prompt and adds LinguaHaru to the Screen & System Audio Recording list."""
     import ctypes
-    from core import backend
-    # Ask at most ONCE, ever. CGPreflightScreenCaptureAccess() checks full SCREEN
-    # capture, so it stays False for a user who granted only "System Audio
-    # Recording" (all we need) — re-requesting on that popped the system dialog on
-    # every launch even after the user had allowed it. The live page still shows
-    # its own hint if system-audio capture is actually denied.
-    if backend.get_config("mac_screen_capture_asked", False):
-        return
     cg = ctypes.CDLL("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
     cg.CGPreflightScreenCaptureAccess.restype = ctypes.c_bool
     cg.CGRequestScreenCaptureAccess.restype = ctypes.c_bool
     if not cg.CGPreflightScreenCaptureAccess():
         cg.CGRequestScreenCaptureAccess()
         app_logger.info("Requested Screen & System Audio Recording access")
-    backend.set_config("mac_screen_capture_asked", True)
+
+
+def _migrate_tcc_identity():
+    """Once per install: drop TCC grants pinned to an old cdhash. Builds before
+    7.0.2 were signed with the default (cdhash) designated requirement, so every
+    copy / version was a different app to TCC and the grant never matched again:
+    the screen-recording prompt came back on every launch, and the "−" button in
+    System Settings does NOT clear the stale requirement. `tccutil reset` for our
+    own bundle id does (no admin needed); the next request then binds to the
+    stable identifier requirement and survives every later update."""
+    from core import backend
+    if backend.get_config("mac_tcc_dr_migrated", False):
+        return
+    for svc in ("ScreenCapture", "Microphone"):
+        subprocess.run(["/usr/bin/tccutil", "reset", svc, "com.linguaharu.desktop"],
+                       capture_output=True, timeout=10, check=False)
+    backend.set_config("mac_tcc_dr_migrated", True)
+    app_logger.info("Reset stale TCC grants for com.linguaharu.desktop (one-time)")
 
 
 def request_permissions():
     """Fire the system prompts (non-blocking). Call once the main window shows."""
     if sys.platform != "darwin" or not _under_app_launcher():
         return
+    try:
+        _migrate_tcc_identity()
+    except Exception as e:  # noqa: BLE001
+        app_logger.warning(f"TCC identity migration skipped: {e}")
     try:
         import AVFoundation as av
         status = av.AVCaptureDevice.authorizationStatusForMediaType_(av.AVMediaTypeAudio)

@@ -97,6 +97,16 @@ def _ocr_use_cuda():
     return _USE_CUDA
 
 
+def _ocr_use_dml():
+    """True when onnxruntime-directml is installed (AMD / Intel GPUs on Windows,
+    see module_manager._maybe_install_directml_onnxruntime)."""
+    try:
+        import onnxruntime as ort
+        return "DmlExecutionProvider" in ort.get_available_providers()
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _lang_code(src_lang):
     """Translation source language (display name or code) -> short code, e.g.
     'ja', 'zh', 'fr'."""
@@ -159,12 +169,14 @@ def _build_rapidocr_v6(v6_lang, size):
     if v6_lang == "japan" and mt == ModelType.TINY:
         mt = ModelType.SMALL    # PP-OCRv6 tiny has no Japanese model
     use_cuda = _ocr_use_cuda()
+    use_dml = not use_cuda and _ocr_use_dml()
     app_logger.info(
         f"Loading RapidOCR PP-OCRv6 ({v6_lang}, {mt.value}, "
-        f"{'GPU' if use_cuda else 'CPU'})...")
+        f"{'GPU' if use_cuda else 'GPU (DirectML)' if use_dml else 'CPU'})...")
     params = {
         "Global.model_root_dir": _rapidocr_root(),
         "EngineConfig.onnxruntime.use_cuda": use_cuda,
+        "EngineConfig.onnxruntime.use_dml": use_dml,
         "Det.ocr_version": OCRVersion.PPOCRV6, "Det.lang_type": v6_lang, "Det.model_type": mt,
         "Rec.ocr_version": OCRVersion.PPOCRV6, "Rec.lang_type": v6_lang, "Rec.model_type": mt,
     }
@@ -345,7 +357,28 @@ def _get_ocr_pool():
     return _ocr_pool
 
 
-def _ocr_worker_entry(file_path, src_lang, manga=False):
+def _detect_boxes_inproc(file_path, manga=False):
+    """Text DETECTION only (no recognition): the line quads for the vision-LLM
+    OCR engine, which then just reads each crop. ~0.4 s on a CPU."""
+    from core.compute_lock import GPU_LOCK
+    kind, engine = _get_ocr_engine(None, manga)   # det is language-independent
+    with GPU_LOCK:
+        if kind == "rapid":
+            # RapidOCR's per-call use_* flags are sticky (update_params setattr's
+            # them on the shared engine): restore, or the next full OCR returns
+            # detection only.
+            prev = {k: getattr(engine, k) for k in ("use_det", "use_cls", "use_rec")}
+            try:
+                boxes = engine(file_path, use_det=True, use_cls=False, use_rec=False).boxes
+            finally:
+                engine.update_params(**prev)
+        else:   # PaddleOCR fallback has no det-only call: take the full result's polys
+            res = engine.predict(file_path)[0]
+            boxes = res.get("rec_polys") if res.get("rec_polys") is not None else res.get("rec_boxes")
+    return [b.tolist() if isinstance(b, np.ndarray) else b for b in (boxes if boxes is not None else [])]
+
+
+def _ocr_worker_entry(file_path, src_lang, manga=False, det_only=False):
     """Runs in the OCR child process. The child didn't run the app's startup, so it
     must set up the model env (cache dirs / HF endpoint) before building the OCR
     engine. The engine is cached in the child across calls (max_workers=1)."""
@@ -377,16 +410,34 @@ def _ocr_worker_entry(file_path, src_lang, manga=False):
             ort.preload_dlls()
     except Exception:  # noqa: BLE001 — older onnxruntime (no preload_dlls) / CPU build
         pass
+    if det_only:
+        return _detect_boxes_inproc(file_path, manga)
     return _run_ocr_inproc(file_path, src_lang, manga)
 
 
 def _run_ocr(file_path, src_lang=None, manga=False):
-    """OCR an image, isolated in a child process so it can't freeze the UI (GIL).
+    """OCR an image with the configured engine (Settings: online / self-hosted
+    OCR); a remote failure falls back to on-device OCR so the task still runs."""
+    from core.pipelines import ocr_remote
+    engine = ocr_remote.selected_engine()
+    if engine != "local":
+        try:
+            return ocr_remote.run(file_path, src_lang,
+                                  lambda p: _run_local(p, src_lang, manga, det_only=True))
+        except Exception as e:  # noqa: BLE001 — misconfigured / offline -> on-device
+            app_logger.warning(f"OCR engine '{engine}' failed ({e}); using on-device OCR.")
+    return _run_local(file_path, src_lang, manga)
+
+
+def _run_local(file_path, src_lang=None, manga=False, det_only=False):
+    """On-device OCR, isolated in a child process so it can't freeze the UI (GIL).
     Falls back to in-process if the subprocess is unavailable / crashes."""
+    inproc = _detect_boxes_inproc if det_only else _run_ocr_inproc
     if not _ocr_subprocess_enabled():
-        return _run_ocr_inproc(file_path, src_lang, manga)
+        return inproc(file_path, manga) if det_only else inproc(file_path, src_lang, manga)
     try:
-        return _get_ocr_pool().submit(_ocr_worker_entry, file_path, src_lang, manga).result()
+        return _get_ocr_pool().submit(_ocr_worker_entry, file_path, src_lang, manga,
+                                      det_only).result()
     except Exception as e:  # noqa: BLE001 — broken pool / child crash / pickling
         app_logger.warning(f"OCR subprocess failed ({e}); running in-process.")
         global _ocr_pool
@@ -397,7 +448,7 @@ def _run_ocr(file_path, src_lang=None, manga=False):
             except Exception:  # noqa: BLE001
                 pass
             _ocr_pool = None
-        return _run_ocr_inproc(file_path, src_lang, manga)
+        return inproc(file_path, manga) if det_only else inproc(file_path, src_lang, manga)
 
 
 def _find_font_path():

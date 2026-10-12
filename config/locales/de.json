@@ -378,5 +378,19 @@
   "Model Load Failed": "Modell konnte nicht geladen werden",
   "Update Done": "Update abgeschlossen",
   "Restart In Seconds": "Neustart in {n} s…",
-  "Restart After Task": "Startet neu, sobald die aktuelle Aufgabe fertig ist"
+  "Restart After Task": "Startet neu, sobald die aktuelle Aufgabe fertig ist",
+  "Image OCR": "Bild-OCR",
+  "OCR Engine": "Erkennungs-Engine",
+  "OCR Engine Tip": "Womit Text in Bildern / Manga gelesen wird. „Auf diesem Gerät“ funktioniert offline; die anderen sind für Rechner ohne schnelle GPU oder für höhere Genauigkeit. Schlägt eine entfernte Engine fehl, wird die Geräte-OCR verwendet.",
+  "OCR Engine Local": "Auf diesem Gerät (PP-OCRv6)",
+  "OCR Engine VLM": "Vision-Modell (Schnittstelle)",
+  "OCR Engine Paddle Server": "Eigener PaddleOCR-Server",
+  "OCR Engine Baidu": "Baidu OCR",
+  "OCR Vision Interface": "Vision-Modell-Schnittstelle",
+  "OCR Vision Interface Tip": "Eine Schnittstelle aus der Schnittstellenverwaltung, deren Modell Bilder lesen kann (GPT, Claude, Qwen-VL, Gemini oder ein Vision-Modell in LM Studio / Ollama). Die Textpositionen werden auf diesem Gerät erkannt; das Modell liest jede Zeile.",
+  "OCR Server URL": "Server-URL",
+  "OCR Server URL Tip": "Ein PaddleOCR-/PaddleX-Dienst, z. B. gestartet mit: paddlex --serve --pipeline OCR --port 8080",
+  "OCR Server Token": "Zugriffstoken (optional)",
+  "Baidu OCR Key Tip": "Baidu-AI-Cloud-Konsole → Texterkennung → App anlegen → deren API Key und Secret Key kopieren (allgemeine OCR mit Positionen).",
+  "Saved Placeholder": "Gespeichert (leer lassen zum Beibehalten)"
 }

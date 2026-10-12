@@ -378,5 +378,19 @@
   "Model Load Failed": "โหลดโมเดลไม่สำเร็จ",
   "Update Done": "อัปเดตเสร็จแล้ว",
   "Restart In Seconds": "จะรีสตาร์ตใน {n} วินาที…",
-  "Restart After Task": "จะรีสตาร์ตเมื่องานปัจจุบันเสร็จ"
+  "Restart After Task": "จะรีสตาร์ตเมื่องานปัจจุบันเสร็จ",
+  "Image OCR": "OCR รูปภาพ",
+  "OCR Engine": "เอนจินการจดจำ",
+  "OCR Engine Tip": "เลือกว่าจะอ่านข้อความในรูปภาพ / มังงะด้วยอะไร บนเครื่องนี้ใช้งานออฟไลน์ได้ ส่วนแบบอื่นเหมาะกับเครื่องที่ไม่มี GPU แรง หรือเมื่อต้องการความแม่นยำมากขึ้น หากเอนจินระยะไกลล้มเหลว จะสลับไปใช้ OCR บนเครื่องโดยอัตโนมัติ",
+  "OCR Engine Local": "บนเครื่องนี้ (PP-OCRv6)",
+  "OCR Engine VLM": "โมเดลวิชัน (อินเทอร์เฟซ)",
+  "OCR Engine Paddle Server": "เซิร์ฟเวอร์ PaddleOCR ของคุณเอง",
+  "OCR Engine Baidu": "Baidu OCR",
+  "OCR Vision Interface": "อินเทอร์เฟซโมเดลวิชัน",
+  "OCR Vision Interface Tip": "เลือกอินเทอร์เฟซจากการจัดการอินเทอร์เฟซที่โมเดลอ่านรูปได้ (GPT, Claude, Qwen-VL, Gemini หรือโมเดลวิชันใน LM Studio / Ollama) ตำแหน่งข้อความยังตรวจจับบนเครื่องนี้ โมเดลทำหน้าที่อ่านแต่ละบรรทัด",
+  "OCR Server URL": "URL ของเซิร์ฟเวอร์",
+  "OCR Server URL Tip": "บริการ PaddleOCR / PaddleX เช่น เริ่มด้วย: paddlex --serve --pipeline OCR --port 8080",
+  "OCR Server Token": "โทเค็นการเข้าถึง (ไม่บังคับ)",
+  "Baidu OCR Key Tip": "คอนโซล Baidu AI Cloud → การจดจำข้อความ → สร้างแอป → คัดลอก API Key และ Secret Key (OCR ทั่วไปแบบมีตำแหน่ง)",
+  "Saved Placeholder": "บันทึกแล้ว (เว้นว่างไว้เพื่อคงค่าเดิม)"
 }
