@@ -41,7 +41,7 @@
 
 ## Why LinguaHaru
 
-**Translation engine built for quality and speed.** Smart batching, concurrent requests with per-model rate control, translation caching, glossary enforcement, placeholder protection and post-translation QA checks. Atomic incremental writes make every job crash-safe; interrupted runs resume exactly where they stopped, and the 6.0 engine is 90%+ faster than the previous line.
+**Translation engine built for quality and speed.** Smart batching, concurrent requests with per-model rate control, translation caching, glossary enforcement, placeholder protection and post-translation QA checks. Atomic incremental writes make every job crash-safe; interrupted runs resume exactly where they stopped.
 
 **Two full frontends, one backend.**
 - **Desktop** — native Windows app in Fluent Design (light/dark, floating live captions, drag-and-drop everywhere).
@@ -52,13 +52,13 @@
 | Plugin | What it adds | GPU |
 |---|---|---|
 | PDF | Layout-preserving PDF translation (BabelDOC engine) | — |
-| Image OCR | Image translation with text re-rendering; PP-OCRv6 | Auto (~60× faster) |
+| Image OCR | Image translation with text re-rendering; PP-OCRv6 | Auto (~60× faster than CPU) |
 | Manga mode | Bubble detection, text erasing and re-lettering for scanned comics/PDFs, with proofread-and-re-export | Auto |
 | Video / Audio | Speech transcription (SenseVoice, Whisper, Qwen3-ASR) and subtitle translation; ffmpeg bundled | Auto |
 | Real-Time Voice | Streaming captions with sentence correction, hallucination guards and glossary enforcement | Auto |
 | Voice input | Microphone input and read-aloud on the quick-translate page | Auto |
 
-**Daily-driver conveniences.** Google-style quick translation with voice input and read-aloud; a full glossary manager (create / import / delete) applied across document, quick and live translation; per-project history with one-click resume; live token and cost estimation; an in-app proofreading editor with re-export; a first-run interactive tour; 13 fully localized UI languages.
+**Daily-driver conveniences.** Google-style quick translation with voice input and read-aloud; a full glossary manager (create / import / delete) applied across document, quick and live translation; per-project history with one-click resume; live token counts; an in-app proofreading editor with re-export; a first-run interactive tour; UI in English, 简体中文, 繁體中文 and 日本語; 13 built-in translation languages, plus custom ones.
 
 **Safe and stable.** Fatal API errors (bad key, no balance) are detected and explained in your language; failed or stopped runs land in history and can be resumed; per-user session isolation and CSRF protection on the web; SHA-256-verified self-update with automatic rollback.
 
