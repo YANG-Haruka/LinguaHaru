@@ -213,25 +213,49 @@ def _sync_base_deps(root):
     return ok
 
 
-def _safe_extract(zpath, ex):
-    """Extract a zip rejecting zip-slip / absolute paths / symlinks (it's
-    downloaded code that overwrites program files)."""
+def _source_members(z):
+    """Only the entries the update applies (version.json + _SOURCE_LAYER, under
+    the package's top-level dir): the full package also carries python/ — tens of
+    thousands of files that are never applied, and extracting them took ~35 s."""
+    names = z.namelist()
+    vj = min((n for n in names if n.rsplit("/", 1)[-1] == "version.json" and n.count("/") <= 1),
+             key=lambda n: n.count("/"), default=None)
+    prefix = vj[:-len("version.json")] if vj else ""
+    keep = set(_SOURCE_LAYER)
+    return [i for i in z.infolist() if i.filename.startswith(prefix)
+            and i.filename[len(prefix):].split("/", 1)[0] in keep]
+
+
+def _safe_extract(zpath, ex, progress_cb=None, base_p=0.6, span=0.1):
+    """Extract the update's source members, rejecting zip-slip / absolute paths /
+    symlinks anywhere in the zip (it's downloaded code that overwrites program
+    files)."""
     base = os.path.realpath(ex)
     with zipfile.ZipFile(zpath) as z:
+        # A package with ANY unsafe entry is rejected outright (string checks only:
+        # cheap even for the ~14k entries of a full package).
         for info in z.infolist():
             name = info.filename
             if name.startswith(("/", "\\")) or ".." in name.replace("\\", "/").split("/"):
                 raise ValueError(f"unsafe zip entry: {name}")
-            target = os.path.realpath(os.path.join(ex, name))
-            if target != base and not target.startswith(base + os.sep):
-                raise ValueError(f"zip slip: {name}")
             if (info.external_attr >> 16) & 0o170000 == 0o120000:
                 raise ValueError(f"symlink in zip: {name}")
-        z.extractall(ex)
+        members = _source_members(z)
+        # Containment for what gets written. normpath (pure string) suffices: `ex`
+        # is a fresh empty dir and symlink entries are rejected, so nothing on disk
+        # can redirect a path — realpath's per-entry disk walk cost ~10 s on Windows.
+        for info in members:
+            target = os.path.normpath(os.path.join(base, info.filename))
+            if target != base and not target.startswith(base + os.sep):
+                raise ValueError(f"zip slip: {info.filename}")
+        for n, info in enumerate(members, 1):
+            z.extract(info, ex)
+            if progress_cb and n % 200 == 0:
+                progress_cb(base_p + span * n / len(members), f"extracting {n}/{len(members)}")
         if os.name != "nt":
             # zipfile drops unix permissions: restore the exec bits (the macOS
             # launcher, Start-Desktop.command), or the updated app can't start.
-            for info in z.infolist():
+            for info in members:
                 mode = (info.external_attr >> 16) & 0o777
                 if mode & 0o111:
                     os.chmod(os.path.join(ex, info.filename), mode)
@@ -352,7 +376,7 @@ def download_and_apply(asset_url, sha256=None, progress_cb=None, asset_urls=None
             progress_cb(0.66, "extracting")
         ex = os.path.join(tmp, "x")
         os.makedirs(ex)
-        _safe_extract(zpath, ex)   # zip-slip safe
+        _safe_extract(zpath, ex, progress_cb)   # zip-slip safe, source layer only
         src_root = _find_inner_root(ex)
         if not os.path.exists(os.path.join(src_root, "version.json")):
             return False, "Downloaded package is not a valid LinguaHaru build."
