@@ -568,7 +568,11 @@ _THINKING_PARAMS = ("reasoning_effort",)                          # top-level
 def _thinking_off_params(base_url):
     """(params_update, extra_body_update) that turn thinking off for base_url."""
     host = (base_url or "").lower()
-    if any(h in host for h in ("dashscope", "siliconflow")):
+    if "anthropic.com" in host:
+        # Claude's OpenAI layer ignores reasoning_effort, and current Claude models
+        # 400 on thinking={"type":"disabled"} (Opus/Sonnet 5.5): send nothing.
+        return {}, {}
+    if any(h in host for h in ("dashscope", "aliyuncs", "siliconflow")):
         return {}, {"enable_thinking": False}
     if "openrouter" in host:
         return {}, {"reasoning": {"enabled": False}}
@@ -611,6 +615,12 @@ def _create_completion(client, params):
         if "response_format" in retry:
             retry.pop("response_format", None)
             changed = True
+        # Reasoning models (OpenAI gpt-5+/o-series, newer Claude) reject custom
+        # sampling with a 400: retry on the provider defaults.
+        for k in ("temperature", "top_p"):
+            if k in retry and k in str(e).lower():
+                retry.pop(k)
+                changed = True
         if changed:
             app_logger.warning("Provider rejected an optional param; retrying without it")
             return client.chat.completions.create(**retry)

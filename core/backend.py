@@ -608,7 +608,7 @@ def fetch_online_models(selected_model, api_key):
 # Prefixes used by the bundled "official" provider configs. Anything not starting
 # with one of these (and not the Custom template) is treated as user-added.
 _OFFICIAL_PREFIXES = (
-    "(Anthropic)", "(ChatGPT)", "(Deepseek)", "(Gemini)", "(GLM)", "(Grok)",
+    "(Anthropic)", "(ChatGPT)", "(Deepseek)", "(Gemini)", "(GLM)", "(Grok)", "(OpenAI)", "(Qwen)",
     "(Siliconflow)", "(Siliconflow Pro)", "(Volcengine)", "(Fetched)",
 )
 

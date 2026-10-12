@@ -1,0 +1,8 @@
+{
+    "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+    "model": "gemini-3.5-flash-lite",
+    "rpm": 60,
+    "thread_count": 4,
+    "max_token": 4096,
+    "max_completion_tokens": 8192
+}

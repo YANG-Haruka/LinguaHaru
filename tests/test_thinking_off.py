@@ -106,6 +106,8 @@ def test_online_switch_per_provider():
         "http://localhost:11434/v1":                          ({"reasoning_effort": "none"}, {}),
         "http://127.0.0.1:1234/v1":                           ({"reasoning_effort": "none"}, {}),
         "https://some.unknown.host/v1":                       ({}, {"thinking": {"type": "disabled"}}),
+        "https://api.anthropic.com/v1/":                      ({}, {}),
+        "https://ws1.cn-beijing.maas.aliyuncs.com/compatible-mode/v1": ({}, {"enable_thinking": False}),
     }
     for url, want in cases.items():
         got = _thinking_off_params(url)
@@ -128,6 +130,28 @@ def test_online_switch_per_provider():
     check("retry dropped reasoning_effort", "reasoning_effort" not in calls[1])
     check("retry dropped enable_thinking but kept other extra_body",
           calls[1].get("extra_body") == {"keep": 1}, str(calls[1].get("extra_body")))
+
+    # A reasoning model rejects custom sampling -> retried on provider defaults.
+    calls.clear()
+
+    class _Strict:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**params):
+                    calls.append(params)
+                    if "temperature" in params:
+                        raise RuntimeError("400 Unsupported value: 'temperature' does not support 0.1")
+                    return "ok"
+    r = _create_completion(_Strict, {"model": "gpt-6-luna", "messages": [], "temperature": 0.1})
+    check("sampling rejection retried without temperature",
+          r == "ok" and "temperature" not in calls[-1], str(calls))
+
+    from core.translation_modes import _sampling_supported
+    check("OpenAI reasoning models skip custom sampling",
+          not _sampling_supported({"base_url": "https://api.openai.com/v1", "model": "gpt-6.1-sol"})
+          and not _sampling_supported({"base_url": "https://api.openai.com/v1", "model": "o4-mini"})
+          and _sampling_supported({"base_url": "https://api.openai.com/v1", "model": "gpt-4o"}))
 
 
 def test_pdf_log_distinguishes_validation_from_parse():

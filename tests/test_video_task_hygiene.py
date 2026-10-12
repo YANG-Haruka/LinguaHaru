@@ -170,7 +170,7 @@ def test_deepseek_model_is_the_canonical_name():
     import glob
     import json
     import os
-    cfgs = glob.glob(os.path.join(ROOT, "config", "api_config", "*Flash*.json"))
+    cfgs = glob.glob(os.path.join(ROOT, "config", "api_config", "(Deepseek)*Flash*.json"))
     check("exactly one Flash entry", len(cfgs) == 1, str([os.path.basename(c) for c in cfgs]))
     with open(cfgs[0], encoding="utf-8") as f:
         d = json.load(f)

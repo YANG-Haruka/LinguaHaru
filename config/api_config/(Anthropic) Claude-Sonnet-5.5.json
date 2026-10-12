@@ -1,0 +1,8 @@
+{
+    "base_url": "https://api.anthropic.com/v1/",
+    "model": "claude-sonnet-5-5",
+    "rpm": 50,
+    "thread_count": 4,
+    "max_token": 4096,
+    "max_completion_tokens": 8192
+}

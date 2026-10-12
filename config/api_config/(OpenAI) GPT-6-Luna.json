@@ -1,0 +1,7 @@
+{
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-6-luna",
+    "rpm": 500,
+    "thread_count": 8,
+    "max_token": 4096
+}

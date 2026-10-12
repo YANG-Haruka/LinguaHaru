@@ -14,6 +14,7 @@ Opus 4.7+). For those, sampling is dropped entirely rather than sent.
 """
 import json
 import os
+import re
 
 from core.paths import CONFIG_DIR
 from core.log_config import app_logger
@@ -67,6 +68,10 @@ def _sampling_supported(model_config):
     base = str(model_config.get("base_url") or "").lower()
     mid = str(model_config.get("model") or "").lower()
     if "anthropic" in base or "claude" in mid:
+        return False
+    # OpenAI reasoning models (gpt-5 / gpt-6 families, o-series) 400 on custom
+    # temperature/top_p; skip the doomed first attempt.
+    if "api.openai.com" in base and re.match(r"(gpt-[5-9]|o\d)", mid):
         return False
     return True
 

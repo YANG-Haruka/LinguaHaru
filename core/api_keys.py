@@ -137,7 +137,21 @@ def load_api_key_for_model(model_name):
             return data.get("api_key", "")  # legacy/plaintext
     except (json.JSONDecodeError, IOError) as e:
         app_logger.warning(f"Failed to load API key for {model_name}: {e}")
-    return ""
+    # A local OpenAI-compatible server (llama.cpp / LM Studio / Ollama on this
+    # machine) needs no key — don't make the user invent one to get past the
+    # "API key is required" check. A key they did save above still wins.
+    return "local" if _is_local_interface(model_name) else ""
+
+
+def _is_local_interface(model_name):
+    try:
+        from core.paths import API_CONFIG_DIR
+        with open(os.path.join(API_CONFIG_DIR, os.path.basename(f"{model_name}.json")),
+                  encoding="utf-8") as f:
+            url = str(json.load(f).get("base_url", "")).lower()
+    except (OSError, ValueError):
+        return False
+    return any(h in url for h in ("://localhost", "://127.0.0.1", "://0.0.0.0", "://[::1]"))
 
 
 def save_api_key_for_model(model_name, api_key):
