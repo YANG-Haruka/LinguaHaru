@@ -1804,6 +1804,8 @@ class LivePage(ScrollArea):
         return text[cut:].lstrip(self._NORM_SKIP)
 
     _NORM_SKIP = " 　。！？!?.，、,；;…・"
+    _TAIL_ENDINGS = frozenset(("です", "ですね", "ですよね", "ですよ", "んです", "んですね",
+                               "ます", "ました", "ね", "よ", "よね", "けど", "でしょう"))
     _BACKCHANNELS = frozenset((
         "うん", "うんうん", "うんうんうん", "はい", "はいはい", "ええ", "ああ", "えっと",
         "あの", "そう", "そうそう", "そうです", "そうですね", "ですね", "んです", "なるほど",
@@ -1900,6 +1902,12 @@ class LivePage(ScrollArea):
         ns, _ = self._norm_map(source)
         prev = self._ctx_history[-1] if getattr(self, "_ctx_history", None) else ""
         if len(ns) <= 4 and prev and self._norm_map(prev)[0].endswith(ns):
+            return
+        # A bare sentence ending ("ですね。", "んです。") after a line that was cut
+        # mid-sentence is that line's TAIL ("…メンバーさんという|ですね"); it adds
+        # nothing to the translation already sent — don't start the next line with it.
+        if ns in self._TAIL_ENDINGS and prev and not prev.rstrip().endswith(
+                tuple(self._SENT_END) + ("？", "！")):
             return
         # Backchannels ("うん。", "ですね。", "そうです。") got a line — and a
         # translation request — of their own; let them ride with the next line.

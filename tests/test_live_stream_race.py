@@ -242,6 +242,7 @@ def test_backchannels_ride_with_the_next_line():
         raise _Stop
     page = types.SimpleNamespace(_WORDLIKE=P._WORDLIKE, _norm_map=P._norm_map,
                                  _BACKCHANNELS=P._BACKCHANNELS, _ctx_history=[], _held="",
+                                 _TAIL_ENDINGS=P._TAIL_ENDINGS, _SENT_END=P._SENT_END,
                                  input_text=types.SimpleNamespace(insertPlainText=_insert))
     for s in ("うん。", "そうですね。", "前回ちょっとお伝えした通りですけど。", "AWSに保存する予定です。"):
         try:
@@ -251,6 +252,16 @@ def test_backchannels_ride_with_the_next_line():
     check("backchannels merged into the next real line",
           sent == ["うん。そうですね。前回ちょっとお伝えした通りですけど。", "AWSに保存する予定です。"],
           str(sent))
+    # A bare sentence ending after a line cut mid-sentence is that line's tail.
+    sent.clear()
+    page._ctx_history = ["開発のメンバーさんという"]
+    for s in ("ですね。", "で、えっと一番目がもちろん山本というCEOで、"):
+        try:
+            P._commit_stream_sentence(page, s)
+        except _Stop:
+            pass
+    check("a cut-off line's tail ending doesn't lead the next line",
+          sent == ["で、えっと一番目がもちろん山本というCEOで、"], str(sent))
 
 def test_web_twin_has_the_same_fix():
     print("Live (web): the real app.js code, run against a slow-final race, commits cleanly")
