@@ -23,14 +23,14 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
     CardWidget, TextEdit, FluentIcon, InfoBar, PushButton, ToggleButton,
-    InfoBarPosition, IconWidget, SwitchButton,
+    InfoBarPosition, IconWidget, SwitchButton, CheckBox,
 )
 
 from core import backend
 from qt_app.i18n import tr
 from qt_app.live_worker import (
     LiveWorker, LiveRecognizeWorker, LiveTranslateWorker,
-    LiveTranslateStreamWorker, PreloadWorker)
+    LiveTranslateStreamWorker, PreloadWorker, SummaryWorker)
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP, get_language_code
 from core.optional_modules import realtime_voice_available
@@ -44,7 +44,7 @@ _OUT_RATE = 24000  # Gemini output
 _VAD_ON_ABS, _VAD_ON_MUL = 0.006, 2.2
 _VAD_OFF_ABS, _VAD_OFF_MUL = 0.004, 1.6
 _VAD_ON_MS, _VAD_HANG_MS = 90, 900
-_VAD_MIN_MS, _VAD_MAX_MS = 280, 30000
+_VAD_MIN_MS, _VAD_MAX_MS = 280, 15000
 # Mic sensitivity preset -> (energy onset threshold, TEN-VAD threshold). Lower =
 # more sensitive (picks up softer speech); higher = needs a louder voice (better
 # in a noisy room). User-tunable in Settings (config live_vad_sensitivity).
@@ -57,6 +57,10 @@ _VAD_PARTIAL_MS = 360
 # Neural-VAD frame: TEN-VAD's hop (256 samples = 16 ms @ 16 kHz). The energy
 # fallback uses the same frame size so the segmentation timing is identical.
 _VAD_FRAME = 256
+# Pseudo loopback ids: "whatever the default output device is right now" (so a
+# multi-output PC doesn't capture a silent device), and macOS ScreenCaptureKit.
+_DEFAULT_SPEAKER = "__default_speaker__"
+_MAC_SYSTEM_AUDIO = "__mac_screencapturekit__"
 
 
 # --------------------------------------------------------------------------- #
@@ -177,8 +181,14 @@ class _CaptionBar(QWidget):
     resizable via a QSizeGrip in the bottom-right corner; dragging the body moves
     it. Translated text stays emphasized (larger/bold) relative to the source."""
 
-    _FONT_MIN, _FONT_MAX = 12, 48
+    closed = Signal()             # hidden via its × (page unticks its toggle)
+    _FONT_MIN, _FONT_MAX = 12, 96
     _MODES = ("bilingual", "translation", "source")
+    # User-adjustable look (gear menu), persisted in config "caption_style".
+    # bg is #AARRGGBB so its alpha doubles as the background opacity.
+    _STYLE_DEFAULT = {"bg": "#db12141a", "dst_color": "#f1f5f9", "src_color": "#9aa6b2",
+                      "family": "", "bold": True, "italic": False, "size": 20,
+                      "mode": "bilingual", "geometry": None}
 
     def __init__(self, parent=None, lang="en"):
         # No parent + Qt.Window (NOT Qt.Tool): an INDEPENDENT top-level window.
@@ -191,14 +201,20 @@ class _CaptionBar(QWidget):
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Window)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        self.setMinimumWidth(320)
-        self.setMaximumWidth(1600)
+        # No maximum size: it must stretch across an ultrawide / full screen.
+        self.setMinimumWidth(240)
         self.setMinimumHeight(90)
         self.resize(560, 150)       # ~1-2 pairs visible; resize taller for more
         self._drag_pos = None
-        self._mode = "bilingual"
+        saved = backend.get_config("caption_style") or {}
+        self._style = dict(self._STYLE_DEFAULT,
+                           **(saved if isinstance(saved, dict) else {}))
+        self._mode = self._style["mode"] if self._style["mode"] in self._MODES else "bilingual"
         # Base translated font size; the source line is kept smaller/emphasis-low.
-        self._font_size = 20
+        try:
+            self._font_size = max(self._FONT_MIN, min(self._FONT_MAX, int(self._style["size"])))
+        except (TypeError, ValueError):
+            self._font_size = 20
         # Rolling buffer of recent utterances. Only the newest few are RENDERED
         # (Google-Meet / 讯飞 style: current line + a little context, old lines
         # scroll away) — the full transcript lives in the main window's panels.
@@ -212,9 +228,7 @@ class _CaptionBar(QWidget):
 
         self._panel = QWidget(self)
         self._panel.setObjectName("captionPanel")
-        self._panel.setStyleSheet(
-            "#captionPanel{background-color: rgba(18,20,26,0.86);"
-            "border-radius: 14px;}")
+        self._apply_bg()
         root.addWidget(self._panel)
 
         inner = QVBoxLayout(self._panel)
@@ -229,6 +243,10 @@ class _CaptionBar(QWidget):
         self._mode_btn.clicked.connect(self._cycle_mode)
         top.addWidget(self._mode_btn)
         top.addStretch(1)
+        self._gear_btn = self._mk_btn("⚙", 26, 22)
+        self._gear_btn.setToolTip(tr("Caption Style", self._lang))
+        self._gear_btn.clicked.connect(self._show_style_menu)
+        top.addWidget(self._gear_btn)
         self._minus_btn = self._mk_btn("A-", 26, 22)
         self._minus_btn.setToolTip(tr("Font Size", self._lang))
         self._minus_btn.clicked.connect(lambda: self._bump_font(-2))
@@ -286,7 +304,76 @@ class _CaptionBar(QWidget):
         new = max(self._FONT_MIN, min(self._FONT_MAX, self._font_size + delta))
         if new != self._font_size:
             self._font_size = new
+            self._style["size"] = new
+            self._save_style()
             self._render()
+
+    # --- appearance (gear menu) ---
+    def _apply_bg(self):
+        from PySide6.QtGui import QColor
+        c = QColor(self._style["bg"])
+        if not c.isValid():
+            c = QColor(self._STYLE_DEFAULT["bg"])
+        self._panel.setStyleSheet(
+            "#captionPanel{background-color: rgba(%d,%d,%d,%.3f);border-radius: 14px;}"
+            % (c.red(), c.green(), c.blue(), c.alphaF()))
+
+    def _save_style(self):
+        try:
+            backend.set_config("caption_style", self._style)
+        except Exception:  # noqa: BLE001 — a style save must never break captions
+            pass
+
+    def _show_style_menu(self):
+        from PySide6.QtWidgets import QMenu
+        L = self._lang
+        m = QMenu(self)
+        m.addAction(tr("Caption Background", L), lambda: self._pick_color("bg", True))
+        m.addAction(tr("Translation Color", L), lambda: self._pick_color("dst_color"))
+        m.addAction(tr("Source Color", L), lambda: self._pick_color("src_color"))
+        m.addAction(tr("Caption Font", L), self._pick_font)
+        m.addSeparator()
+        m.addAction(tr("Reset Style", L), self._reset_style)
+        m.exec(self._gear_btn.mapToGlobal(self._gear_btn.rect().bottomLeft()))
+
+    def _pick_color(self, key, alpha=False):
+        from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QColorDialog
+        args = (QColor(self._style[key]), self, tr("Caption Style", self._lang))
+        if alpha:   # alpha channel = background opacity
+            c = QColorDialog.getColor(*args, QColorDialog.ColorDialogOption.ShowAlphaChannel)
+        else:
+            c = QColorDialog.getColor(*args)
+        if c.isValid():
+            self._style[key] = c.name(QColor.NameFormat.HexArgb if alpha
+                                      else QColor.NameFormat.HexRgb)
+            self._apply_bg()
+            self._render()
+            self._save_style()
+
+    def _pick_font(self):
+        from PySide6.QtGui import QFont
+        from PySide6.QtWidgets import QFontDialog
+        f = QFont(self._style["family"] or self.font().family(), self._font_size)
+        f.setBold(bool(self._style["bold"]))
+        f.setItalic(bool(self._style["italic"]))
+        ok, f = QFontDialog.getFont(f, self)
+        if ok:
+            self._style.update(family=f.family(), bold=f.bold(), italic=f.italic())
+            if f.pointSize() > 0:
+                self._font_size = max(self._FONT_MIN, min(self._FONT_MAX, f.pointSize()))
+                self._style["size"] = self._font_size
+            self._render()
+            self._save_style()
+
+    def _reset_style(self):
+        self._style = dict(self._STYLE_DEFAULT, geometry=self._style.get("geometry"))
+        self._font_size = self._STYLE_DEFAULT["size"]
+        self._mode = self._STYLE_DEFAULT["mode"]
+        self._update_mode_btn()
+        self._apply_bg()
+        self._render()
+        self._save_style()
 
     def _mode_label(self):
         if self._mode == "translation":
@@ -301,6 +388,8 @@ class _CaptionBar(QWidget):
     def _cycle_mode(self):
         i = self._MODES.index(self._mode)
         self._mode = self._MODES[(i + 1) % len(self._MODES)]
+        self._style["mode"] = self._mode
+        self._save_style()
         self._update_mode_btn()
         self._render()
 
@@ -309,53 +398,73 @@ class _CaptionBar(QWidget):
         bottom. Only _RENDER_LAST pairs are shown (current speech + a little
         context); the newest translation is bright, older ones dimmed — like
         Google Meet / 讯飞 captions, instead of a scrolling wall of history."""
+        from PySide6.QtGui import QColor
+        st = self._style
         src_px = max(self._FONT_MIN - 4, int(self._font_size * 0.65))
         show_src = self._mode in ("bilingual", "source")
         show_dst = self._mode in ("bilingual", "translation")
+        src_c = _html.escape(st["src_color"])
+        new_c, bg = QColor(st["dst_color"]), QColor(st["bg"])
+        # Older translations: the chosen color blended 30% toward the background.
+        old_c = QColor(int(new_c.red() * 0.7 + bg.red() * 0.3),
+                       int(new_c.green() * 0.7 + bg.green() * 0.3),
+                       int(new_c.blue() * 0.7 + bg.blue() * 0.3)).name()
+        # Double quotes: the style attributes below are single-quoted.
+        fam = ('font-family:"%s";' % _html.escape(st["family"])) if st["family"] else ""
+        bold = 700 if st["bold"] else 400
+        ital = "font-style:italic;" if st["italic"] else ""
         shown = self._entries[-self._RENDER_LAST:]
         parts = []
         for idx, e in enumerate(shown):
             newest = idx == len(shown) - 1
             if show_src and e.get("src"):
                 parts.append(
-                    "<div style='color:#9aa6b2;font-size:%dpx;margin-top:8px;'>%s</div>"
-                    % (src_px, _html.escape(e["src"])))
+                    "<div style='%scolor:%s;font-size:%dpx;margin-top:8px;'>%s</div>"
+                    % (fam, src_c, src_px, _html.escape(e["src"])))
             if show_dst and e.get("dst"):
-                color, weight = ("#f1f5f9", 700) if newest else ("#b9c4cf", 600)
+                color, weight = ((new_c.name(), bold) if newest
+                                 else (old_c, max(400, bold - 100)))
                 parts.append(
-                    "<div style='color:%s;font-size:%dpx;font-weight:%d;'>%s</div>"
-                    % (color, self._font_size, weight, _html.escape(e["dst"])))
+                    "<div style='%s%scolor:%s;font-size:%dpx;font-weight:%d;'>%s</div>"
+                    % (fam, ital, color, self._font_size, weight, _html.escape(e["dst"])))
         if self._interim and show_src:        # live, still-being-spoken text (dim)
             parts.append(
-                "<div style='color:#9aa6b2;font-size:%dpx;margin-top:8px;'>%s …</div>"
-                % (src_px, _html.escape(self._interim)))
+                "<div style='%scolor:%s;font-size:%dpx;margin-top:8px;'>%s …</div>"
+                % (fam, src_c, src_px, _html.escape(self._interim)))
         self._cap.setHtml("".join(parts))
         from PySide6.QtGui import QTextCursor
         self._cap.moveCursor(QTextCursor.End)      # keep newest visible
         self._cap.ensureCursorVisible()
 
-    def set_source(self, text):
+    def set_source(self, text, key=None):
         text = (text or "").strip()
         if not text:
             return
-        self._entries.append({"src": text, "dst": ""})
+        self._entries.append({"src": text, "dst": "", "key": key})
         self._trim()
         self._render()
 
-    def set_translated(self, text):
+    def set_translated(self, text, key=None):
         text = (text or "").strip()
         if not text:
             return
-        # Pair with the OLDEST source still waiting for its translation (FIFO).
-        # Translations run one worker per sentence, so when the speaker is fast
-        # two+ sources are pending at once — pairing with the newest (the old
-        # behavior) attached sentence N's translation to sentence N+1.
-        for e in self._entries:
-            if e.get("src") and not e.get("dst"):
-                e["dst"] = text
-                break
+        if key is not None:
+            # Pair by the sentence's own key. (FIFO pairing shifted EVERY later
+            # caption by one line as soon as a single translation failed.)
+            for e in self._entries:
+                if e.get("key") == key:
+                    e["dst"] = text
+                    break
+            else:
+                return              # its source already scrolled out of the buffer
         else:
-            self._entries.append({"src": "", "dst": text})
+            # Keyless (Google mode): pair with the OLDEST source still waiting.
+            for e in self._entries:
+                if e.get("src") and not e.get("dst"):
+                    e["dst"] = text
+                    break
+            else:
+                self._entries.append({"src": "", "dst": text})
         self._trim()
         self._render()
 
@@ -372,8 +481,17 @@ class _CaptionBar(QWidget):
             self._entries = self._entries[-self._CAP_MAX:]
 
     def show_centered(self):
-        """Place near the bottom-center of the primary screen, then show."""
+        """Restore the last position/size if it's still on a screen; otherwise
+        place near the bottom-center of the primary screen. Then show."""
+        from PySide6.QtCore import QPoint
         from PySide6.QtWidgets import QApplication
+        geo = self._style.get("geometry")
+        if (isinstance(geo, list) and len(geo) == 4
+                and QApplication.screenAt(QPoint(geo[0] + geo[2] // 2, geo[1] + 10))):
+            self.setGeometry(*geo)
+            self.show()
+            self.raise_()
+            return
         self.show()
         screen = QApplication.primaryScreen()
         if screen is not None:
@@ -400,6 +518,14 @@ class _CaptionBar(QWidget):
         self._drag_pos = None
         super().mouseReleaseEvent(event)
 
+    def hideEvent(self, event):
+        # Remember where/how big the user left it (e.g. stretched full-width).
+        g = self.geometry()
+        self._style["geometry"] = [g.x(), g.y(), g.width(), g.height()]
+        self._save_style()
+        self.closed.emit()
+        super().hideEvent(event)
+
 
 class _LoopbackWorker(QThread):
     """Capture system audio (speaker loopback) via the optional ``soundcard``
@@ -423,14 +549,19 @@ class _LoopbackWorker(QThread):
         self._running = False
 
     def run(self):
+        if self._loopback_id == _MAC_SYSTEM_AUDIO:
+            self._run_mac()
+            return
         try:
             import soundcard  # noqa: WPS433
         except Exception as e:  # noqa: BLE001
             self.failed.emit(f"soundcard unavailable: {e}")
             return
         try:
-            mic = soundcard.get_microphone(
-                self._loopback_id, include_loopback=True)
+            lid = self._loopback_id
+            if lid == _DEFAULT_SPEAKER:      # resolved at start: follows the OS
+                lid = soundcard.default_speaker().id
+            mic = soundcard.get_microphone(lid, include_loopback=True)
             rate = 48000  # device rate; resampled to 16 kHz below
             self._running = True
             with mic.recorder(samplerate=rate, channels=1) as rec:
@@ -454,6 +585,75 @@ class _LoopbackWorker(QThread):
         finally:
             self._running = False
 
+    def _run_mac(self):
+        """macOS: capture system audio with ScreenCaptureKit (macOS 13+, needs
+        the Screen Recording permission). soundcard can't — CoreAudio has no
+        loopback device. SCK delivers 48 kHz mono float32 on its own queue."""
+        import threading
+        try:
+            import numpy as np
+            import ScreenCaptureKit as SCK
+            import CoreMedia
+        except Exception as e:  # noqa: BLE001
+            self.failed.emit(f"macOS system audio needs macOS 13+ and the Real-Time "
+                             f"Voice plugin reinstalled (pyobjc ScreenCaptureKit): {e}")
+            return
+        got, ev = {}, threading.Event()
+
+        def _content(content, err):
+            got["c"], got["e"] = content, err
+            ev.set()
+        SCK.SCShareableContent.getShareableContentWithCompletionHandler_(_content)
+        if not ev.wait(10) or got.get("c") is None or not got["c"].displays():
+            self.failed.emit("macOS system audio: allow LinguaHaru in System Settings > "
+                             f"Privacy & Security > Screen Recording, then restart it. ({got.get('e')})")
+            return
+        flt = SCK.SCContentFilter.alloc().initWithDisplay_excludingWindows_(
+            got["c"].displays()[0], [])
+        cfg = SCK.SCStreamConfiguration.alloc().init()
+        cfg.setCapturesAudio_(True)
+        cfg.setExcludesCurrentProcessAudio_(True)
+        cfg.setSampleRate_(48000)
+        cfg.setChannelCount_(1)
+        cfg.setWidth_(2)                    # video is required but unused: keep it tiny
+        cfg.setHeight_(2)
+        cfg.setMinimumFrameInterval_(CoreMedia.CMTimeMake(1, 1))
+
+        def _sink(sbuf):
+            bb = CoreMedia.CMSampleBufferGetDataBuffer(sbuf)
+            n = CoreMedia.CMBlockBufferGetDataLength(bb) if bb else 0
+            if not n:
+                return
+            _st, data = CoreMedia.CMBlockBufferCopyDataBytes(bb, 0, n, None)
+            a = np.frombuffer(bytes(data), dtype=np.float32)
+            a = a[:len(a) // 3 * 3].reshape(-1, 3).mean(axis=1)   # 48k -> 16k
+            self.pcm.emit((np.clip(a, -1, 1) * 32767).astype(np.int16).tobytes())
+
+        out = _mac_stream_output(SCK)
+        _MAC_SINK[0] = _sink
+        stream = SCK.SCStream.alloc().initWithFilter_configuration_delegate_(flt, cfg, None)
+        ok, err = stream.addStreamOutput_type_sampleHandlerQueue_error_(
+            out, SCK.SCStreamOutputTypeAudio, None, None)
+        if not ok:
+            self.failed.emit(f"macOS system audio: {err}")
+            return
+        started = {}
+        ev.clear()
+
+        def _started(err):
+            started["e"] = err
+            ev.set()
+        stream.startCaptureWithCompletionHandler_(_started)
+        ev.wait(10)
+        if started.get("e") is not None:
+            self.failed.emit(f"macOS system audio: {started['e']}")
+            return
+        self._running = True
+        while self._running:
+            self.msleep(100)
+        _MAC_SINK[0] = None
+        stream.stopCaptureWithCompletionHandler_(lambda _err: None)
+
     @staticmethod
     def _to_mono_floats(data):
         """soundcard returns a numpy float32 array shaped (frames, channels).
@@ -464,6 +664,30 @@ class _LoopbackWorker(QThread):
             return [float(v) for v in data]
         except Exception:  # noqa: BLE001
             return []
+
+
+_MAC_OUTPUT_CLS = None
+_MAC_SINK = [None]   # current audio callback (one capture at a time)
+
+
+def _mac_stream_output(SCK):
+    """One SCStreamOutput instance (the ObjC class can only be defined once per
+    process). ``_MAC_SINK[0]`` receives each audio CMSampleBuffer."""
+    global _MAC_OUTPUT_CLS
+    if _MAC_OUTPUT_CLS is None:
+        import objc
+        from Foundation import NSObject
+
+        class LHSystemAudioOutput(NSObject, protocols=[objc.protocolNamed("SCStreamOutput")]):
+            def stream_didOutputSampleBuffer_ofType_(self, stream, sbuf, kind):
+                sink = _MAC_SINK[0]
+                if kind == SCK.SCStreamOutputTypeAudio and sink:
+                    try:
+                        sink(sbuf)
+                    except Exception:  # noqa: BLE001 — one bad buffer must not kill capture
+                        pass
+        _MAC_OUTPUT_CLS = LHSystemAudioOutput
+    return _MAC_OUTPUT_CLS.alloc().init()
 
 
 class LivePage(ScrollArea):
@@ -503,6 +727,11 @@ class LivePage(ScrollArea):
         self._stream_detected = "auto"
         self._det_hist = []             # recent detections (majority-vote lock)
         self._stream_text = {}          # ts -> cumulative streamed translation
+        self._out_rows = []             # [[sentence key, translation]] in source order
+        self._rec = None                # wave writer while "Save Recording" is on
+        self._rec_path = ""
+        self._rec_start = None
+        self._summarizers = []          # keep SummaryWorkers alive until done
 
         self.setWidgetResizable(True)
         self.enableTransparentBackground()
@@ -582,6 +811,14 @@ class LivePage(ScrollArea):
         self.caption_btn = ToggleButton(FluentIcon.VIEW, tr("Floating Captions", lang))
         self.caption_btn.toggled.connect(self._on_caption_toggled)
         cap_row.addWidget(self.caption_btn)
+        # Keep this session's audio (WAV) + transcript and auto-summarize it;
+        # all three show up in History.
+        self.save_rec_cb = CheckBox(tr("Save Recording", lang))
+        self.save_rec_cb.setToolTip(tr("Save Recording Tip", lang))
+        self.save_rec_cb.setChecked(bool(config.get("live_save_recording", False)))
+        self.save_rec_cb.toggled.connect(
+            lambda on: backend.set_config("live_save_recording", bool(on)))
+        cap_row.addWidget(self.save_rec_cb)
         cap_row.addStretch(1)
         ctrl.addLayout(cap_row)
         layout.addWidget(ctrl_card)
@@ -650,6 +887,8 @@ class LivePage(ScrollArea):
         self.target_label.setText(tr("Target Language", lang))
         self.mic_label.setText(tr("Input", lang))
         self.caption_btn.setText(tr("Floating Captions", lang))
+        self.save_rec_cb.setText(tr("Save Recording", lang))
+        self.save_rec_cb.setToolTip(tr("Save Recording Tip", lang))
         self._populate_mics()
         self.input_header.setText(tr("Recognized Speech", lang))
         self.input_sub.setText(tr("Auto Detect", lang))
@@ -717,6 +956,8 @@ class LivePage(ScrollArea):
             self._mic_loopback_ids.append(None)
         # System-audio (speaker loopback) entries, only if soundcard is present.
         for sid, name in self._loopback_sources():
+            if sid in (_DEFAULT_SPEAKER, _MAC_SYSTEM_AUDIO):
+                name = tr("Default Output Device", self._lang)
             self.mic_combo.addItem(f"{tr('System Audio', self._lang)}: {name}")
             self._mic_loopback_ids.append(sid)
         idx = self.mic_combo.findText(prev)
@@ -727,17 +968,30 @@ class LivePage(ScrollArea):
     def _loopback_sources():
         """List system-audio loopback sources as (id, name) tuples. Empty when
         the optional ``soundcard`` package isn't installed — mics-only then."""
+        import sys
+        from core.log_config import app_logger
+        if sys.platform == "darwin":
+            # CoreAudio has no loopback; ScreenCaptureKit (macOS 13+) does.
+            try:
+                import ScreenCaptureKit  # noqa: F401, WPS433
+                return [(_MAC_SYSTEM_AUDIO, "")]
+            except Exception as e:  # noqa: BLE001
+                app_logger.warning(f"System audio unavailable on macOS: {e}")
+                return []
         try:
             import soundcard  # noqa: WPS433
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"System audio unavailable (soundcard): {e}")
             return []
         try:
             out = []
             for m in soundcard.all_microphones(include_loopback=True):
                 if getattr(m, "isloopback", False):
                     out.append((m.id, m.name))
-            return out
-        except Exception:  # noqa: BLE001
+            # First: follow the current default output (the one actually playing).
+            return [(_DEFAULT_SPEAKER, "")] + out if out else []
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"Listing system audio devices failed: {e}")
             return []
 
     def _refresh_model_sub(self):
@@ -769,7 +1023,21 @@ class LivePage(ScrollArea):
         if self._source is None:
             self._populate_mics()
         self._refresh_model_sub()
+        # Warm the local STT model in the background as soon as the page is
+        # opened, so pressing Start doesn't sit through the library import +
+        # model load (~10 s on a cold start).
+        if self._mode == "local" and realtime_voice_available():
+            from core.pipelines.video_translation_pipeline import recognizer_ready
+            if not recognizer_ready():
+                self._start_preload()
         super().showEvent(event)
+
+    def _start_preload(self):
+        if self._preloader is not None and self._preloader.isRunning():
+            return
+        self._preloader = PreloadWorker(self)
+        self._preloader.done.connect(self._on_preload_done)
+        self._preloader.start()
 
     # --- lifecycle ---
     def _style_go(self, running):
@@ -806,12 +1074,18 @@ class LivePage(ScrollArea):
         self.output_text.clear()
         self._session_tokens = 0
         self._stream_text = {}          # drop any leftover streamed-translation state
+        self._out_rows = []
         self._reset_vad()
 
         # Google mode needs playback (it returns spoken audio); local mode is
         # text-only, so skip the speaker.
-        if not self._start_audio(with_playback=(self._mode == "google")):
+        # Google mode speaks its translation aloud — but not while capturing the
+        # system audio, or it would hear (and re-translate) itself.
+        if not self._start_audio(with_playback=(self._mode == "google"
+                                                and self._selected_loopback_id() is None)):
             return
+
+        self._start_recording()
 
         if self._mode == "google":
             target = get_language_code(self.target_combo.currentText())
@@ -830,9 +1104,7 @@ class LivePage(ScrollArea):
             else:
                 self.status_label.setText(tr("Loading model", self._lang))
                 self._show_loading()
-                self._preloader = PreloadWorker(self)
-                self._preloader.done.connect(self._on_preload_done)
-                self._preloader.start()
+                self._start_preload()   # joins a background preload already running
 
         # Real-time voice is in progress -> keep the system awake (and, with the
         # process-wide opt-out, un-throttled) until on_stop.
@@ -944,6 +1216,10 @@ class LivePage(ScrollArea):
         self.status_label.setText(tr("Listening", self._lang))
 
     def on_stop(self):
+        # on_stop also runs on app close / page leave; only a session that was
+        # actually running gets saved (closing the app used to save the last,
+        # already-saved session a second time).
+        was_live = self._is_listening() or self._worker is not None
         if self._worker is not None:
             self._worker.stop()
             self._worker.wait(2000)
@@ -959,7 +1235,9 @@ class LivePage(ScrollArea):
             if w.isRunning():
                 w.wait(3000)
         self._local_workers = [w for w in self._local_workers if w.isRunning()]
-        self._save_live_history()       # persist this session's transcript
+        audio = self._stop_recording()
+        if was_live:
+            self._save_live_history(audio)  # persist this session's transcript (+ audio)
         if self._source is not None:
             self._source.stop()
             self._source = None
@@ -986,7 +1264,47 @@ class LivePage(ScrollArea):
             except Exception:  # noqa: BLE001
                 pass
 
-    def _save_live_history(self):
+    # --- recording (WAV of exactly what the recognizer heard: 16 kHz mono) ---
+    def _start_recording(self):
+        self._rec, self._rec_path = None, ""
+        from datetime import datetime
+        self._rec_start = datetime.now()
+        if not self.save_rec_cb.isChecked():
+            return
+        import os
+        import wave
+        try:
+            _, result_dir, _ = backend.get_custom_paths()
+            os.makedirs(result_dir, exist_ok=True)
+            self._rec_path = os.path.join(
+                result_dir, f"realtime_{self._rec_start.strftime('%Y%m%d_%H%M%S')}.wav")
+            self._rec = wave.open(self._rec_path, "wb")
+            self._rec.setnchannels(1)
+            self._rec.setsampwidth(2)
+            self._rec.setframerate(_IN_RATE)
+        except Exception as e:  # noqa: BLE001 — never block live voice on this
+            self._rec, self._rec_path = None, ""
+            self._info(f"{tr('Save Recording', self._lang)}: {e}", error=True)
+
+    def _record(self, pcm):
+        if self._rec is not None:
+            try:
+                self._rec.writeframes(pcm)
+            except Exception:  # noqa: BLE001 — e.g. disk full: stop recording, keep going
+                self._stop_recording()
+
+    def _stop_recording(self):
+        """Close the WAV; returns its path ('' when nothing was recorded)."""
+        rec, self._rec = self._rec, None
+        if rec is None:
+            return ""
+        try:
+            rec.close()
+        except Exception:  # noqa: BLE001
+            pass
+        return self._rec_path
+
+    def _save_live_history(self, audio_path=""):
         """Save the just-finished session (source + translation) to history."""
         src = [ln for ln in self.input_text.toPlainText().splitlines() if ln.strip()]
         dst = [ln for ln in self.output_text.toPlainText().splitlines() if ln.strip()]
@@ -994,22 +1312,44 @@ class LivePage(ScrollArea):
             return
         try:
             from core.translation_history import save_live_session
-            _, result_dir, log_dir = backend.get_custom_paths()
+            _, result_dir, _ = backend.get_custom_paths()
             online = backend.get_config("default_online", True)
             model = backend.get_active_model(online)
             tokens = int(self._session_tokens or 0)
-            save_live_session(src, dst, "Auto",
-                              self.target_combo.currentText(), model, online,
-                              result_dir, log_dir, total_tokens=tokens,
-                              cost_amount=None, cost_currency=None)
+            # history_dir(), the DB the History page reads — the legacy log_dir
+            # made every desktop real-time session invisible in History.
+            rec = save_live_session(src, dst, "Auto",
+                                    self.target_combo.currentText(), model, online,
+                                    result_dir, backend.history_dir(), total_tokens=tokens,
+                                    cost_amount=None, cost_currency=None,
+                                    start_time=self._rec_start, audio_path=audio_path)
+            # Saving was asked for -> also summarize it (in the target language).
+            out = (rec or {}).get("output_file_path")
+            if self.save_rec_cb.isChecked() and out:
+                w = SummaryWorker(out, self.target_combo.currentText(), self)
+                w.done.connect(lambda ok, w=w: self._on_summary_done(w, ok))
+                self._summarizers.append(w)
+                w.start()
             if not getattr(self, "_shutting_down", False):   # no modal during app close
                 from qt_app.thanks import show_thanks
                 show_thanks(self.window(), self._lang, tokens)
         except Exception:  # noqa: BLE001 — history is best-effort
             pass
 
+    def _on_summary_done(self, worker, ok):
+        if worker in self._summarizers:
+            self._summarizers.remove(worker)
+        if not getattr(self, "_shutting_down", False):
+            self._info(tr("Summary Saved" if ok else "Summary Failed", self._lang),
+                       error=not ok)
+
     def hideEvent(self, event):
         # Leaving the page must not keep the mic/loopback hot or the bar open.
+        # A SPONTANEOUS hide is the window being minimized — that's exactly when
+        # the floating captions are needed, so keep listening and keep the bar.
+        if event.spontaneous():
+            super().hideEvent(event)
+            return
         if self._is_listening():
             self.on_stop()
         if self._caption_bar is not None:
@@ -1037,6 +1377,7 @@ class LivePage(ScrollArea):
             samples = _decode_to_mono_float(data, fmt.sampleFormat(), fmt.channelCount())
             samples = _resample(samples, fmt.sampleRate(), _IN_RATE)
             pcm = _encode_from_mono_float(samples, QAudioFormat.SampleFormat.Int16, 1)
+        self._record(pcm)
         self._update_level(pcm)
         if self._mode == "google":
             if self._worker is not None:
@@ -1050,6 +1391,7 @@ class LivePage(ScrollArea):
         signal), mirroring ``_on_mic_ready``."""
         if self._loopback is None or not pcm:
             return
+        self._record(pcm)
         self._update_level(pcm)
         if self._mode == "google":
             if self._worker is not None:
@@ -1190,8 +1532,21 @@ class LivePage(ScrollArea):
                 hang = base_hang * 0.7
             else:
                 hang = max(500.0, base_hang * 0.55)
-            ended = self._vad_sil_ms >= hang or dur_ms >= getattr(self, "_max_seg_ms", _VAD_MAX_MS)
-            if ended:
+            capped = (self._vad_sil_ms < hang
+                      and dur_ms >= getattr(self, "_max_seg_ms", _VAD_MAX_MS))
+            if capped:
+                # Hit the length cap mid-speech (fast talker, no pause). Cutting
+                # at this exact frame split words in half ("大家好" -> "大"+"今…").
+                # Cut at the quietest moment of the last 2 s instead, and carry
+                # the audio after the cut into the next utterance — nothing is
+                # dropped or recognized twice.
+                cut = self._quiet_cut(self._vad_buf)
+                utt = bytes(self._vad_buf[:cut])
+                self._vad_buf = bytearray(self._vad_buf[cut:])
+                self._partial_ms = 0.0
+                self._dispatch_recognize(utt, is_final=True)
+                return
+            if self._vad_sil_ms >= hang:
                 utt = bytes(self._vad_buf)
                 self._vad_on = False
                 self._vad_voice_ms = 0.0
@@ -1206,6 +1561,21 @@ class LivePage(ScrollArea):
             elif self._partial_ms >= _VAD_PARTIAL_MS and dur_ms >= _VAD_MIN_MS:
                 self._partial_ms = 0.0
                 self._dispatch_recognize(bytes(self._vad_buf), is_final=False)
+
+    @staticmethod
+    def _quiet_cut(buf):
+        """Byte offset of the quietest ~80 ms window in the last 2 s (and the
+        back half) of PCM16 ``buf`` — where a forced cut is least likely to
+        split a word."""
+        import numpy as np
+        a = np.frombuffer(bytes(buf), dtype=np.int16).astype(np.float32)
+        win = _VAD_FRAME * 5
+        lo = max(len(a) - _IN_RATE * 2, len(a) // 2)
+        n = (len(a) - lo) // win
+        if n < 2:
+            return len(buf)
+        energy = (a[lo:lo + n * win].reshape(n, win) ** 2).mean(axis=1)
+        return (lo + int(energy.argmin()) * win + win // 2) * 2
 
     def _dispatch_recognize(self, pcm, is_final):
         """Run one STT pass (partial or final) on the utterance-so-far. Only one
@@ -1351,18 +1721,40 @@ class LivePage(ScrollArea):
             return text
         if text.startswith(c):
             return text[len(c):]
-        # Content probe: the committed tail MINUS trailing punctuation — the
-        # re-decode loves to flip 。<->， at the seam, which would break an
-        # exact match.
-        probe = c[-10:].rstrip("。！？!?.，、,；; ")
-        i = text.find(probe) if probe else -1
-        if i >= 0:
-            tail = text[i + len(probe):]
+        # Compare with spaces/punctuation REMOVED: the re-decode freely adds
+        # them ("作業してたら完全に" -> "作業 してたら 完全 に", 。<->，), and
+        # counting raw characters then re-emitted a tail ("ら 完全 に。") or
+        # swallowed a head ("いました。").
+        nc, _ = self._norm_map(c)
+        nt, idx = self._norm_map(text)
+
+        def after(n):            # raw index just past the first n normalized chars
+            return idx[n - 1] + 1 if 0 < n <= len(idx) else (len(text) if n else 0)
+        if nt.startswith(nc):
+            cut = after(len(nc))
         else:
-            tail = text[len(c):]
+            # Content probe: the committed tail; take the occurrence ending
+            # nearest to where the committed text should end.
+            probe = nc[-10:]
+            ends = []
+            i = nt.find(probe) if probe else -1
+            while i >= 0:
+                ends.append(i + len(probe))
+                i = nt.find(probe, i + 1)
+            # Fallback: same audio ≈ same length, counted in normalized chars.
+            n = min(ends, key=lambda e: abs(e - len(nc))) if ends else len(nc)
+            cut = after(n)
         # An alignment seam can leave stray leading punctuation (never real
         # sentence starts) — drop it.
-        return tail.lstrip("。！？!?.，、,；; ")
+        return text[cut:].lstrip(self._NORM_SKIP)
+
+    _NORM_SKIP = " 　。！？!?.，、,；;…・"
+
+    @classmethod
+    def _norm_map(cls, s):
+        """(s without spaces/punctuation, lowercased; raw index of each kept char)."""
+        keep = [(i, ch.lower()) for i, ch in enumerate(s) if ch not in cls._NORM_SKIP]
+        return "".join(ch for _, ch in keep), [i for i, _ in keep]
 
     def _on_recognized_stream(self, text, detected, is_final):
         """LocalAgreement-2 commit on the UNCOMMITTED TAIL: only tail text two
@@ -1440,9 +1832,18 @@ class LivePage(ScrollArea):
             return
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")
+        # Unique per-sentence key: two sentences committed in the same second
+        # used to share the "[HH:MM:SS]" key, so one translation overwrote the
+        # other. The key's "#n" suffix is never displayed.
+        self._seq = getattr(self, "_seq", 0) + 1
+        key = f"{ts}#{self._seq}"
         self.input_text.insertPlainText(f"[{ts}] {source}\n")
         self.input_text.ensureCursorVisible()
-        self._push_caption(source=source)
+        self._push_caption(source=source, key=key)
+        # Reserve this sentence's output row now, so translations line up with
+        # their sources in order even when replies come back out of order.
+        self._out_rows.append([key, ""])
+        self._render_output()
         ctx = self._live_context()
         self._ctx_history.append(source)   # after building ctx (don't include self)
         del self._ctx_history[:-6]         # keep only the last few lines
@@ -1451,11 +1852,9 @@ class LivePage(ScrollArea):
         api_key = load_api_key_for_model(model) if online else ""
         dst = get_language_code(self.target_combo.currentText())
         if online and backend.get_config("live_stream_translation", False):
-            # Stream mode: append a placeholder line and grow it token-by-token.
-            self.output_text.insertPlainText(f"[{ts}] \n")
-            self.output_text.ensureCursorVisible()
-            self._stream_text[ts] = ""
-            w = LiveTranslateStreamWorker(ts, source, self._stream_detected, dst,
+            # Stream mode: grow the reserved row token-by-token.
+            self._stream_text[key] = ""
+            w = LiveTranslateStreamWorker(key, source, self._stream_detected, dst,
                                           model, online, api_key, context=ctx)
             w.chunk.connect(self._on_stream_chunk)
             w.done.connect(self._on_stream_done)
@@ -1463,42 +1862,48 @@ class LivePage(ScrollArea):
             self._local_workers.append(w)
             w.start()
             return
-        w = LiveTranslateWorker(ts, source, self._stream_detected, dst, model,
+        w = LiveTranslateWorker(key, source, self._stream_detected, dst, model,
                                 online, api_key, context=ctx)
         w.done.connect(self._on_translated_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
         w.start()
 
-    def _on_translated_stream(self, ts, translated, tokens=0):
+    def _on_translated_stream(self, key, translated, tokens=0):
         self._session_tokens += int(tokens or 0)
-        if translated:
-            self.output_text.insertPlainText(f"[{ts}] {translated}\n")
-            self.output_text.ensureCursorVisible()
-            self._push_caption(translated=translated)
+        # A sentence that still failed after the retry is marked, not dropped.
+        text = translated or "⚠ " + tr("Translation Failed", self._lang)
+        self._set_out_row(key, text)
+        self._push_caption(translated=text, key=key)
 
-    def _set_out_line_for_ts(self, ts, text):
-        pre = f"[{ts}] "
-        lines = self.output_text.toPlainText().split("\n")
-        for i, l in enumerate(lines):
-            if l.startswith(pre):
-                lines[i] = pre + text
-                break
-        self.output_text.setPlainText("\n".join(lines))
+    def _render_output(self):
+        """Rebuild the translation pane from the ordered rows (one per committed
+        source sentence)."""
+        self.output_text.setPlainText("".join(
+            f"[{k.split('#')[0]}] {t}\n" for k, t in self._out_rows))
         from PySide6.QtGui import QTextCursor
         self.output_text.moveCursor(QTextCursor.End)
         self.output_text.ensureCursorVisible()
 
-    def _on_stream_chunk(self, ts, text):
-        self._stream_text[ts] = text
-        self._set_out_line_for_ts(ts, text)
+    def _set_out_row(self, key, text):
+        for row in reversed(self._out_rows):
+            if row[0] == key:
+                row[1] = text
+                self._render_output()
+                return
+
+    def _on_stream_chunk(self, key, text):
+        self._stream_text[key] = text
+        self._set_out_row(key, text)
         self._set_caption_interim(text)        # show the growing translation live
 
-    def _on_stream_done(self, ts, tokens=0):
+    def _on_stream_done(self, key, tokens=0):
         self._session_tokens += int(tokens or 0)   # streamed line's token cost
-        final = self._stream_text.pop(ts, "")
-        if final:
-            self._push_caption(translated=final)
+        final = self._stream_text.pop(key, "")
+        if not final:
+            final = "⚠ " + tr("Translation Failed", self._lang)
+            self._set_out_row(key, final)
+        self._push_caption(translated=final, key=key)
         self._set_caption_interim("")
 
     def _play_audio(self, data):
@@ -1548,22 +1953,31 @@ class LivePage(ScrollArea):
             if self._caption_bar is None:
                 self._caption_bar = _CaptionBar(lang=self._lang)
                 self._caption_bar.destroyed.connect(self._on_caption_destroyed)
+                self._caption_bar.closed.connect(self._on_caption_closed)
             self._caption_bar.show_centered()
         elif self._caption_bar is not None:
             self._caption_bar.hide()
 
+    def _on_caption_closed(self):
+        """The bar's own × hid it — untick the toggle so one click reopens it."""
+        if self.caption_btn.isChecked():
+            self.caption_btn.blockSignals(True)
+            self.caption_btn.setChecked(False)
+            self.caption_btn.blockSignals(False)
+
     def _on_caption_destroyed(self, *args):
         self._caption_bar = None
 
-    def _push_caption(self, source=None, translated=None):
-        """Update the floating caption bar (if open) with the latest lines."""
+    def _push_caption(self, source=None, translated=None, key=None):
+        """Update the floating caption bar (if open) with the latest lines.
+        ``key`` pairs a translation with ITS source sentence (local mode)."""
         bar = self._caption_bar
         if bar is None:
             return
         if source is not None:
-            bar.set_source(source)
+            bar.set_source(source, key)
         if translated is not None:
-            bar.set_translated(translated)
+            bar.set_translated(translated, key)
 
     def _set_caption_interim(self, text):
         """Show the live, not-yet-finalized source text in the caption bar."""

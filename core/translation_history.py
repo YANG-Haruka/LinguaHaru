@@ -457,11 +457,15 @@ def save_live_session(
     total_tokens: int = 0,
     cost_amount: Optional[float] = None,
     cost_currency: Optional[str] = None,
+    audio_path: str = "",
 ) -> Optional[Dict[str, Any]]:
     """Persist a real-time-voice session: write a bilingual transcript file and
     add a history record (file_type 'realtime'). Source/translated lines are the
     timestamped lines shown in the two live panes; they're paired by their
     ``[HH:MM:SS]`` prefix. Returns the record, or None if there's nothing to save.
+    ``audio_path`` (the session's recording, optional) is kept in the record's
+    log_file_path slot — realtime records have no log, and deleting the record
+    then deletes the recording too.
     """
     import re
     import uuid
@@ -511,12 +515,35 @@ def save_live_session(
         src_lang="", src_lang_display=src_display,
         dst_lang="", dst_lang_display=dst_display,
         model=model, use_online=use_online,
-        input_file=name, output_file_path=out_path, log_file_path="",
+        input_file=name, output_file_path=out_path, log_file_path=audio_path or "",
         status="success", cost_amount=cost_amount, cost_currency=cost_currency,
     )
     rec["file_type"] = "realtime"     # group under its own type in the browse UI
     TranslationHistoryManager(log_dir=log_dir).add_record(rec)
     return rec
+
+
+SUMMARY_MARK = "# Summary"
+
+
+_SUMMARY_SEP = "\n" + "=" * 40 + "\n"
+
+
+def read_transcript_body(path: str) -> str:
+    """A live transcript file's text without its summary header (if any)."""
+    with open(path, encoding="utf-8") as f:
+        body = f.read()
+    if body.startswith(SUMMARY_MARK) and _SUMMARY_SEP in body:
+        body = body.split(_SUMMARY_SEP, 1)[1]
+    return body
+
+
+def add_transcript_summary(path: str, summary: str) -> None:
+    """Put ``summary`` at the top of a live transcript file (replacing an older
+    one), so opening the transcript shows the gist first."""
+    body = read_transcript_body(path)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"{SUMMARY_MARK}\n{summary.strip()}{_SUMMARY_SEP}{body}")
 
 
 def format_duration(seconds: int) -> str:

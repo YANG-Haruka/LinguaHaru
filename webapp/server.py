@@ -520,7 +520,7 @@ def bootstrap():
             "web_vad": config.get("web_vad", "energy"),
             "live_vad_hang_ms": config.get("live_vad_hang_ms", 900),
             "live_vad_sensitivity": config.get("live_vad_sensitivity", "standard"),
-            "live_vad_max_seg_ms": config.get("live_vad_max_seg_ms", 30000),
+            "live_vad_max_seg_ms": config.get("live_vad_max_seg_ms", 15000),
             "pdf_translate_table": config.get("pdf_translate_table", False),
             "pdf_ocr_scanned": config.get("pdf_ocr_scanned", False),
             "pdf_dual_alternating": config.get("pdf_dual_alternating", False),

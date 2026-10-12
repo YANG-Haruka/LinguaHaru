@@ -433,5 +433,21 @@
   "Excel Sheet Names Label": "Excel 翻譯工作表名（跨表公式/圖表引用會同步改為新名；預設開啟）",
   "Custom Language": "自訂語言",
   "Add Custom Language": "新增",
-  "Custom Language Tip": "內建清單沒有的目標語言。填它的代號（如粵語填 yue）；會依英文範本產生提示詞檔案，之後所有語言選單都能選到。"
+  "Custom Language Tip": "內建清單沒有的目標語言。填它的代號（如粵語填 yue）；會依英文範本產生提示詞檔案，之後所有語言選單都能選到。",
+  "Translation Failed": "翻譯失敗",
+  "Caption Style": "字幕樣式",
+  "Caption Background": "背景顏色 / 透明度…",
+  "Translation Color": "譯文顏色",
+  "Source Color": "原文顏色…",
+  "Caption Font": "字型 / 字形 / 字級…",
+  "Reset Style": "恢復預設",
+  "Default Output Device": "預設輸出裝置",
+  "Save Recording": "儲存錄音和摘要",
+  "Save Recording Tip": "儲存本次的錄音（WAV）和文字轉寫，停止時自動產生摘要。可在「歷史紀錄」中找到。",
+  "Summary Saved": "摘要已儲存，可在歷史紀錄中查看",
+  "Summary Failed": "摘要失敗（請檢查模型 / API 金鑰）",
+  "Open Transcript": "開啟文字紀錄",
+  "Play Recording": "播放錄音",
+  "Summarize": "產生摘要",
+  "Summarizing": "正在產生摘要…"
 }

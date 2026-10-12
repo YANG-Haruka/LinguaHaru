@@ -610,7 +610,7 @@ async function boot() {
   if ($("set-web-vad")) $("set-web-vad").value = c.web_vad || "energy";
   if ($("set-vad-hang")) $("set-vad-hang").value = String(c.live_vad_hang_ms || 900);
   if ($("set-vad-sens")) $("set-vad-sens").value = c.live_vad_sensitivity || "standard";
-  if ($("set-vad-maxseg")) $("set-vad-maxseg").value = String(c.live_vad_max_seg_ms || 30000);
+  if ($("set-vad-maxseg")) $("set-vad-maxseg").value = String(c.live_vad_max_seg_ms || 15000);
   if ($("set-result-dir")) $("set-result-dir").value = c.result_dir || "";
   if ($("set-hist-max")) $("set-hist-max").value = (c.history_max_records ?? 1000);
   if ($("set-hist-age")) $("set-hist-age").value = (c.history_max_age_days ?? 0);
@@ -1464,7 +1464,7 @@ if ($("set-vad-sens")) $("set-vad-sens").onchange = () => {
   saveConfig({ live_vad_sensitivity: v });
 };
 if ($("set-vad-maxseg")) $("set-vad-maxseg").onchange = () => {
-  const v = parseInt($("set-vad-maxseg").value, 10) || 30000;
+  const v = parseInt($("set-vad-maxseg").value, 10) || 15000;
   if (BOOT.config) BOOT.config.live_vad_max_seg_ms = v;
   saveConfig({ live_vad_max_seg_ms: v });
 };
@@ -2507,7 +2507,7 @@ async function startWorkletVad() {
   await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260911A");
   const cfg = BOOT.config || {};
   const hangMs = cfg.live_vad_hang_ms || 900;
-  const maxSegMs = cfg.live_vad_max_seg_ms || 30000;
+  const maxSegMs = cfg.live_vad_max_seg_ms || 15000;
   const [onAbs, offAbs] = VAD_SENS[cfg.live_vad_sensitivity] || VAD_SENS.standard;
   liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
     { processorOptions: { prerollMs: 500, onMs: 90, hangMs, minSegMs: 280, maxSegMs,
@@ -3501,7 +3501,7 @@ async function quickMic() {
   try {
     await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260911A");
     _quickRecNode = new AudioWorkletNode(_quickRecCtx, "vad-processor",
-      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 900, minSegMs: 280, maxSegMs: 30000,
+      { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 900, minSegMs: 280, maxSegMs: 15000,
                             onAbs: 0.006, offAbs: 0.004 } });
     _quickRecNode.port.onmessage = onQuickVad;
     _quickRecNode.port.postMessage({ type: "mode", mode: "open" });

@@ -111,9 +111,15 @@ def portable_root():
     sits next to the app), else None."""
     if getattr(sys, "frozen", False):
         return None
-    cand = os.path.join(RUNTIME_ROOT, "python",
-                        "python.exe" if os.name == "nt" else "python")
-    return RUNTIME_ROOT if os.path.exists(cand) else None
+    return RUNTIME_ROOT if _portable_python(RUNTIME_ROOT) else None
+
+
+def _portable_python(root):
+    """The bundled interpreter: python/python.exe (Windows embeddable) or
+    python/bin/python3 (macOS standalone build). None if absent."""
+    rel = ("python.exe",) if os.name == "nt" else ("bin", "python3")
+    cand = os.path.join(root, "python", *rel)
+    return cand if os.path.exists(cand) else None
 
 
 def flavor():
@@ -159,10 +165,11 @@ def _sync_base_deps(root):
     retry on failure) — otherwise a mainland user's UPDATE would stall on the
     dependency sync and roll back a perfectly good update."""
     exe = "uv.exe" if os.name == "nt" else "uv"
-    py = os.path.join(root, "python", "python.exe" if os.name == "nt" else "python")
-    # The portable bundles uv under python/Scripts/ (pip-installed); accept the
-    # bare python/ location too for manual installs.
+    py = _portable_python(root) or os.path.join(root, "python", "python")
+    # The portable bundles uv under python/Scripts/ (Windows) or python/bin/
+    # (macOS); accept the bare python/ location too for manual installs.
     uv = next((c for c in (os.path.join(root, "python", "Scripts", exe),
+                           os.path.join(root, "python", "bin", exe),
                            os.path.join(root, "python", exe)) if os.path.exists(c)),
               None)
     reqs = [os.path.join(root, "requirements", "base.txt"),

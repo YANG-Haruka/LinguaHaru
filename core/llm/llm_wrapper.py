@@ -403,6 +403,31 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, 
         return text, False, None
 
 
+def summarize_transcript(transcript, out_lang, model, use_online, api_key):
+    """Summarize a real-time voice transcript in ``out_lang``.
+    Returns (summary, success, token_usage)."""
+    # ponytail: head-only cut at 30k chars; chunked map-reduce if meetings run longer
+    text = (transcript or "").strip()[:30000]
+    if not text:
+        return "", False, None
+    messages = [
+        {"role": "system", "content": (
+            f"You summarize meeting / talk transcripts. Write the summary in {out_lang}. "
+            "Start with one sentence on what it was about, then 3-8 bullet points with "
+            "the key points, decisions and action items. Output only the summary.")},
+        {"role": "user", "content": text},
+    ]
+    try:
+        if use_online:
+            result, ok, usage = translate_online(api_key, messages, model)
+        else:
+            result, ok, usage = translate_offline(messages, model)
+        return (_plain_translation(result) if ok else ""), bool(ok and result), usage
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(f"Transcript summary error: {e}")
+        return "", False, None
+
+
 def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key,
                                  usage_sink=None, context=""):
     """Like translate_text_simple but a GENERATOR yielding the translation

@@ -36,6 +36,8 @@ def _page():
                  "_push_caption"):
         setattr(page, name, types.MethodType(getattr(P, name), page))
     page._split_scored, page._find_boundary = P._split_scored, P._find_boundary
+    page._quiet_cut = P._quiet_cut
+    page._norm_map, page._NORM_SKIP = P._norm_map, P._NORM_SKIP
     page._common_prefix, page._WORDLIKE = P._common_prefix, P._WORDLIKE
     page._is_listening = lambda: True
     page._lang = "zh"
@@ -123,21 +125,49 @@ def test_queue_keeps_order_and_never_drops_a_final():
           page.dispatched == [(b"u1-final", True)], str(page.dispatched))
 
 
-def test_hard_cap_does_not_resend_the_previous_tail():
-    print("Live: after the 30 s cap the next utterance's pre-roll holds no old audio")
+def test_hard_cap_cuts_at_a_pause_without_loss_or_overlap():
+    print("Live: the length cap cuts at the quietest point; the tail carries over, nothing lost or repeated")
+    import numpy as np
     page, lp = _page()
-    page._max_seg_ms = 1000                        # a small cap for the test
-    _frames(page, lp, 8, speech=True, fill=1)      # onset
-    for _ in range(200):                           # keep talking until the cap cuts
-        _frames(page, lp, 1, speech=True, fill=1)
-        if not page._vad_on:
+    page._hang_ms, page._max_seg_ms = 900.0, 3000.0
+    page._frame_is_speech = lambda _f: True        # continuous speech, no pause
+    rng = np.random.default_rng(0)
+    fed = bytearray()
+    for i in range(400):                           # ~6.4 s, a quiet dip at frame 150
+        amp = 50 if 148 <= i <= 152 else 8000
+        fr = (rng.standard_normal(lp._VAD_FRAME) * amp).astype(np.int16).tobytes()
+        fed += fr
+        page._vad_step(fr, np.frombuffer(fr, dtype=np.int16))
+        if any(f for _, f in page.dispatched + page._recog_pending):
             break
-    check("the cap ended utterance 1 with a final (sent or queued behind a partial)",
-          not page._vad_on and any(f for _, f in page.dispatched + page._recog_pending))
-    _frames(page, lp, 8, speech=True, fill=2)      # utterance 2 starts at once
-    check("utterance 2 started", page._vad_on)
-    check("its buffer has none of utterance 1's audio (no seam duplicate)",
-          1 not in set(page._vad_buf), f"{sorted(set(page._vad_buf))}")
+    finals = [p for p, f in page.dispatched + page._recog_pending if f]
+    check("the cap sent utterance 1 as a final", len(finals) == 1, str(len(finals)))
+    check("still listening (speech continues)", page._vad_on)
+    onset = len(fed) - len(finals[0]) - len(page._vad_buf)
+    check("final + carried tail == the audio after onset (no loss, no overlap)",
+          onset >= 0 and finals[0] + bytes(page._vad_buf) == bytes(fed[onset:]))
+    cut_frame = (onset + len(finals[0])) // (lp._VAD_FRAME * 2)
+    check("cut landed in the quiet dip, not mid-word", 146 <= cut_frame <= 154, str(cut_frame))
+
+
+def test_redecode_spacing_neither_repeats_nor_drops():
+    print("Live: a re-decode that adds spaces/punctuation aligns on content, not raw length")
+    page, _lp = _page()
+    # Seen in a real session: committed, then the final re-decoded WITH spaces
+    # re-emitted the tail as a new line "ら 完全 に。".
+    page._stream_committed = "すいません別の作業してたら完全に。"
+    check("spaced re-decode adds nothing new",
+          page._uncommitted_tail("すいません 別の作業 してたら 完全 に。") == "",
+          repr(page._uncommitted_tail("すいません 別の作業 してたら 完全 に。")))
+    check("…and only the genuinely new words come through",
+          page._uncommitted_tail("すいません、別の作業 してたら 完全に 忘れてました。") == "忘れてました。",
+          repr(page._uncommitted_tail("すいません、別の作業 してたら 完全に 忘れてました。")))
+    # Re-decode dropped the commas the partial had: the old raw-length skip ate
+    # the start of the new words.
+    page._stream_committed = "えっと、今、作業して"
+    check("fewer punctuation marks don't swallow new words",
+          page._uncommitted_tail("えっと今作業していました。") == "いました。",
+          repr(page._uncommitted_tail("えっと今作業していました。")))
 
 
 def test_web_twin_has_the_same_fix():
@@ -160,5 +190,6 @@ def test_web_twin_has_the_same_fix():
 if __name__ == "__main__":
     run([test_final_after_next_onset_is_not_recommitted,
          test_queue_keeps_order_and_never_drops_a_final,
-         test_hard_cap_does_not_resend_the_previous_tail,
+         test_hard_cap_cuts_at_a_pause_without_loss_or_overlap,
+         test_redecode_spacing_neither_repeats_nor_drops,
          test_web_twin_has_the_same_fix])

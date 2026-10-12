@@ -678,9 +678,19 @@ def _sensevoice_local_dir():
     user's global HF cache, so the model lives in a predictable place and is
     downloaded only once (hf_hub_download reuses cached files)."""
     from core.model_store import current_dir, pick_hf_endpoint
+    cache_dir = current_dir()
+    # Already fully cached -> return it straight from disk: no endpoint probe
+    # (a network round-trip of 1-3 s on every start) and no hf import.
+    base = os.path.join(cache_dir, "models--" + _SENSEVOICE_HF_REPO.replace("/", "--"))
+    try:
+        with open(os.path.join(base, "refs", "main"), encoding="utf-8") as f:
+            snap = os.path.join(base, "snapshots", f.read().strip())
+        if all(os.path.isfile(os.path.join(snap, n)) for n in _SENSEVOICE_FILES):
+            return snap
+    except OSError:
+        pass
     if "HF_ENDPOINT" not in os.environ:
         os.environ["HF_ENDPOINT"] = pick_hf_endpoint()
-    cache_dir = current_dir()
     os.makedirs(cache_dir, exist_ok=True)
     try:
         from huggingface_hub import hf_hub_download
@@ -729,9 +739,10 @@ def _get_sensevoice(model_name):
             else:  # mirror unreachable -> modelscope (may be slow)
                 app_logger.warning("HF mirror unavailable; loading SenseVoice via modelscope.")
                 asr = AutoModel(model=model_name, disable_update=True, device=dev)
-            vad = AutoModel(model="fsmn-vad", disable_update=True, device=dev,
-                            vad_kwargs={"max_single_segment_time": 30000})
-            _sensevoice = (asr, vad)
+            # No fsmn-vad here: nothing reads this slot (offline segmentation
+            # loads its own via _get_vad), and loading it cost ~4 s + a
+            # modelscope network check on EVERY real-time start.
+            _sensevoice = (asr, None)
     return _sensevoice
 
 

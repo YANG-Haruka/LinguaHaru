@@ -393,5 +393,21 @@
   "Excel Sheet Names Label": "Excel：シート名を翻訳（シート間の数式・グラフ参照も新しい名前に更新。既定はオン）",
   "Custom Language": "カスタム言語",
   "Add Custom Language": "追加",
-  "Custom Language Tip": "組み込みリストにない翻訳先言語。コードを入力します（例：広東語なら yue）。英語テンプレートからプロンプトファイルを生成し、すべての言語メニューに表示されます。"
+  "Custom Language Tip": "組み込みリストにない翻訳先言語。コードを入力します（例：広東語なら yue）。英語テンプレートからプロンプトファイルを生成し、すべての言語メニューに表示されます。",
+  "Translation Failed": "翻訳失敗",
+  "Caption Style": "字幕のスタイル",
+  "Caption Background": "背景色 / 不透明度…",
+  "Translation Color": "訳文の色",
+  "Source Color": "原文の色…",
+  "Caption Font": "フォント / スタイル / サイズ…",
+  "Reset Style": "既定に戻す",
+  "Default Output Device": "既定の出力デバイス",
+  "Save Recording": "録音と要約を保存",
+  "Save Recording Tip": "このセッションの録音（WAV）と文字起こしを保存し、停止時に自動で要約します。「履歴」から確認できます。",
+  "Summary Saved": "要約を保存しました（履歴で確認できます）",
+  "Summary Failed": "要約できませんでした（モデル / API キーを確認してください）",
+  "Open Transcript": "文字起こしを開く",
+  "Play Recording": "録音を再生",
+  "Summarize": "要約する",
+  "Summarizing": "要約中…"
 }

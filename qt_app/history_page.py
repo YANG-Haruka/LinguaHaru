@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     TableWidget, PushButton, PrimaryPushButton, StrongBodyLabel, ComboBox,
     BodyLabel, FluentIcon, StateToolTip, MessageBox, SimpleCardWidget, CaptionLabel,
+    InfoBar, InfoBarPosition,
 )
 
 from core import backend
@@ -31,7 +32,7 @@ from core.api_keys import load_api_key_for_model
 from qt_app.i18n import tr
 from qt_app.worker import TranslationWorker
 from core.translation_history import (
-    TranslationHistoryManager, format_tokens, format_duration,
+    TranslationHistoryManager, format_tokens, format_duration, SUMMARY_MARK,
 )
 
 # Compact table columns (resolved per UI language). The full record shows in the
@@ -409,6 +410,8 @@ class HistoryPage(QWidget):
         self.detail_hint.setText(tr("Resume Hint", L) if _is_resumable(rec) else "")
         # Actions
         self.detail_acts.addStretch(1)
+        if rec.get("file_type") == "realtime":
+            self._add_realtime_actions(rec)
         open_btn = PushButton(FluentIcon.FOLDER, tr("Open Folder", L))
         open_btn.clicked.connect(lambda: self._open_record_folder(rec))
         self.detail_acts.addWidget(open_btn)
@@ -419,6 +422,54 @@ class HistoryPage(QWidget):
         del_btn = PushButton(FluentIcon.DELETE, tr("Delete Record", L))
         del_btn.clicked.connect(lambda: self._delete_record(rec))
         self.detail_acts.addWidget(del_btn)
+
+    def _add_realtime_actions(self, rec):
+        """Real-time voice session: its summary (if any) inline, plus open the
+        transcript, play the recording (kept in log_file_path), summarize."""
+        L = self._lang
+        txt = rec.get("output_file_path") or ""
+        audio = rec.get("log_file_path") or ""
+        if not (txt and os.path.isfile(txt)):
+            return
+        try:
+            with open(txt, encoding="utf-8") as f:
+                head = f.read(4000)
+        except OSError:
+            head = ""
+        if head.startswith(SUMMARY_MARK):
+            summary = BodyLabel(head[len(SUMMARY_MARK):].split("\n" + "=" * 40, 1)[0].strip())
+            summary.setWordWrap(True)
+            summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
+            self.detail_files.addWidget(summary)
+        doc_btn = PushButton(FluentIcon.DOCUMENT, tr("Open Transcript", L))
+        doc_btn.clicked.connect(lambda: open_folder(txt))
+        self.detail_acts.addWidget(doc_btn)
+        if audio.lower().endswith(".wav") and os.path.isfile(audio):
+            play_btn = PushButton(FluentIcon.PLAY, tr("Play Recording", L))
+            play_btn.clicked.connect(lambda: open_folder(audio))
+            self.detail_acts.addWidget(play_btn)
+        sum_btn = PushButton(FluentIcon.EDIT, tr("Summarize", L))
+        sum_btn.clicked.connect(lambda: self._summarize_record(rec, sum_btn))
+        self.detail_acts.addWidget(sum_btn)
+
+    def _summarize_record(self, rec, btn):
+        from qt_app.live_worker import SummaryWorker
+        btn.setEnabled(False)
+        btn.setText(tr("Summarizing", self._lang))
+        w = SummaryWorker(rec["output_file_path"],
+                          rec.get("dst_lang_display") or "English", self)
+        w.done.connect(self._on_summary_done)
+        self._summary_worker = w      # keep alive until done
+        w.start()
+
+    def _on_summary_done(self, ok):
+        self._summary_worker = None
+        bar = InfoBar.success if ok else InfoBar.error
+        bar(tr("Summarize", self._lang),
+            tr("Summary Saved" if ok else "Summary Failed", self._lang),
+            orient=1, isClosable=True, position=InfoBarPosition.TOP,
+            duration=4000, parent=self)
+        self._on_row_selected()        # re-render the detail with the summary
 
     def _show_batch_detail(self, recs):
         L = self._lang

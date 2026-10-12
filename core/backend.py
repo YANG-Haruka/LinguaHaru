@@ -382,6 +382,34 @@ def get_custom_paths():
 _history_migrated = False
 
 
+def _merge_legacy_live_history(new_base):
+    """The desktop real-time voice page saved its sessions into the legacy
+    log_dir DB (<root>/log, not data/log), which History never reads — merge
+    those records into the real history DB once. Best-effort; never raises."""
+    try:
+        legacy = os.path.join(get_custom_paths()[2], "translation_history.db")
+        target = os.path.join(new_base, "translation_history.db")
+        if (not os.path.isfile(legacy) or not os.path.isfile(target)
+                or os.path.abspath(legacy) == os.path.abspath(target)):
+            return
+        import sqlite3
+        con = sqlite3.connect(target)
+        try:
+            con.execute("ATTACH DATABASE ? AS old", (legacy,))
+            main_cols = {r[1] for r in con.execute("PRAGMA main.table_info(records)")}
+            cols = ",".join(r[1] for r in con.execute("PRAGMA old.table_info(records)")
+                            if r[1] in main_cols)
+            con.execute(f"INSERT OR IGNORE INTO main.records ({cols}) "
+                        f"SELECT {cols} FROM old.records WHERE file_type = 'realtime'")
+            con.commit()
+            con.execute("DETACH DATABASE old")
+        finally:
+            con.close()
+        os.replace(legacy, legacy + ".merged")
+    except Exception:  # noqa: BLE001 — migration is best-effort
+        pass
+
+
 def _migrate_history_once():
     """One-time move of the translation-history DB(s) from the old data/log
     location into data/history, so upgrading users keep their history when data/log
@@ -392,6 +420,7 @@ def _migrate_history_once():
     _history_migrated = True
     old_base = os.path.join(DATA_DIR, "log")
     new_base = os.path.join(DATA_DIR, "history")
+    _merge_legacy_live_history(new_base)
     if not os.path.isdir(old_base):
         return
     import shutil

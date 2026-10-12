@@ -148,6 +148,9 @@ def _start_background_warmup(window):
                 run_retention()
             except Exception:  # noqa: BLE001
                 pass
+            # First run of the portable: drop a shortcut on the desktop.
+            from core.desktop_shortcut import ensure_desktop_shortcut
+            ensure_desktop_shortcut()
 
     def _refresh():
         # Reflect any local models found + the resolved active interface.

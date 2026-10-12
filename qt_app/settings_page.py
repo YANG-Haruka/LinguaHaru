@@ -501,7 +501,7 @@ class SettingsPage(ScrollArea):
         self.maxseg_combo = ComboBox()
         for _v, lbl in self._maxsegs:
             self.maxseg_combo.addItem(lbl)
-        cur_max = str(config.get("live_vad_max_seg_ms", 30000))
+        cur_max = str(config.get("live_vad_max_seg_ms", 15000))
         for i, (v, _l) in enumerate(self._maxsegs):
             if v == cur_max:
                 self.maxseg_combo.setCurrentIndex(i)

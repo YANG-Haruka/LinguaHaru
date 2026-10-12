@@ -9,7 +9,7 @@ import base64
 import json
 import threading
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QObject, QThread, Signal
 
 _URL = ("wss://generativelanguage.googleapis.com/ws/"
         "google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent")
@@ -19,17 +19,76 @@ _MODEL = "models/gemini-3.5-live-translate-preview"
 _STT_LOCK = threading.Lock()
 
 
-class PreloadWorker(QThread):
+class PreloadWorker(QObject):
     """Load the local STT model up front so the first utterance isn't blocked on
-    a multi-second model load. Emits done(ready)."""
+    a multi-second model load. Emits done(ready).
+
+    A DAEMON thread, not a QThread: it starts as soon as the page is opened, and
+    the app may be closed mid-load — a running QThread would abort Qt at exit
+    ('Destroyed while thread is still running'), a daemon thread just dies."""
     done = Signal(bool)
 
-    def run(self):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._t = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._t.start()
+
+    def isRunning(self):
+        return self._t.is_alive()
+
+    def wait(self, ms):
+        if self._t.is_alive():
+            self._t.join(ms / 1000.0)
+
+    def _run(self):
         try:
             from core.pipelines.video_translation_pipeline import preload_recognizer
-            self.done.emit(bool(preload_recognizer()))
+            ok = bool(preload_recognizer())
         except Exception:  # noqa: BLE001
-            self.done.emit(False)
+            ok = False
+        try:
+            self.done.emit(ok)
+        except RuntimeError:  # page already destroyed (app closing)
+            pass
+
+
+class SummaryWorker(QObject):
+    """Summarize a saved real-time transcript with the current model and write
+    the summary to the top of the transcript file. Daemon thread (like
+    PreloadWorker) so a slow LLM call never blocks closing the app. done(ok)."""
+    done = Signal(bool)
+
+    def __init__(self, path, out_lang, parent=None):
+        super().__init__(parent)
+        self._path, self._lang = path, out_lang
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        ok = False
+        try:
+            from core import backend
+            from core.api_keys import load_api_key_for_model
+            from core.llm.llm_wrapper import summarize_transcript
+            from core.translation_history import add_transcript_summary, read_transcript_body
+            online = backend.get_config("default_online", True)
+            model = backend.get_active_model(online)
+            key = load_api_key_for_model(model) if online else ""
+            summary, ok, _u = summarize_transcript(
+                read_transcript_body(self._path), self._lang, model, online, key)
+            if ok:
+                add_transcript_summary(self._path, summary)
+        except Exception as e:  # noqa: BLE001
+            from core.log_config import app_logger
+            app_logger.warning(f"Live summary failed: {e}")
+            ok = False
+        try:
+            self.done.emit(ok)
+        except RuntimeError:  # receiver already destroyed (app closing)
+            pass
 
 
 class LiveRecognizeWorker(QThread):
@@ -82,10 +141,17 @@ class LiveTranslateWorker(QThread):
             # proper nouns stay consistent (same terms as document translation).
             hint = backend.live_glossary_hint(self._source, self._src, self._dst)
             ctx = f"{self._context} {hint}".strip() if hint else self._context
-            translated, ok, usage = translate_text_simple(
-                self._source, self._src or "auto", self._dst, self._model,
-                self._online, self._key, context=ctx)
-            tokens = int((usage or {}).get("total_tokens", 0) or 0)
+            tokens = 0
+            # One retry: fast speech fires many requests at once and the odd one
+            # hits a rate limit / timeout — that sentence used to vanish silently.
+            for attempt in range(2):
+                translated, ok, usage = translate_text_simple(
+                    self._source, self._src or "auto", self._dst, self._model,
+                    self._online, self._key, context=ctx)
+                tokens += int((usage or {}).get("total_tokens", 0) or 0)
+                if ok or attempt:
+                    break
+                self.msleep(1500)
             self.done.emit(self._ts, translated if ok else "", tokens)
         except Exception:  # noqa: BLE001
             self.done.emit(self._ts, "", 0)

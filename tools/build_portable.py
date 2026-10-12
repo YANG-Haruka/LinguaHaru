@@ -7,9 +7,10 @@ because it's a real Python, unlike the frozen build — see module_manager).
 
     python build_portable.py web    -> dist/LinguaHaru-web/
     python build_portable.py qt     -> dist/LinguaHaru-desktop/
+    python build_portable.py mac    -> dist/LinguaHaru-<ver>-desktop-mac.zip (Apple Silicon)
 
-Run on Windows (the embeddable Python is win amd64). Needs network (downloads the
-embeddable Python + pip + base wheels).
+Run on Windows (the embeddable Python is win amd64; the Mac builds are cross-
+built, see build_mac). Needs network (downloads Python + pip + base wheels).
 """
 import io
 import os
@@ -190,6 +191,160 @@ def build(variant):
     print(f"[6/6] done: {dest}  ({total/1024/1024:.0f} MB)")
 
 
+# --------------------------------------------------------------------------- #
+# macOS desktop portable — cross-built from Windows.
+# There is no "embeddable" Python for macOS; python-build-standalone ships a
+# relocatable CPython we can unpack anywhere. Deps are resolved by uv FOR macOS
+# (--python-platform), so markers like `pywin32; sys_platform == "win32"` are
+# evaluated for the Mac, not for the Windows builder (pip --platform can't).
+# --------------------------------------------------------------------------- #
+PBS_TAG, PBS_PY = "20261009", "3.12.15"
+PBS_URL = ("https://github.com/astral-sh/python-build-standalone/releases/download/"
+           "{tag}/cpython-{py}%2B{tag}-{arch}-apple-darwin-install_only.tar.gz")
+MAC_VARIANTS = {  # name -> (pbs arch, uv --python-platform, zip suffix)
+    "mac": ("aarch64", "aarch64-apple-darwin", "mac"),   # Apple Silicon (M1+) only
+}
+# Same idea as _prune_pyside6, Mac layout (frameworks + abi3 .so modules).
+_PYSIDE6_MAC_PRUNE = [
+    "Qt/lib/QtWebEngine*.framework", "Qt/lib/QtQuick*.framework", "Qt/lib/QtQml*.framework",
+    "Qt/lib/Qt3D*.framework", "Qt/lib/QtCharts*.framework",
+    "Qt/lib/QtDataVisualization*.framework", "Qt/lib/QtPdf*.framework",
+    "Qt/lib/QtDesigner*.framework", "Qt/qml", "Qt/resources", "Qt/libexec/QtWebEngineProcess*",
+    "Qt/translations/qtwebengine_locales",
+    "QtWebEngine*.so", "QtQuick*.so", "QtQml*.so", "Qt3D*.so", "QtCharts*.so",
+    "QtDataVisualization*.so", "QtPdf*.so", "QtDesigner*.so",
+]
+_MACH_O = (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe", b"\xca\xfe\xba\xbe", b"\xfe\xed\xfa\xcf")
+
+MAC_LAUNCHER = """#!/bin/bash
+# Double-click to start LinguaHaru (macOS). First time: right-click > Open
+# (or System Settings > Privacy & Security > Open Anyway).
+cd "$(dirname "$0")"
+# Clear the download quarantine once so macOS lets the bundled Python run.
+xattr -dr com.apple.quarantine . 2>/dev/null
+export PYTHONNOUSERSITE=1
+unset PYTHONPATH
+exec ./python/bin/python3 app_qt.py "$@"
+"""
+MAC_README = """LinguaHaru for macOS (13 Ventura or newer, Apple Silicon M1 or later)
+
+1. Unzip, then double-click "Start-Desktop.command".
+   macOS blocks apps downloaded from the internet the first time:
+   - right-click Start-Desktop.command > Open > Open, or
+   - System Settings > Privacy & Security > scroll down > "Open Anyway".
+   Or run once in Terminal:  xattr -dr com.apple.quarantine <this folder>
+2. On first start a "LinguaHaru" shortcut is added to your Desktop — use it
+   from then on (don't move this folder afterwards, or the shortcut breaks).
+3. Real-time voice from system audio (what your Mac is playing) needs
+   System Settings > Privacy & Security > Screen & System Audio Recording:
+   allow LinguaHaru (or Terminal, if you started it from the .command file).
+
+macOS 13 以上、M 系列芯片。解压后双击 Start-Desktop.command；第一次会被系统拦截，请右键 >
+打开，或在「系统设置 > 隐私与安全性」里点「仍要打开」。首次启动会在桌面生成
+LinguaHaru 快捷方式，之后用它启动（不要再移动本文件夹）。实时语音监听系统声音
+需要在「隐私与安全性 > 屏幕与系统录音」里允许 LinguaHaru（或"终端"）。
+"""
+
+
+def _uv():
+    try:
+        subprocess.run([sys.executable, "-m", "uv", "--version"], check=True,
+                       capture_output=True)
+    except Exception:  # noqa: BLE001
+        subprocess.run([sys.executable, "-m", "pip", "install", "uv"], check=True)
+    return [sys.executable, "-m", "uv"]
+
+
+def _mac_icon(dest):
+    """assets/img/icon.icns (for the desktop .app) from the square Windows icon."""
+    from PIL import Image
+    ico = Image.open(os.path.join(ROOT, "assets", "img", "ico.ico"))
+    ico.size = max(ico.ico.sizes())
+    ico.convert("RGBA").resize((1024, 1024), Image.LANCZOS).save(
+        os.path.join(dest, "assets", "img", "icon.icns"))
+
+
+def build_mac(variant):
+    import glob as _glob
+    import tarfile
+    arch, platform, suffix = MAC_VARIANTS[variant]
+    v = VARIANTS["qt"]
+    dest = os.path.join(OUT_ROOT, f"LinguaHaru-desktop-{suffix}")
+    if os.path.exists(dest):
+        shutil.rmtree(dest)
+    os.makedirs(dest)
+
+    print("[1/6] standalone Python for macOS")
+    data = _download(PBS_URL.format(tag=PBS_TAG, py=PBS_PY, arch=arch))
+    modes = {}     # Windows drops the exec bits; remember them for the zip
+    with tarfile.open(fileobj=io.BytesIO(data)) as t:
+        for m in t.getmembers():
+            modes[m.name] = m.mode
+        t.extractall(dest, filter="data")     # symlinks become copies on Windows
+    sp = os.path.join(dest, "python", "lib", "python3.12", "site-packages")
+
+    print("[2/6] base deps (resolved for macOS) + setuptools/wheel/uv")
+    cmd = _uv() + ["pip", "install", "--target", sp, "--python-version", "3.12",
+                   "--python-platform", platform, "--only-binary", ":all:"]
+    for req in v["reqs"]:
+        cmd += ["-r", os.path.join(ROOT, req)]
+    subprocess.run(cmd + ["setuptools", "wheel", "uv"], check=True, env=_ISOLATED_ENV)
+    # --target puts console scripts in <target>/bin; module_manager looks for uv
+    # next to the interpreter (python/bin/uv).
+    for exe in ("uv", "uvx"):
+        src = os.path.join(sp, "bin", exe)
+        if os.path.exists(src):
+            shutil.move(src, os.path.join(dest, "python", "bin", exe))
+
+    print("[3/6] prune PySide6")
+    qt = os.path.join(sp, "PySide6")
+    for pat in _PYSIDE6_MAC_PRUNE:
+        for p in _glob.glob(os.path.join(qt, pat)):
+            shutil.rmtree(p) if os.path.isdir(p) else os.remove(p)
+
+    print("[4/6] app payload")
+    for d in APP_DIRS + v["dirs"]:
+        shutil.copytree(os.path.join(ROOT, d), os.path.join(dest, d),
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc",
+                                                      "system_config.json"))
+    for fn in APP_FILES + v.get("files", []):
+        shutil.copy2(os.path.join(ROOT, fn), os.path.join(dest, fn))
+    _mac_icon(dest)
+
+    print("[5/6] launcher")
+    with open(os.path.join(dest, "Start-Desktop.command"), "w", newline="\n") as f:
+        f.write(MAC_LAUNCHER)
+    with open(os.path.join(dest, "README-Mac.txt"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(MAC_README)
+
+    print("[6/6] zip (with unix permissions)")
+    # The app's own version (version.json is only bumped once assets are live).
+    with open(os.path.join(ROOT, "core", "version.py"), encoding="utf-8") as f:
+        import re
+        ver = re.search(r'__version__ = "([^"]+)"', f.read()).group(1)
+    out = os.path.join(OUT_ROOT, f"LinguaHaru-{ver}-desktop-{suffix}.zip")
+    top = os.path.basename(dest)
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for dp, _, fns in os.walk(dest):
+            for fn in fns:
+                p = os.path.join(dp, fn)
+                rel = os.path.relpath(p, dest).replace("\\", "/")
+                with open(p, "rb") as fh:
+                    head = fh.read(4)
+                executable = (modes.get(rel, 0) & 0o111 or head in _MACH_O
+                              or head[:2] == b"#!" or rel.startswith("python/bin/"))
+                zi = zipfile.ZipInfo.from_file(p, f"{top}/{rel}")
+                zi.create_system = 3                       # unix, so modes apply
+                zi.external_attr = ((0o100755 if executable else 0o100644) << 16)
+                zi.compress_type = zipfile.ZIP_DEFLATED
+                with open(p, "rb") as fh:
+                    z.writestr(zi, fh.read())
+    print(f"done: {out}  ({os.path.getsize(out)/1024/1024:.0f} MB)")
+
+
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else "web"
-    build(target)
+    if target in MAC_VARIANTS:
+        build_mac(target)
+    else:
+        build(target)
