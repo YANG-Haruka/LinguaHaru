@@ -44,7 +44,7 @@
 **Translation engine built for quality and speed.** Smart batching, concurrent requests with per-model rate control, translation caching, glossary enforcement, placeholder protection and post-translation QA checks. Atomic incremental writes make every job crash-safe; interrupted runs resume exactly where they stopped.
 
 **Two full frontends, one backend.**
-- **Desktop** — native Windows app in Fluent Design (light/dark, floating live captions, drag-and-drop everywhere).
+- **Desktop** — native Windows and macOS (Apple Silicon) app in Fluent Design (light/dark, floating live captions, drag-and-drop everywhere).
 - **Web console** — the same features in your browser, with multi-user session isolation, LAN sharing and a public server mode.
 
 **Everything heavy is a plugin.** The base download stays small; install only what you need from the in-app Plugins page. NVIDIA GPUs are detected automatically and the GPU runtimes (CUDA torch, onnxruntime-gpu) are installed for you. Uninstalling a plugin reclaims every dependency it brought in.
@@ -71,7 +71,8 @@
 No Python, no CUDA setup. Download, unzip, double-click.
 
 1. Grab a package from [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest):
-   - `LinguaHaru-*-desktop-portable.zip` — native desktop app
+   - `LinguaHaru-*-desktop-portable.zip` — native desktop app (Windows)
+   - `LinguaHaru-*-desktop-mac.zip` — native desktop app for macOS 13+ on Apple Silicon (open `LinguaHaru.app`; see README-Mac.txt inside)
    - `LinguaHaru-*-web-portable.zip` — web console (opens your browser automatically)
 2. Unzip anywhere, then run `Start-Desktop.bat` or `Start-Web.bat`.
 3. In **Interface Management**, add an interface (e.g. DeepSeek), paste your API key, click the card to activate.

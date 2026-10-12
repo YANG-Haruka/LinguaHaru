@@ -44,7 +44,7 @@
 **为质量与速度而生的翻译引擎。** 智能分批、并发请求与按模型限流、翻译缓存、术语表强制、占位符保护、译后 QA 检查。原子化增量写盘让任何任务都崩溃安全；中断的任务可以精确续传。
 
 **两套完整前端，一个后端。**
-- **桌面端** —— Fluent Design 原生 Windows 应用（浅色/深色、悬浮实时字幕、全局拖拽）。
+- **桌面端** —— Fluent Design 原生 Windows / macOS（Apple Silicon）应用（浅色/深色、悬浮实时字幕、全局拖拽）。
 - **Web 控制台** —— 浏览器里的同款全功能，支持多用户会话隔离、局域网共享与公共服务器模式。
 
 **重的东西全是插件。** 基础包保持小巧，需要什么在应用内插件页装什么。自动检测 NVIDIA 显卡并安装 GPU 运行时（CUDA torch、onnxruntime-gpu）；卸载插件会完整回收它带来的所有依赖。
@@ -71,7 +71,8 @@
 不需要 Python，不需要配 CUDA。下载、解压、双击。
 
 1. 从 [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) 下载：
-   - `LinguaHaru-*-desktop-portable.zip` —— 原生桌面端
+   - `LinguaHaru-*-desktop-portable.zip` —— 原生桌面端（Windows）
+   - `LinguaHaru-*-desktop-mac.zip` —— macOS 桌面端（macOS 13 以上、M 系列芯片；打开 `LinguaHaru.app`，说明见包内 README-Mac.txt）
    - `LinguaHaru-*-web-portable.zip` —— Web 端（自动打开浏览器）
 2. 解压到任意位置，运行 `Start-Desktop.bat` 或 `Start-Web.bat`。
 3. 在 **接口管理** 添加接口（如 DeepSeek），粘贴 API 密钥，点击卡片激活。

@@ -44,7 +44,7 @@
 **品質と速度のために作られた翻訳エンジン。** スマートなバッチ処理、モデル別レート制御付き並列リクエスト、翻訳キャッシュ、用語集の強制適用、プレースホルダー保護、翻訳後の QA チェック。アトミックな逐次書き込みでどのジョブもクラッシュ安全。中断したタスクは正確に再開できます。
 
 **2 つの完全なフロントエンド、1 つのバックエンド。**
-- **デスクトップ** —— Fluent Design のネイティブ Windows アプリ（ライト/ダーク、フローティング字幕、ドラッグ&ドロップ対応）。
+- **デスクトップ** —— Fluent Design のネイティブ Windows / macOS（Apple Silicon）アプリ（ライト/ダーク、フローティング字幕、ドラッグ&ドロップ対応）。
 - **Web コンソール** —— ブラウザで同じ全機能。マルチユーザーセッション分離、LAN 共有、公開サーバーモード。
 
 **重い機能はすべてプラグイン。** 基本パッケージは小さいまま、必要なものだけをアプリ内のプラグインページからインストール。NVIDIA GPU は自動検出され、GPU ランタイム（CUDA torch、onnxruntime-gpu）も自動導入。アンインストール時は依存関係を完全に回収します。
@@ -71,7 +71,8 @@
 Python も CUDA 設定も不要。ダウンロードして解凍、ダブルクリックするだけ。
 
 1. [Releases](https://github.com/YANG-Haruka/LinguaHaru/releases/latest) からダウンロード：
-   - `LinguaHaru-*-desktop-portable.zip` —— ネイティブデスクトップ版
+   - `LinguaHaru-*-desktop-portable.zip` —— ネイティブデスクトップ版（Windows）
+   - `LinguaHaru-*-desktop-mac.zip` —— macOS 版（macOS 13 以降・Apple シリコン。`LinguaHaru.app` を開く。詳細は同梱の README-Mac.txt）
    - `LinguaHaru-*-web-portable.zip` —— Web 版（ブラウザが自動で開きます）
 2. 任意の場所に解凍し、`Start-Desktop.bat` または `Start-Web.bat` を実行。
 3. **インターフェース管理** でインターフェースを追加（例：DeepSeek）、API キーを貼り付けてカードをクリックして有効化。
