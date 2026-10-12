@@ -147,7 +147,7 @@ class LiveTranslateWorker(QThread):
             for attempt in range(2):
                 translated, ok, usage = translate_text_simple(
                     self._source, self._src or "auto", self._dst, self._model,
-                    self._online, self._key, context=ctx)
+                    self._online, self._key, context=ctx, speech=True)
                 tokens += int((usage or {}).get("total_tokens", 0) or 0)
                 # Much longer than its source -> the model translated the context
                 # too; redo this one without context.
@@ -190,7 +190,7 @@ class LiveTranslateStreamWorker(QThread):
             ctx = f"{self._context} {hint}".strip() if hint else self._context
             for partial in translate_text_simple_stream(
                     self._source, self._src or "auto", self._dst, self._model,
-                    self._online, self._key, usage_sink=sink, context=ctx):
+                    self._online, self._key, usage_sink=sink, context=ctx, speech=True):
                 self.chunk.emit(self._ts, partial or "")
         except Exception:  # noqa: BLE001
             pass

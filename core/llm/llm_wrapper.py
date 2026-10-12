@@ -352,7 +352,37 @@ def _plain_translation(result):
     return s
 
 
-def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, context=""):
+# Real-time voice: the source is live ASR output, not written text.
+_SPEECH_NOTE = (" The text is automatic speech recognition of live speech (often a"
+                " meeting): it may contain mis-recognized words, missing punctuation or"
+                " be a sentence fragment. Translate what the speaker meant, silently"
+                " correcting obvious mis-recognitions (sound-alike words, mangled"
+                " technical terms or names) from context, but never add content that"
+                " isn't there. Keep English technical terms and product names as written.")
+
+
+def _simple_messages(text, src_lang, dst_lang, context="", speech=False):
+    """Chat messages for a one-line translation. Context goes in its own
+    <context> tag next to the <translate> tag: in the system prompt, models
+    (DeepSeek in real sessions) often translated the CONTEXT instead of the
+    line — 3 of 4 live-caption lines came out as the previous sentences."""
+    ctx = str(context or "").strip()
+    system_prompt = (f"You are a professional translator. Translate the following text "
+                     f"from {src_lang} to {dst_lang}. Output only the translation, nothing else.")
+    if speech:
+        system_prompt += _SPEECH_NOTE
+    if not ctx:
+        return [{"role": "system", "content": system_prompt},
+                {"role": "user", "content": text}]
+    system_prompt += (" The text to translate is inside <translate>. <context> holds"
+                      " surrounding information ONLY to resolve meaning — never translate,"
+                      " repeat or include it. Output only the translation of <translate>.")
+    return [{"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"<context>{ctx}</context>\n<translate>{text}</translate>"}]
+
+
+def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, context="",
+                          speech=False):
     """
     Simple text translation without complex prompt templates.
     Used by BabelDOC integration for direct text translation.
@@ -374,17 +404,7 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, 
     if not text or not text.strip():
         return text, True, None
 
-    # Simple system prompt for translation
-    system_prompt = f"You are a professional translator. Translate the following text from {src_lang} to {dst_lang}. Output only the translation, nothing else."
-    if context and str(context).strip():
-        system_prompt += (" Context for disambiguation only (do NOT translate it or"
-                          f" include it in the output): {str(context).strip()}")
-
-    # User message is just the text to translate
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": text},
-    ]
+    messages = _simple_messages(text, src_lang, dst_lang, context, speech)
 
     try:
         if not use_online:
@@ -429,7 +449,7 @@ def summarize_transcript(transcript, out_lang, model, use_online, api_key):
 
 
 def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key,
-                                 usage_sink=None, context=""):
+                                 usage_sink=None, context="", speech=False):
     """Like translate_text_simple but a GENERATOR yielding the translation
     progressively (cumulative string), for live captions' optional stream mode.
 
@@ -447,24 +467,20 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         yield text
         return
     if not use_online:
-        result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
+                                                   context=context, speech=speech)
         _sink(u)
         yield result
         return
-    system_prompt = (f"You are a professional translator. Translate the following text "
-                     f"from {src_lang} to {dst_lang}. Output only the translation, nothing else.")
-    if context and str(context).strip():
-        system_prompt += (" Context for disambiguation only (do NOT translate it or"
-                          f" include it in the output): {str(context).strip()}")
-    messages = [{"role": "system", "content": system_prompt},
-                {"role": "user", "content": text}]
+    messages = _simple_messages(text, src_lang, dst_lang, context, speech)
     try:
         from core.llm.online_translation import load_model_config
         from openai import OpenAI
         cfg = load_model_config(model) or {}
         base_url, api_model = cfg.get("base_url"), cfg.get("model")
         if not (base_url and api_model and api_key):
-            result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
+                                                   context=context, speech=speech)
             _sink(u)
             yield result
             return
@@ -494,12 +510,14 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
                 acc += delta
                 yield _plain_translation(acc)
         if not acc:        # nothing streamed -> fall back to a normal call
-            result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+            result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
+                                                   context=context, speech=speech)
             _sink(u)
             yield result
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"Stream translate failed ({e}); falling back.")
-        result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key)
+        result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
+                                                   context=context, speech=speech)
         _sink(u)
         yield result
 
