@@ -1,8 +1,0 @@
-{
-    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "model": "qwen3.8-flash",
-    "rpm": 600,
-    "thread_count": 8,
-    "max_token": 4096,
-    "max_completion_tokens": 8192
-}
