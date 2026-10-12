@@ -1,15 +1,15 @@
 {
-    "version": "7.0",
+    "version": "7.0.1",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0: macOS support (Apple Silicon, macOS 13+) — open LinguaHaru.app; real-time voice there runs Qwen3-ASR 1.7B on the chip's GPU and can translate what the Mac is playing. Much better real-time translation: captions no longer translate the previous sentences instead of the current one, sentences finished in the same second no longer overwrite each other, no mid-word cuts or one-character fragments, faster model start, and captions survive minimizing the window. Floating captions: no size limit, colors / font / background opacity. Optional recording per session, with playback and an on-demand summary in History; earlier real-time sessions that never showed up in History are restored. / 7.0：支持 macOS（Apple Silicon、macOS 13 以上）——打开 LinguaHaru.app 即可；Mac 上的实时语音使用 Qwen3-ASR 1.7B，在芯片自带 GPU 上运行，并能翻译电脑正在播放的声音。实时翻译大幅改进：不再出现译文翻成前几句的情况，同一秒内说的两句不再互相覆盖，不再在词中间切断或出现单字碎句，模型启动更快，最小化窗口时悬浮字幕不再消失。悬浮字幕：去掉尺寸限制，可设置颜色、字体和背景透明度。可选保存每次的录音，在历史记录中播放并按需生成总结；之前在历史记录里看不到的实时语音记录也已恢复。",
+    "notes": "7.0.1: models you already have no longer go online before loading — Qwen3-ASR used to check Hugging Face on every load and could hang for minutes on a slow network; every model now loads straight from disk. Model packs unzipped into the models folder count as installed (image-OCR models now live in models/rapidocr too). Missing models show live download progress (size and speed), and a failed download says why. / 7.0.1：已下载的模型加载时不再联网检查——以前 Qwen3-ASR 每次加载都要先连 Hugging Face，网络慢时会卡几分钟；现在所有模型都直接从本地加载。解压到 models 文件夹的模型包会被识别为已安装（图片 OCR 模型也改存到 models/rapidocr）。缺少模型时会实时显示下载进度（大小与速度），下载失败会显示原因。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0/LinguaHaru-7.0-web-portable.zip",
-            "sha256": "a3607dd24e777373322fa7c41847a3a29108cbcd525f5791946384be099b6f42"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.1/LinguaHaru-7.0.1-web-portable.zip",
+            "sha256": "9c5c6ac81851675bc70e8cd885b15bde1a0f42478132b8f0b2a56a670e52cb4b"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0/LinguaHaru-7.0-desktop-portable.zip",
-            "sha256": "feadf3b45856c7c0987c3b42421d84eeb5d3e261e378235e2b533a5272078e88"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.1/LinguaHaru-7.0.1-desktop-portable.zip",
+            "sha256": "db033bd7dc50bd8deda913f5631317314da0226b5c621eed927f5a4b47e8fb6a"
         }
     }
 }
