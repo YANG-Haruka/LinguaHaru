@@ -229,6 +229,29 @@ def test_runon_japanese_breaks_at_a_particle():
                                               for u in u2[:1]), str(u2))
 
 
+def test_backchannels_ride_with_the_next_line():
+    print("Live: backchannels (うん。/ですね。) don't get a line of their own")
+    from qt_app.live_page import LivePage as P
+    sent = []
+
+    class _Stop(Exception):
+        pass
+
+    def _insert(line):          # the first thing the real commit does
+        sent.append(line.split("] ", 1)[1].strip())
+        raise _Stop
+    page = types.SimpleNamespace(_WORDLIKE=P._WORDLIKE, _norm_map=P._norm_map,
+                                 _BACKCHANNELS=P._BACKCHANNELS, _ctx_history=[], _held="",
+                                 input_text=types.SimpleNamespace(insertPlainText=_insert))
+    for s in ("うん。", "そうですね。", "前回ちょっとお伝えした通りですけど。", "AWSに保存する予定です。"):
+        try:
+            P._commit_stream_sentence(page, s)
+        except _Stop:
+            pass
+    check("backchannels merged into the next real line",
+          sent == ["うん。そうですね。前回ちょっとお伝えした通りですけど。", "AWSに保存する予定です。"],
+          str(sent))
+
 def test_web_twin_has_the_same_fix():
     print("Live (web): the real app.js code, run against a slow-final race, commits cleanly")
     node = shutil.which("node")
@@ -253,4 +276,5 @@ if __name__ == "__main__":
          test_redecode_spacing_neither_repeats_nor_drops,
          test_fragments_and_soft_cap,
          test_runon_japanese_breaks_at_a_particle,
+         test_backchannels_ride_with_the_next_line,
          test_web_twin_has_the_same_fix])

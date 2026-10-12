@@ -264,8 +264,15 @@ def get_selected_stt_model():
 
 def get_selected_live_stt_model():
     """STT model id for REAL-TIME VOICE (config 'live_stt_model'), independent
-    of the video-subtitle model so each plugin picks its own."""
-    return _selected_model_for("live_stt_model") or DEFAULT_STT_MODEL
+    of the video-subtitle model so each plugin picks its own.
+
+    Default on Apple Silicon with MLX: Qwen3-ASR 1.7B. Replaying real meetings
+    on an M5, it got the terms SenseVoice mangled (AWS, CRMシステム, SIMカード)
+    and SenseVoice dropped 30-60% of the words; 15 s windows still keep up."""
+    picked = _selected_model_for("live_stt_model")
+    if picked:
+        return picked
+    return "qwen3-asr-1.7b" if _mlx_qwen_ok() else DEFAULT_STT_MODEL
 
 
 def get_selected_quick_stt_model():

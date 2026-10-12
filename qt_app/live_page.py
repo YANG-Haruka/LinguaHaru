@@ -1456,6 +1456,7 @@ class LivePage(ScrollArea):
         self._stream_detected = "auto"
         self._det_hist = []
         self._ctx_history = []
+        self._held = ""                   # backchannels waiting to ride with the next line
         self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1803,6 +1804,11 @@ class LivePage(ScrollArea):
         return text[cut:].lstrip(self._NORM_SKIP)
 
     _NORM_SKIP = " 　。！？!?.，、,；;…・"
+    _BACKCHANNELS = frozenset((
+        "うん", "うんうん", "うんうんうん", "はい", "はいはい", "ええ", "ああ", "えっと",
+        "あの", "そう", "そうそう", "そうです", "そうですね", "ですね", "んです", "なるほど",
+        "嗯", "嗯嗯", "对", "对对", "是的", "好的", "yeah", "yes", "ok", "okay", "right",
+        "mhm", "uhhuh"))
 
     @classmethod
     def _norm_map(cls, s):
@@ -1895,6 +1901,13 @@ class LivePage(ScrollArea):
         prev = self._ctx_history[-1] if getattr(self, "_ctx_history", None) else ""
         if len(ns) <= 4 and prev and self._norm_map(prev)[0].endswith(ns):
             return
+        # Backchannels ("うん。", "ですね。", "そうです。") got a line — and a
+        # translation request — of their own; let them ride with the next line.
+        if ns in self._BACKCHANNELS or len(ns) <= 3:
+            self._held = (getattr(self, "_held", "") + source)[-40:]
+            return
+        if getattr(self, "_held", ""):
+            source, self._held = self._held + source, ""
         from datetime import datetime
         ts = datetime.now().strftime("%H:%M:%S")
         # Unique per-sentence key: two sentences committed in the same second
