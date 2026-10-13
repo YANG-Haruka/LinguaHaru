@@ -1,19 +1,19 @@
 {
-    "version": "7.0.5",
+    "version": "7.0.6",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.5: pick the OCR / speech model right on the File Translation and Real-Time Voice pages, with each model's state shown (in use / downloaded / not downloaded) and download in place. Fixed a desktop crash when switching speech models while one was still loading. Interface fixes after a language switch and across pages. / 7.0.5：在文件翻译和实时语音页直接选文字识别/语音识别模型，能看到每个模型是使用中、已下载还是未下载，没下载的可以当场下载。修复了桌面版在模型还没加载完时切换语音识别模型会闪退的问题。修正了切换界面语言后和多个页面的显示问题。",
+    "notes": "7.0.6: a large batch of fixes found with real-world documents — translations no longer drift onto the neighbouring segment, Excel files with tables open without repair, footnote markers / links / fields / inline formatting are kept across Word, PowerPoint, ODT, EPUB, HTML and Markdown, codes and numbers are left untranslated, and fewer false warnings. / 7.0.6：修复了一大批用真实文档发现的翻译问题：译文不再错位到相邻段落，含表格的 Excel 不再需要修复才能打开，Word、PPT、ODT、EPUB、HTML、Markdown 的脚注标记、链接、自动字段和局部格式都会保留，代码和数字不再被翻译，误报的提示也更少。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.5/LinguaHaru-7.0.5-web-portable.zip",
-            "sha256": "810226c5dd40a9fc6caa9db844e51350d321fd5f5f3558a25282014eefce74a6"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.6/LinguaHaru-7.0.6-web-portable.zip",
+            "sha256": "632c0c51625c65d4a511684cebed2172134ea410de8b42a6b3c114b99deb515d"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.5/LinguaHaru-7.0.5-desktop-portable.zip",
-            "sha256": "e7b7d09b544bf9b3eabecabafbf50eca983b91edd6261f59a255b3bb6a18c644"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.6/LinguaHaru-7.0.6-desktop-portable.zip",
+            "sha256": "3b59395bf338e15028752da71b84b2285d1b165eec598c9152bbea59fa44f450"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.5/LinguaHaru-7.0.5-desktop-mac.zip",
-            "sha256": "b2eafdfc016f5bdd695b53ab220095ae1e7f295c993ae459d0a59360322afa32"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.6/LinguaHaru-7.0.6-desktop-mac.zip",
+            "sha256": "ae8a59f8d26f2f2a70e85840f6b0f9445744afd0664f0d1624ecc01349d31ac3"
         }
     }
 }
