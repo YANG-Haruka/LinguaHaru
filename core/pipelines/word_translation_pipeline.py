@@ -1995,11 +1995,13 @@ def _vert_marker_kind(run, namespaces):
     the original runs by length moved the superscript onto the wrong
     characters ("ᵉ2,630" -> "²630", "apparent¹" -> "ᵃᵖᵃʳᵉⁿᵗᵉ¹")."""
     va = run.find('w:rPr/w:vertAlign', namespaces)
-    if va is None:
-        return None
-    val = va.get(f'{{{namespaces["w"]}}}val')
+    val = va.get(f'{{{namespaces["w"]}}}val') if va is not None else None
     if val not in ('superscript', 'subscript'):
-        return None
+        # Marker typed with the Footnote/Endnote Reference character style
+        rs = run.find('w:rPr/w:rStyle', namespaces)
+        if rs is None or rs.get(f'{{{namespaces["w"]}}}val') not in _NOTE_REF_STYLES:
+            return None
+        val = 'superscript'
     if any(etree.QName(c).localname not in ('rPr', 't') for c in run):
         return None
     text = ''.join(t.text or '' for t in run.findall('w:t', namespaces)).strip()
@@ -2009,6 +2011,20 @@ def _vert_marker_kind(run, namespaces):
 
 
 _MARKER_RE = re.compile(r'\{\{[^}]+\}\}|\[formula_\d+\]')
+
+_NOTE_REF_STYLES = ('FootnoteReference', 'EndnoteReference')
+_VERT_RPR_RE = re.compile(r'vertAlign w:val="(?:super|sub)script"|rStyle w:val="(?:Footnote|Endnote)Reference"')
+
+
+def _is_vert_rpr(rpr_xml):
+    """True if a serialized w:rPr (str or bytes) raises/lowers its text:
+    superscript/subscript or a note-reference character style. Such formatting
+    must never be copied or spread onto ordinary translated text."""
+    if not rpr_xml:
+        return False
+    if isinstance(rpr_xml, bytes):
+        rpr_xml = rpr_xml.decode('utf-8', 'ignore')
+    return bool(_VERT_RPR_RE.search(rpr_xml))
 
 
 def should_translate_table_cell(text):
@@ -2030,6 +2046,10 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
     formula_counter = 0
     hyperlink_counter = 0
     vert_counter = 0
+    # Source already holds literal "{{SUP_"/"{{SUB_" text: placeholders would
+    # be ambiguous on write-back, so leave this paragraph's markers alone
+    allow_vert = not re.search(r'\{\{SU[PB]_', ''.join(
+        t.text or '' for t in paragraph.iter(f'{{{namespaces["w"]}}}t')))
 
     # Get all runs in the paragraph
     if exclude_textbox_runs:
@@ -2188,7 +2208,7 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
                 continue
 
             # Superscript/subscript footnote marker: keep the run verbatim
-            marker_kind = _vert_marker_kind(child, namespaces)
+            marker_kind = allow_vert and _vert_marker_kind(child, namespaces)
             if marker_kind:
                 vert_counter += 1
                 placeholder = f'{{{{{marker_kind}_{vert_counter}}}}}'
@@ -4447,7 +4467,7 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     if original_structure and original_structure.get('runs_info'):
         # Find the first text run with formatting
         for run_info in original_structure['runs_info']:
-            if run_info.get('has_text') and run_info.get('rPr_xml') and 'vertAlign' not in run_info['rPr_xml']:
+            if run_info.get('has_text') and run_info.get('rPr_xml') and not _is_vert_rpr(run_info['rPr_xml']):
                 try:
                     formatting = etree.fromstring(run_info['rPr_xml'])
                     break
@@ -4455,10 +4475,15 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
                     pass
     
     if formatting is None and text_runs:
-        # Fallback to first text run formatting
-        first_run = text_runs[0]
-        rPr_elements = first_run.xpath('./w:rPr', namespaces=namespaces)
-        formatting = rPr_elements[0] if rPr_elements else None
+        # Fallback to first text run formatting, skipping superscript/
+        # note-reference runs (a leading footnote reference would otherwise
+        # turn the whole translation superscript)
+        for run in text_runs:
+            rPr_elements = run.xpath('./w:rPr', namespaces=namespaces)
+            if rPr_elements and _is_vert_rpr(etree.tostring(rPr_elements[0])):
+                continue
+            formatting = rPr_elements[0] if rPr_elements else None
+            break
     
     # Remove text runs and math runs (they will be replaced), keep everything else
     for run in text_runs:
@@ -4910,6 +4935,11 @@ def _should_distribute_runs(original_run_infos, new_text):
         return False
     if len(original_run_infos) < 2:
         return False
+    # A superscript run that isn't a protected marker ("th" in "5th", "TM")
+    # would land on whatever text falls at its offset; drop that formatting
+    # instead of moving it onto another word.
+    if any(_is_vert_rpr(i['rPr_xml']) for i in original_run_infos):
+        return False
     # Must have at least two runs with actual text to distribute into.
     if sum(1 for i in original_run_infos if i['length'] > 0) < 2:
         return False
@@ -5009,7 +5039,7 @@ def add_text_around_vert_markers(paragraph, text, namespaces, original_run_infos
             groups.append([])
         else:
             groups[-1].append(info)
-    groups = [[i for i in g if i['length'] > 0] for g in groups]
+    groups = [[i for i in g if i['length'] > 0 and not _is_vert_rpr(i['rPr_xml'])] for g in groups]
     fallback = next((g for g in groups if g), [])
 
     group = groups[0] or fallback

@@ -82,7 +82,9 @@ def _repair_placeholders(src, out):
         tok = re.sub(r"\s+", "", m.group(0)).lower()
         if left[tok] > 0:
             left[tok] -= 1
-            return tok
+            # "{ v1 }" -> "{v1}" (validation needs it exact); "< 10 >" may be
+            # real text ("x < 10 > y"), so keep it as written
+            return tok if tok.startswith("{") else m.group(0)
         return ""
 
     out = re.sub(r"[ \t]{2,}", " ", _BD_TAG.sub(_keep, out)).strip()
@@ -385,6 +387,12 @@ class PdfTranslator(DocumentTranslator):
         # the source, so re-export never silently calls the API.
         if self._proofread_overrides is not None:
             edited = self._proofread_overrides.get(stripped)
+            if edited is None:
+                # Proofread on 7.0.5 or older: formulas were "<bN>", not "{vN}"
+                edited = self._proofread_overrides.get(
+                    re.sub(r"\{v(\d+)\}", r"<b\1>", stripped))
+                if edited:
+                    edited = re.sub(r"<b(\d+)>", r"{v\1}", edited)
             if edited and edited.strip():
                 return _repair_placeholders(stripped, edited) or text
             return text
@@ -446,7 +454,8 @@ class PdfTranslator(DocumentTranslator):
                     f"{result[:100]!r}")
                 continue
             # "322 billion" must keep its value ("322 亿" is ×10 off): retry
-            # once; if the retry is no better, ship the first (flagged by QA).
+            # once. The retry's result ships even if still off (QA flags it);
+            # the first is used only if the retry fails validation.
             bad_numbers = scale_number_mismatches(stripped, result, self.src_lang, self.dst_lang)
             if bad_numbers and attempt == 0:
                 app_logger.warning(

@@ -114,7 +114,8 @@ def extract_vtt_content_to_json(file_path, temp_dir):
                            or not cue["translatable"] or cue["translatable"] != idx)
         # Cues with inline tags (<i>, <c.x>, <00:01.000>) are never merged with
         # neighbours, so a cut can't separate a tag from its text.
-        cue["solo"] = (cue["per_line"] or cue["start"] is None
+        # A wrapped (multi-line) cue is never merged either: it keeps its breaks.
+        cue["solo"] = (cue["per_line"] or cue["start"] is None or len(idx) > 1
                        or bool(_MARKUP.search(cue["text"])))
 
     content_data = []
@@ -262,7 +263,9 @@ def extract_ass_content_to_json(file_path, temp_dir):
             # Inline override tags (karaoke {\k}, mid-line {\i1}) keep the line a
             # unit of its own; leading tags ({\an8}) are lifted off and re-applied
             # to that line, so a cut never lands inside a tag.
-            "solo": start is None or "{" in text[len(lead):],
+            # A \N line break also keeps it single (grouping would drop the break).
+            "solo": (start is None or "{" in text[len(lead):]
+                     or "\\N" in text or "\\n" in text),
         })
 
     content_data = []

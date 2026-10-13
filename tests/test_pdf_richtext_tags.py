@@ -168,9 +168,31 @@ def test_scale_number_rule(dst_lang, text, ok):
     assert (bad == []) is ok, bad
 
 
-def test_qa_flags_leftover_tags():
-    items = [{"count_src": 1, "original": "{v1}Total 9 percent",
-              "translated": "{v1}总计 9%</b1>"},
-             {"count_src": 2, "original": "Since 2010", "translated": "自 2010 年<1>"},
-             {"count_src": 3, "original": "{v1}Fine", "translated": "{v1}很好"}]
-    assert translation_qa.run(["placeholders"], items)["placeholders"] == [1, 2]
+def test_shared_placeholder_qa_ignores_angle_numbers():
+    # The shared _PH (all pipelines + polish guard) stays as before: "<3>" is
+    # text. PDF leftover tags are removed by _repair_placeholders before QA.
+    items = [{"count_src": 1, "original": "Step <3> and < 2 >", "translated": "步骤 <3> 和 <2>"}]
+    assert "placeholders" not in translation_qa.run(["placeholders"], items)
+
+
+@pytest.mark.parametrize("dst", ["zh", "zh-TW", "ja", "ko"])
+@pytest.mark.parametrize("text", ["1-2 billion", "1 to 2 billion", "1~2 billion", "1 – 2 billion"])
+def test_ranges_are_not_localized(dst, text):
+    assert translation_qa.localize_scale_numbers(text, "en", dst) == text
+
+
+def test_non_range_still_localized():
+    assert translation_qa.localize_scale_numbers("-3 billion, 1.5 million", "en", "zh") == "-30亿, 150万"
+
+
+def test_repair_keeps_real_angle_text_as_written():
+    assert pt._repair_placeholders("if x < 10 > y", "si x < 10 > y") == "si x < 10 > y"
+    assert pt._repair_placeholders("table < 3 >", "tableau < 3 >") == "tableau < 3 >"
+
+
+def test_pre_upgrade_proofread_override_matches(tmp_path):
+    # Proofread on <=7.0.5: source key and edit carry "<b1>" for the formula
+    tr = _translator(tmp_path)
+    old_key = BULLET.replace("{v1}", "<b1>")
+    tr._proofread_overrides = {old_key: "<b1>总取水量 3220 亿加仑</b1>"}
+    assert tr._translate_paragraph(BULLET) == "{v1}总取水量 3220 亿加仑"

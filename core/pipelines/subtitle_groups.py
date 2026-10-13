@@ -6,6 +6,7 @@
 # consecutive cues forming a sentence are sent as ONE unit and the translation is
 # split back over those cues (split_across_cues), one piece per cue, timing kept.
 import re
+import unicodedata
 
 from core.log_config import app_logger
 
@@ -17,14 +18,19 @@ _SENT_END_AT_END = re.compile(_SENT_END.pattern + r"\s*$")
 _TAG_ONLY = re.compile(r"^\s*(?:\[[^\]]*\]|\([^)]*\)|【[^】]*】|（[^）]*）|♪+)\s*$")
 # Any sound/caption tag in the source; and the ones a model invents.
 _ANY_TAG = re.compile(r"\[[^\]\n]*\]|\([^)\n]*\)|【[^】\n]*】|（[^）\n]*）|♪")
-# Only SOUND tags count as invented: a translator's "[sic]" / "[1]" is legit.
+# Only SOUND tags count as invented: a translator's "[sic]" / "[1]" / "【声明】"
+# is legit. A tag counts only when it is WHOLLY a sound label ("[Music]",
+# "[upbeat music playing]", "[音乐]", "【掌声】") or a bare "♪".
+_SOUND_WORD = (r"music|musique|musik|m[uú]sica|музыка|applause|laughter|laughs|laughing|"
+               r"cheering|cheers|silence|noise|inaudible")
+_SOUND_CJK = r"音乐|音樂|音楽|BGM|掌声|掌聲|拍手|笑声|笑聲|笑|欢呼|歡呼|歓声|沉默|噪音|음악|박수|웃음"
 _FAB_TAG = re.compile(
-    r"[\[【][^\]】\n]*(?:music|musique|musik|músic|musica|музык|音乐|音樂|音楽|음악|"
-    r"applause|掌声|拍手|박수|laugh|笑|웃음|cheer|欢呼|歓声|silence|沉默|noise|噪|"
-    r"sound|声|inaudible)[^\]】\n]*[\]】]|♪+", re.I)
+    r"\[\s*(?:[^\W\d_]+\s+){0,2}(?:" + _SOUND_WORD + r")(?:\s+[^\W\d_]+){0,2}\s*\]"
+    r"|[\[【]\s*(?:" + _SOUND_CJK + r")\s*[\]】]|♪+", re.I)
 _PUNCT = set("。！？；，、：,.;:!?…")
 _CLOSERS = set("\"”’)]」』）")
-_NO_SPACE_SCRIPT = re.compile("[　-ヿ㐀-鿿豈-﫿＀-￯]")
+# CJK/kana/fullwidth + Thai, Lao, Burmese, Khmer (no spaces between words)
+_NO_SPACE_SCRIPT = re.compile("[฀-໿က-႟ក-៿　-ヿ㐀-鿿豈-﫿＀-￯]")
 PAUSE_S = 1.0              # a gap this long between cues ends the sentence group
 # ponytail: hard cap per unit; a run that hits it without a sentence end falls
 # back to one unit per cue (old behaviour).
@@ -76,7 +82,9 @@ def group_cues(items, info):
             close(False)
             groups.append([item])
             continue
-        if cur and (start - prev_end >= PAUSE_S or speaker != prev_speaker
+        # overlap (start before the previous cue ends) = simultaneous lines
+        if cur and (start - prev_end >= PAUSE_S or start < prev_end - 0.05
+                    or speaker != prev_speaker
                     or cur_len + len(text) > MAX_GROUP_CHARS):
             close(False)
         cur.append(item)
@@ -99,6 +107,8 @@ def _inside(text, i, open_ch, close_ch):
 def _cut_cost(text, i, ideal, tol):
     """Cost of cutting text before index i (None = never cut here)."""
     a, b = text[i - 1], text[i]
+    if unicodedata.category(b).startswith("M"):
+        return None                      # never orphan a combining mark (Thai vowel/tone)
     if b in _PUNCT or b in _CLOSERS or _inside(text, i, "<", ">") or _inside(text, i, "{", "}"):
         return None                      # don't orphan punctuation / split a tag
     if b.isdigit() and (a.isdigit() or (a in ",." and i >= 2 and text[i - 2].isdigit())):
@@ -156,7 +166,9 @@ def split_across_cues(src_text, src_parts, translated):
         lo, hi = prev + 1, len(text) - (n - k)
         scored = [(c, i) for i in range(lo, hi + 1)
                   if (c := _cut_cost(text, i, ideal, tol)) is not None]
-        cut = min(scored)[1] if scored else min(max(round(ideal), lo), hi)
+        # No allowed cut (one long word): never cut mid-word; this cue stays
+        # empty and the text carries on into the following cue(s).
+        cut = min(scored)[1] if scored else prev
         cuts.append(cut)
         prev = cut
     return [text[a:b].strip() for a, b in zip([0] + cuts, cuts + [len(text)])]

@@ -408,3 +408,81 @@ def test_lrc_pause_and_chorus_not_merged(tmp_path):
     # without punctuation stay one line per unit
     assert units == ["The waves froze in", "place and stayed.", "Over time they",
                      "moved apart.", "Every line a phrase", "no punctuation here"], units
+
+
+# ---- review regressions ------------------------------------------------------
+def _srt_units(tmp_path, doc, name="r.srt"):
+    (tmp_path / name).write_text(doc, encoding="utf-8")
+    with open(stp.extract_srt_content_to_json(str(tmp_path / name), str(tmp_path)), encoding="utf-8") as f:
+        return json.load(f)
+
+
+def test_srt_markup_cues_stay_single(tmp_path):
+    # Grouped, "<i>Nunca pensé que" | "acabaríamos ... pueblo.</i>" left cue 2 unstyled.
+    units = _srt_units(tmp_path, "1\n00:00:01,000 --> 00:00:03,000\nI never thought that we\n\n"
+                       "2\n00:00:03,000 --> 00:00:05,000\nwould end up <i>here, in this town.</i>\n\n"
+                       "3\n00:00:05,000 --> 00:00:07,000\n{\\an8}Up top it said\n\n"
+                       "4\n00:00:07,000 --> 00:00:09,000\nnothing at all.\n")
+    assert [u["value"] for u in units] == [
+        "I never thought that we", "would end up <i>here, in this town.</i>",
+        "{\\an8}Up top it said", "nothing at all."]
+
+
+def test_wrapped_cues_stay_single_and_keep_breaks(tmp_path):
+    units = _srt_units(tmp_path, "1\n00:00:01,000 --> 00:00:03,000\nI never thought that we\nwould end up here,\n\n"
+                       "2\n00:00:03,000 --> 00:00:05,000\nin this tiny little town.\n")
+    assert [len(u["cues"]) for u in units] == [1, 1] and "␊" in units[0]["value"]
+    from core.pipelines.subtitle_formats_pipeline import extract_ass_content_to_json, extract_vtt_content_to_json
+    (tmp_path / "w.vtt").write_text("WEBVTT\n\n00:01.000 --> 00:03.000\nI never thought\nthat we\n\n"
+                                    "00:03.000 --> 00:05.000\nwould end up here.\n", encoding="utf-8")
+    with open(extract_vtt_content_to_json(str(tmp_path / "w.vtt"), str(tmp_path)), encoding="utf-8") as f:
+        assert [u["value"] for u in json.load(f)] == ["I never thought␊that we", "would end up here."]
+    doc = ("[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
+           "Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,I never thought\\Nthat we\n"
+           "Dialogue: 0,0:00:03.00,0:00:05.00,Default,,0,0,0,,would end up here.\n")
+    (tmp_path / "w.ass").write_text(doc, encoding="utf-8")
+    with open(extract_ass_content_to_json(str(tmp_path / "w.ass"), str(tmp_path)), encoding="utf-8") as f:
+        assert [u["value"] for u in json.load(f)] == ["I never thought␊that we", "would end up here."]
+
+
+def test_thai_split_never_orphans_a_combining_mark():
+    import unicodedata
+    # old fallback cut this as 'สวัสด' | 'ีครับ' (vowel mark orphaned)
+    parts = ["aaaaaa", "bbbbb."]
+    text = "สวัสดีครับ"
+    pieces = sg.split_across_cues(sg.join_texts(parts), parts, text)
+    assert "".join(pieces) == text and all(pieces)
+    assert not any(unicodedata.category(p[0]).startswith("M") for p in pieces), pieces
+
+
+def test_fabricated_tag_filter_matches_whole_tags_only():
+    assert sg.drop_fabricated_tags("The statement.", "【声明】") == "【声明】"
+    assert sg.drop_fabricated_tags("Sound check, one two.", "试音【声音测试】") == "试音【声音测试】"
+    assert sg.drop_fabricated_tags("Hello.", "[upbeat music playing] 你好。") == "你好。"
+    assert sg.drop_fabricated_tags("Hello.", "【掌声】你好。") == "你好。"
+
+
+def test_qa_subtitle_length_uses_per_cue_budget(tmp_path, monkeypatch):
+    from core.engine import translation_qa as qa
+    long_zh = "我" * 40      # 80 cells: over one zh line, fine across 2+ cues
+    item = {"count_src": 1, "translated": long_zh, "start_time": "00:00:01,000", "end_time": "00:00:09,000"}
+    assert qa.check_subtitle_length([item], "zh") == [1]
+    assert qa.check_subtitle_length([dict(item, cue_count=3)], "zh") == []
+    # the real pipeline carries cue_count for multi-cue groups only
+    src, _ = _sandbox(tmp_path, monkeypatch, lambda d, _n: merging_model(d))
+    _run(tmp_path, src)
+    dst_path = next(p for p in (tmp_path / "temp").rglob("dst_translated.json"))
+    dst = json.loads(dst_path.read_text(encoding="utf-8"))
+    assert [d.get("cue_count", 1) for d in dst] == [2, 2, 9, 3, 2, 1]
+
+
+def test_overlapping_cues_not_grouped():
+    items = [("Two people talk at once,", 0, 3), ("and this too.", 0.5, 2.5)]
+    groups = sg.group_cues(items, lambda t: (t[0], t[1], t[2], False, None))
+    assert [len(g) for g in groups] == [1, 1]
+
+
+def test_long_word_is_not_cut_mid_word():
+    parts = ["Hello there my", "friend."]
+    word = "Donaudampfschifffahrtsgesellschaftskapitän."
+    assert sg.split_across_cues(sg.join_texts(parts), parts, word) == ["", word]

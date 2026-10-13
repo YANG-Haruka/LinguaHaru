@@ -20,11 +20,8 @@ Unknown qa keys are ignored.
 """
 import re
 
-# {{token}} | ${var} | %1$s | %s/%d/%f | {name}/{0} | BabelDOC rich-text/formula
-# tags (<b1> </b1>) and their mangled forms (<1> </1>) — a leftover tag the source
-# doesn't carry would be drawn literally into the PDF.
-_PH = re.compile(r"\{\{.*?\}\}|\$\{[^}]*\}|%\d+\$[a-zA-Z]|%[sdfgSDFG]|\{[^{}]*\}"
-                 r"|<\s*/?\s*b?\s*\d+\s*>")
+# {{token}} | ${var} | %1$s | %s/%d/%f | {name}/{0}
+_PH = re.compile(r"\{\{.*?\}\}|\$\{[^}]*\}|%\d+\$[a-zA-Z]|%[sdfgSDFG]|\{[^{}]*\}")
 
 # Per-line subtitle width budget in "cells" (a full-width CJK char = 2 cells).
 # Netflix-derived: JA 13 full-width chars/line (26 cells), zh/ko ~16 (32), Latin
@@ -129,9 +126,11 @@ def check_subtitle_length(dst_items, dst_lang=None):
     language (per-language cell budget)."""
     max_cells = _subtitle_max_cells(dst_lang)
     bad = []
-    for k, dst, _it in _subtitle_cues(dst_items):
+    for k, dst, it in _subtitle_cues(dst_items):
         lines = (dst or "").splitlines() or [dst or ""]
-        if any(_cells(line) > max_cells for line in lines):
+        # An SRT sentence group is split back over cue_count cues on output,
+        # so its joined line gets that many lines' budget.
+        if any(_cells(line) > max_cells * it.get("cue_count", 1) for line in lines):
             bad.append(k)
     return bad
 
@@ -196,6 +195,8 @@ _NATIVE_UNITS = {
     "ja": ((1e12, "兆"), (1e8, "億"), (1e4, "万")),
     "ko": ((1e12, "조"), (1e8, "억"), (1e4, "만")),
 }
+# A number just before the match makes it the end of a range ("1-2 billion").
+_RANGE_LEFT = re.compile(r"\d\s*(?:[-–—~～]|to)\s*$", re.IGNORECASE)
 
 
 def _base_lang(lang):
@@ -258,6 +259,10 @@ def localize_scale_numbers(text, src_lang, dst_lang):
         return text
 
     def _sub(m):
+        # "1-2 billion" / "1 to 2 billion": converting only "2 billion" would
+        # give "1-20亿" — leave ranges to the model.
+        if _RANGE_LEFT.search(text, 0, m.start()):
+            return m.group(0)
         vals = _match_values(m, _base_lang(src_lang)) if m.group(2) else ()
         if len(vals) != 1:
             return m.group(0)

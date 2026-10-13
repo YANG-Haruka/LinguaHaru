@@ -26,8 +26,15 @@ def _read_srt_text(file_path):
         return content.lstrip("﻿")
 
 
+_SRT_MARKUP = re.compile(r"<[^>]*>|\{")
+
+
 def _srt_info(cue):
-    return (flat(cue["value"]), seconds(cue["start_time"]), seconds(cue["end_time"]), False, None)
+    # A cue with markup (<i>, <font>, {\an8}) or several lines stays its own unit:
+    # a cut could split a tag pair, and a grouped cue would lose its line breaks.
+    v = cue["value"]
+    solo = bool(_SRT_MARKUP.search(v)) or "␊" in v or "␍" in v
+    return (flat(v), seconds(cue["start_time"]), seconds(cue["end_time"]), solo, None)
 
 
 def extract_srt_content_to_json(file_path, temp_dir):
@@ -84,8 +91,8 @@ def extract_srt_content_to_json(file_path, temp_dir):
             "start_time": group[0]["start_time"],
             "end_time": group[-1]["end_time"],
             "extra_time": group[0]["extra_time"],
-            # A lone cue keeps its line markers; a multi-cue group is joined
-            # into one line of text (cue wrapping is re-done per cue on output).
+            # A lone cue keeps its line markers; a multi-cue group (single-line
+            # cues only, see _srt_info) is joined into one line of text.
             "value": group[0]["value"] if len(group) == 1
                      else join_texts([flat(c["value"]) for c in group]),
             "cues": group,

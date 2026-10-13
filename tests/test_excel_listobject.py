@@ -100,6 +100,40 @@ def test_structured_ref_escaping():
     assert _rename_structured_refs("T[Amount]+Other[Amount]+T[#All]", r) == "T[金额]+Other[Amount]+T[#All]"
 
 
+def test_external_workbook_ref_untouched():
+    r = {"sales": {"amount": "金额"}}
+    assert _rename_structured_refs("[1]!Sales[Amount]+Sales[Amount]", r) == "[1]!Sales[Amount]+Sales[金额]"
+
+
+def test_validation_cf_and_pivot_follow_renamed_columns():
+    from types import SimpleNamespace as NS
+    from openpyxl.formatting.rule import FormulaRule
+    from openpyxl.worksheet.datavalidation import DataValidation
+    from core.pipelines.excel_translation_pipeline import _sync_table_columns
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["地区", "金额"])                       # headers already translated
+    ws.append(["北方", 1])
+    t = Table(displayName="Sales", ref="A1:B2")
+    t._initialise_columns()
+    t.tableColumns[0].name, t.tableColumns[1].name = "Region", "Amount"
+    ws.add_table(t)
+    dv = DataValidation(type="list", formula1='INDIRECT("Sales[Region]")')
+    ws.add_data_validation(dv)
+    ws.conditional_formatting.add("D1", FormulaRule(formula=['D1>SUM(INDIRECT("Sales[Amount]"))']))
+    fields = [NS(name="Region"), NS(name="Amount")]   # stands in for an openpyxl pivot cache
+    ws._pivots.append(NS(cache=NS(cacheSource=NS(worksheetSource=NS(name="Sales")),
+                                  cacheFields=fields)))
+
+    _sync_table_columns(wb)
+
+    assert dv.formula1 == 'INDIRECT("Sales[地区]")'
+    rule = next(iter(ws.conditional_formatting)).rules[0]
+    assert rule.formula == ['D1>SUM(INDIRECT("Sales[金额]"))']
+    assert [f.name for f in fields] == ["地区", "金额"]
+
+
 def _excel_check(path, headers):
     """Optional: open in real Excel (Windows + COM); a repair reverts the
     headers / column names, so equality here means Excel accepted the file."""

@@ -130,3 +130,87 @@ def test_bilingual_keeps_markers(tmp_path):
     sups = [r.text for r in cell.runs if r.font.superscript]
     assert sups == ["1", "1"]
     assert "{{" not in doc.element.xml
+
+
+# --- Review follow-ups: deterministic "translation" = uppercase (placeholders kept)
+
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls
+
+
+def _upper_roundtrip(tmp_path, build, bilingual=False):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    src = str(tmp_path / "in.docx")
+    doc = Document()
+    build(doc)
+    doc.save(src)
+    src_json = extract_word_content_to_json(src, str(tmp_path / "temp"))
+    with open(src_json, encoding="utf-8") as f:
+        items = json.load(f)
+    dst_json = str(tmp_path / "dst.json")
+    with open(dst_json, "w", encoding="utf-8") as f:
+        json.dump([{"count_src": i["count_src"],
+                    "translated": i["value"].upper()} for i in items],
+                  f, ensure_ascii=False)
+    result = write_translated_content_to_word(
+        src, src_json, dst_json, str(tmp_path / "temp"), str(tmp_path / "result"),
+        bilingual_mode=bilingual, src_lang="en", dst_lang="es")
+    return [i["value"] for i in items], Document(result)
+
+
+def _sup_texts(para):
+    return [r.text for r in para.runs if r.text and (
+        r.font.superscript or (r.style is not None and r.style.font.superscript))]
+
+
+def test_multiletter_superscript_not_moved(tmp_path):
+    # "th"/"TM" are not markers: their superscript must not jump onto "AND"
+    def build(doc):
+        _runs([("The 5", False, False), ("th", True, False), (" item is BrandX", False, False),
+               ("TM", True, False), (" and x", False, False), ("2", True, False),
+               (" grows", False, False)], doc.add_paragraph())
+    _, doc = _upper_roundtrip(tmp_path, build)
+    assert _sup_texts(doc.paragraphs[0]) == ["2"]
+    assert doc.paragraphs[0].text == "THE 5TH ITEM IS BRANDXTM AND X2 GROWS"
+
+
+def _note_ref_style(doc):
+    doc.styles.add_style("FootnoteReference", 2).font.superscript = True
+
+
+def test_leading_footnote_reference_style_not_inherited(tmp_path):
+    def build(doc):
+        _note_ref_style(doc)
+        p = doc.add_paragraph()
+        p._p.append(parse_xml(
+            f'<w:r {nsdecls("w")}><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr>'
+            '<w:footnoteReference w:id="1"/></w:r>'))
+        p.add_run(" Leading ref then plain text")
+    for bilingual in (False, True):
+        _, doc = _upper_roundtrip(tmp_path / str(bilingual), build, bilingual)
+        p = doc.paragraphs[0]
+        assert p._p.xml.count("<w:footnoteReference") == 1
+        assert _sup_texts(p) == []
+
+
+def test_note_reference_char_style_marker(tmp_path):
+    def build(doc):
+        _note_ref_style(doc)
+        p = doc.add_paragraph()
+        p.add_run("Styled marker")
+        p.add_run("2").style = "FootnoteReference"
+        p.add_run(" after styled marker text")
+    for bilingual in (False, True):
+        values, doc = _upper_roundtrip(tmp_path / str(bilingual), build, bilingual)
+        assert values == ["Styled marker{{SUP_1}} after styled marker text"]
+        assert _sup_texts(doc.paragraphs[0]) == (["2", "2"] if bilingual else ["2"])
+
+
+def test_literal_placeholder_text_skips_marker_path(tmp_path):
+    def build(doc):
+        _runs([("Use {{SUP_1}} literally", False, False), ("1", True, False),
+               (" end of text", False, False)], doc.add_paragraph())
+    values, doc = _upper_roundtrip(tmp_path, build)
+    assert values == ["Use {{SUP_1}} literally1 end of text"]
+    assert doc.paragraphs[0].text == "USE {{SUP_1}} LITERALLY1 END OF TEXT"
+    assert _sup_texts(doc.paragraphs[0]) == []

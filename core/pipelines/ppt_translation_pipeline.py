@@ -714,22 +714,47 @@ def _extract_notes(pptx, notes_path: str, slide_index: int, namespaces: Dict, co
     
     return count
 
+_VERT_MARK_RE = re.compile(r'\{\{SU[PB]_\d+\}\}')
+
+
+def _vert_marker_runs(text_runs, namespaces: Dict):
+    """Indices of short superscript/subscript marker runs (footnote "1", "e",
+    "*"). They are sent as {{SUP_n}}/{{SUB_n}} and keep their own text, so
+    length-based re-flow can't move the superscript onto another word
+    ("5%¹ in" -> "5%1^ in"). None if the source already holds such literals."""
+    texts = [''.join(r.xpath('./a:t/text()', namespaces=namespaces)) for r in text_runs]
+    if _VERT_MARK_RE.search(''.join(texts)):
+        return []
+    marks = []
+    for i, (run, text) in enumerate(zip(text_runs, texts)):
+        rpr = run.find('a:rPr', namespaces)
+        t = text.strip()
+        if rpr is not None and rpr.get('baseline', '0') != '0' and t and len(t) <= 3                 and sum(c.isalpha() for c in t) <= 1:
+            marks.append(i)
+    return marks
+
+
 def _process_text_runs(text_runs, namespaces: Dict) -> Dict:
     """Process text runs and preserve exact spacing and formatting."""
     merged_text = ""
     run_texts = []
     run_styles = []
     run_lengths = []
-    
-    for text_run in text_runs:
+    marks = _vert_marker_runs(text_runs, namespaces)
+
+    for run_index, text_run in enumerate(text_runs):
         text_node = text_run.xpath('./a:t', namespaces=namespaces)
         if text_node and text_node[0].text is not None:
             run_text = text_node[0].text
         else:
             run_text = ""
-        
+
         # Preserve exact text content including spaces
-        merged_text += run_text
+        if run_index in marks:
+            kind = 'SUB' if text_run.find('a:rPr', namespaces).get('baseline').startswith('-') else 'SUP'
+            merged_text += f'{{{{{kind}_{marks.index(run_index) + 1}}}}}'
+        else:
+            merged_text += run_text
         run_texts.append(run_text)
         run_lengths.append(len(run_text))
         run_styles.append(_extract_run_style(text_run, namespaces))
@@ -1238,8 +1263,30 @@ def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, n
     original_run_texts = item.get('run_texts', [])
     original_run_lengths = item.get('run_lengths', [])
 
+    marks = _vert_marker_runs(text_runs, namespaces)
+    segments = _VERT_MARK_RE.split(translated_text)
+    if marks and (len(segments) != len(marks) + 1 or len(original_run_texts) != len(text_runs)):
+        # Placeholder count broke: drop them and re-flow as before
+        translated_text, marks = ''.join(segments), []
+    if marks:
+        # Marker runs keep their text; each translated segment fills the plain
+        # runs between two markers (an empty gap passes its text on).
+        bounds = [-1] + marks + [len(text_runs)]
+        carry = ''
+        for seg, lo, hi in zip(segments, bounds, bounds[1:]):
+            seg = carry + seg
+            if lo + 1 >= hi:
+                carry = seg
+                continue
+            carry = ''
+            _intelligent_text_distribution(text_runs[lo + 1:hi], seg, original_run_texts[lo + 1:hi],
+                                           original_run_lengths[lo + 1:hi], namespaces)
+        plain = [r for i, r in enumerate(text_runs) if i not in marks and r.find('a:t', namespaces) is not None]
+        if carry and plain:
+            tn = plain[-1].find('a:t', namespaces)
+            tn.text = (tn.text or '') + carry
     # If we don't have the original structure, fallback to simple distribution
-    if not original_run_texts or len(original_run_texts) != len(text_runs):
+    elif not original_run_texts or len(original_run_texts) != len(text_runs):
         app_logger.warning("Mismatch in run structure, using simple distribution")
         _simple_text_distribution(text_runs, translated_text, namespaces)
     else:

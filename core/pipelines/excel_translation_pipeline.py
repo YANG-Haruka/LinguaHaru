@@ -113,7 +113,7 @@ def _rewrite_sheet_refs(result_path, renames):
     app_logger.info(f"Rewrote cross-sheet references for renamed sheets: {renames}")
 
 
-_STRUCT_REF_RE = re.compile(r"(?<![\w.\\])([A-Za-z_\\][\w.\\]*)\[")
+_STRUCT_REF_RE = re.compile(r"(?<![\w.\\!])([A-Za-z_\\][\w.\\]*)\[")
 _STRUCT_ITEM_RE = re.compile(r"\[((?:'.|[^\]'])*)\]", re.S)
 
 
@@ -218,6 +218,18 @@ def _sync_table_columns(workbook):
                         tf.attr_text = fix(tf.attr_text)
         for dn in ws.defined_names.values():
             dn.attr_text = fix(dn.attr_text)
+        # Validation / CF can only reach table columns via INDIRECT("Tbl[Col]").
+        for dv in ws.data_validations.dataValidation:
+            dv.formula1, dv.formula2 = fix(dv.formula1), fix(dv.formula2)
+        for cf in ws.conditional_formatting:
+            for rule in cf.rules:
+                rule.formula = [fix(f) for f in (rule.formula or [])]
+        # Pivot caches match source columns by name; stale names empty the pivot on refresh.
+        for pt in ws._pivots:
+            src = pt.cache.cacheSource.worksheetSource
+            cols = src is not None and src.name and renames.get(src.name.lower())
+            for fld in (pt.cache.cacheFields if cols else ()):
+                fld.name = cols.get(fld.name.lower(), fld.name)
     for dn in workbook.defined_names.values():
         dn.attr_text = fix(dn.attr_text)
     app_logger.info(f"Synced Excel table column names with translated headers: {renames}")

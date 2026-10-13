@@ -20,4 +20,9 @@ def is_untranslatable_short_token(text):
         return True
     if len(letters) > 2 or not all(c.isascii() for c in letters):
         return False
-    return "".join(letters).lower() not in _TWO_LETTER_WORDS
+    word = "".join(letters)
+    # Two plain letters are a code only when uppercase ("US", "NA") or next to
+    # a digit ("5 kt"); "Hi", "Up", "On", "Ja" are words.
+    if len(letters) == 2 and not word.isupper() and not any(c.isdigit() for c in s):
+        return False
+    return word.lower() not in _TWO_LETTER_WORDS

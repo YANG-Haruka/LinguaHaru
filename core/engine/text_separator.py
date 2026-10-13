@@ -877,6 +877,10 @@ def restore_translations_from_deduped(dst_translated_split_path, count_src_to_de
         if "start_time" in item and "end_time" in item:
             entry["start_time"] = item["start_time"]
             entry["end_time"] = item["end_time"]
+            # SRT sentence group spanning several cues: QA must not judge the
+            # joined sentence as one subtitle line.
+            if len(item.get("cues") or ()) > 1:
+                entry["cue_count"] = len(item["cues"])
         result.append(entry)
     
     # Statistics
