@@ -1064,6 +1064,47 @@ def _erase(image, regions):
     return out
 
 
+def _balloon_body(interior, rect, cs):
+    """The balloon interior without its speech tail: 1920s box balloons are open
+    where the tail joins, so the interior runs down the tail and its bounding box
+    with it. An opening with a ~1-character square drops anything narrower than a
+    character (the tail); keep the piece holding most of the OCR box."""
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (cs | 1, cs | 1))
+    body = cv2.morphologyEx(interior.astype(np.uint8), cv2.MORPH_OPEN, k)
+    n, lab = cv2.connectedComponents(body, connectivity=4)
+    x0, y0, x1, y1 = (max(0, v) for v in rect)
+    counts = np.bincount(lab[y0:y1, x0:x1].ravel(), minlength=n)
+    counts[0] = 0
+    return lab == counts.argmax() if counts.max() > 0 else interior
+
+
+def _inner_rect(body, mg):
+    """An axis-aligned rect (window coords) inside `body` kept >= mg px off its
+    edge: the bounding box of the eroded body, its sides moved inward until each
+    side lies inside (an outline bulging inward pushes the side in)."""
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * mg + 1, 2 * mg + 1))
+    inner = cv2.erode(body.astype(np.uint8), k).astype(bool)
+    if not inner.any():
+        inner = body
+    ys, xs = np.nonzero(inner)
+    x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
+    while x1 - x0 > 8 and y1 - y0 > 8:
+        sides = {"l": inner[y0:y1 + 1, x0].mean(), "r": inner[y0:y1 + 1, x1].mean(),
+                 "t": inner[y0, x0:x1 + 1].mean(), "b": inner[y1, x0:x1 + 1].mean()}
+        worst = min(sides, key=sides.get)
+        if sides[worst] >= 0.99:
+            break
+        if worst == "l":
+            x0 += 1
+        elif worst == "r":
+            x1 -= 1
+        elif worst == "t":
+            y0 += 1
+        else:
+            y1 -= 1
+    return x0, y0, x1, y1
+
+
 def _render_rects(image, regions):
     """Where to letter each region's translation: the OCR rect kept inside its
     speech balloon's interior (minus a margin); in a box-like balloon (tight 1920s
@@ -1079,10 +1120,10 @@ def _render_rects(image, regions):
             own.append(rect)
             continue
         X0, Y0, _g, interior, _ink, cs = lay
+        interior = _balloon_body(interior, (rect[0] - X0, rect[1] - Y0, rect[2] - X0, rect[3] - Y0), cs)
         ys, xs = np.nonzero(interior)
-        mg = max(2, cs // 4)
-        ib = [int(X0 + xs.min() + mg), int(Y0 + ys.min() + mg),
-              int(X0 + xs.max() - mg), int(Y0 + ys.max() - mg)]
+        x0, y0, x1, y1 = _inner_rect(interior, max(2, cs // 4))
+        ib = [X0 + x0, Y0 + y0, X0 + x1, Y0 + y1]
         cl = [max(rect[0], ib[0]), max(rect[1], ib[1]), min(rect[2], ib[2]), min(rect[3], ib[3])]
         cl = cl if cl[2] - cl[0] >= 8 and cl[3] - cl[1] >= 8 else rect
         boxy = interior.sum() >= 0.8 * (np.ptp(xs) + 1) * (np.ptp(ys) + 1)

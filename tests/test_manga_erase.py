@@ -121,3 +121,34 @@ def test_two_regions_in_one_balloon_do_not_share_the_lettering_box():
     b = dict(region, erase_rects=region["erase_rects"][2:], rect=[140, 170, 340, 232], count_src=2)
     ra, rb = M._render_rects(img, [a, b])
     assert ra[3] <= rb[1] + 4                   # stacked, not overlapping
+
+
+def _tailed_balloon():
+    """A tight box balloon whose outline opens at the bottom into a speech tail
+    (1920s style): the interior runs on down the tail."""
+    img = np.full((520, 400, 3), PAPER, np.uint8)
+    cv2.rectangle(img, (5, 5), (394, 514), INK, 4)
+    pts = [(150, 300), (100, 300), (100, 60), (260, 60), (260, 300), (205, 300)]
+    cv2.polylines(img, [np.int32(pts)], False, INK, 3)               # open at 150..205
+    for x0, x1 in ((150, 172), (205, 180)):                           # wavy tail, closed
+        tail = [(int(x0 + (x1 - x0) * (y - 300) / 60 + 5 * np.sin(y / 10.0)), y)
+                for y in range(300, 364, 4)]
+        cv2.polylines(img, [np.int32(tail)], False, INK, 3)
+    _glyphs(img, 130, 85, 3, 6, 30)                                   # 3 columns x 6 chars
+    rects = [[118 + c * 30, 80, 150 + c * 30, 270] for c in range(3)]
+    region = {"rect": [118, 80, 240, 270], "erase_rects": rects,
+              "needs_translation": True, "count_src": 1, "value": "x"}
+    return img, region
+
+
+def test_lettering_does_not_run_down_the_speech_tail():
+    img, region = _tailed_balloon()
+    (rect,) = M._render_rects(img, [region])
+    assert 100 < rect[0] and rect[2] < 260 and 60 < rect[1] and rect[3] < 300 - 4
+    text = "这是一段相当长的中文测试译文要排满整个气泡才行"
+    clean = M.inpaint_page(img, [region])
+    pil = M.render_on_image(img, [region], {1: text}, "zh", clean_bgr=clean)
+    drawn = np.any(np.array(pil)[..., ::-1] != clean, axis=2)
+    assert drawn.any()
+    assert not drawn[297:].any()                # nothing on/below the bottom outline
+    assert not drawn[:, :103].any() and not drawn[:, 258:].any()
