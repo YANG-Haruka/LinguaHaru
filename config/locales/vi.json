@@ -71,11 +71,6 @@
   "Generating output": "Đang tạo đầu ra",
   "Generating translated PDF": "Đang tạo tệp PDF đã dịch",
   "Glossary": "Bảng thuật ngữ",
-  "Google API Key": "Google API Key (Live Voice)",
-  "Google API Key Hint": "Used for real-time voice translation (Gemini Live).",
-  "Google Voice Mode": "Google Live (Gemini)",
-  "Google key not set": "Set your Google API key in Settings first.",
-  "Google key saved": "Google API key saved.",
   "HTML Bilingual": "Bật chế độ song ngữ HTML",
   "Hide API Key": "Ẩn khóa",
   "History": "Lịch sử",
@@ -148,7 +143,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "Giới hạn RPM (0 = không giới hạn, khởi động lại để áp dụng)",
   "Re-export": "Xuất lại",
   "Real-Time Voice": "Real-Time Voice",
-  "Real-Time Voice Subtitle": "Speak into your microphone and hear an instant spoken translation (Gemini Live).",
   "Recognized Speech": "Recognized Speech",
   "Recognizing": "Recognizing…",
   "Refresh List": "Làm mới danh sách",
@@ -331,8 +325,6 @@
   "API Key Not Set": "Chưa đặt API key — vui lòng nhập trong Cài đặt.",
   "Drop Files Here": "Thả tệp vào đây, hoặc nhấp để tải lên",
   "Translate Subtitles Option": "Dịch phụ đề (nếu không chỉ chép lời)",
-  "Local Mode Label": "Mô hình cục bộ · SenseVoice + LLM",
-  "Google Live Label": "Google trực tiếp · Gemini Live",
   "Recognized Source": "Đã nhận dạng",
   "Add Row": "Thêm hàng",
   "Loading Model": "Đang tải mô hình…",
@@ -394,5 +386,8 @@
   "Baidu OCR Key Tip": "Bảng điều khiển Baidu AI Cloud → Nhận dạng văn bản → tạo ứng dụng → sao chép API Key và Secret Key (OCR chung có vị trí).",
   "Saved Placeholder": "Đã lưu (để trống để giữ nguyên)",
   "Up To Date": "Đã là bản mới nhất",
-  "New Version": "Có phiên bản mới"
+  "New Version": "Có phiên bản mới",
+  "Not Downloaded": "chưa tải",
+  "Model Not Downloaded Go": "\"{model}\" chưa được tải. Đến trang Plugin để tải về?",
+  "Live Page Subtitle": "Nói vào micrô; giọng nói được nhận dạng và dịch ngay khi bạn nói."
 }

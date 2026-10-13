@@ -320,20 +320,13 @@ class OptionalPluginCard(CardWidget):
             if m.get("id") == cur:
                 label = m.get("label", cur)
                 break
-        for ch in ("（", "("):
-            idx = (label or "").find(ch)
-            if idx > 0:
-                label = label[:idx].strip()
-                break
-        return f"{tr('Model', self._lang)}: {label}"
+        return f"{tr('Model', self._lang)}: {self._short_label(label)}"
 
     @staticmethod
     def _short_label(label):
-        for ch in ("（", "("):
-            idx = (label or "").find(ch)
-            if idx > 0:
-                return label[:idx].strip()
-        return label
+        """Cut at the EARLIEST detail separator ("Anime-Whisper — tuned … (JA only)")."""
+        cuts = [i for i in ((label or "").find(ch) for ch in ("（", "(", " — ")) if i > 0]
+        return label[:min(cuts)].strip() if cuts else label
 
     def _refresh_usage(self):
         """Fill the usage line: library (pip deps) + model disk volumes, so the
@@ -413,7 +406,9 @@ class OptionalPluginCard(CardWidget):
     def show_upgrade(self, current, latest):
         """Reveal the Upgrade button with the available version transition."""
         self._upgrade_info = (current, latest)
-        self.upgrade_btn.setText(f"{tr('Upgrade', self._lang)} ({current} → {latest})")
+        # Short text so it fits beside Uninstall; the full transition is the tooltip.
+        self.upgrade_btn.setText(f"{tr('Upgrade', self._lang)} {latest}")
+        self.upgrade_btn.setToolTip(f"{current} → {latest}")
         self.upgrade_btn.show()
 
     def hide_upgrade(self):

@@ -34,12 +34,17 @@ from qt_app.i18n import tr
 from qt_app.worker import TranslationWorker
 from qt_app.history_page import open_folder
 from qt_app.widgets import DropZone
+from qt_app.model_picker import ModelPicker
 from qt_app.progress_dashboard import ProgressDashboard
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP
 from core.pipelines.video_translation_pipeline import (
     STT_MODELS, get_selected_stt_model, get_stt_model, SENSEVOICE_SUPPORTED_CODES)
 from core.optional_modules import MEDIA_EXTENSIONS, is_subtitle_content
+
+# Remote OCR engine -> its label (same keys as the Settings OCR form).
+_OCR_ENGINE_KEYS = {"vlm": "OCR Engine VLM", "paddle_server": "OCR Engine Paddle Server",
+                    "baidu": "OCR Engine Baidu"}
 
 
 class TranslatePage(QStackedWidget):
@@ -264,6 +269,7 @@ class TranslatePage(QStackedWidget):
         self.manga_label.setText(tr("Manga Mode", lang))
         self.manga_caption.setText(tr("Manga Mode Hint", lang))
         self.manga_pdf_caption.setText(tr("Manga Mode PDF Hint", lang))
+        self.ocr_label.setText(tr("Image OCR Model", lang))
         self.translate_btn.setText(tr("Translate", lang))
         self.stop_btn.setText(tr("Stop Translation", lang))
         self.dashboard.retranslate(lang)
@@ -327,9 +333,21 @@ class TranslatePage(QStackedWidget):
         self.manga_switch = SwitchButton()
         self.manga_switch.setChecked(config.get("manga_mode", False))
         self.manga_switch.checkedChanged.connect(
-            lambda val: backend.set_config("manga_mode", val))
+            lambda val: (backend.set_config("manga_mode", val), self._refresh_ocr_line()))
         row.addWidget(self.manga_switch)
         v.addLayout(row)
+        # Which OCR model the selected images / manga are read with. Manga keeps
+        # its own choice (the 漫画翻译 plugin), so the picker follows the switch.
+        ocr_row = QHBoxLayout()
+        ocr_row.setContentsMargins(0, 8, 0, 0)
+        self.ocr_label = BodyLabel(tr("Image OCR Model", lang))
+        self.ocr_picker = ModelPicker("Image OCR", lang)
+        self.ocr_picker.on_open_plugins = lambda: callable(self.on_open_plugins) and self.on_open_plugins()
+        self.ocr_remote = BodyLabel()   # remote OCR engine: nothing local to pick
+        ocr_row.addWidget(self.ocr_label)
+        ocr_row.addWidget(self.ocr_picker, 1)
+        ocr_row.addWidget(self.ocr_remote, 1)
+        v.addLayout(ocr_row)
         return card
 
     def _build_pdf_card(self, lang, config):
@@ -440,6 +458,7 @@ class TranslatePage(QStackedWidget):
             self.active_interface_label.setText(f"{model}  ·  {tag}")
         else:
             self.active_interface_label.setText(tr("No active interface", self._lang))
+        self._refresh_ocr_line()   # OCR engine / model may have changed in Settings
 
     # --- handlers ---
     def on_pick_files(self):
@@ -496,6 +515,27 @@ class TranslatePage(QStackedWidget):
         self.manga_card.setVisible(has_pdf or has_image)
         # The PDF-specific guidance only makes sense for PDFs.
         self.manga_pdf_caption.setVisible(has_pdf)
+        self._refresh_ocr_line()
+
+    def _refresh_ocr_line(self):
+        """Images are always OCR'd; a PDF only in manga mode (otherwise BabelDOC
+        reads its text layer)."""
+        from core.pipelines.ocr_remote import selected_engine
+        exts = {os.path.splitext(p)[1].lower() for p in self._files}
+        manga = self.manga_switch.isChecked()
+        has_image = bool(exts & {".png", ".jpg", ".jpeg", ".bmp", ".webp"})
+        show = has_image or (manga and ".pdf" in exts)
+        engine = selected_engine()
+        self.ocr_label.setVisible(show)
+        self.ocr_picker.setVisible(show and engine == "local")
+        self.ocr_remote.setVisible(show and engine != "local")
+        if not show:
+            return                       # skip the model-dir scan when hidden
+        if engine == "local":
+            self.ocr_picker.reload("漫画翻译" if manga else "Image OCR", self._lang)
+        else:
+            vlm = backend.get_config("ocr_vlm_interface", "") if engine == "vlm" else ""
+            self.ocr_remote.setText(vlm or tr(_OCR_ENGINE_KEYS[engine], self._lang))
 
     # --- drag & drop ---
     def dragEnterEvent(self, event):

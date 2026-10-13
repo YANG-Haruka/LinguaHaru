@@ -118,11 +118,6 @@
   "Glossary Subtitle": "维护术语对照表，翻译时自动套用，保证专有名词一致。",
   "Go to Download": "前往下载",
   "Go to Plugins": "去插件",
-  "Google API Key": "Google API 密钥（实时语音）",
-  "Google API Key Hint": "用于实时语音翻译（Gemini Live）。",
-  "Google Voice Mode": "Google 实时翻译（Gemini）",
-  "Google key not set": "请先在“设置”中填写 Google API 密钥。",
-  "Google key saved": "Google API 密钥已保存。",
   "HTML Bilingual": "HTML 双语对照",
   "Hide API Key": "隐藏密钥",
   "History": "历史记录",
@@ -336,7 +331,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "RPM 限制（0 为不限制，重启后生效）",
   "Re-export": "重新导出",
   "Real-Time Voice": "实时语音",
-  "Real-Time Voice Subtitle": "对着麦克风说话，即可听到即时语音翻译（Gemini Live）。",
   "Realtime Voice": "实时语音",
   "Recognized Speech": "识别原文",
   "Recognizing": "识别中…",
@@ -660,8 +654,6 @@
   "API Key Not Set": "尚未设置 API 密钥 —— 请在「设置」中填写。",
   "Drop Files Here": "将文件拖放到此处，或点击上传",
   "Translate Subtitles Option": "翻译字幕（不勾选则仅转写）",
-  "Local Mode Label": "本地模型 · SenseVoice + LLM",
-  "Google Live Label": "Google 实时翻译 · Gemini Live",
   "Recognized Source": "识别原文",
   "Add Row": "添加行",
   "Loading Model": "正在加载模型…",
@@ -740,5 +732,8 @@
   "Baidu OCR Key Tip": "百度智能云控制台 → 文字识别 → 创建应用 → 复制该应用的 API Key 和 Secret Key（使用通用文字识别·含位置版）。",
   "Saved Placeholder": "已设置（留空则不修改）",
   "Up To Date": "已是最新",
-  "New Version": "有新版本"
+  "New Version": "有新版本",
+  "Not Downloaded": "未下载",
+  "Model Not Downloaded Go": "「{model}」还没有下载。要去插件页下载吗？",
+  "Live Page Subtitle": "对着麦克风说话，边说边识别并翻译。"
 }

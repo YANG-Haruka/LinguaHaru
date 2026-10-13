@@ -371,6 +371,59 @@ document.querySelectorAll(".tab").forEach((t) => {
   };
 });
 
+// Model dropdown for a plugin (mirrors qt_app/model_picker.py): the whole
+// catalog, models not on disk marked; picking one of those offers the Plugins
+// page instead of switching to a model that can't run.
+let _translateSub = "doc";
+async function fillModelPicker(sel, plugin) {
+  let d;
+  try { d = await api("/api/modules/models?name=" + encodeURIComponent(plugin)); }
+  catch (e) { return false; }                     // server_mode: no model admin
+  sel._plugin = plugin; sel._states = d.models;
+  fillSelect(sel, d.models.map((m) => ({ id: m.id, label: m.label.split(" — ")[0]
+    + (m.downloaded ? "" : `（${_label("Not Downloaded", "未下载")}）`) })), d.current_model);
+  sel._cur = sel.value;
+  return true;
+}
+function bindModelPicker(sel) {
+  sel.onchange = async () => {
+    const m = (sel._states || []).find((x) => x.id === sel.value);
+    if (m && m.downloaded) {
+      await api("/api/models/select", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ plugin: sel._plugin, model_id: m.id }) });
+      sel._cur = m.id;
+      return;
+    }
+    sel.value = sel._cur;
+    if (m && confirm(_label("Model Not Downloaded Go", "").replace("{model}", m.label.split(" — ")[0]))) {
+      const t = document.querySelector('.tab[data-tab="modules"]'); if (t) t.click();
+    }
+  };
+}
+// OCR picker on the file page: images are always OCR'd, a PDF only in manga
+// mode (otherwise BabelDOC reads its text layer). Manga keeps its own model.
+const _OCR_ENGINE_KEYS = { vlm: "OCR Engine VLM", paddle_server: "OCR Engine Paddle Server", baidu: "OCR Engine Baidu" };
+async function refreshOcrPicker() {
+  const box = $("ocr-pick");
+  if (!box) return;
+  const exts = currentFiles.map((f) => "." + f.name.split(".").pop().toLowerCase());
+  const manga = !!($("manga-mode") && $("manga-mode").checked);
+  const show = exts.some((x) => IMAGE_EXTS.includes(x)) || (manga && exts.includes(".pdf"));
+  const c = BOOT.config || {};
+  const engine = _OCR_ENGINE_KEYS[c.ocr_engine] ? c.ocr_engine : "local";
+  $("ocr-model").hidden = engine !== "local";
+  $("ocr-remote").hidden = engine === "local";
+  if (!show) { box.hidden = true; return; }
+  if (engine !== "local") {
+    $("ocr-remote").textContent = (engine === "vlm" && c.ocr_vlm_interface) || _label(_OCR_ENGINE_KEYS[engine], engine);
+    box.hidden = false;
+    return;
+  }
+  box.hidden = !(await fillModelPicker($("ocr-model"), manga ? "漫画翻译" : "Image OCR"));
+}
+if ($("ocr-model")) bindModelPicker($("ocr-model"));
+if ($("live-stt")) bindModelPicker($("live-stt"));
+
 function showTranslateSub(sub) {
   document.querySelectorAll('.panel[data-panel="translate"] .subpane').forEach((x) => x.classList.remove("active"));
   const el = document.querySelector(`.panel[data-panel="translate"] .subpane[data-sub="${sub}"]`);
@@ -381,8 +434,12 @@ function showTranslateSub(sub) {
   const p = document.querySelector('.panel[data-panel="translate"] .page-head p');
   if (h2) { h2.dataset.i18n = sub === "live" ? "Real-Time Voice" : "File Translation";
             h2.textContent = _label(h2.dataset.i18n, h2.textContent); }
-  if (p) { p.dataset.i18n = sub === "live" ? "Real-Time Voice Subtitle" : "Translate Page Subtitle";
+  if (p) { p.dataset.i18n = sub === "live" ? "Live Page Subtitle" : "Translate Page Subtitle";
            p.textContent = _label(p.dataset.i18n, p.textContent); }
+  _translateSub = sub;
+  // Re-read the STT catalog: a model may have been downloaded on the Plugins page.
+  if (sub === "live" && $("live-stt") && !$("live-stt").disabled)
+    fillModelPicker($("live-stt"), "Real-Time Voice").then((ok) => { $("live-stt-pill").hidden = !ok; });
   document.querySelectorAll('#translate-mode .seg').forEach(
     (s) => s.classList.toggle("active", s.dataset.sub === sub));
 }
@@ -506,6 +563,9 @@ function applyI18n(lang) {
     }
   }
   localStorage.setItem("lh-lang", lang);
+  // Pickers carry a localized "not downloaded" mark; _label reads the saved language.
+  if (currentFiles.length) refreshOcrPicker();
+  if (_translateSub === "live" && $("live-stt") && !$("live-stt").disabled) fillModelPicker($("live-stt"), "Real-Time Voice");
 }
 function initUiLang() {
   const sel = $("ui-lang");
@@ -1057,7 +1117,8 @@ async function saveConfig(obj) {
   // The server config is admin-owned in server mode; never persist per-user prefs.
   if (BOOT && BOOT.server_mode) return;
   try { await api("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(obj) }); }
-  catch (e) { console.warn("saveConfig", e); }
+  catch (e) { console.warn("saveConfig", e); return; }
+  if (BOOT.config) Object.assign(BOOT.config, obj);   // keep the local mirror current
 }
 
 // ----- file upload (drag/drop + click) -----
@@ -1117,6 +1178,7 @@ function setFiles(list) {
   // PDF-specific guidance (full scans -> manga mode; PDF-Options OCR is only for
   // mostly-digital PDFs) only makes sense when a PDF is selected.
   if ($("manga-pdf-hint")) $("manga-pdf-hint").hidden = !anyPdf;
+  refreshOcrPicker();
 }
 
 // ----- translate -----
@@ -1590,6 +1652,7 @@ if ($("manga-mode")) $("manga-mode").onchange = () => {
   const on = $("manga-mode").checked;
   if (BOOT.config) BOOT.config.manga_mode = on;   // keep gating in sync without reload
   saveConfig({ manga_mode: on });
+  refreshOcrPicker();
 };
 if ($("pdf-pages")) $("pdf-pages").onchange = () => saveConfig({ pdf_pages: $("pdf-pages").value.trim() });
 if ($("pdf-only-translated")) $("pdf-only-translated").onchange = () => saveConfig({ pdf_only_translated_pages: $("pdf-only-translated").checked });
@@ -1608,8 +1671,8 @@ function _currentModelLabel(m) {
   if (!m.models || !m.current_model) return "";
   const cur = m.models.find((x) => x.id === m.current_model);
   const full = cur ? cur.label : m.current_model;
-  // Compact chip: drop the "(...)" detail; full label shows in the picker modal.
-  return full.replace(/\s*[（(].*$/, "").trim() || full;
+  // Compact chip: drop the "(...)" / " — ..." detail; full label shows in the picker modal.
+  return full.replace(/\s*[（(].*$/, "").replace(/\s+—.*$/, "").trim() || full;
 }
 
 function renderModules() {
@@ -1876,7 +1939,9 @@ async function checkModuleUpdate(name, actTd, statTd) {
   } catch { return; }
   if (!info || !info.update) return;
   const up = document.createElement("button");
-  up.textContent = `${_label("Upgrade", "升级")} (${info.current} → ${info.latest})`;
+  // Short text so it fits on one line; the full transition is the tooltip.
+  up.textContent = `${_label("Upgrade", "升级")} ${info.latest}`;
+  up.title = `${info.current} → ${info.latest}`;
   up.style.marginLeft = "8px";
   up.onclick = () => moduleAction(name, "upgrade", up, statTd);
   actTd.appendChild(up);
@@ -2389,7 +2454,10 @@ function liveListenMsg() {
     ? "正在聆听（系统/标签页声音）…"
     : "正在聆听…（对着麦克风说话）";
 }
-function setLiveBusy(b) { const g = $("live-go"); if (g) g.classList.toggle("running", b); }
+function setLiveBusy(b) {
+  const g = $("live-go"); if (g) g.classList.toggle("running", b);
+  if ($("live-stt")) $("live-stt").disabled = b;   // the model is loaded at start
+}
 
 // Hot-switch input device mid-session; floating-caption (PiP) toggle.
 function onLiveInputChange() {

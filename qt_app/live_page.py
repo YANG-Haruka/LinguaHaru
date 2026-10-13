@@ -25,6 +25,7 @@ from qfluentwidgets import (
 
 from core import backend
 from qt_app.i18n import tr
+from qt_app.model_picker import ModelPicker
 from qt_app.live_worker import (
     LiveRecognizeWorker, LiveTranslateWorker, LiveTranslateStreamWorker, PreloadWorker)
 from core.api_keys import load_api_key_for_model
@@ -746,7 +747,7 @@ class LivePage(ScrollArea):
 
         self.title = TitleLabel(tr("Real-Time Voice", lang))
         layout.addWidget(self.title)
-        self.subtitle = CaptionLabel(tr("Real-Time Voice Subtitle", lang))
+        self.subtitle = CaptionLabel(tr("Live Page Subtitle", lang))
         self.subtitle.setWordWrap(True)
         layout.addWidget(self.subtitle)
 
@@ -776,6 +777,15 @@ class LivePage(ScrollArea):
         self.mic_combo.currentIndexChanged.connect(self._on_mic_changed)
         row1.addWidget(self.mic_combo, 1)
         ctrl.addLayout(row1)
+
+        stt_row = QHBoxLayout()
+        stt_row.setSpacing(10)
+        self.stt_label = BodyLabel(tr("Speech-to-Text Model", lang))
+        stt_row.addWidget(self.stt_label)
+        self.stt_picker = ModelPicker("Real-Time Voice", lang)
+        self.stt_picker.on_open_plugins = lambda: self.on_open_plugins and self.on_open_plugins()
+        stt_row.addWidget(self.stt_picker, 1)
+        ctrl.addLayout(stt_row)
 
         row2 = QHBoxLayout()
         row2.setSpacing(10)
@@ -865,11 +875,19 @@ class LivePage(ScrollArea):
         layout.addLayout(panels, 1)
         self._update_hint()
 
+    def refresh_models(self):
+        """Re-read the STT catalog: a model may have been downloaded or switched
+        on the Plugins page since this page was built."""
+        if not self._is_listening():
+            self.stt_picker.reload(lang=self._lang)
+
     # --- i18n ---
     def retranslate(self, lang):
         self._lang = lang
         self.title.setText(tr("Real-Time Voice", lang))
-        self.subtitle.setText(tr("Real-Time Voice Subtitle", lang))
+        self.subtitle.setText(tr("Live Page Subtitle", lang))
+        self.stt_label.setText(tr("Speech-to-Text Model", lang))
+        self.stt_picker.reload(lang=lang)
         self.target_label.setText(tr("Target Language", lang))
         self.mic_label.setText(tr("Input", lang))
         self.caption_btn.setText(tr("Floating Captions", lang))
@@ -1018,6 +1036,7 @@ class LivePage(ScrollArea):
     def _style_go(self, running):
         """Round green 'play' button; turns red 'stop' while listening."""
         self.go_btn.setText("■" if running else "▶")
+        self.stt_picker.setEnabled(not running)   # the model is loaded at start
         color, hover = ("#ef4444", "#dc2626") if running else ("#22c55e", "#16a34a")
         self.go_btn.setStyleSheet(
             "QPushButton{background:%s;color:white;border:none;border-radius:23px;"

@@ -71,11 +71,6 @@
   "Generating output": "Ausgabe generieren",
   "Generating translated PDF": "Übersetztes PDF generieren",
   "Glossary": "Glossar",
-  "Google API Key": "Google API Key (Live Voice)",
-  "Google API Key Hint": "Used for real-time voice translation (Gemini Live).",
-  "Google Voice Mode": "Google Live (Gemini)",
-  "Google key not set": "Set your Google API key in Settings first.",
-  "Google key saved": "Google API key saved.",
   "HTML Bilingual": "HTML-Zweisprachenmodus aktivieren",
   "Hide API Key": "Schlüssel verbergen",
   "History": "Verlauf",
@@ -148,7 +143,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "RPM-Limit (0 = unbegrenzt, Neustart erforderlich)",
   "Re-export": "Erneut exportieren",
   "Real-Time Voice": "Real-Time Voice",
-  "Real-Time Voice Subtitle": "Speak into your microphone and hear an instant spoken translation (Gemini Live).",
   "Recognized Speech": "Recognized Speech",
   "Recognizing": "Recognizing…",
   "Refresh List": "Liste aktualisieren",
@@ -331,8 +325,6 @@
   "API Key Not Set": "Kein API-Schlüssel gesetzt — bitte in den Einstellungen eintragen.",
   "Drop Files Here": "Dateien hierher ziehen oder zum Hochladen klicken",
   "Translate Subtitles Option": "Untertitel übersetzen (sonst nur Transkription)",
-  "Local Mode Label": "Lokales Modell · SenseVoice + LLM",
-  "Google Live Label": "Google Echtzeit · Gemini Live",
   "Recognized Source": "Erkannter Text",
   "Add Row": "Zeile hinzufügen",
   "Loading Model": "Modell wird geladen…",
@@ -394,5 +386,8 @@
   "Baidu OCR Key Tip": "Baidu-AI-Cloud-Konsole → Texterkennung → App anlegen → deren API Key und Secret Key kopieren (allgemeine OCR mit Positionen).",
   "Saved Placeholder": "Gespeichert (leer lassen zum Beibehalten)",
   "Up To Date": "Aktuell",
-  "New Version": "Neue Version"
+  "New Version": "Neue Version",
+  "Not Downloaded": "nicht heruntergeladen",
+  "Model Not Downloaded Go": "„{model}“ ist noch nicht heruntergeladen. Zur Plugin-Seite wechseln, um es herunterzuladen?",
+  "Live Page Subtitle": "Sprich ins Mikrofon – deine Sprache wird beim Sprechen erkannt und übersetzt."
 }

@@ -78,11 +78,6 @@
   "Glossary": "用語集",
   "Glossary Subtitle": "用語対照表を管理し、翻訳時に自動適用して固有名詞を統一します。",
   "Go to Download": "ダウンロードへ",
-  "Google API Key": "Google API キー（リアルタイム音声）",
-  "Google API Key Hint": "リアルタイム音声翻訳（Gemini Live）に使用します。",
-  "Google Voice Mode": "Google リアルタイム翻訳（Gemini）",
-  "Google key not set": "先に「設定」で Google API キーを入力してください。",
-  "Google key saved": "Google API キーを保存しました。",
   "HTML Bilingual": "HTML二言語対照を有効にする",
   "Hide API Key": "キーを非表示",
   "History": "履歴",
@@ -160,7 +155,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "RPM制限（0は無制限、再起動後に適用）",
   "Re-export": "再エクスポート",
   "Real-Time Voice": "リアルタイム音声",
-  "Real-Time Voice Subtitle": "マイクに話しかけると、即座に音声翻訳が再生されます（Gemini Live）。",
   "Recognized Speech": "認識した原文",
   "Recognizing": "認識中…",
   "Refresh List": "リストを更新",
@@ -352,8 +346,6 @@
   "API Key Not Set": "API キーが未設定です — 「設定」で入力してください。",
   "Drop Files Here": "ここにファイルをドロップ、またはクリックしてアップロード",
   "Translate Subtitles Option": "字幕を翻訳（オフなら文字起こしのみ）",
-  "Local Mode Label": "ローカルモデル · SenseVoice + LLM",
-  "Google Live Label": "Google リアルタイム · Gemini Live",
   "Recognized Source": "認識結果",
   "Add Row": "行を追加",
   "Loading Model": "モデルを読み込み中…",
@@ -433,5 +425,8 @@
   "Baidu OCR Key Tip": "Baidu AI Cloud コンソール → 文字認識 → アプリを作成 → API Key と Secret Key をコピー（位置付きの汎用文字認識）。",
   "Saved Placeholder": "設定済み（空欄なら変更しない）",
   "Up To Date": "最新です",
-  "New Version": "新しいバージョン"
+  "New Version": "新しいバージョン",
+  "Not Downloaded": "未ダウンロード",
+  "Model Not Downloaded Go": "「{model}」はまだダウンロードされていません。プラグインページでダウンロードしますか？",
+  "Live Page Subtitle": "マイクに向かって話すと、話しながら認識・翻訳します。"
 }

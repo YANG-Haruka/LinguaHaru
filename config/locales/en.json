@@ -118,11 +118,6 @@
   "Glossary Subtitle": "Maintain a term mapping that's applied automatically during translation to keep proper nouns consistent.",
   "Go to Download": "Go to Download",
   "Go to Plugins": "Go to Plugins",
-  "Google API Key": "Google API Key (Live Voice)",
-  "Google API Key Hint": "Used for real-time voice translation (Gemini Live).",
-  "Google Voice Mode": "Google Live (Gemini)",
-  "Google key not set": "Set your Google API key in Settings first.",
-  "Google key saved": "Google API key saved.",
   "HTML Bilingual": "Enable HTML Bilingual Mode",
   "Hide API Key": "Hide API Key",
   "History": "History",
@@ -324,7 +319,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "RPM Limit (0 = unlimited, restart to apply)",
   "Re-export": "Re-export",
   "Real-Time Voice": "Real-Time Voice",
-  "Real-Time Voice Subtitle": "Speak into your microphone and hear an instant spoken translation (Gemini Live).",
   "Realtime Voice": "Realtime Voice",
   "Recognized Speech": "Recognized Speech",
   "Recognizing": "Recognizing…",
@@ -649,8 +643,6 @@
   "API Key Not Set": "No API key set — please add one in Settings.",
   "Drop Files Here": "Drop files here, or click to upload",
   "Translate Subtitles Option": "Translate subtitles (otherwise transcribe only)",
-  "Local Mode Label": "Local model · SenseVoice + LLM",
-  "Google Live Label": "Google live · Gemini Live",
   "Recognized Source": "Recognized",
   "Add Row": "Add row",
   "Loading Model": "Loading model…",
@@ -729,5 +721,8 @@
   "Baidu OCR Key Tip": "Baidu AI Cloud console → Text Recognition → create an app → copy its API Key and Secret Key (general OCR with positions).",
   "Saved Placeholder": "Saved (leave empty to keep)",
   "Up To Date": "Up to date",
-  "New Version": "New version"
+  "New Version": "New version",
+  "Not Downloaded": "not downloaded",
+  "Model Not Downloaded Go": "\"{model}\" isn't downloaded yet. Go to the Plugins page to download it?",
+  "Live Page Subtitle": "Speak into your microphone; your speech is recognized and translated as you talk."
 }

@@ -27,7 +27,6 @@ _OCR_LOAD_LOCK = threading.Lock()
 # noticeably smaller/faster than "medium" with only a minor accuracy drop;
 # "tiny" is fastest, "medium" most accurate. Driven by config "ocr_model_size"
 # (the Image-OCR plugin's model selector sets this).
-_OCR_SIZES = ("tiny", "small", "medium")
 
 # Translation source language -> (RapidOCR Rec.lang_type, PaddleOCR lang). Only
 # the non-Chinese/English scripts are listed; everything else (zh/zh-Hant/en/th/
@@ -61,21 +60,11 @@ def _normalize_ocr_lang(src_lang):
 
 def _ocr_model_size(manga=False):
     """The selected PP-OCRv6 size. Manga translation has its OWN model setting
-    (config `manga_ocr_model_size`, default medium for accuracy) separate from
-    plain image OCR (`ocr_model_size`, default small) — exposed as the 漫画翻译
-    plugin card. Falls back to the image-OCR size if manga's isn't set."""
-    try:
-        import json as _json
-        from core.paths import SYSTEM_CONFIG
-        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
-            cfg = _json.load(f)
-        if manga:
-            size = cfg.get("manga_ocr_model_size") or cfg.get("ocr_model_size", "medium")
-        else:
-            size = cfg.get("ocr_model_size", "small")
-        return size if size in _OCR_SIZES else ("medium" if manga else "small")
-    except Exception:  # noqa: BLE001
-        return "medium" if manga else "small"
+    (the 漫画翻译 plugin, default medium for accuracy) separate from plain image
+    OCR (default small). Same resolver the Plugins page and the model pickers use,
+    so what they show is what runs."""
+    from core.optional_modules import plugin_current_model
+    return plugin_current_model("漫画翻译" if manga else "Image OCR")
 
 
 _USE_CUDA = None

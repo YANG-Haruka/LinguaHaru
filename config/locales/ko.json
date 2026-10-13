@@ -71,11 +71,6 @@
   "Generating output": "출력 생성 중",
   "Generating translated PDF": "번역된 PDF 생성 중",
   "Glossary": "용어집",
-  "Google API Key": "Google API Key (Live Voice)",
-  "Google API Key Hint": "Used for real-time voice translation (Gemini Live).",
-  "Google Voice Mode": "Google Live (Gemini)",
-  "Google key not set": "Set your Google API key in Settings first.",
-  "Google key saved": "Google API key saved.",
   "HTML Bilingual": "HTML 이중 언어 모드 활성화",
   "Hide API Key": "키 숨기기",
   "History": "기록",
@@ -148,7 +143,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "RPM 제한 (0 = 무제한, 적용하려면 재시작)",
   "Re-export": "다시 내보내기",
   "Real-Time Voice": "Real-Time Voice",
-  "Real-Time Voice Subtitle": "Speak into your microphone and hear an instant spoken translation (Gemini Live).",
   "Recognized Speech": "Recognized Speech",
   "Recognizing": "Recognizing…",
   "Refresh List": "목록 새로고침",
@@ -331,8 +325,6 @@
   "API Key Not Set": "API 키가 없습니다 — 설정에서 입력하세요.",
   "Drop Files Here": "여기에 파일을 놓거나 클릭하여 업로드",
   "Translate Subtitles Option": "자막 번역(해제 시 전사만)",
-  "Local Mode Label": "로컬 모델 · SenseVoice + LLM",
-  "Google Live Label": "Google 실시간 · Gemini Live",
   "Recognized Source": "인식 결과",
   "Add Row": "행 추가",
   "Loading Model": "모델 로딩 중…",
@@ -394,5 +386,8 @@
   "Baidu OCR Key Tip": "Baidu AI Cloud 콘솔 → 문자 인식 → 앱 생성 → API Key와 Secret Key 복사 (위치 포함 일반 문자 인식).",
   "Saved Placeholder": "저장됨 (비워 두면 유지)",
   "Up To Date": "최신 버전",
-  "New Version": "새 버전"
+  "New Version": "새 버전",
+  "Not Downloaded": "다운로드 안 됨",
+  "Model Not Downloaded Go": "「{model}」이(가) 아직 다운로드되지 않았습니다. 플러그인 페이지에서 다운로드할까요?",
+  "Live Page Subtitle": "마이크에 대고 말하면 말하는 동안 인식하고 번역합니다."
 }

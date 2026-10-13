@@ -71,11 +71,6 @@
   "Generating output": "Generazione dell'output",
   "Generating translated PDF": "Generazione del PDF tradotto",
   "Glossary": "Glossario",
-  "Google API Key": "Google API Key (Live Voice)",
-  "Google API Key Hint": "Used for real-time voice translation (Gemini Live).",
-  "Google Voice Mode": "Google Live (Gemini)",
-  "Google key not set": "Set your Google API key in Settings first.",
-  "Google key saved": "Google API key saved.",
   "HTML Bilingual": "Abilita modalità bilingue HTML",
   "Hide API Key": "Nascondi chiave",
   "History": "Cronologia",
@@ -148,7 +143,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "Limite RPM (0 = illimitato, riavviare per applicare)",
   "Re-export": "Riesporta",
   "Real-Time Voice": "Real-Time Voice",
-  "Real-Time Voice Subtitle": "Speak into your microphone and hear an instant spoken translation (Gemini Live).",
   "Recognized Speech": "Recognized Speech",
   "Recognizing": "Recognizing…",
   "Refresh List": "Aggiorna elenco",
@@ -331,8 +325,6 @@
   "API Key Not Set": "Nessuna chiave API — impostala nelle Impostazioni.",
   "Drop Files Here": "Trascina i file qui o fai clic per caricare",
   "Translate Subtitles Option": "Traduci i sottotitoli (altrimenti solo trascrizione)",
-  "Local Mode Label": "Modello locale · SenseVoice + LLM",
-  "Google Live Label": "Google live · Gemini Live",
   "Recognized Source": "Riconosciuto",
   "Add Row": "Aggiungi riga",
   "Loading Model": "Caricamento del modello…",
@@ -394,5 +386,8 @@
   "Baidu OCR Key Tip": "Console Baidu AI Cloud → Riconoscimento testo → crea un'app → copia API Key e Secret Key (OCR generale con posizioni).",
   "Saved Placeholder": "Salvato (lascia vuoto per mantenerlo)",
   "Up To Date": "Aggiornato",
-  "New Version": "Nuova versione"
+  "New Version": "Nuova versione",
+  "Not Downloaded": "non scaricato",
+  "Model Not Downloaded Go": "\"{model}\" non è ancora scaricato. Andare alla pagina Plugin per scaricarlo?",
+  "Live Page Subtitle": "Parla al microfono: la voce viene riconosciuta e tradotta mentre parli."
 }

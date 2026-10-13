@@ -71,11 +71,6 @@
   "Generating output": "Gerando saída",
   "Generating translated PDF": "Gerando PDF traduzido",
   "Glossary": "Glossário",
-  "Google API Key": "Google API Key (Live Voice)",
-  "Google API Key Hint": "Used for real-time voice translation (Gemini Live).",
-  "Google Voice Mode": "Google Live (Gemini)",
-  "Google key not set": "Set your Google API key in Settings first.",
-  "Google key saved": "Google API key saved.",
   "HTML Bilingual": "Ativar modo bilíngue HTML",
   "Hide API Key": "Ocultar chave",
   "History": "Histórico",
@@ -148,7 +143,6 @@
   "RPM Limit (0 = unlimited, restart to apply)": "Limite de RPM (0 = ilimitado, reiniciar para aplicar)",
   "Re-export": "Reexportar",
   "Real-Time Voice": "Real-Time Voice",
-  "Real-Time Voice Subtitle": "Speak into your microphone and hear an instant spoken translation (Gemini Live).",
   "Recognized Speech": "Recognized Speech",
   "Recognizing": "Recognizing…",
   "Refresh List": "Atualizar lista",
@@ -331,8 +325,6 @@
   "API Key Not Set": "Nenhuma chave API — defina em Configurações.",
   "Drop Files Here": "Solte arquivos aqui ou clique para enviar",
   "Translate Subtitles Option": "Traduzir legendas (senão apenas transcrever)",
-  "Local Mode Label": "Modelo local · SenseVoice + LLM",
-  "Google Live Label": "Google ao vivo · Gemini Live",
   "Recognized Source": "Reconhecido",
   "Add Row": "Adicionar linha",
   "Loading Model": "Carregando modelo…",
@@ -394,5 +386,8 @@
   "Baidu OCR Key Tip": "Console do Baidu AI Cloud → Reconhecimento de texto → crie um app → copie a API Key e a Secret Key (OCR geral com posições).",
   "Saved Placeholder": "Salvo (deixe vazio para manter)",
   "Up To Date": "Atualizado",
-  "New Version": "Nova versão"
+  "New Version": "Nova versão",
+  "Not Downloaded": "não baixado",
+  "Model Not Downloaded Go": "\"{model}\" ainda não foi baixado. Ir à página de Plugins para baixá-lo?",
+  "Live Page Subtitle": "Fale ao microfone; sua fala é reconhecida e traduzida enquanto você fala."
 }

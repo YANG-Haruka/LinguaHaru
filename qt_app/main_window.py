@@ -690,6 +690,8 @@ class MainWindow(FluentWindow):
             self.translate_page.refresh_glossaries()
         elif current is self.quick_page:
             self.quick_page.reload_history()
+        elif current is self.live_page:
+            self.live_page.refresh_models()
 
     def on_lang_changed(self, lang):
         if lang not in UI_LANGS or lang == self._lang:

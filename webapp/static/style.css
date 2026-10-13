@@ -145,6 +145,10 @@ html[data-theme="light"] .page-head .kicker,
 html[data-theme="light"] .footer {
   text-shadow: 0 1px 14px rgba(255,255,255,0.65), 0 0 3px rgba(255,255,255,0.5);
 }
+/* Over the blue day sky the muted gray / accent blue all but vanish: use the
+   body text colour, softened. */
+html[data-theme="light"] .page-head p { color: rgba(12,31,54,0.78); }
+html[data-theme="light"] .page-head .kicker { color: rgba(12,31,54,0.62); }
 
 .sidebar {
   width: var(--sb); flex-shrink: 0;
@@ -349,6 +353,10 @@ details.set-card > summary:hover { background: var(--surface-2); }
   font-size: 0.66rem; color: var(--muted); font-weight: 500;
   text-transform: uppercase; letter-spacing: 1px;
 }
+/* OCR model picker inside the manga card: same width as one .row-2 column. */
+.model-pick { margin-top: 14px; max-width: calc(50% - 10px); }
+.model-pick[hidden] { display: none; }
+#ocr-remote { font-size: 0.92rem; }
 
 select, input[type="text"], input[type="password"], input[type="number"], input:not([type]) {
   width: 100%; height: 42px; padding: 0 13px;
