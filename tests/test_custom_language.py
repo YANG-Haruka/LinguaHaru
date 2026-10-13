@@ -16,12 +16,26 @@ from tests.corpus_common import check, run
 CODE = "zzqa"          # not a real language: safe to create and delete
 
 
+def _snapshot_glossaries():
+    from core.backend import GLOSSARY_DIR
+    return {os.path.join(GLOSSARY_DIR, n): open(os.path.join(GLOSSARY_DIR, n), "rb").read()
+            for n in os.listdir(GLOSSARY_DIR) if n.endswith(".csv")}
+
+
+_GLOSSARIES = _snapshot_glossaries()
+
+
 def _prompt_file(code):
     from core.paths import PROMPTS_DIR
     return os.path.join(PROMPTS_DIR, f"{code}.json")
 
 
 def _cleanup():
+    # add_language() appends a column to EVERY glossary, the shipped Default.csv
+    # included: put the files back so the test can't leak into a release build.
+    for path, data in _GLOSSARIES.items():
+        with open(path, "wb") as f:
+            f.write(data)
     for code in (CODE, "zz-qa_1"):
         p = _prompt_file(code)
         if os.path.exists(p):
