@@ -13,6 +13,7 @@ _SAFE_PARSER = etree.XMLParser(resolve_entities=False, load_dtd=False, no_networ
 from typing import Dict, List
 from openpyxl import load_workbook
 from openpyxl.cell.cell import MergedCell
+from openpyxl.cell.rich_text import CellRichText, TextBlock
 from openpyxl.styles import Alignment
 from openpyxl.utils import range_boundaries
 from .skip_pipeline import should_translate
@@ -380,7 +381,7 @@ def _format_bilingual_text(original_text: str, translated_text: str, content_typ
 
 def _extract_with_openpyxl(file_path, temp_dir):
     """Extract Excel content using openpyxl library."""
-    workbook = load_workbook(file_path)
+    workbook = load_workbook(file_path, rich_text=True)   # else every rich-text cell is flattened on save
     cell_data = []
     count = 0
 
@@ -518,7 +519,7 @@ def _extract_with_openpyxl(file_path, temp_dir):
 
 def _write_with_openpyxl(file_path, original_json_path, translated_json_path, result_dir, bilingual_mode=False, src_lang=None, dst_lang=None):
     """Write translated content using openpyxl library."""
-    workbook = load_workbook(file_path)
+    workbook = load_workbook(file_path, rich_text=True)   # else every rich-text cell is flattened on save
 
     # Load original JSON data
     with open(original_json_path, "r", encoding="utf-8") as original_file:
@@ -598,7 +599,13 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
         # already preserved by openpyxl; writing the top-left cell is enough.
         sheet = workbook[sheet_name]
         cell = sheet.cell(row=row, column=column)
-        cell.value = _safe_cell_value(value)
+        new_value = _safe_cell_value(value)
+        old_value = cell.value
+        if isinstance(old_value, CellRichText) and old_value and all(
+                isinstance(b, TextBlock) and b.font == old_value[0].font for b in old_value):
+            # One font across all runs (e.g. whole cell bold/red): keep it
+            new_value = CellRichText([TextBlock(old_value[0].font, new_value)])
+        cell.value = new_value
         if shrink_to_fit and not isinstance(cell, MergedCell):
             _apply_shrink_to_fit(cell, original_text, value)
 
@@ -637,6 +644,14 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
             # Log if the name needed to be changed
             if sanitized_name != translated_name:
                 app_logger.warning(f"Sheet name '{translated_name}' contains invalid characters and was changed to '{sanitized_name}'")
+
+            # Unique (case-insensitive) within Excel's 31-char limit: openpyxl's
+            # own de-dup appends a digit past 31 and Excel then refuses the file
+            taken = {ws.title.lower() for ws in workbook.worksheets if ws is not sheet}
+            base, n = sanitized_name, 1
+            while sanitized_name.lower() in taken:
+                sanitized_name = base[:31 - len(str(n))] + str(n)
+                n += 1
 
             try:
                 sheet.title = sanitized_name

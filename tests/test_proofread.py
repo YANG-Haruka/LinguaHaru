@@ -65,6 +65,10 @@ import core.backend as backend
 def check(name, cond, detail=""):
     (PASSED if cond else FAILED).append(name)
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" -> {detail}" if detail and not cond else ""))
+    # Under pytest a failed check must fail the test (script mode keeps
+    # going to print the full report), or the suite reports it as passed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(name)
     return bool(cond)
 
 

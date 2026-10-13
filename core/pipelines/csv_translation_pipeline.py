@@ -33,6 +33,10 @@ def _safe_csv_value(value):
     return value
 
 
+# Literal booleans/nulls from DB/spreadsheet exports: data, not prose.
+_LITERAL_VALUES = {"true", "false", "null"}
+
+
 def extract_csv_content_to_json(file_path, temp_dir):
     content, encoding = read_file_with_encoding(file_path)
     delimiter = _sniff_delimiter(content[:4096])
@@ -45,7 +49,9 @@ def extract_csv_content_to_json(file_path, temp_dir):
     for row_index, row in enumerate(rows):
         for col_index, cell in enumerate(row):
             text = cell.strip()
-            if not text or not should_translate(text):
+            # '=' cells are formulas (skipped like the Excel pipeline does)
+            if (not text or text.startswith("=") or text.lower() in _LITERAL_VALUES
+                    or not should_translate(text)):
                 continue
             count += 1
             content_data.append({
@@ -93,16 +99,25 @@ def write_translated_content_to_csv(file_path, original_json_path, translated_js
         translated = translations.get(item["count_src"])
         if translated:
             restored = translated.replace("␊", "\n").replace("␍", "\r")
-            rows[item["row"]][item["col"]] = _safe_csv_value(restored)
+            # Only guard a lead char the translation INTRODUCED: a source cell
+            # like "- bullet" already started that way, don't space-prefix it.
+            if restored[:1] != item["value"][:1]:
+                restored = _safe_csv_value(restored)
+            rows[item["row"]][item["col"]] = restored
 
     os.makedirs(result_dir, exist_ok=True)
     lang_suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
     extension = os.path.splitext(file_path)[1].lower() or ".csv"  # also serves .tsv
     result_path = os.path.join(result_dir, f"{filename}_{lang_suffix}{extension}")
 
-    # Plain UTF-8 (no BOM): a BOM would be glued to the first header cell
-    # (e.g. "﻿id"), breaking strict CSV consumers.
-    with open(result_path, "w", encoding="utf-8", newline="") as f:
+    # Plain UTF-8 (no BOM) for UTF-8/ASCII sources: a BOM would be glued to the
+    # first header cell (e.g. "﻿id"), breaking strict CSV consumers. But keep a
+    # BOM when the source had one (Excel "CSV UTF-8") or was a legacy codec
+    # (GBK/Shift-JIS/UTF-16 saved by Excel): without it Excel decodes the UTF-8
+    # output with the ANSI code page and shows mojibake.
+    source_encoding = (layout.get("encoding") or "").lower().replace("_", "-")
+    out_encoding = "utf-8" if source_encoding in ("utf-8", "ascii") else "utf-8-sig"
+    with open(result_path, "w", encoding=out_encoding, newline="") as f:
         writer = csv.writer(f, delimiter=layout["delimiter"])
         writer.writerows(rows)
 

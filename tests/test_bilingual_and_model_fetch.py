@@ -5,6 +5,7 @@
 #   python tests/test_bilingual_and_model_fetch.py
 import json
 import os
+import re
 import shutil
 import sys
 import zipfile
@@ -25,6 +26,10 @@ PASSED, FAILED = [], []
 def check(name, cond, detail=""):
     (PASSED if cond else FAILED).append(name)
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" -> {detail}" if detail and not cond else ""))
+    # Under pytest a failed check must fail the test (script mode keeps
+    # going to print the full report), or the suite reports it as passed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(name)
     return bool(cond)
 
 
@@ -47,6 +52,12 @@ def fake_translate(src_json_path):
 
 
 # --------------------------------------------------------------- subtitles --
+def _unstyled(text):
+    """Bilingual mode styles the translation (bilingual_bold / bilingual_color,
+    on by default): compare the text without those tags."""
+    return re.sub(r"</?(?:b|font)\b[^>]*>", "", text)
+
+
 def test_srt_bilingual():
     print("SRT bilingual: translation first, original below, timestamps intact")
     from core.pipelines.subtitle_translation_pipeline import (
@@ -62,7 +73,7 @@ def test_srt_bilingual():
     out = write_translated_content_to_srt(src, src_json, dst_json, RESULT_DIR,
                                           src_lang="en", dst_lang="ja", bilingual_mode=True)
     with open(out, encoding="utf-8") as f:
-        content = f.read()
+        content = _unstyled(f.read())
 
     check("cue 1 has translation then original",
           f"{T}Hello there my friend\nHello there my friend" in content, content)
@@ -96,7 +107,7 @@ def test_vtt_bilingual():
     out = write_translated_content_to_vtt(src, src_json, dst_json, TEMP_DIR, RESULT_DIR,
                                           src_lang="en", dst_lang="ja", bilingual_mode=True)
     with open(out, encoding="utf-8") as f:
-        content = f.read()
+        content = _unstyled(f.read())
 
     check("WEBVTT header preserved", content.startswith("WEBVTT"), content[:30])
     check("cue 1 bilingual", f"{T}Hello my friend\nHello my friend" in content, content)

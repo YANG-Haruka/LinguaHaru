@@ -119,11 +119,10 @@ building target alpha...
           "echo untouched literal text" in result
           and T + "echo untouched literal text" not in result
           and 'class="language-sh"' in result, result)
-    # Known limitation: a <p> with mixed inline content (here <code>) is
-    # replaced wholesale - the text is translated but the inline <code> tag
-    # is dropped ("losing inline tags beats keeping the source language").
-    check("paragraph with inline code translated (code tag dropped - known limitation)",
-          T + "Run the make build command now." in result, result)
+    # Inline <code> is kept verbatim (tag and content); the prose around it
+    # is translated.
+    check("paragraph with inline code translated, <code> kept verbatim",
+          T + "Run the <code>make build</code> command now." in result, result)
 
 
 def test_html_attribute_text():

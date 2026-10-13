@@ -35,6 +35,10 @@ _LOG = os.path.join(WORK, "log")
 def check(name, cond, detail=""):
     (PASSED if cond else FAILED).append(name)
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" -> {detail}" if detail and not cond else ""))
+    # Under pytest a failed check must fail the test (script mode keeps
+    # going to print the full report), or the suite reports it as passed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(name)
 
 
 def install_fake_llm():
@@ -58,6 +62,27 @@ def use_sandbox():
     for d in (_TEMP, _RESULT, _LOG):
         os.makedirs(d, exist_ok=True)
     backend.get_custom_paths = lambda: (_TEMP, _RESULT, _LOG)
+
+
+try:
+    import pytest
+
+    @pytest.fixture(autouse=True, scope="module")
+    def _sandbox_and_fake_llm():
+        """main() does this setup for script runs; pytest never calls main(), so
+        without it these tests ran against the real config and model. Restored
+        afterwards so other test modules see the real functions."""
+        import shutil
+        import core.engine.base_translator as bt
+        saved = (bt.translate_text, backend.get_custom_paths)
+        shutil.rmtree(WORK, ignore_errors=True)
+        os.makedirs(WORK, exist_ok=True)
+        use_sandbox()
+        install_fake_llm()
+        yield
+        bt.translate_text, backend.get_custom_paths = saved
+except ImportError:   # script mode without pytest installed
+    pass
 
 
 def test_session_id_validity():

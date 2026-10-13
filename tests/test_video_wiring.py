@@ -17,6 +17,10 @@ CHECKS = []
 def check(name, cond, detail=""):
     CHECKS.append(bool(cond))
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f"\n      -> {detail}" if detail and not cond else ""))
+    # Under pytest a failed check must fail the test (script mode keeps
+    # going to print the full report), or the suite reports it as passed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(name)
 
 
 def test_sensevoice_codes_unified():

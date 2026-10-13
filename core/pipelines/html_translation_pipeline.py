@@ -4,12 +4,14 @@
 # mixed-content blocks are replaced wholesale.
 import json
 import os
+import re
 
 from lxml import html as lxml_html
 
 from .epub_translation_pipeline import (
     _iter_blocks, _apply_to_block, _extract_block, _has_block_descendant,
     _insert_original_sibling, _plain_text, _iter_attr_targets,
+    _iter_inline_heads, _extract_inline_heads, _apply_to_inline_head,
     HLINK_RE, INLINE_RE)
 from .skip_pipeline import should_translate
 from .txt_translation_pipeline import read_file_with_encoding
@@ -17,7 +19,9 @@ from core.log_config import app_logger
 
 
 def _parse_html(content):
-    return lxml_html.fromstring(content)
+    # lxml rejects a str that carries an XML encoding declaration (XHTML
+    # saved as .html); the text is already decoded, so drop it
+    return lxml_html.fromstring(re.sub(r"^\s*<\?xml[^>]*\?>", "", content))
 
 
 def extract_html_content_to_json(file_path, temp_dir):
@@ -48,6 +52,17 @@ def extract_html_content_to_json(file_path, temp_dir):
         }
         if head:
             item["head"] = True
+        if links:
+            item["links"] = links
+        if inlines:
+            item["inlines"] = inlines
+        content_data.append(item)
+
+    # Inline-only heads of nested containers (<li><a>Menu</a><ul>...)
+    for head_index, text, links, inlines in _extract_inline_heads(root):
+        count += 1
+        item = {"count_src": count, "type": "head_inline", "value": text,
+                "head_index": head_index}
         if links:
             item["links"] = links
         if inlines:
@@ -89,7 +104,9 @@ def write_translated_content_to_html(file_path, original_json_path, translated_j
 
     translations = {item["count_src"]: item["translated"] for item in translated_data}
     by_block = {item["block_index"]: item for item in original_data
-                if item.get("type") != "attr"}
+                if item.get("type") not in ("attr", "head_inline")}
+    by_head = {item["head_index"]: item for item in original_data
+               if item.get("type") == "head_inline"}
     by_attr = {item["attr_index"]: item for item in original_data
                if item.get("type") == "attr"}
 
@@ -99,8 +116,15 @@ def write_translated_content_to_html(file_path, original_json_path, translated_j
         if item and translations.get(item["count_src"]):
             el.set(attr, translations[item["count_src"]])
 
-    # Materialize before mutating (live-iterator pitfall)
-    for block_index, el in enumerate(list(_iter_blocks(root))):
+    # Materialize before mutating (live-iterator pitfall; a rewritten inline
+    # head may also gain direct text and shift _iter_blocks)
+    blocks = list(_iter_blocks(root))
+    for head_index, el in enumerate(list(_iter_inline_heads(root))):
+        item = by_head.get(head_index)
+        if item and translations.get(item["count_src"]):
+            _apply_to_inline_head(el, translations[item["count_src"]],
+                                  item.get("links"), item.get("inlines"))
+    for block_index, el in enumerate(blocks):
         item = by_block.get(block_index)
         if not item:
             continue
@@ -113,7 +137,7 @@ def write_translated_content_to_html(file_path, original_json_path, translated_j
                 _apply_to_block(el, translated, item.get("links"), item.get("inlines"))
             if (bilingual_mode and original_plain
                     and translated.strip() != original_plain.strip()):
-                _insert_original_sibling(el, original_plain)
+                _insert_original_sibling(el, original_plain, item.get("head"))
                 from core.engine.bilingual_format import style_html_element
                 style_html_element(el)   # bold/color the translation
 
@@ -122,6 +146,14 @@ def write_translated_content_to_html(file_path, original_json_path, translated_j
     filename = os.path.splitext(os.path.basename(file_path))[0]
     extension = os.path.splitext(file_path)[1].lower() or ".html"
     result_path = os.path.join(result_dir, f"{filename}_{lang_suffix}{extension}")
+
+    # The output is written as UTF-8: a source <meta charset="gbk"> left as is
+    # makes browsers decode it as GBK (mojibake)
+    for meta in root.iter("meta"):
+        if meta.get("charset"):
+            meta.set("charset", "utf-8")
+        elif (meta.get("http-equiv") or "").lower() == "content-type":
+            meta.set("content", "text/html; charset=utf-8")
 
     output = lxml_html.tostring(root, encoding="unicode", doctype="<!DOCTYPE html>")
     with open(result_path, "w", encoding="utf-8") as f:

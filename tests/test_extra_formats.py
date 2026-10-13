@@ -22,6 +22,10 @@ CHECKS = []
 def check(name, cond, detail=""):
     CHECKS.append((name, bool(cond)))
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f"\n      -> {detail}" if detail and not cond else ""))
+    # Under pytest a failed check must fail the test (script mode keeps
+    # going to print the full report), or the suite reports it as passed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(name)
     return bool(cond)
 
 
@@ -109,8 +113,9 @@ def test_odt():
           first.filename == "mimetype" and first.compress_type == zipfile.ZIP_STORED)
     check("heading translated", T + "Document heading line" in chap, chap)
     check("simple paragraph translated", T + "Simple body paragraph text." in chap, chap)
-    check("styled paragraph translated wholesale",
-          T + "Styled paragraph with inner span tail." in chap, chap)
+    # The inner text:span keeps its style (it used to be flattened away).
+    check("styled paragraph translated, inner span kept",
+          T + "Styled paragraph with " in chap and 'style-name="T1">inner span<' in chap, chap)
     check("table cell paragraph translated", T + "Table cell paragraph" in chap, chap)
 
 

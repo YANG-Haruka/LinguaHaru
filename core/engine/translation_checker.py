@@ -230,6 +230,66 @@ def _is_repetition_degenerate(original, translated):
     return ratio > 4.0   # normal prose ~2-3; >4 means heavy repetition
 
 
+_NUM_RE = re.compile(r"\d+(?:[.,]\d+)*")
+
+
+def _numbers(s):
+    """Digit runs in s (grouping/decimal marks dropped), ignoring markers that
+    carry indices ([formula_3], {{FIELD_2}}, MD sentinels)."""
+    from collections import Counter
+    s = _MD_SENTINEL_RE.sub("", PLACEHOLDER_PATTERN.sub("", s or ""))
+    return Counter(re.sub(r"[.,]", "", n) for n in _NUM_RE.findall(s))
+
+
+def _batch_misaligned(pairs):
+    """True if a batch's translations look shifted by one id: the model merged
+    id N+1 into id N (or skipped one) and every later id got its neighbour's text,
+    while all ids are still present. Each item alone looks valid, so this is
+    checked across the batch. Signals (cheap, no LLM call):
+      * a translation has a number its source lacks and exactly a neighbour's
+        source numbers;
+      * two adjacent ids got the identical translation from different sources;
+      * translated lengths fit the neighbours' source lengths far better than
+        their own (needs varied lengths; similar-length batches never trigger).
+    pairs = [(source, translation)] in id order."""
+    import math
+    import statistics as st
+    n = len(pairs)
+    if n < 2:
+        return False
+    src = [(s or "").strip() for s, _ in pairs]
+    dst = [(t or "").strip() for _, t in pairs]
+    for i in range(n):
+        if not dst[i]:
+            continue
+        nt = _numbers(dst[i])
+        if nt - _numbers(src[i]) and any(
+                nt == _numbers(src[j]) for j in (i - 1, i + 1) if 0 <= j < n):
+            return True
+        if i and dst[i] == dst[i - 1] and src[i] != src[i - 1] \
+                and min(len(src[i]), len(src[i - 1])) >= 20:
+            return True
+
+    def _mad(xs):
+        m = st.median(xs)
+        return st.median(abs(x - m) for x in xs)
+    # ponytail: MAD-of-log-ratio heuristic; ~0.1% false positives on noisy
+    # synthetic batches (cost: one smaller retry), misses similar-length batches.
+    idx = [i for i in range(n) if len(src[i]) >= 8 and dst[i]]
+    aligned = [math.log(len(dst[i]) / len(src[i])) for i in idx]
+    if len(aligned) < 4:
+        return False
+    spread = _mad(aligned)
+    if spread <= 0.3:
+        return False
+    for d in (1, -1):
+        shifted = [math.log(len(dst[i]) / len(src[i + d]))
+                   for i in idx if 0 <= i + d < n and len(src[i + d]) >= 8]
+        if len(shifted) >= 4 and _mad(shifted) < spread / 3:
+            return True
+    return False
+
+
 def is_translation_valid(original, translated, src_lang, dst_lang):
     """
     Check if translation is valid
@@ -334,6 +394,17 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         translated_json = _loads_lenient(translated_text)
     if translated_json is None:
         app_logger.warning("Failed to parse translated (even leniently)")
+        _mark_all_as_failed(original_text, FAILED_JSON_PATH)
+        return {}
+
+    # All ids present but content shifted by one -> every item would be accepted
+    # with its neighbour's text. Fail the batch; retry rounds re-chunk smaller
+    # and the last round goes one id per call (where this can't trigger).
+    if isinstance(translated_json, dict) and _batch_misaligned(
+            [(str(v), translated_json.get(k) if isinstance(translated_json.get(k), str) else "")
+             for k, v in original_json.items()]):
+        app_logger.warning(f"Batch looks shifted/merged across ids "
+                           f"({len(original_json)} items); retrying smaller")
         _mark_all_as_failed(original_text, FAILED_JSON_PATH)
         return {}
 

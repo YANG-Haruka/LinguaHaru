@@ -26,6 +26,10 @@ def check(cond, msg):
     else:
         _checks["fail"] += 1
         print(f"  FAIL: {msg}")
+    # Under pytest a failed check must fail the test (script mode keeps
+    # going to print the full report), or the suite reports it as passed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(msg)
 
 
 def _write(path, content="x"):

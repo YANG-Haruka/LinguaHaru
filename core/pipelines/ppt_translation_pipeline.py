@@ -734,31 +734,67 @@ def _vert_marker_runs(text_runs, namespaces: Dict):
     return marks
 
 
+_TOKEN_SPLIT_RE = re.compile(r'(\{\{(?:SU[PB]_\d+|/?HLINK_\d+)\}\})')
+
+
+def _run_link(run, namespaces: Dict):
+    """Identity of the run's a:hlinkClick (None when the run is not a link)."""
+    h = run.find('a:rPr/a:hlinkClick', namespaces)
+    return None if h is None else ('link',) + tuple(sorted(h.attrib.items()))
+
+
+def _run_layout(text_runs, namespaces: Dict):
+    """Run order with protective tokens: an int is a plain run index, a str a
+    token. Marker runs become {{SUP_n}}/{{SUB_n}} (text kept verbatim); linked
+    runs are wrapped in {{HLINK_k}}..{{/HLINK_k}} so the link stays on the
+    translated link text instead of whatever lands at its old offset. Links are
+    only tokenized when the paragraph also has plain text."""
+    texts = [''.join(r.xpath('./a:t/text()', namespaces=namespaces)) for r in text_runs]
+    if _TOKEN_SPLIT_RE.search(''.join(texts)):   # source already holds such literals
+        return list(range(len(text_runs)))
+    marks = _vert_marker_runs(text_runs, namespaces)
+    links = [_run_link(r, namespaces) for r in text_runs]
+    with_text = [l for l, t in zip(links, texts) if t.strip()]
+    if None not in with_text or not any(with_text):
+        links = [None] * len(text_runs)
+    seq, open_link, k = [], None, 0
+    for i, run in enumerate(text_runs):
+        link = links[i] if texts[i] else open_link   # empty runs never split a link
+        if link != open_link:
+            if open_link:
+                seq.append(f'{{{{/HLINK_{k}}}}}')
+            if link:
+                k += 1
+                seq.append(f'{{{{HLINK_{k}}}}}')
+            open_link = link
+        if i in marks:
+            kind = 'SUB' if run.find('a:rPr', namespaces).get('baseline').startswith('-') else 'SUP'
+            seq.append(f'{{{{{kind}_{marks.index(i) + 1}}}}}')
+        else:
+            seq.append(i)
+    if open_link:
+        seq.append(f'{{{{/HLINK_{k}}}}}')
+    return seq
+
+
 def _process_text_runs(text_runs, namespaces: Dict) -> Dict:
     """Process text runs and preserve exact spacing and formatting."""
-    merged_text = ""
     run_texts = []
     run_styles = []
     run_lengths = []
-    marks = _vert_marker_runs(text_runs, namespaces)
-
-    for run_index, text_run in enumerate(text_runs):
+    for text_run in text_runs:
         text_node = text_run.xpath('./a:t', namespaces=namespaces)
         if text_node and text_node[0].text is not None:
             run_text = text_node[0].text
         else:
             run_text = ""
-
-        # Preserve exact text content including spaces
-        if run_index in marks:
-            kind = 'SUB' if text_run.find('a:rPr', namespaces).get('baseline').startswith('-') else 'SUP'
-            merged_text += f'{{{{{kind}_{marks.index(run_index) + 1}}}}}'
-        else:
-            merged_text += run_text
         run_texts.append(run_text)
         run_lengths.append(len(run_text))
         run_styles.append(_extract_run_style(text_run, namespaces))
-    
+    # Preserve exact text content including spaces; tokens protect markers/links
+    merged_text = ''.join(x if isinstance(x, str) else run_texts[x]
+                          for x in _run_layout(text_runs, namespaces))
+
     return {
         'merged_text': merged_text,
         'run_texts': run_texts,
@@ -1263,25 +1299,40 @@ def _distribute_text_to_runs(parent_element, translated_text: str, item: Dict, n
     original_run_texts = item.get('run_texts', [])
     original_run_lengths = item.get('run_lengths', [])
 
-    marks = _vert_marker_runs(text_runs, namespaces)
-    segments = _VERT_MARK_RE.split(translated_text)
-    if marks and (len(segments) != len(marks) + 1 or len(original_run_texts) != len(text_runs)):
-        # Placeholder count broke: drop them and re-flow as before
-        translated_text, marks = ''.join(segments), []
-    if marks:
+    seq = _run_layout(text_runs, namespaces)
+    tokens = [x for x in seq if isinstance(x, str)]
+    parts = _TOKEN_SPLIT_RE.split(translated_text)
+    if tokens and (parts[1::2] != tokens or len(original_run_texts) != len(text_runs)):
+        # Placeholders broke (dropped/reordered): drop them and re-flow as before
+        translated_text, tokens = ''.join(parts[0::2]), []
+    if len(original_run_texts) == len(text_runs) == len(original_run_lengths):
+        # A superscript run that isn't a protected marker ("th" in "5th", "TM")
+        # would land on whatever text falls at its offset: give it no text.
+        vert = [i for i, r in enumerate(text_runs) if r.find('a:rPr', namespaces) is not None
+                and r.find('a:rPr', namespaces).get('baseline', '0') != '0']
+        if any(original_run_texts[i].strip() for i in range(len(text_runs)) if i not in vert):
+            original_run_texts = ['' if i in vert else t for i, t in enumerate(original_run_texts)]
+            original_run_lengths = [0 if i in vert else n for i, n in enumerate(original_run_lengths)]
+    if tokens:
         # Marker runs keep their text; each translated segment fills the plain
-        # runs between two markers (an empty gap passes its text on).
-        bounds = [-1] + marks + [len(text_runs)]
+        # runs between two tokens (an empty gap passes its text on).
+        groups = [[]]
+        for x in seq:
+            if isinstance(x, str):
+                groups.append([])
+            else:
+                groups[-1].append(x)
         carry = ''
-        for seg, lo, hi in zip(segments, bounds, bounds[1:]):
+        for seg, group in zip(parts[0::2], groups):
             seg = carry + seg
-            if lo + 1 >= hi:
+            if not group:
                 carry = seg
                 continue
             carry = ''
-            _intelligent_text_distribution(text_runs[lo + 1:hi], seg, original_run_texts[lo + 1:hi],
-                                           original_run_lengths[lo + 1:hi], namespaces)
-        plain = [r for i, r in enumerate(text_runs) if i not in marks and r.find('a:t', namespaces) is not None]
+            _intelligent_text_distribution([text_runs[i] for i in group], seg,
+                                           [original_run_texts[i] for i in group],
+                                           [original_run_lengths[i] for i in group], namespaces)
+        plain = [text_runs[x] for x in seq if not isinstance(x, str) and text_runs[x].find('a:t', namespaces) is not None]
         if carry and plain:
             tn = plain[-1].find('a:t', namespaces)
             tn.text = (tn.text or '') + carry

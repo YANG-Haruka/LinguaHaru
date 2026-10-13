@@ -2036,6 +2036,23 @@ def should_translate_table_cell(text):
     return is_likely_date_format(bare) or not is_untranslatable_short_token(bare)
 
 
+_TEXT_WRAPPERS = ('ins', 'smartTag', 'sdt', 'customXml')
+
+
+def _is_text_wrapper(elem, namespaces):
+    """Inline element that only wraps plain text runs (w:ins, w:smartTag,
+    inline w:sdt, w:customXml). Handled like a hyperlink: its text is
+    translated in place between markers and the wrapper is rebuilt there.
+    Wrappers holding fields/notes/drawings/math/links are left alone."""
+    if elem.tag not in [f'{{{namespaces["w"]}}}{t}' for t in _TEXT_WRAPPERS]:
+        return False
+    return not elem.xpath(
+        './/w:fldChar | .//w:instrText | .//w:fldSimple | .//w:footnoteReference'
+        ' | .//w:endnoteReference | .//w:drawing | .//w:pict | .//w:hyperlink'
+        ' | .//*[local-name()="oMath"] | .//*[local-name()="AlternateContent"]',
+        namespaces=namespaces)
+
+
 def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, numbering_info=None, exclude_textbox_runs=True):
     """Extract paragraph text including page variables and math formulas, but excluding textbox content"""
     full_text = ""
@@ -2263,8 +2280,9 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
                 full_text += field_result['display_text']
                 field_info.append(field_result)
 
-        elif tag_name == 'hyperlink':
-            # Inline hyperlink: its display text IS translated, wrapped in
+        elif tag_name == 'hyperlink' or _is_text_wrapper(child, namespaces):
+            # Inline hyperlink (or tracked insertion / smart tag / inline
+            # content control): its display text IS translated, wrapped in
             # marker placeholders so the link element can be rebuilt at this
             # exact position with the translated text inside
             hyperlink_counter += 1
@@ -2328,10 +2346,10 @@ def process_field_run(run, namespaces, run_idx):
     if instr_texts:
         instr_text = instr_texts[0].text if instr_texts[0].text else ''
         # Create a readable placeholder for common field instructions
-        if 'PAGE' in instr_text:
-            display_text = '{{PAGE_NUMBER}}'
-        elif 'NUMPAGES' in instr_text:
+        if 'NUMPAGES' in instr_text:     # before PAGE: 'PAGE' is a substring
             display_text = '{{TOTAL_PAGES}}'
+        elif 'PAGE' in instr_text:
+            display_text = '{{PAGE_NUMBER}}'
         elif 'DATE' in instr_text:
             display_text = '{{DATE}}'
         elif 'TIME' in instr_text:
@@ -2359,10 +2377,10 @@ def process_simple_field_run(run, namespaces, run_idx):
         instr = fld_simples[0].get(f'{{{namespaces["w"]}}}instr', '')
         
         # Create a readable placeholder for common field instructions
-        if 'PAGE' in instr:
-            display_text = '{{PAGE_NUMBER}}'
-        elif 'NUMPAGES' in instr:
+        if 'NUMPAGES' in instr:     # before PAGE: 'PAGE' is a substring
             display_text = '{{TOTAL_PAGES}}'
+        elif 'PAGE' in instr:
+            display_text = '{{PAGE_NUMBER}}'
         elif 'DATE' in instr:
             display_text = '{{DATE}}'
         elif 'TIME' in instr:
@@ -4447,7 +4465,12 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     # so the originals must be removed
     direct_hyperlinks = []
     if field_info and any(f.get('type') == 'hyperlink' for f in field_info):
-        direct_hyperlinks = paragraph.xpath('./w:hyperlink', namespaces=namespaces)
+        direct_hyperlinks = [c for c in paragraph
+                             if c.tag == f"{{{namespaces['w']}}}hyperlink" or _is_text_wrapper(c, namespaces)]
+    # Tracked deletions: the rewritten paragraph is the accepted text, so the
+    # deleted source-language runs would only float to the paragraph start
+    if new_text:
+        direct_hyperlinks += paragraph.xpath('./w:del', namespaces=namespaces)
 
     # Paragraph-level simple fields (direct children of <w:p>) captured in
     # field_info are rebuilt at their placeholder positions, so the originals
@@ -4520,6 +4543,16 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     else:
         add_text_with_enhanced_formatting(paragraph, new_text, namespaces, formatting)
 
+    # Bookmarks (REF / TOC targets) are kept but now sit before the rebuilt
+    # runs, i.e. empty - a cross-reference would update to "". Stretch each
+    # one that starts here over the new text.
+    # ponytail: whole-paragraph span; a label-only bookmark widens to the full caption
+    w_ns = namespaces['w']
+    starts = {b.get(f'{{{w_ns}}}id') for b in paragraph.findall(f'{{{w_ns}}}bookmarkStart')}
+    for end in paragraph.findall(f'{{{w_ns}}}bookmarkEnd'):
+        if end.get(f'{{{w_ns}}}id') in starts:
+            paragraph.append(end)
+
     style = _BILINGUAL_STYLE.get()
     if style:
         _style_bilingual_runs(paragraph, namespaces, *style)
@@ -4589,14 +4622,17 @@ def update_paragraph_content_with_math_and_fields_enhanced(paragraph, new_text, 
                     # recreated from the translated text that follows
                     f = hlink_open[part]
                     hl_elem = etree.fromstring(f['hyperlink_xml'])
+                    # Inline content controls hold their runs in w:sdtContent
+                    holder = hl_elem.find(f"{{{namespaces['w']}}}sdtContent")
+                    holder = hl_elem if holder is None else holder
                     rpr_template = None
-                    for link_run in hl_elem.findall(f"{{{namespaces['w']}}}r"):
+                    for link_run in holder.findall(f"{{{namespaces['w']}}}r"):
                         rpr = link_run.find(f"{{{namespaces['w']}}}rPr")
                         if rpr_template is None and rpr is not None:
                             rpr_template = etree.tostring(rpr)
-                        hl_elem.remove(link_run)
+                        holder.remove(link_run)
                     paragraph.append(hl_elem)
-                    active_hyperlink = (hl_elem, rpr_template)
+                    active_hyperlink = (holder, rpr_template)
                     current_run = None
                     continue
 

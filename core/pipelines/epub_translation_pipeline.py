@@ -10,6 +10,7 @@ import os
 import posixpath
 import re
 import zipfile
+from html.entities import name2codepoint
 
 from lxml import etree
 
@@ -98,10 +99,25 @@ def _content_documents(zf):
         return zip_order
 
 
+_NAMED_ENTITY_RE = re.compile(rb"&([A-Za-z][A-Za-z0-9]*);")
+_XML_ENTITIES = {b"amp", b"lt", b"gt", b"quot", b"apos"}
+
+
+def _numeric_entity(m):
+    # HTML named entities (&nbsp; &mdash; ...) are undefined in XML: recover
+    # mode silently DROPS them (or keeps opaque entity nodes whose text is
+    # invisible to extraction). Rewrite them as numeric refs before parsing.
+    name = m.group(1)
+    cp = name2codepoint.get(name.decode("ascii"))
+    if name in _XML_ENTITIES or cp is None:
+        return m.group(0)
+    return b"&#%d;" % cp
+
+
 def _parse_doc(data):
     # XHTML may or may not be well-formed XML; recover mode handles both
     parser = etree.XMLParser(recover=True, resolve_entities=False)
-    return etree.fromstring(data, parser=parser)
+    return etree.fromstring(_NAMED_ENTITY_RE.sub(_numeric_entity, data), parser=parser)
 
 
 def _plain_text(text):
@@ -135,6 +151,60 @@ def _iter_blocks(root):
                 yield el
             continue
         yield el
+
+
+def _inline_head(el):
+    """Leading child nodes of a block container, up to its first nested block."""
+    lead = []
+    for c in el:
+        if isinstance(c.tag, str) and (_local_name(c) in BLOCK_TAGS
+                                       or _has_block_descendant(c)):
+            break
+        lead.append(c)
+    return lead
+
+
+def _iter_inline_heads(root):
+    """Block containers whose head is inline markup with NO direct text, e.g.
+    the nested-TOC entry <li><a href="p1.xhtml">Part One</a><ol>...</ol></li>
+    (EPUB3 nav.xhtml). _iter_blocks skips these (no head text), so the title
+    was never translated. A separate index ("head_inline" items) keeps the
+    block_index of older src.json files valid."""
+    for el in root.iter():
+        if (_local_name(el) in BLOCK_TAGS and not (el.text or "").strip()
+                and _has_block_descendant(el) and _inline_head(el)):
+            yield el
+
+
+def _head_fragment(el):
+    # Same (namespaced) tag so a rebuilt <a> gets the XHTML namespace
+    frag = el.makeelement(el.tag, {})
+    frag.text = el.text
+    for c in _inline_head(el):
+        frag.append(copy.deepcopy(c))
+    return frag
+
+
+def _extract_inline_heads(root):
+    """[(head_index, text, links, inlines)] for translatable inline heads."""
+    result = []
+    for head_index, el in enumerate(_iter_inline_heads(root)):
+        text, links, inlines = _extract_block(_head_fragment(el))
+        text = text.strip()
+        plain = _plain_text(text)
+        if plain and should_translate(plain):
+            result.append((head_index, text, links, inlines))
+    return result
+
+
+def _apply_to_inline_head(el, translated, links=None, inlines=None):
+    frag = _head_fragment(el)
+    _apply_to_block(frag, translated, links, inlines)
+    for c in _inline_head(el):
+        el.remove(c)
+    el.text = frag.text
+    for i, c in enumerate(list(frag)):
+        el.insert(i, c)
 
 
 # User-visible attribute text worth translating. Pure attributes only, so this
@@ -261,6 +331,17 @@ def extract_epub_content_to_json(file_path, temp_dir):
                     item["inlines"] = inlines
                 content_data.append(item)
 
+            # Inline-only heads of nested containers (nav.xhtml part titles)
+            for head_index, text, links, inlines in _extract_inline_heads(root):
+                count += 1
+                item = {"count_src": count, "type": "head_inline", "value": text,
+                        "doc_index": doc_index, "head_index": head_index}
+                if links:
+                    item["links"] = links
+                if inlines:
+                    item["inlines"] = inlines
+                content_data.append(item)
+
             # Translatable attribute text (img alt, title, aria-label, ...)
             for attr_index, (el, attr) in enumerate(_iter_attr_targets(root)):
                 val = (el.get(attr) or "").strip()
@@ -283,6 +364,23 @@ def extract_epub_content_to_json(file_path, temp_dir):
     return json_path
 
 
+_CODE_TAGS = {"code", "kbd", "samp", "var", "pre"}
+
+
+def _is_verbatim_inline(el):
+    """Inline elements whose text must never be translated: code spans, and
+    <sup>/<sub> footnote/reference markers (a link inside, or no letters at
+    all - "1", "[2]", "*"). Flattening them loses the tag and lets the model
+    translate or move the marker."""
+    name = _local_name(el)
+    if name in _CODE_TAGS:
+        return True
+    if name in ("sup", "sub"):
+        return (any(_local_name(d) == "a" for d in el.iterdescendants())
+                or not any(ch.isalpha() for ch in "".join(el.itertext())))
+    return False
+
+
 def _extract_block(el):
     """Block text with inline anchors wrapped in {{HLINK_n}} markers and
     text-less inline elements (img, br, ...) replaced by {{INLINE_n}}.
@@ -299,13 +397,20 @@ def _extract_block(el):
             if not isinstance(child.tag, str):
                 out += child.tail or ""
                 continue
-            if _local_name(child) == "a":
+            name = _local_name(child)
+            if name in ("rt", "rp"):
+                # Ruby reading/fallback parens are not prose: "漢<rt>かん</rt>"
+                # would otherwise reach the model as "漢かん"
+                pass
+            elif name == "a" and "".join(child.itertext()).strip():
                 index = len(links)
                 links.append({"attrib": dict(child.attrib)})
                 inner = "".join(child.itertext())
                 out += f"{{{{HLINK_{index}}}}}{inner}{{{{/HLINK_{index}}}}}"
-            elif not "".join(child.itertext()).strip():
-                # No text content (img, br, hr, empty span): keep verbatim
+            elif not "".join(child.itertext()).strip() or _is_verbatim_inline(child):
+                # No text content (img, br, hr, empty span, an <a> wrapping
+                # only an image) or machine text (code, footnote-ref <sup>):
+                # keep verbatim
                 clone = copy.deepcopy(child)
                 clone.tail = None
                 index = len(inlines)
@@ -326,6 +431,10 @@ def _apply_to_block(el, translated, links=None, inlines=None):
     at their marker positions. Other simple blocks keep their structure;
     remaining mixed-content blocks are replaced wholesale - losing inline
     tags beats keeping the source language."""
+    # Comments / PIs: their tail text is already part of the extracted (and
+    # now translated) text, so left in place it would duplicate the source
+    for node in [c for c in el if not isinstance(c.tag, str)]:
+        el.remove(node)
     children = [c for c in el if isinstance(c.tag, str)]
 
     # Any recorded inline element forces the rebuild path even if the
@@ -391,14 +500,27 @@ def _apply_to_block(el, translated, links=None, inlines=None):
     el.text = translated
 
 
-def _insert_original_sibling(el, original_text):
+def _insert_original_sibling(el, original_text, head=False):
     """Insert a sibling block right after ``el`` carrying the original text.
 
     Used by bilingual mode: the translated block stays in place and the
     untouched source text follows it in a fresh element of the same tag (a
     plain following <p>/<li>/... with only text). Returns the new element so
     callers can keep iterating past it. The new block has no attributes so it
-    does not inherit ids/anchors that must stay unique."""
+    does not inherit ids/anchors that must stay unique.
+
+    Table cells and list items are the exception: a sibling <td> would shift
+    every later column and a sibling <li> renumbers the list, so the original
+    goes inside the same element after a <br/> (before nested blocks for a
+    ``head`` item)."""
+    if _local_name(el) in ("td", "th", "li"):
+        ns = el.tag[:el.tag.index("}") + 1] if el.tag.startswith("{") else ""
+        br, span = el.makeelement(ns + "br", {}), el.makeelement(ns + "span", {})
+        span.text = original_text
+        pos = 0 if head else len(el)
+        el.insert(pos, br)
+        el.insert(pos + 1, span)
+        return span
     parent = el.getparent()
     if parent is None:
         return None
@@ -425,6 +547,7 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
     # Group items per content document; OPF/NCX items are keyed by member name
     items_by_doc = {}
     attr_items_by_doc = {}
+    head_items_by_doc = {}
     opf_items_by_name = {}
     ncx_items_by_name = {}
     for item in original_data:
@@ -434,6 +557,8 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
             ncx_items_by_name.setdefault(item["ncx_name"], {})[item["nav_index"]] = item
         elif item.get("type") == "attr":
             attr_items_by_doc.setdefault(item["doc_index"], {})[item["attr_index"]] = item
+        elif item.get("type") == "head_inline":
+            head_items_by_doc.setdefault(item["doc_index"], {})[item["head_index"]] = item
         else:
             items_by_doc.setdefault(item["doc_index"], {})[item["block_index"]] = item
 
@@ -475,7 +600,8 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                 doc_index = content_names.get(info.filename)
                 doc_items = items_by_doc.get(doc_index) if doc_index is not None else None
                 attr_items = attr_items_by_doc.get(doc_index) if doc_index is not None else None
-                if doc_items or attr_items:
+                head_items = head_items_by_doc.get(doc_index) if doc_index is not None else None
+                if doc_items or attr_items or head_items:
                     root = _parse_doc(data)
                     # Attribute write-back first (independent of block mutation)
                     for attr_index, (el, attr) in enumerate(_iter_attr_targets(root)):
@@ -483,8 +609,15 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                         if item and translations.get(item["count_src"]):
                             el.set(attr, translations[item["count_src"]])
                     # Materialize before mutating: _apply_to_block removes
-                    # children, which would derail a live root.iter()
-                    for block_index, el in enumerate(list(_iter_blocks(root))):
+                    # children, which would derail a live root.iter() (and a
+                    # rewritten inline head may gain direct text)
+                    blocks = list(_iter_blocks(root))
+                    for head_index, el in enumerate(list(_iter_inline_heads(root))):
+                        item = (head_items or {}).get(head_index)
+                        if item and translations.get(item["count_src"]):
+                            _apply_to_inline_head(el, translations[item["count_src"]],
+                                                  item.get("links"), item.get("inlines"))
+                    for block_index, el in enumerate(blocks):
                         item = (doc_items or {}).get(block_index)
                         if not item:
                             continue
@@ -502,7 +635,7 @@ def write_translated_content_to_epub(file_path, original_json_path, translated_j
                                                 item.get("inlines"))
                             if (bilingual_mode and original_plain
                                     and translated.strip() != original_plain.strip()):
-                                _insert_original_sibling(el, original_plain)
+                                _insert_original_sibling(el, original_plain, item.get("head"))
                                 from core.engine.bilingual_format import style_html_element
                                 style_html_element(el)   # bold/color the translation
                     data = etree.tostring(root, xml_declaration=True, encoding="utf-8")

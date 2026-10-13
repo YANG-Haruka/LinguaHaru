@@ -20,6 +20,8 @@ from core.log_config import app_logger
 TEXT_NS = "urn:oasis:names:tc:opendocument:xmlns:text:1.0"
 PARA_TAGS = {f"{{{TEXT_NS}}}p", f"{{{TEXT_NS}}}h"}
 A_TAG = f"{{{TEXT_NS}}}a"
+SPAN_TAG = f"{{{TEXT_NS}}}span"
+SPAN_RE = re.compile(r"\{\{/?SPAN_\d+\}\}")
 
 # Drawing/image namespaces. A <draw:frame> (image) anchored inside a text:p is
 # preserved verbatim through a {{INLINE_n}} marker so it is never lost on the
@@ -34,7 +36,7 @@ _IMAGE_ALT_TAGS = {_SVG_TITLE_TAG, _SVG_DESC_TAG}
 
 # Combined scan used at write-back to rebuild a paragraph in one pass
 _TOKEN_RE = re.compile(
-    r"\{\{HLINK_(\d+)\}\}(.*?)\{\{/HLINK_\1\}\}|\{\{INLINE_(\d+)\}\}", re.DOTALL)
+    r"\{\{(HLINK|SPAN)_(\d+)\}\}(.*?)\{\{/\1_\2\}\}|\{\{INLINE_(\d+)\}\}", re.DOTALL)
 
 # Paragraph-bearing members: content.xml (body) + styles.xml (headers/footers
 # live in master-page <style:header>/<style:footer> as text:p elements).
@@ -57,6 +59,16 @@ def _iter_paragraphs(root):
             yield el
 
 
+def _is_inline(child):
+    """Kept verbatim behind {{INLINE_n}}: everything except links and styled
+    spans with text - images, spaces/tabs, fields (page number, date: their
+    text is generated), footnotes/annotations and text boxes (their own
+    text:p are translated as separate items)."""
+    if child.tag == A_TAG:
+        return False
+    return child.tag != SPAN_TAG or not "".join(child.itertext()).strip()
+
+
 def _extract_paragraph(el):
     """Paragraph text with text:a hyperlinks wrapped in {{HLINK_n}} markers
     (same scheme as the EPUB pipeline); link text itself IS translated.
@@ -64,12 +76,14 @@ def _extract_paragraph(el):
     by a {{INLINE_n}} marker and serialized verbatim, so the wholesale-replace
     write-back never deletes an image.
 
-    Returns (text, links, inlines) where links holds each anchor's attributes
-    and inlines the serialized elements, both for rebuilding at write-back.
-    Other inline elements (text:span etc.) are flattened: the paragraph is
-    replaced wholesale on write-back."""
+    text:span is wrapped in {{SPAN_n}}..{{/SPAN_n}} so bold/italic stays on the
+    translated words.
+
+    Returns (text, links, inlines, spans): attributes of each anchor/span and
+    the serialized inline elements, for rebuilding at write-back."""
     links = []
     inlines = []
+    spans = []
 
     def render(node):
         out = node.text or ""
@@ -82,7 +96,7 @@ def _extract_paragraph(el):
                 links.append({"attrib": dict(child.attrib)})
                 inner = "".join(child.itertext())
                 out += f"{{{{HLINK_{index}}}}}{inner}{{{{/HLINK_{index}}}}}"
-            elif child.tag == DRAW_FRAME_TAG or not "".join(child.itertext()).strip():
+            elif _is_inline(child):
                 # Image frame / text-less inline element: keep verbatim so it
                 # survives the wholesale-replace rebuild (losing an image is
                 # data loss). svg:title/svg:desc inside it are translated
@@ -92,12 +106,14 @@ def _extract_paragraph(el):
                 index = len(inlines)
                 inlines.append(etree.tostring(clone, encoding="unicode"))
                 out += f"{{{{INLINE_{index}}}}}"
-            else:
-                out += render(child)
+            else:  # text:span
+                index = len(spans)
+                spans.append({"attrib": dict(child.attrib)})
+                out += f"{{{{SPAN_{index}}}}}{render(child)}{{{{/SPAN_{index}}}}}"
             out += child.tail or ""
         return out
 
-    return render(el), links, inlines
+    return render(el), links, inlines, spans
 
 
 def _live_inlines(el):
@@ -113,7 +129,7 @@ def _live_inlines(el):
                 continue
             if child.tag == A_TAG:
                 continue
-            if child.tag == DRAW_FRAME_TAG or not "".join(child.itertext()).strip():
+            if _is_inline(child):
                 clone = copy.deepcopy(child)
                 clone.tail = None
                 out.append(etree.tostring(clone, encoding="unicode"))
@@ -124,13 +140,53 @@ def _live_inlines(el):
     return out
 
 
-def _apply_to_paragraph(el, translated, links=None, inlines=None):
+def _build(parent, text, links, spans, inlines, used_inlines):
+    """Fill `parent` from marker text: {{HLINK_n}}/{{SPAN_n}} pairs become
+    text:a / text:span (spans recursively), {{INLINE_n}} the verbatim element."""
+    parent.text = ""
+    last_node = None
+    pos = 0
+
+    def add(s):
+        if last_node is None:
+            parent.text += s
+        else:
+            last_node.tail = (last_node.tail or "") + s
+
+    for match in _TOKEN_RE.finditer(text):
+        add(text[pos:match.start()])
+        pos = match.end()
+        if match.group(1) is not None:  # {{HLINK_n}}..{{/HLINK_n}} / {{SPAN_n}}..
+            is_link = match.group(1) == "HLINK"
+            node = etree.SubElement(parent, A_TAG if is_link else SPAN_TAG)
+            records = links if is_link else spans
+            index = int(match.group(2))
+            if records and index < len(records):
+                for key, value in records[index].get("attrib", {}).items():
+                    node.set(key, value)
+            if is_link:
+                node.text = match.group(3)
+            else:
+                _build(node, match.group(3), links, spans, inlines, used_inlines)
+            last_node = node
+        else:  # {{INLINE_n}}
+            inline_index = int(match.group(4))
+            if inlines and inline_index < len(inlines):
+                node = etree.fromstring(inlines[inline_index], parser=_SAFE_PARSER)
+                parent.append(node)
+                last_node = node
+                used_inlines.add(inline_index)
+    add(text[pos:])
+
+
+def _apply_to_paragraph(el, translated, links=None, inlines=None, spans=None):
     children = [c for c in el if isinstance(c.tag, str)]
 
     # Any recorded inline element forces the rebuild path even if the
     # translation dropped its marker: the fallback below re-appends it so an
     # image is never lost.
-    has_markers = (links and "{{HLINK_" in translated) or bool(inlines)
+    has_markers = ((links and "{{HLINK_" in translated)
+                   or (spans and "{{SPAN_" in translated) or bool(inlines))
     if has_markers:
         # Prefer LIVE inline elements over the extraction-time JSON strings:
         # any svg:title/svg:desc alt text translated in-place on this tree is
@@ -140,40 +196,11 @@ def _apply_to_paragraph(el, translated, links=None, inlines=None):
             live = _live_inlines(el)
             if len(live) == len(inlines):
                 inlines = live
-        # Rebuild text:a anchors and inline frames at their marker positions
+        # Rebuild text:a anchors, spans and inline frames at their markers
         for child in children:
             el.remove(child)
-        el.text = ""
-        last_node = None
-        pos = 0
         used_inlines = set()
-        for match in _TOKEN_RE.finditer(translated):
-            leading = translated[pos:match.start()]
-            if last_node is None:
-                el.text += leading
-            else:
-                last_node.tail = (last_node.tail or "") + leading
-            if match.group(1) is not None:  # {{HLINK_n}}text{{/HLINK_n}}
-                anchor = etree.SubElement(el, A_TAG)
-                link_index = int(match.group(1))
-                if links and link_index < len(links):
-                    for key, value in links[link_index].get("attrib", {}).items():
-                        anchor.set(key, value)
-                anchor.text = match.group(2)
-                last_node = anchor
-            else:  # {{INLINE_n}}
-                inline_index = int(match.group(3))
-                if inlines and inline_index < len(inlines):
-                    node = etree.fromstring(inlines[inline_index], parser=_SAFE_PARSER)
-                    el.append(node)
-                    last_node = node
-                    used_inlines.add(inline_index)
-            pos = match.end()
-        trailing = translated[pos:]
-        if last_node is None:
-            el.text += trailing
-        else:
-            last_node.tail = (last_node.tail or "") + trailing
+        _build(el, translated, links, spans, inlines, used_inlines)
         # A dropped {{INLINE_n}} marker must not lose the element (an image,
         # typically): re-append any that the translation failed to carry
         for inline_index, raw in enumerate(inlines or []):
@@ -182,11 +209,11 @@ def _apply_to_paragraph(el, translated, links=None, inlines=None):
         return
 
     if not children:
-        el.text = translated
+        el.text = SPAN_RE.sub("", translated)
         return
     for child in children:
         el.remove(child)
-    el.text = translated
+    el.text = SPAN_RE.sub("", translated)
 
 
 def _iter_image_alts(root):
@@ -217,10 +244,10 @@ def extract_odt_content_to_json(file_path, temp_dir):
                 continue
             root = etree.fromstring(zf.read(member), parser=_SAFE_PARSER)
             for index, el in enumerate(_iter_paragraphs(root)):
-                text, links, inlines = _extract_paragraph(el)
+                text, links, inlines, spans = _extract_paragraph(el)
                 text = text.strip()
                 plain = HLINK_RE.sub(lambda m: m.group(2), text)
-                plain = INLINE_RE.sub("", plain)
+                plain = SPAN_RE.sub("", INLINE_RE.sub("", plain))
                 if not plain.strip() or not should_translate(plain.strip()):
                     continue
                 count += 1
@@ -235,6 +262,8 @@ def extract_odt_content_to_json(file_path, temp_dir):
                     item["links"] = links
                 if inlines:
                     item["inlines"] = inlines
+                if spans:
+                    item["spans"] = spans
                 content_data.append(item)
 
             # Image alt text (svg:title / svg:desc inside draw:frame)
@@ -322,15 +351,18 @@ def write_translated_content_to_odt(file_path, original_json_path, translated_js
                             item = alt_by_index.get(alt_index)
                             if item and translations.get(item["count_src"]):
                                 el.text = translations[item["count_src"]]
-                    # Materialize before mutating (live-iterator pitfall)
-                    for index, el in enumerate(list(_iter_paragraphs(root))):
+                    # Materialize before mutating (live-iterator pitfall).
+                    # Reversed: a paragraph nested in a footnote/text box/
+                    # annotation is translated before its parent re-inserts
+                    # that element from the live tree.
+                    for index, el in reversed(list(enumerate(_iter_paragraphs(root)))):
                         item = (by_index or {}).get(index)
                         if not item:
                             continue
                         translated = translations.get(item["count_src"])
                         if translated:
                             _apply_to_paragraph(el, translated, item.get("links"),
-                                                item.get("inlines"))
+                                                item.get("inlines"), item.get("spans"))
                     data = etree.tostring(root, xml_declaration=True, encoding="UTF-8")
                 elif info.filename == "meta.xml" and meta_items:
                     root = etree.fromstring(data, parser=_SAFE_PARSER)

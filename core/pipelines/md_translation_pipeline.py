@@ -95,6 +95,14 @@ _MD_LINK_TARGET_RE = re.compile(
     r"(?:<[^>]*>|[^\s)]+)"           # URL: <bracketed> or run of non-space
 )
 
+# Identifiers that must match a definition elsewhere in the file: the label of
+# a full reference link [text][label] and footnote refs/definitions [^1].
+# Translating either silently breaks the link / footnote.
+_MD_REF_LABEL_RE = re.compile(r"(?<=\])\[[^\]\n]+\]|\[\^[^\]\s]+\]")
+
+# Inline HTML tags (<a href="..."> </b> <br/>): attributes are machine text.
+_MD_HTML_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+
 
 def _protect_inline_md(text):
     """Mask inline code, link/image URLs and autolinks with sentinels.
@@ -103,13 +111,15 @@ def _protect_inline_md(text):
     Fast path: a line with none of these returns unchanged + empty map.
     """
     if not text or (("`" not in text) and ("](" not in text)
-                    and ("![" not in text) and ("://" not in text) and ("<" not in text)):
+                    and ("![" not in text) and ("://" not in text) and ("<" not in text)
+                    and ("][" not in text) and ("[^" not in text)):
         return text, {}
 
     mapping = {}
     spans = []  # (start, end) of every protected slice
 
-    for rx in (_MD_INLINE_CODE_RE, _MD_AUTOLINK_RE, _MD_LINK_TARGET_RE, _MD_BARE_URL_RE):
+    for rx in (_MD_INLINE_CODE_RE, _MD_AUTOLINK_RE, _MD_LINK_TARGET_RE, _MD_BARE_URL_RE,
+               _MD_REF_LABEL_RE, _MD_HTML_TAG_RE):
         for m in rx.finditer(text):
             spans.append((m.start(), m.end()))
 
@@ -380,6 +390,7 @@ def extract_md_content_to_json(file_path, temp_dir):
                 closing_tag = line[line.rfind('<'):]
                 
                 count += 1
+                masked_content, inline_map = _protect_inline_md(content_text)
                 structure_items.append({
                     "index": position_index,
                     "type": "html_simple",
@@ -388,14 +399,15 @@ def extract_md_content_to_json(file_path, temp_dir):
                     "closing_tag": closing_tag,
                     "value": line,
                     "translate": True,
-                    "count_src": count
+                    "count_src": count,
+                    "inline_map": inline_map
                 })
-                
+
                 content_data.append({
                     "count_src": count,
                     "index": position_index,
                     "type": "html_content",
-                    "value": content_text
+                    "value": masked_content
                 })
                 position_index += 1
                 continue
@@ -415,6 +427,7 @@ def extract_md_content_to_json(file_path, temp_dir):
                 # Check if content needs translation (with base64 check)
                 if should_translate_enhanced(inner_content):
                     count += 1
+                    masked_content, inline_map = _protect_inline_md(inner_content)
                     structure_items.append({
                         "index": position_index,
                         "type": "html_complex",
@@ -423,14 +436,15 @@ def extract_md_content_to_json(file_path, temp_dir):
                         "closing_tag": closing_outer_tag,
                         "value": line,
                         "translate": True,
-                        "count_src": count
+                        "count_src": count,
+                        "inline_map": inline_map
                     })
-                    
+
                     content_data.append({
                         "count_src": count,
                         "index": position_index,
                         "type": "html_complex_content",
-                        "value": inner_content
+                        "value": masked_content
                     })
                 else:
                     structure_items.append({
@@ -442,23 +456,19 @@ def extract_md_content_to_json(file_path, temp_dir):
                 position_index += 1
                 continue
 
-            # Preserve unrecognized HTML
-            structure_items.append({
-                "index": position_index,
-                "type": "html_unknown",
-                "value": line,
-                "translate": False
-            })
-            position_index += 1
-            continue
-            
+            # Anything else ("<b>Note:</b> prose", "<img ...> caption") is
+            # prose with inline HTML: fall through to the text path, whose
+            # masking protects the tags (kept verbatim before = untranslated)
+
         # Handle regular text (with base64 check)
-        if should_translate_enhanced(line):
+        # Protect inline code / link-image URLs / autolinks / HTML tags before
+        # the line is handed to the translator. masked_line carries sentinels in
+        # place of those machine tokens; inline_map restores them on write-back.
+        # A line that is ONLY machine tokens has nothing to translate.
+        masked_line, inline_map = _protect_inline_md(line)
+        if (should_translate_enhanced(line) and should_translate_enhanced(
+                _MD_SENTINEL_RE.sub(" ", masked_line).strip())):
             count += 1
-            # Protect inline code / link-image URLs / autolinks before the line
-            # is handed to the translator. masked_line carries sentinels in place
-            # of those machine tokens; inline_map restores them on write-back.
-            masked_line, inline_map = _protect_inline_md(line)
             structure_items.append({
                 "index": position_index,
                 "type": "text",
@@ -534,7 +544,7 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
     # Rebuild document
     final_lines = []
     
-    for item in structure_items:
+    for pos, item in enumerate(structure_items):
         if not item.get("translate", False):
             # Keep original content for non-translated items (includes base64 images)
             final_lines.append(item["value"])
@@ -590,8 +600,8 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                 count = item.get("count_src")
                 if count in translations:
                     final_lines.append(
-                        item["opening_tag"] + 
-                        translations[count] + 
+                        item["opening_tag"] +
+                        _restore_inline_md(translations[count], item.get("inline_map") or {}) +
                         item["closing_tag"]
                     )
                 else:
@@ -603,8 +613,12 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                     # Restore inline code / URLs masked out before translation.
                     translated_line = _restore_inline_md(
                         translations[count], item.get("inline_map") or {})
-                    final_lines.append(translated_line)
                     original_line = item["value"]
+                    # The engine strips replies: re-apply the source line's
+                    # indentation or nested list items / indented blocks flatten
+                    indent = original_line[:len(original_line) - len(original_line.lstrip())]
+                    translated_line = indent + translated_line.lstrip()
+                    final_lines.append(translated_line)
                     # Bilingual: append the original as a blockquote, but only
                     # for plain text lines - pipe-table rows or existing
                     # blockquotes would have their structure broken
@@ -612,6 +626,12 @@ def write_translated_content_to_md(file_path, original_json_path, translated_jso
                             and not original_line.lstrip().startswith(("|", ">"))
                             and translated_line.strip() != original_line.strip()):
                         final_lines.append("> " + original_line.strip())
+                        # A following non-blank line would be a lazy
+                        # continuation of this quote (the next translation
+                        # rendered inside the original): end the quote here
+                        if (pos + 1 < len(structure_items)
+                                and structure_items[pos + 1]["value"].strip()):
+                            final_lines.append("")
                 else:
                     final_lines.append(item["value"])
     

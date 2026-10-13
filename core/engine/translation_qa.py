@@ -103,8 +103,10 @@ def check_placeholders(pairs):
 def check_length_ratio(pairs, lo=0.25, hi=4.0, min_len=8):
     bad = []
     for k, src, dst, _typ in pairs:
-        ls = len(src.strip())
-        ld = len(dst.strip())
+        # Width cells, not chars: one CJK char carries ~2 Latin chars of
+        # meaning, so en->zh (~0.3 chars) / zh->en (~3-4) aren't flagged.
+        ls = _cells(src.strip())
+        ld = _cells(dst.strip())
         if ls >= min_len and ld > 0:
             r = ld / ls
             if r < lo or r > hi:
@@ -287,10 +289,14 @@ def check_number_scale(pairs, src_lang, dst_lang):
 
 
 def check_glossary_terms(pairs, glossary):
+    # Same matching as the prompt side (whole word for Latin: "app" is not in
+    # "application"); text inside placeholders ({count}) is not a term.
+    from core.engine.text_separator import _term_matches
     bad = []
     for k, src, dst, _typ in pairs:
+        src = _PH.sub(" ", src)
         for st, dt in (glossary or []):
-            if st and dt and st in src and dt not in dst:
+            if st and dt and _term_matches(st, src) and dt not in dst:
                 bad.append({"id": k, "term": st, "expected": dt})
     return bad
 

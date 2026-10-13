@@ -18,6 +18,10 @@ PASSED, FAILED = [], []
 def check(name, cond, detail=""):
     (PASSED if cond else FAILED).append(name)
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" -> {detail}" if detail and not cond else ""))
+    # Under pytest a failed check must fail the test (script mode keeps
+    # going to print the full report), or the suite reports it as passed.
+    if not cond and os.environ.get("PYTEST_CURRENT_TEST"):
+        raise AssertionError(name)
 
 
 class FakeOpenAIError(Exception):
@@ -131,7 +135,7 @@ def test_text_rules():
     print("Text rules (replace before/after, no-translate list)")
     import core.text_rules as tr
 
-    rules_path = os.path.join("config", "text_rules.json")
+    rules_path = tr.RULES_PATH
     backup = None
     if os.path.exists(rules_path):
         with open(rules_path, encoding="utf-8") as f:
@@ -143,7 +147,9 @@ def test_text_rules():
                 "replace_after": [{"from": "誤訳語", "to": "正訳語"}],
                 "no_translate": ["KeepMeAsIs"],
             }, f, ensure_ascii=False)
-        tr._cache["mtime"] = None  # bust cache
+        # Bust the whole cache: the mtime stat is throttled, so resetting only
+        # mtime kept serving rules another test had loaded moments earlier.
+        tr._cache.update(mtime=None, rules=None, checked=0.0)
 
         check("replace_before applies",
               tr.apply_replace_before("about TyypoBrand products") == "about TypoBrand products")

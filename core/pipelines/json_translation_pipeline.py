@@ -24,6 +24,9 @@ DEFAULT_SKIP_KEYS = {
     "classname", "style", "color", "colour", "icon", "path", "ref", "version",
 }
 
+# Booleans/null stored as strings ("enabled": "true"): machine values, not prose.
+_LITERAL_VALUES = {"true", "false", "null"}
+
 
 def _load_skip_config():
     """Return (skip_keys:set[str lower], skip_paths:set[str]) from system_config."""
@@ -74,7 +77,7 @@ def extract_json_content_to_json(file_path, temp_dir):
 
     def visit(path, value):
         text = value.strip()
-        if not text or not should_translate(text):
+        if not text or text.lower() in _LITERAL_VALUES or not should_translate(text):
             return
         counter["n"] += 1
         content_data.append({
