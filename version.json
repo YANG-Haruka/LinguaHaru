@@ -1,19 +1,19 @@
 {
-    "version": "7.0.3",
+    "version": "7.0.4",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.3: the title bar shows your version and whether it's the latest. One-click updates now work on the Mac (its own package, LinguaHaru.app included), and the Mac title bar is tidied up. Presets are trimmed to one translation-friendly model per provider. Real-time voice drops the Google (Gemini Live) mode. / 7.0.3：标题栏显示当前版本以及是否为最新版。Mac 可以一键更新（下载 Mac 自己的安装包，连同 LinguaHaru.app 一起更新），Mac 左上角标题栏重新排版。预设接口精简为每家一个最适合翻译的型号。实时语音去掉了 Google（Gemini Live）模式。",
+    "notes": "7.0.4: in-app updates unpack much faster (under a second instead of 10-35 s), starting with the update after this one. / 7.0.4：应用内更新的解压快多了（从十几秒到半分钟缩短到一秒以内），从这次之后的下一次更新开始生效。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.3/LinguaHaru-7.0.3-web-portable.zip",
-            "sha256": "7f75722181ecf6ce6178a77f8ee5f9761d0ffee19afaef499580e2d5f40823a1"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.4/LinguaHaru-7.0.4-web-portable.zip",
+            "sha256": "615ae6e8486163f7a0a7ec0c7e1f1b62ce9df4ccf29ca617c7a117e40fcb87f9"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.3/LinguaHaru-7.0.3-desktop-portable.zip",
-            "sha256": "40538ffc82b956e3ee12a9e03a715424c50b9f619958366e34026ac0f97b1f73"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.4/LinguaHaru-7.0.4-desktop-portable.zip",
+            "sha256": "c3c7aff27b8d08d3f3ffd2186d16cf09345e5ba5476c5ac0fba40548bc51060d"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.3/LinguaHaru-7.0.3-desktop-mac.zip",
-            "sha256": "2cff21f042768b5c16ed689ba9e698dbd2b76c86274031ee08681d735448ac5c"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.4/LinguaHaru-7.0.4-desktop-mac.zip",
+            "sha256": "ccd402eabb7bb056bc4fd6793c49178d686e33336adec646186cb778cf0563c3"
         }
     }
 }
