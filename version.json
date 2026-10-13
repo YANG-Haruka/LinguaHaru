@@ -1,19 +1,19 @@
 {
-    "version": "7.0.4",
+    "version": "7.0.5",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.4: in-app updates unpack much faster (under a second instead of 10-35 s), starting with the update after this one. / 7.0.4：应用内更新的解压快多了（从十几秒到半分钟缩短到一秒以内），从这次之后的下一次更新开始生效。",
+    "notes": "7.0.5: pick the OCR / speech model right on the File Translation and Real-Time Voice pages, with each model's state shown (in use / downloaded / not downloaded) and download in place. Fixed a desktop crash when switching speech models while one was still loading. Interface fixes after a language switch and across pages. / 7.0.5：在文件翻译和实时语音页直接选文字识别/语音识别模型，能看到每个模型是使用中、已下载还是未下载，没下载的可以当场下载。修复了桌面版在模型还没加载完时切换语音识别模型会闪退的问题。修正了切换界面语言后和多个页面的显示问题。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.4/LinguaHaru-7.0.4-web-portable.zip",
-            "sha256": "615ae6e8486163f7a0a7ec0c7e1f1b62ce9df4ccf29ca617c7a117e40fcb87f9"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.5/LinguaHaru-7.0.5-web-portable.zip",
+            "sha256": "810226c5dd40a9fc6caa9db844e51350d321fd5f5f3558a25282014eefce74a6"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.4/LinguaHaru-7.0.4-desktop-portable.zip",
-            "sha256": "c3c7aff27b8d08d3f3ffd2186d16cf09345e5ba5476c5ac0fba40548bc51060d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.5/LinguaHaru-7.0.5-desktop-portable.zip",
+            "sha256": "e7b7d09b544bf9b3eabecabafbf50eca983b91edd6261f59a255b3bb6a18c644"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.4/LinguaHaru-7.0.4-desktop-mac.zip",
-            "sha256": "ccd402eabb7bb056bc4fd6793c49178d686e33336adec646186cb778cf0563c3"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.5/LinguaHaru-7.0.5-desktop-mac.zip",
+            "sha256": "b2eafdfc016f5bdd695b53ab220095ae1e7f295c993ae459d0a59360322afa32"
         }
     }
 }
