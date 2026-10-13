@@ -1,19 +1,19 @@
 {
-    "version": "7.0.6",
+    "version": "7.0.7",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.6: a large batch of fixes found with real-world documents — translations no longer drift onto the neighbouring segment, Excel files with tables open without repair, footnote markers / links / fields / inline formatting are kept across Word, PowerPoint, ODT, EPUB, HTML and Markdown, codes and numbers are left untranslated, and fewer false warnings. / 7.0.6：修复了一大批用真实文档发现的翻译问题：译文不再错位到相邻段落，含表格的 Excel 不再需要修复才能打开，Word、PPT、ODT、EPUB、HTML、Markdown 的脚注标记、链接、自动字段和局部格式都会保留，代码和数字不再被翻译，误报的提示也更少。",
+    "notes": "7.0.7: manga text removal erases only the glyph strokes, so balloon outlines stay clean (and whole pages process much faster); manga lettering stays inside the balloon, and vertical text uses vertical punctuation with better column breaks. / 7.0.7：漫画抹字只擦掉文字笔画，气泡边框不再被涂花，整页处理也快了很多；漫画译文留在气泡内，竖排使用竖排标点，换列更自然。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.6/LinguaHaru-7.0.6-web-portable.zip",
-            "sha256": "632c0c51625c65d4a511684cebed2172134ea410de8b42a6b3c114b99deb515d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.7/LinguaHaru-7.0.7-web-portable.zip",
+            "sha256": "ad9d83bcaad40ad65715e4f2f889282083e4597e5c3612e6843f2c5bb94c7afa"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.6/LinguaHaru-7.0.6-desktop-portable.zip",
-            "sha256": "3b59395bf338e15028752da71b84b2285d1b165eec598c9152bbea59fa44f450"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.7/LinguaHaru-7.0.7-desktop-portable.zip",
+            "sha256": "f4e1b832ea9e1b939b8943a41b350929fb3f88d71a5b4ec665bba76efaff7286"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.6/LinguaHaru-7.0.6-desktop-mac.zip",
-            "sha256": "ae8a59f8d26f2f2a70e85840f6b0f9445744afd0664f0d1624ecc01349d31ac3"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.7/LinguaHaru-7.0.7-desktop-mac.zip",
+            "sha256": "95f14f45593a20b9dec3574456b605c6e93fc17f81036ea0f4be3fdb73da491b"
         }
     }
 }
