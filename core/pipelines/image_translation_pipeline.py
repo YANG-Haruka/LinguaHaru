@@ -713,44 +713,91 @@ def _text_colors(rgb, rect):
     return (20, 20, 20), (245, 245, 245)        # dark text, light halo
 
 
-def _render_vertical(draw, text, rect, font_path, fg, stroke):
+# No HarfBuzz 'vert' substitution in PIL, so punctuation would be drawn in its
+# horizontal form (comma in the bottom-left corner, brackets lying sideways).
+# Swap in the Unicode vertical presentation forms instead; the CJK fonts
+# _find_font_path picks (YaHei, Meiryo, PingFang, Noto CJK) all carry them.
+_VERTICAL_FORMS = str.maketrans({
+    "，": "︐", ",": "︐", "、": "︑", "。": "︒", "：": "︓", ":": "︓",
+    "；": "︔", ";": "︔", "！": "︕", "!": "︕", "？": "︖", "?": "︖",
+    "…": "︙", "—": "︱", "～": "︴", "（": "︵", "(": "︵", "）": "︶", ")": "︶",
+    "【": "︻", "】": "︼", "《": "︽", "》": "︾", "「": "﹁", "」": "﹂",
+    "『": "﹃", "』": "﹄", "“": "﹁", "”": "﹂", "‘": "﹃", "’": "﹄",
+})
+
+
+# Closing punctuation never starts a column (Chinese/Japanese line-breaking rule).
+_NO_COLUMN_START = set("︐︑︒︓︔︕︖︙︶︼︾﹂﹄")
+
+
+def _columns(chars, per_col):
+    """Split chars into columns of <= per_col. A column that would end mid-phrase
+    ends after its last punctuation instead (if that keeps it at least half full),
+    and never leaves closing punctuation to start the next column."""
+    cols, i = [], 0
+    while i < len(chars):
+        n = min(per_col, len(chars) - i)
+        if i + n < len(chars) and chars[i + n - 1] not in _NO_COLUMN_START:
+            cut = max((j + 1 for j in range(n) if chars[i + j] in _NO_COLUMN_START), default=0)
+            if cut * 2 >= n:
+                n = cut
+        while n > 1 and i + n < len(chars) and chars[i + n] in _NO_COLUMN_START:
+            n -= 1
+        cols.append(chars[i:i + n])
+        i += n
+    return cols
+
+
+def _clean_breaks(cols):
+    """Every column but the last ends on punctuation (no word split across columns)."""
+    return all(c[-1] in _NO_COLUMN_START for c in cols[:-1])
+
+
+def _render_vertical(draw, text, rect, font_path, fg, stroke, max_size=None):
     """Stack characters top->bottom in columns laid out right->left (CJK vertical
     writing). The font size is chosen so the whole block fits the box in BOTH axes
     (the column count * column width <= box width, and chars-per-column * line
-    height <= box height), then the block is centered. PIL-only (no HarfBuzz
-    vertical glyph substitution, but fine for caption-style overlays)."""
+    height <= box height), then the block is centered. max_size caps it (the source
+    text's character size, so a short translation is not blown up to fill the
+    box). PIL-only (no HarfBuzz vertical glyph substitution, but fine for
+    caption-style overlays)."""
     x1, y1, x2, y2 = rect
     box_w, box_h = max(x2 - x1, 8), max(y2 - y1, 8)
-    chars = [c for c in text if c.strip()]
+    chars = [c for c in text.translate(_VERTICAL_FORMS) if c.strip()]
     if not chars:
         return
     line_gap = 1.06
-    size = 8
+    size, cols, best = 8, None, None
     # A single column can't be wider than the box; shrink until the whole grid fits
     # the box height AND width (this is what prevents the old vertical overflow).
-    for s in range(min(box_h, box_w), 7, -1):
+    # Then keep shrinking (by at most 20%) if that lets every column break on
+    # punctuation instead of mid-word.
+    for s in range(min(box_h, box_w, max_size or box_h), 7, -1):
         step = s * line_gap
-        per_col = max(1, int(box_h // step))
-        ncols = (len(chars) + per_col - 1) // per_col
-        if ncols * step <= box_w:
-            size = s
+        cols = _columns(chars, max(1, int(box_h // step)))
+        if len(cols) * step > box_w:
+            continue
+        if best is None or _clean_breaks(cols):
+            best = (s, cols)
+        if _clean_breaks(cols) or s < 0.8 * best[0]:
             break
+    if best:
+        size, cols = best
     step = size * line_gap
-    per_col = max(1, int(box_h // step))
-    ncols = (len(chars) + per_col - 1) // per_col
+    if not best:                              # nothing fits: 8 px floor
+        cols = _columns(chars, max(1, int(box_h // step)))
     font = (ImageFont.truetype(font_path, size) if font_path else ImageFont.load_default())
     sw = max(1, size // 12)
     # Center the grid in the box; lay columns out right -> left.
-    grid_w = ncols * step
-    rows_in_first = min(per_col, len(chars))
-    grid_h = rows_in_first * step
+    grid_w = len(cols) * step
+    grid_h = max(len(c) for c in cols) * step
     x_right = x2 - max(0, (box_w - grid_w)) / 2.0
     y_top = y1 + max(0, (box_h - grid_h)) / 2.0
-    for idx, ch in enumerate(chars):
-        col, row = divmod(idx, per_col)
+    for col, column in enumerate(cols):
         cx = x_right - (col + 1) * step + (step - size) / 2.0
-        cy = y_top + row * step
-        draw.text((cx, cy), ch, font=font, fill=fg, stroke_width=sw, stroke_fill=stroke)
+        for row, ch in enumerate(column):
+            draw.text((cx, y_top + row * step), ch, font=font, fill=fg,
+                      stroke_width=sw, stroke_fill=stroke)
 
 
 def _fit_text(draw, text, rect, font_path):
@@ -1161,7 +1208,7 @@ def render_on_image(image, regions, translations, dst_lang=None, clean_bgr=None)
         # region rect, kept inside its speech balloon (see _render_rects).
         erase.append(region)
         texts.append(translated)
-    to_render = list(zip(_render_rects(image, erase), texts)) if erase else []
+    to_render = list(zip(_render_rects(image, erase), texts, erase)) if erase else []
 
     if clean_bgr is not None:
         image = clean_bgr            # pre-inpainted clean page -> skip the slow step
@@ -1177,14 +1224,15 @@ def render_on_image(image, regions, translations, dst_lang=None, clean_bgr=None)
         app_logger.warning("No CJK-capable font found, falling back to PIL default font")
 
     cjk_dst = _is_cjk_lang(dst_lang)
-    for rect, text in to_render:
+    for rect, text, region in to_render:
         x1, y1, x2, y2 = rect
         w, h = x2 - x1, y2 - y1
         # Vertical layout for CJK targets in a tall, narrow box (manga columns).
         vertical = cjk_dst and h > 1.6 * w and h >= 40
         fg, stroke = _text_colors(rgb, rect)
         if vertical:
-            _render_vertical(draw, text, rect, font_path, fg, stroke)
+            _render_vertical(draw, text, rect, font_path, fg, stroke,
+                             max_size=int(0.75 * _char_size(region)))  # glyph ~3/4 of an OCR column
         else:
             font, lines, line_h = _fit_text(draw, text, rect, font_path)
             sw = max(1, font.size // 12) if hasattr(font, "size") else 1

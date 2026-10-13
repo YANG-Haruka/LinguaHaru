@@ -152,3 +152,23 @@ def test_lettering_does_not_run_down_the_speech_tail():
     assert drawn.any()
     assert not drawn[297:].any()                # nothing on/below the bottom outline
     assert not drawn[:, :103].any() and not drawn[:, 258:].any()
+
+
+def test_vertical_text_uses_vertical_punctuation():
+    drawn = []
+
+    class Draw:
+        def text(self, xy, ch, **kw):
+            drawn.append(ch)
+
+    M._render_vertical(Draw(), "（一），好。", (0, 0, 40, 400), None, (0, 0, 0), (255, 255, 255))
+    assert drawn == ["︵", "一", "︶", "︐", "好", "︒"]
+
+
+def test_closing_punctuation_never_starts_a_column():
+    cols = M._columns(list("有了弟弟︐真开心︕"), 4)
+    assert [c[0] for c in cols] == ["有", "弟", "真"]   # never "︐" or "︕"
+    assert "".join("".join(c) for c in cols) == "有了弟弟︐真开心︕"
+    # a column that would split a phrase breaks after its last punctuation instead
+    assert M._columns(list("下次冒险︐也带上我吧︕"), 6) == [list("下次冒险︐"), list("也带上我吧︕")]
+    assert M._clean_breaks(M._columns(list("有了弟弟︐真开心︕"), 5))
