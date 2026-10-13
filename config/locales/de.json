@@ -206,7 +206,6 @@
   "Unfinished Translation Detected": "Unvollständige Übersetzung erkannt — Sie können auf „Übersetzung fortsetzen“ klicken.",
   "Uninstall": "Uninstall",
   "Uninstalling": "Uninstalling...",
-  "Upload File": "Datei hochladen (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "Dateien hochladen",
   "Use Online Model": "Online-Modell verwenden",
   "Video ffmpeg note": "Video/Audio also requires ffmpeg on your PATH.",
@@ -388,6 +387,13 @@
   "Up To Date": "Aktuell",
   "New Version": "Neue Version",
   "Not Downloaded": "nicht heruntergeladen",
-  "Model Not Downloaded Go": "„{model}“ ist noch nicht heruntergeladen. Zur Plugin-Seite wechseln, um es herunterzuladen?",
-  "Live Page Subtitle": "Sprich ins Mikrofon – deine Sprache wird beim Sprechen erkannt und übersetzt."
+  "Live Page Subtitle": "Sprich ins Mikrofon – deine Sprache wird beim Sprechen erkannt und übersetzt.",
+  "Plugin Market Hint": "Klicke auf „Markt aktualisieren“, um verfügbare Plugins zu sehen.",
+  "File Name": "Dateiname",
+  "Refresh Market": "Markt aktualisieren",
+  "Plugin Market": "Plugin-Markt",
+  "Downloaded": "Heruntergeladen",
+  "Use Model": "Verwenden",
+  "In Use": "In Verwendung",
+  "Tag JapaneseOnly": "Nur Japanisch"
 }

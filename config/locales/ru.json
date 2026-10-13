@@ -206,7 +206,6 @@
   "Unfinished Translation Detected": "Обнаружен незавершённый перевод — вы можете нажать «Продолжить перевод».",
   "Uninstall": "Uninstall",
   "Uninstalling": "Uninstalling...",
-  "Upload File": "Загрузить файл (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "Загрузить файлы",
   "Use Online Model": "Использовать онлайн-модель",
   "Video ffmpeg note": "Video/Audio also requires ffmpeg on your PATH.",
@@ -388,6 +387,13 @@
   "Up To Date": "Актуальная версия",
   "New Version": "Новая версия",
   "Not Downloaded": "не загружена",
-  "Model Not Downloaded Go": "«{model}» ещё не загружена. Перейти на страницу плагинов, чтобы загрузить?",
-  "Live Page Subtitle": "Говорите в микрофон — речь распознаётся и переводится прямо во время разговора."
+  "Live Page Subtitle": "Говорите в микрофон — речь распознаётся и переводится прямо во время разговора.",
+  "Plugin Market Hint": "Нажмите «Обновить маркет», чтобы увидеть доступные плагины.",
+  "File Name": "Имя файла",
+  "Refresh Market": "Обновить маркет",
+  "Plugin Market": "Маркет плагинов",
+  "Downloaded": "Загружена",
+  "Use Model": "Использовать",
+  "In Use": "Используется",
+  "Tag JapaneseOnly": "Только японский"
 }

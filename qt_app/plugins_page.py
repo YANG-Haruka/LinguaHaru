@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel,
     SimpleCardWidget, CardWidget, IconWidget, FluentIcon, FlowLayout,
-    PushButton, PrimaryPushButton, HyperlinkButton, InfoBadge, InfoBar, InfoBarPosition,
+    PushButton, PrimaryPushButton, TransparentPushButton, HyperlinkButton, InfoBadge,
+    InfoBar, InfoBarPosition,
     MessageBox, MessageBoxBase,
 )
 
@@ -100,7 +101,8 @@ class _BuiltinChip(SimpleCardWidget):
         col = QVBoxLayout()
         col.setSpacing(0)
         col.addWidget(StrongBodyLabel(label, self))
-        col.addWidget(CaptionLabel(tr("Built-in", lang), self))
+        self.caption = CaptionLabel(tr("Built-in", lang), self)
+        col.addWidget(self.caption)
         layout.addLayout(col, 1)
 
 
@@ -113,33 +115,28 @@ def _download_error_text(lang):
 
 
 class _ModelPickerDialog(MessageBoxBase):
-    """Per-model management for a plugin: each model shows its install status +
-    disk size with an Install / Delete button (white row = installed → Delete,
-    gray = not installed → Install). Clicking an installed model makes it the
-    active (in-use) one. Acts live (its own workers) and refreshes in place."""
+    """A plugin's model list, shared by the Plugins page and the file / live
+    pages: one row per model with name + tags, a one-line description, its
+    state (in use / downloaded · size / not downloaded · size) and the action
+    (download in place with progress / use / delete). Acts live (its own
+    workers); Close is disabled while a download runs, since closing would
+    destroy the worker thread mid-run."""
 
     def __init__(self, plugin, lang="en", parent=None):
         super().__init__(parent)
         self._plugin = plugin
         self._lang = lang
         self._workers = []
-        self.titleLabel = StrongBodyLabel(tr("Select Model", lang), self)
+        self._busy = False
+        self.titleLabel = StrongBodyLabel(f"{tr(plugin, lang)} · {tr('Select Model', lang)}", self)
         self.viewLayout.addWidget(self.titleLabel)
         self._rows = QVBoxLayout()
-        self._rows.setSpacing(6)
+        self._rows.setSpacing(8)
         self.viewLayout.addLayout(self._rows)
         self.yesButton.setText(tr("Close", lang))
         self.cancelButton.hide()
-        self.widget.setMinimumWidth(460)
+        self.widget.setMinimumWidth(600)
         self._build()
-
-    @staticmethod
-    def _short(label):
-        for ch in ("（", "("):
-            i = (label or "").find(ch)
-            if i > 0:
-                return label[:i].strip()
-        return label
 
     def _build(self):
         while self._rows.count():
@@ -153,57 +150,106 @@ class _ModelPickerDialog(MessageBoxBase):
             self._rows.addWidget(self._row(st))
 
     def _row(self, st):
+        active = st["id"] == self._cur
         row = QWidget()
         row.setObjectName("pickRow")
         h = QHBoxLayout(row)
-        h.setContentsMargins(10, 7, 10, 7)
-        h.setSpacing(8)
-        h.addWidget(StrongBodyLabel(self._short(st["label"])))
-        h.addStretch(1)
-        sz = CaptionLabel(st.get("disk_human", "") if st["downloaded"]
-                          else tr("Not Installed", self._lang))
-        sz.setTextColor("#808080", "#a0a0a0")
-        h.addWidget(sz)
-        if st["downloaded"]:
-            b = PushButton(tr("Delete", self._lang))
-            b.clicked.connect(lambda _=False, s=st: self._delete(s))
+        h.setContentsMargins(14, 10, 12, 10)
+        h.setSpacing(12)
+
+        name, _, desc = tr(st["label"], self._lang).partition(" — ")
+        info = QVBoxLayout()
+        info.setSpacing(2)
+        line = QHBoxLayout()
+        line.setSpacing(6)
+        line.addWidget(StrongBodyLabel(OptionalPluginCard._short_label(name)))
+        for t in st.get("tags", []):
+            tag = CaptionLabel(tr(t, self._lang))
+            tag.setObjectName("pickTag")
+            line.addWidget(tag)
+        line.addStretch(1)
+        info.addLayout(line)
+        if desc:
+            d = CaptionLabel(desc)
+            d.setTextColor("#808080", "#a0a0a0")
+            d.setToolTip(desc)
+            info.addWidget(d)
+        h.addLayout(info, 1)
+
+        if active and st["downloaded"]:
+            state = CaptionLabel("✓ " + tr("In Use", self._lang))
+            state.setTextColor("#0a84ff", "#4aa3ff")
+        elif st["downloaded"]:
+            state = CaptionLabel(f"{tr('Downloaded', self._lang)} · {st.get('disk_human', '')}")
+            state.setTextColor("#808080", "#a0a0a0")
         else:
-            b = PushButton(tr("Install", self._lang))
-            b.clicked.connect(lambda _=False, s=st: self._install(s))
-        h.addWidget(b)
-        active = st["id"] == self._cur
-        border = ("rgba(10,132,255,0.85)" if active else "rgba(128,128,128,0.28)")
-        row.setStyleSheet(f"#pickRow{{border:1px solid {border};border-radius:8px;}}")
+            size = st.get("size", "")
+            state = CaptionLabel(tr("Not Downloaded", self._lang) + (f" · {size}" if size else ""))
+            state.setTextColor("#b7791f", "#e0a84a")
+        h.addWidget(state)
+
+        if not st["downloaded"]:
+            b = PrimaryPushButton(tr("Download", self._lang))
+            b.clicked.connect(lambda _=False, s=st, lbl=state: self._install(s, lbl))
+            h.addWidget(b)
+        elif not active:
+            b = PushButton(tr("Use Model", self._lang))
+            b.clicked.connect(lambda _=False, s=st: self._activate(s))
+            h.addWidget(b)
+        if st["downloaded"]:
+            d = TransparentPushButton(tr("Delete", self._lang))
+            d.clicked.connect(lambda _=False, s=st: self._delete(s))
+            h.addWidget(d)
+        for b in row.findChildren(PushButton):
+            b.setEnabled(not self._busy)
+
+        border = "rgba(10,132,255,0.85)" if active else "rgba(128,128,128,0.28)"
+        bg = "rgba(10,132,255,0.07)" if active else "transparent"
+        row.setStyleSheet(
+            f"#pickRow{{border:1px solid {border};border-radius:8px;background:{bg};}}"
+            "#pickTag{border:1px solid rgba(128,128,128,0.35);border-radius:8px;padding:0 6px;}")
         if st["downloaded"] and not active:
             row.setCursor(Qt.PointingHandCursor)
             row.mousePressEvent = lambda _e, s=st: self._activate(s)
         return row
 
     def _activate(self, st):
+        if self._busy:
+            return
         from core.optional_modules import set_plugin_model
         set_plugin_model(self._plugin, st["id"])
         self._build()
 
-    def _install(self, st):
+    def _set_busy(self, busy):
+        self._busy = busy
+        self.yesButton.setEnabled(not busy)
+        for b in self.widget.findChildren(PushButton):
+            if b is not self.yesButton:
+                b.setEnabled(not busy)
+
+    def _install(self, st, state_label):
+        if self._busy:
+            return
+        self._set_busy(True)
+        state_label.setText(tr("Downloading Model", self._lang))
         w = ModelDownloadWorker(self._plugin, st["id"], self)
         self._workers.append(w)
-        w.progress.connect(lambda f, s: self.titleLabel.setText(
+        w.progress.connect(lambda f, _s: state_label.setText(
             tr("Downloading Model", self._lang) + f" {int(max(0.0, min(1.0, f)) * 100)}%"))
-        w.detail.connect(lambda t: self.titleLabel.setText(
-            tr("Downloading Model", self._lang) + f" {t}"))
+        w.detail.connect(lambda t: state_label.setText(t))
 
         def _done(ok):
-            self.titleLabel.setText(tr("Select Model", self._lang) if ok
-                                    else tr("Download Failed", self._lang))
+            self._set_busy(False)
             if not ok:
                 InfoBar.error(tr("Download Failed", self._lang), _download_error_text(self._lang),
                               duration=-1, position=InfoBarPosition.TOP, parent=self.window())
-            self._build()
+            self._build()   # a finished download is the active model now
         w.finished_ok.connect(_done)
         w.start()
-        self._build()   # reflect "downloading" by re-reading state shortly
 
     def _delete(self, st):
+        if self._busy:
+            return
         box = MessageBox(tr("Delete", self._lang),
                          tr("Delete Model Confirm", self._lang), self.window())
         if not box.exec():
@@ -224,6 +270,7 @@ class OptionalPluginCard(CardWidget):
         self._on_install = on_install
         self._on_select_model = on_select_model
         self._upgrade_info = None  # (current, latest) when an upgrade is offered
+        self.fixed_model_label = None  # "Model: DocLayout" for a fixed-model plugin
         self.model_link = None     # clickable "Model: <label>" line (model plugins)
         self.status_caption = None  # transient download status under the model line
         self._models = mod.get("models") or []
@@ -246,7 +293,8 @@ class OptionalPluginCard(CardWidget):
         head.addWidget(self.icon, 0, Qt.AlignTop)
         col = QVBoxLayout()
         col.setSpacing(0)
-        col.addWidget(StrongBodyLabel(tr(mod["name"], lang), self))
+        self.name_label = StrongBodyLabel(tr(mod["name"], lang), self)
+        col.addWidget(self.name_label)
         head.addLayout(col, 1)
         self.badge = None
         head.addStretch(1)
@@ -271,9 +319,8 @@ class OptionalPluginCard(CardWidget):
             self.model_link.clicked.connect(self._open_model_picker)
             layout.addWidget(self.model_link, 0, Qt.AlignLeft)
         elif self._mod.get("fixed_model"):
-            layout.addWidget(
-                BodyLabel(f"{tr('Model', lang)}: {self._mod['fixed_model']}", self),
-                0, Qt.AlignLeft)
+            self.fixed_model_label = BodyLabel(f"{tr('Model', lang)}: {self._mod['fixed_model']}", self)
+            layout.addWidget(self.fixed_model_label, 0, Qt.AlignLeft)
         # Usage line (line 2, every card): downloaded models + disk space, so the
         # user can manage space. Overwritten with the download status while a
         # model is downloading, then refreshed.
@@ -296,6 +343,21 @@ class OptionalPluginCard(CardWidget):
         layout.addLayout(btn_row)
 
         self.set_state(mod["available"])
+
+    def retranslate(self, lang):
+        """Every text the card set at construction (UI language switched)."""
+        self._lang = lang
+        self.name_label.setText(tr(self._mod["name"], lang))
+        self.subtitle.setText(tr(self._mod["detail"], lang) if self._mod.get("detail") else "")
+        if self.fixed_model_label is not None:
+            self.fixed_model_label.setText(f"{tr('Model', lang)}: {self._mod['fixed_model']}")
+        if self.model_link is not None:
+            self.model_link.setText(self._current_model_text())
+        self.set_state(self._mod["available"])
+        if self._upgrade_info:  # set_state doesn't touch a visible upgrade btn
+            self.show_upgrade(*self._upgrade_info)
+        if not self._busy_download:
+            self._refresh_usage()   # "Library … · Models …" line
 
     def _clicked(self):
         if callable(self._on_install):
@@ -502,7 +564,7 @@ class PluginsPage(ScrollArea):
         market_card = SimpleCardWidget()
         m_layout = QVBoxLayout(market_card)
         m_layout.setContentsMargins(20, 16, 20, 16)
-        self.market_hint = CaptionLabel(tr("Refresh Market", lang))
+        self.market_hint = CaptionLabel(tr("Plugin Market Hint", lang))
         m_layout.addWidget(self.market_hint)
         m_flow_host = QWidget()
         self.market_flow = FlowLayout(m_flow_host, needAni=False)
@@ -524,8 +586,9 @@ class PluginsPage(ScrollArea):
         b_flow = FlowLayout(b_flow_host, needAni=False)
         b_flow.setHorizontalSpacing(10)
         b_flow.setVerticalSpacing(10)
-        for label, icon in _BUILTIN_FORMATS:
-            b_flow.addWidget(_BuiltinChip(label, icon, lang))
+        self._builtin_chips = [_BuiltinChip(label, icon, lang) for label, icon in _BUILTIN_FORMATS]
+        for chip in self._builtin_chips:
+            b_flow.addWidget(chip)
         b_layout.addWidget(b_flow_host)
         layout.addWidget(builtin_card)
 
@@ -540,12 +603,11 @@ class PluginsPage(ScrollArea):
         self.market_header.setText(tr("Plugin Market", lang))
         self.market_refresh.setText(tr("Refresh Market", lang))
         for card in self._opt_cards:
-            card._lang = lang
-            card.set_state(card._mod["available"])
-            if card._upgrade_info:  # set_state doesn't touch a visible upgrade btn
-                card.show_upgrade(*card._upgrade_info)
-            if card.model_link is not None:
-                card.model_link.setText(card._current_model_text())
+            card.retranslate(lang)
+        for chip in self._builtin_chips:
+            chip.caption.setText(tr("Built-in", lang))
+        if not self._market_cards:
+            self.market_hint.setText(tr("Plugin Market Hint", lang))
 
     def shutdown(self):
         """Wait for every background worker (disk-size probe, update check,

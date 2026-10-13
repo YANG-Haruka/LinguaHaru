@@ -371,35 +371,7 @@ document.querySelectorAll(".tab").forEach((t) => {
   };
 });
 
-// Model dropdown for a plugin (mirrors qt_app/model_picker.py): the whole
-// catalog, models not on disk marked; picking one of those offers the Plugins
-// page instead of switching to a model that can't run.
 let _translateSub = "doc";
-async function fillModelPicker(sel, plugin) {
-  let d;
-  try { d = await api("/api/modules/models?name=" + encodeURIComponent(plugin)); }
-  catch (e) { return false; }                     // server_mode: no model admin
-  sel._plugin = plugin; sel._states = d.models;
-  fillSelect(sel, d.models.map((m) => ({ id: m.id, label: m.label.split(" — ")[0]
-    + (m.downloaded ? "" : `（${_label("Not Downloaded", "未下载")}）`) })), d.current_model);
-  sel._cur = sel.value;
-  return true;
-}
-function bindModelPicker(sel) {
-  sel.onchange = async () => {
-    const m = (sel._states || []).find((x) => x.id === sel.value);
-    if (m && m.downloaded) {
-      await api("/api/models/select", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plugin: sel._plugin, model_id: m.id }) });
-      sel._cur = m.id;
-      return;
-    }
-    sel.value = sel._cur;
-    if (m && confirm(_label("Model Not Downloaded Go", "").replace("{model}", m.label.split(" — ")[0]))) {
-      const t = document.querySelector('.tab[data-tab="modules"]'); if (t) t.click();
-    }
-  };
-}
 // OCR picker on the file page: images are always OCR'd, a PDF only in manga
 // mode (otherwise BabelDOC reads its text layer). Manga keeps its own model.
 const _OCR_ENGINE_KEYS = { vlm: "OCR Engine VLM", paddle_server: "OCR Engine Paddle Server", baidu: "OCR Engine Baidu" };
@@ -419,10 +391,8 @@ async function refreshOcrPicker() {
     box.hidden = false;
     return;
   }
-  box.hidden = !(await fillModelPicker($("ocr-model"), manga ? "漫画翻译" : "Image OCR"));
+  box.hidden = !(await fillModelButton($("ocr-model"), manga ? "漫画翻译" : "Image OCR"));
 }
-if ($("ocr-model")) bindModelPicker($("ocr-model"));
-if ($("live-stt")) bindModelPicker($("live-stt"));
 
 function showTranslateSub(sub) {
   document.querySelectorAll('.panel[data-panel="translate"] .subpane').forEach((x) => x.classList.remove("active"));
@@ -439,7 +409,7 @@ function showTranslateSub(sub) {
   _translateSub = sub;
   // Re-read the STT catalog: a model may have been downloaded on the Plugins page.
   if (sub === "live" && $("live-stt") && !$("live-stt").disabled)
-    fillModelPicker($("live-stt"), "Real-Time Voice").then((ok) => { $("live-stt-pill").hidden = !ok; });
+    fillModelButton($("live-stt"), "Real-Time Voice").then((ok) => { $("live-stt-pill").hidden = !ok; });
   document.querySelectorAll('#translate-mode .seg').forEach(
     (s) => s.classList.toggle("active", s.dataset.sub === sub));
 }
@@ -565,7 +535,7 @@ function applyI18n(lang) {
   localStorage.setItem("lh-lang", lang);
   // Pickers carry a localized "not downloaded" mark; _label reads the saved language.
   if (currentFiles.length) refreshOcrPicker();
-  if (_translateSub === "live" && $("live-stt") && !$("live-stt").disabled) fillModelPicker($("live-stt"), "Real-Time Voice");
+  if (_translateSub === "live" && $("live-stt") && !$("live-stt").disabled) fillModelButton($("live-stt"), "Real-Time Voice");
 }
 function initUiLang() {
   const sel = $("ui-lang");
@@ -1702,11 +1672,11 @@ function renderModules() {
     const modelLine = document.createElement("div"); modelLine.className = "plugin-card-model";
     if (m.models && m.models.length) {
       const chip = document.createElement("button");
-      chip.type = "button"; chip.className = "model-chip";
+      chip.type = "button"; chip.className = "model-chip"; chip.dataset.plugin = m.name;
       const txt = document.createElement("span"); txt.textContent = _currentModelLabel(m);
       const aff = document.createElement("span"); aff.className = "model-chip-aff"; aff.innerHTML = ICON.chevron;
       chip.append(txt, aff);
-      chip.onclick = () => openPluginModelModal(m, chip, txt);
+      chip.onclick = () => openPluginModelModal(m);
       modelLine.appendChild(chip);
     } else if (m.fixed_model) {
       modelLine.className = "plugin-card-model plugin-sub";
@@ -1819,83 +1789,88 @@ async function loadModuleUsage() {
 // disk size, with an Install / Delete button (white = installed → Delete, gray =
 // not installed → Install). Clicking an installed model makes it the active one
 // (the model the plugin uses). The card chip reflects the active model.
-function openPluginModelModal(m, chip, chipText) {
-  $("plugin-model-title").textContent = m.name;
-  $("plugin-model-status").textContent = "";
-  const modal = $("plugin-model-modal");
-  const switchBtn = $("plugin-model-switch");
-  if (switchBtn) switchBtn.style.display = "none";   // per-row actions now
-  const cancel = $("plugin-model-cancel");
-  if (cancel) cancel.textContent = _label("Close", "关闭");
-  const close = () => {
-    modal.hidden = true;
-    cancel.onclick = null; modal.onclick = null;
-    if (switchBtn) switchBtn.style.display = "";
-    loadModuleUsage(); renderModules();   // sizes / active may have changed
-  };
-  cancel.onclick = close;
-  modal.onclick = (e) => { if (e.target === modal) close(); };
-  modal.hidden = false;
-  refreshPickerRows(m, chipText);
+// Model list for a plugin, shared by the Plugins page and the file / live
+// pages: one row per model with name + tags, a one-line description, its state
+// (in use / downloaded · size / not downloaded · size) and the action (download
+// in place with progress / use / delete).
+function _splitModelLabel(label) {
+  const i = label.search(/\s+—\s+|\s*[（(]/);
+  return i > 0 ? [label.slice(0, i).trim(), label.slice(i).replace(/^\s*—\s*/, "").trim()] : [label, ""];
 }
-
-async function refreshPickerRows(m, chipText) {
+let _pickerBusy = false;   // one download at a time (the server queues jobs anyway)
+async function refreshPickerRows(m) {
   const list = $("plugin-model-list");
-  list.innerHTML = "";
   let data;
   try { data = await api("/api/modules/models?name=" + encodeURIComponent(m.name)); }
   catch (e) { list.textContent = (e.message || _label("Failed", "加载失败")); return; }
+  list.innerHTML = "";
   m.current_model = data.current_model;
   for (const s of data.models) {
+    const active = s.id === data.current_model;
+    const [name, desc] = _splitModelLabel(_label(s.label, s.label));
     const row = document.createElement("div");
-    row.className = "picker-row" + (s.id === data.current_model ? " active" : "");
-    const main = document.createElement("div"); main.className = "picker-main";
-    const nm = document.createElement("span"); nm.className = "picker-name"; nm.textContent = s.label;
-    main.appendChild(nm);
+    row.className = "picker-row" + (active ? " active" : "") + (s.downloaded ? "" : " missing");
+    const info = document.createElement("div"); info.className = "picker-info";
+    const line = document.createElement("div"); line.className = "picker-line";
+    const nm = document.createElement("span"); nm.className = "picker-name"; nm.textContent = name;
+    line.appendChild(nm);
     (s.tags || []).forEach((t) => {
       const c = document.createElement("span");
       c.className = "model-tag" + (t === "Tag Recommended" ? " rec" : "");
-      c.textContent = _label(t, t); main.appendChild(c);
+      c.textContent = _label(t, t); line.appendChild(c);
     });
-    const size = document.createElement("span"); size.className = "picker-size";
-    size.textContent = s.downloaded ? (s.disk_human || "") : _label("Not Installed", "未安装");
-    const act = document.createElement("div"); act.className = "picker-act";
-    const b = document.createElement("button"); b.className = "mini" + (s.downloaded ? " danger" : "");
-    b.textContent = s.downloaded ? _label("Delete", "删除") : _label("Install", "安装");
-    b.onclick = (e) => {
-      e.stopPropagation();
-      if (s.downloaded) pickerDelete(m, s, chipText); else pickerInstall(m, s, chipText);
-    };
-    act.appendChild(b);
-    if (s.downloaded && s.id !== data.current_model) {
-      row.style.cursor = "pointer";
-      row.onclick = () => pickerActivate(m, s, chipText);
+    info.appendChild(line);
+    if (desc) {
+      const d = document.createElement("div"); d.className = "picker-desc";
+      d.textContent = desc; d.title = desc; info.appendChild(d);
     }
-    row.append(main, size, act);
+    const state = document.createElement("div"); state.className = "picker-state";
+    if (active && s.downloaded) state.innerHTML = pill("on", _label("In Use", "使用中"), ICON.check);
+    else state.textContent = s.downloaded
+      ? `${_label("Downloaded", "已下载")} · ${s.disk_human || ""}`
+      : `${_label("Not Downloaded", "未下载")}${s.size ? " · " + s.size : ""}`;
+    const act = document.createElement("div"); act.className = "picker-act";
+    const btn = (text, cls, fn) => {
+      const b = document.createElement("button"); b.className = "mini" + (cls ? " " + cls : "");
+      b.textContent = text; b.disabled = _pickerBusy;
+      b.onclick = (e) => { e.stopPropagation(); fn(); };
+      act.appendChild(b);
+    };
+    if (!s.downloaded) btn(_label("Download", "下载"), "", () => pickerInstall(m, s, state));
+    else if (!active) btn(_label("Use Model", "使用"), "", () => pickerActivate(m, s));
+    if (s.downloaded) btn(_label("Delete", "删除"), "danger", () => pickerDelete(m, s));
+    if (s.downloaded && !active) { row.style.cursor = "pointer"; row.onclick = () => pickerActivate(m, s); }
+    row.append(info, state, act);
     list.appendChild(row);
   }
 }
 
-async function pickerActivate(m, s, chipText) {
+async function pickerActivate(m, s) {
+  if (_pickerBusy) return;
   try {
     await api("/api/models/select", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ plugin: m.name, model_id: s.id }),
     });
-    if (chipText) chipText.textContent = (s.label || s.id).replace(/\s*[（(].*$/, "").trim();
-    refreshPickerRows(m, chipText);
   } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
+  refreshPickerRows(m);
 }
 
-async function pickerInstall(m, s, chipText) {
-  const status = $("plugin-model-status");
-  status.innerHTML = pill("busy", _label("Downloading Model", "正在下载模型…") + " " + s.label, "");
+async function pickerInstall(m, s, stateEl) {
+  _pickerBusy = true;
+  $("plugin-model-list").querySelectorAll("button").forEach((b) => { b.disabled = true; });
+  const show = (t) => { stateEl.innerHTML = pill("busy", t.replace(/[<>&]/g, ""), ""); };
+  show(_label("Downloading Model", "正在下载模型…"));
   try {
     await api("/api/modules/model", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: m.name, model_id: s.id }),
     });
-  } catch (e) { status.innerHTML = pill("bad", _label("Failed", "失败"), ICON.cross); return; }
+  } catch (e) {
+    _pickerBusy = false;
+    stateEl.innerHTML = pill("bad", _label("Failed", "失败"), ICON.cross);
+    return;
+  }
   const poll = setInterval(async () => {
     let j;
     try { j = await api("/api/modules/status?name=" + encodeURIComponent(m.name)); }
@@ -1903,23 +1878,22 @@ async function pickerInstall(m, s, chipText) {
     if (j.status === "queued" || j.status === "running") {
       const pct = j.detail ? " " + j.detail
         : (j.progress != null) ? " " + Math.round(j.progress * 100) + "%" : "";
-      status.innerHTML = pill("busy", (j.status === "queued"
-        ? _label("Status Queued", "排队中")
-        : _label("Downloading Model", "正在下载模型…")) + pct.replace(/[<>&]/g, ""), "");
+      show((j.status === "queued" ? _label("Status Queued", "排队中")
+                                  : _label("Downloading Model", "正在下载模型…")) + pct);
       return;
     }
     clearInterval(poll);
+    _pickerBusy = false;
     if (j.status === "error") {
-      status.innerHTML = pill("bad", _label("Download Failed", "下载失败,请检查网络后重试"), ICON.cross);
-      if (j.output) toast(sttLoadErrorText({ network: j.network, error: j.output }), "bad");
-    } else {
-      status.textContent = "";
+      toast(j.output ? sttLoadErrorText({ network: j.network, error: j.output })
+                     : _label("Download Failed", "下载失败,请检查网络后重试"), "bad");
     }
-    refreshPickerRows(m, chipText);
+    refreshPickerRows(m);   // a finished download is the active model now
   }, 1500);
 }
 
-async function pickerDelete(m, s, chipText) {
+async function pickerDelete(m, s) {
+  if (_pickerBusy) return;
   if (!confirm(_label("Delete Model Confirm", "确定删除该模型的本地文件吗？"))) return;
   try {
     await api("/api/models/delete", {
@@ -1927,7 +1901,44 @@ async function pickerDelete(m, s, chipText) {
       body: JSON.stringify({ plugin: m.name, model_id: s.id }),
     });
   } catch (e) { toast((e.message || "failed").slice(-160), "bad"); }
-  refreshPickerRows(m, chipText);
+  refreshPickerRows(m);
+}
+
+// onClose: the opener refreshes whatever shows the active model.
+function openPluginModelModal(m, onClose) {
+  $("plugin-model-title").textContent = `${_label(m.name, m.name)} · ${_label("Select Model", "模型")}`;
+  const modal = $("plugin-model-modal");
+  const cancel = $("plugin-model-cancel");
+  cancel.textContent = _label("Close", "关闭");
+  const close = () => {
+    modal.hidden = true;
+    cancel.onclick = null; modal.onclick = null;
+    loadModuleUsage(); renderModules();   // sizes / active may have changed
+    if (onClose) onClose();
+  };
+  cancel.onclick = close;
+  modal.onclick = (e) => { if (e.target === modal) close(); };
+  modal.hidden = false;
+  refreshPickerRows(m);
+}
+
+// Page-side model control (file / live pages): a select-style button with the
+// active model and whether it's on disk; opens the model list above.
+async function fillModelButton(btn, plugin) {
+  let d;
+  try { d = await api("/api/modules/models?name=" + encodeURIComponent(plugin)); }
+  catch (e) { return false; }                     // server_mode: no model admin
+  const cur = d.models.find((x) => x.id === d.current_model) || d.models[0];
+  if (!cur) return false;
+  btn.innerHTML = "";
+  const n = document.createElement("span"); n.className = "ms-name";
+  n.textContent = _splitModelLabel(_label(cur.label, cur.label))[0];
+  const st = document.createElement("span"); st.className = "ms-state" + (cur.downloaded ? "" : " warn");
+  st.textContent = cur.downloaded ? _label("Downloaded", "已下载") : _label("Not Downloaded", "未下载");
+  const chev = document.createElement("span"); chev.className = "ms-chev"; chev.innerHTML = ICON.chevron;
+  btn.append(n, st, chev);
+  btn.onclick = () => openPluginModelModal({ name: plugin }, () => fillModelButton(btn, plugin));
+  return true;
 }
 
 // For an installed module, ask PyPI (server-side) whether a newer version
@@ -3285,7 +3296,7 @@ async function loadHistory() {
       emptyState(EICON.inbox, _label("还没有翻译记录", "还没有翻译记录"), _label("完成一次翻译后，项目会按文件类型与时间显示在这里。", "完成一次翻译后，项目会按文件类型与时间显示在这里。")) + "</td></tr>";
     return;
   }
-  t.innerHTML = `<tr><th>${_label("Status", "状态")}</th><th>${_label("Upload File", "文件")}</th><th>${_label("File Type", "类型")}</th><th>${_label("Time", "时间")}</th></tr>`;
+  t.innerHTML = `<tr><th>${_label("Status", "状态")}</th><th>${_label("File Name", "文件名")}</th><th>${_label("File Type", "类型")}</th><th>${_label("Time", "时间")}</th></tr>`;
   // One run = one batch (shared batch_id): fold its files into one parent row.
   for (const recs of _groupBatches(data.records)) {
     const single = recs.length === 1;

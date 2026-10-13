@@ -1,50 +1,50 @@
-"""Model dropdown for a plugin (OCR / STT), used on the File Translation and
-Real-Time Voice pages. Lists the plugin's whole catalog; models not on disk are
-marked, and picking one offers the Plugins page (where it's downloaded) instead
-of switching to a model that can't run."""
-from qfluentwidgets import ComboBox, MessageBox
+"""Model control for a plugin (OCR / STT) on the File Translation and Real-Time
+Voice pages: a dropdown-looking button with the active model and whether it's
+on disk. Clicking opens the same model list as the Plugins page (state of every
+model; switch to a downloaded one, download a missing one in place)."""
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QHBoxLayout
+from qfluentwidgets import BodyLabel, CaptionLabel, FluentIcon, IconWidget, PushButton
 
-from core.optional_modules import plugin_model_states, set_plugin_model
+from core.optional_modules import plugin_model_states
 from qt_app.i18n import tr
 
 
-class ModelPicker(ComboBox):
+class ModelPicker(PushButton):
     def __init__(self, plugin, lang, parent=None):
         super().__init__(parent)
         self.plugin = plugin
         self._lang = lang
-        self._states = []
-        self._cur = -1
-        self.on_open_plugins = None     # set by the page -> jump to Plugins
-        self.currentIndexChanged.connect(self._picked)
+        self.setMinimumHeight(33)
+        h = QHBoxLayout(self)
+        h.setContentsMargins(11, 0, 10, 0)
+        h.setSpacing(8)
+        self._name = BodyLabel()
+        self._state = CaptionLabel()
+        chev = IconWidget(FluentIcon.CHEVRON_DOWN_MED)
+        chev.setFixedSize(10, 10)
+        for w in (self._name, self._state, chev):
+            w.setAttribute(Qt.WA_TransparentForMouseEvents)
+        h.addWidget(self._name, 1)
+        h.addWidget(self._state)
+        h.addWidget(chev)
+        self.clicked.connect(self._open)
         self.reload()
 
     def reload(self, plugin=None, lang=None):
-        """Re-read the catalog (downloads / the active model may have changed)."""
+        """Re-read the active model (it may have been switched / downloaded)."""
         self.plugin = plugin or self.plugin
         self._lang = lang or self._lang
-        self._states = plugin_model_states(self.plugin)
-        self.blockSignals(True)
-        self.clear()
-        for s in self._states:
-            name = s["label"].split(" — ")[0]
-            self.addItem(name if s["downloaded"] else f"{name}（{tr('Not Downloaded', self._lang)}）")
-        self._cur = next((i for i, s in enumerate(self._states) if s["active"]), 0)
-        self.setCurrentIndex(self._cur)
-        self.blockSignals(False)
+        states = plugin_model_states(self.plugin)
+        cur = next((s for s in states if s["active"]), states[0] if states else None)
+        if cur is None:
+            return
+        self._name.setText(tr(cur["label"], self._lang).partition(" — ")[0])
+        ok = cur["downloaded"]
+        self._state.setText(tr("Downloaded" if ok else "Not Downloaded", self._lang))
+        self._state.setTextColor(*(("#15803d", "#4ade80") if ok else ("#a16207", "#facc15")))
 
-    def _picked(self, i):
-        if not (0 <= i < len(self._states)) or i == self._cur:
-            return
-        s = self._states[i]
-        if s["downloaded"]:
-            set_plugin_model(self.plugin, s["id"])
-            self._cur = i
-            return
-        # Not on disk: keep the current model, offer the Plugins page.
-        self.blockSignals(True)
-        self.setCurrentIndex(self._cur)
-        self.blockSignals(False)
-        msg = tr("Model Not Downloaded Go", self._lang).format(model=s["label"].split(" — ")[0])
-        if MessageBox(tr("Plugins", self._lang), msg, self.window()).exec() and callable(self.on_open_plugins):
-            self.on_open_plugins()
+    def _open(self):
+        from qt_app.plugins_page import _ModelPickerDialog
+        _ModelPickerDialog(self.plugin, self._lang, parent=self.window()).exec()
+        self.reload()

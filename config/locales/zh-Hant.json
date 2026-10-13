@@ -172,7 +172,7 @@
   "Original Text": "原文",
   "Output Folder": "輸出資料夾",
   "PDF Bilingual": "PDF 雙語模式",
-  "Per Model Hint": "每個模型的 API 金鑰、RPM、執行緒數、最大重試次數請在「介面管理」中雙擊對應介面單獨設定；Google 即時語音金鑰也在「介面管理」裡。",
+  "Per Model Hint": "每個模型的 API 金鑰、RPM、執行緒數、最大重試次數請在「介面管理」中雙擊對應介面單獨設定。",
   "Please Configure API Key First": "請先設定 API Key（在「設定」中填寫）",
   "Please select a model first": "請先選擇模型。",
   "Please select file(s) to translate.": "請選擇要翻譯的檔案。",
@@ -266,7 +266,6 @@
   "Upgrade": "升級",
   "Upgrade finished": "升級完成 —— 請重新啟動程式以生效。",
   "Upgrading": "升級中...",
-  "Upload File": "上傳檔案 (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "上傳檔案",
   "Use Online Model": "使用線上模型",
   "Video ffmpeg note": "影片/音訊還需要在 PATH 中安裝 ffmpeg。",
@@ -467,6 +466,13 @@
   "Up To Date": "已是最新",
   "New Version": "有新版本",
   "Not Downloaded": "未下載",
-  "Model Not Downloaded Go": "「{model}」還沒有下載。要去外掛頁下載嗎？",
-  "Live Page Subtitle": "對著麥克風說話，邊說邊辨識並翻譯。"
+  "Live Page Subtitle": "對著麥克風說話，邊說邊辨識並翻譯。",
+  "Plugin Market Hint": "點「重新整理市集」查看可下載的外掛。",
+  "File Name": "檔名",
+  "Refresh Market": "重新整理市集",
+  "Plugin Market": "外掛市集",
+  "Downloaded": "已下載",
+  "Use Model": "使用",
+  "In Use": "使用中",
+  "Tag JapaneseOnly": "僅日語"
 }

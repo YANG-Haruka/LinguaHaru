@@ -206,7 +206,6 @@
   "Unfinished Translation Detected": "완료되지 않은 번역이 감지되었습니다 — '번역 계속하기'를 클릭할 수 있습니다.",
   "Uninstall": "Uninstall",
   "Uninstalling": "Uninstalling...",
-  "Upload File": "파일 업로드 (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "파일 업로드",
   "Use Online Model": "온라인 모델 사용",
   "Video ffmpeg note": "Video/Audio also requires ffmpeg on your PATH.",
@@ -388,6 +387,13 @@
   "Up To Date": "최신 버전",
   "New Version": "새 버전",
   "Not Downloaded": "다운로드 안 됨",
-  "Model Not Downloaded Go": "「{model}」이(가) 아직 다운로드되지 않았습니다. 플러그인 페이지에서 다운로드할까요?",
-  "Live Page Subtitle": "마이크에 대고 말하면 말하는 동안 인식하고 번역합니다."
+  "Live Page Subtitle": "마이크에 대고 말하면 말하는 동안 인식하고 번역합니다.",
+  "Plugin Market Hint": "「마켓 새로고침」을 누르면 다운로드할 수 있는 플러그인이 표시됩니다.",
+  "File Name": "파일 이름",
+  "Refresh Market": "마켓 새로고침",
+  "Plugin Market": "플러그인 마켓",
+  "Downloaded": "다운로드됨",
+  "Use Model": "사용",
+  "In Use": "사용 중",
+  "Tag JapaneseOnly": "일본어 전용"
 }

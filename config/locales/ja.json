@@ -227,7 +227,6 @@
   "Upgrade": "アップグレード",
   "Upgrade finished": "アップグレード完了 —— 反映するには再起動してください。",
   "Upgrading": "アップグレード中...",
-  "Upload File": "ファイルをアップロード (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "ファイルをアップロード",
   "Use Online Model": "オンラインモデルを使用",
   "Video ffmpeg note": "動画/音声には PATH 上の ffmpeg も必要です。",
@@ -293,7 +292,7 @@
   "清空失败：": "Clear failed: ",
   "确定清空历史记录，并删除这些记录生成的译文/日志文件？\n你的原始文件不会被删除。此操作不可撤销。": "Clear history AND delete the result/log files these records produced?\nYour original files are not touched. This cannot be undone.",
   "历史记录已清空，删除了 {n} 个文件。": "History cleared; {n} file(s) deleted.",
-  "已加载 {n} 条": "Loaded {n} entries",
+  "已加载 {n} 条": "{n} 件を読み込みました",
   "已保存 {n} 条": "Saved {n} entries",
   "共 {n} 行": "{n} rows",
   "第 {a}/{b} 页 · 显示 {c}–{d} / 共 {n} 行": "Page {a}/{b} · showing {c}–{d} of {n}",
@@ -427,6 +426,13 @@
   "Up To Date": "最新です",
   "New Version": "新しいバージョン",
   "Not Downloaded": "未ダウンロード",
-  "Model Not Downloaded Go": "「{model}」はまだダウンロードされていません。プラグインページでダウンロードしますか？",
-  "Live Page Subtitle": "マイクに向かって話すと、話しながら認識・翻訳します。"
+  "Live Page Subtitle": "マイクに向かって話すと、話しながら認識・翻訳します。",
+  "Plugin Market Hint": "「マーケットを更新」を押すと、ダウンロードできるプラグインが表示されます。",
+  "File Name": "ファイル名",
+  "Refresh Market": "マーケットを更新",
+  "Plugin Market": "プラグインマーケット",
+  "Downloaded": "ダウンロード済み",
+  "Use Model": "使用する",
+  "In Use": "使用中",
+  "Tag JapaneseOnly": "日本語のみ"
 }

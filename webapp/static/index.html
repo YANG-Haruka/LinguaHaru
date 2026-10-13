@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20261013B" />
+  <link rel="stylesheet" href="/static/style.css?v=20261013D" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -202,11 +202,9 @@
       <div class="modal">
         <h3 id="plugin-model-title" data-i18n="Select Model">模型</h3>
         <div id="plugin-model-list" class="model-radio-list"></div>
-        <div id="plugin-model-status" class="muted" style="margin-top:10px"></div>
         <div class="modal-actions">
           <span style="flex:1"></span>
           <button id="plugin-model-cancel" data-i18n="Cancel">取消</button>
-          <button id="plugin-model-switch" class="primary" data-i18n="Switch Model">切换</button>
         </div>
       </div>
     </div>
@@ -351,7 +349,7 @@
           <div class="muted" id="manga-pdf-hint" data-i18n="Manga Mode PDF Hint" hidden>Manga Mode PDF Hint</div>
           <div class="field model-pick" id="ocr-pick" hidden>
             <label for="ocr-model" data-i18n="Image OCR Model">图片识别模型</label>
-            <select id="ocr-model"></select>
+            <button type="button" id="ocr-model" class="model-select"></button>
             <span id="ocr-remote" hidden></span>
           </div>
         </div>
@@ -443,7 +441,7 @@
           </label>
           <label class="live-target-pill" id="live-stt-pill">
             <span class="mono" data-i18n="Speech-to-Text Model">语音转文字模型</span>
-            <select id="live-stt"></select>
+            <button type="button" id="live-stt" class="model-select pill"></button>
           </label>
           <div class="mic-pill">
             <svg class="mic-icon" id="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
@@ -884,6 +882,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20261013F"></script>
+  <script src="/static/app.js?v=20261013H"></script>
 </body>
 </html>

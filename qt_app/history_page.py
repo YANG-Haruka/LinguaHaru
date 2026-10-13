@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from qfluentwidgets import (
+    TitleLabel,
     TableWidget, PushButton, PrimaryPushButton, StrongBodyLabel, ComboBox,
     BodyLabel, FluentIcon, StateToolTip, MessageBox, SimpleCardWidget, CaptionLabel,
     InfoBar, InfoBarPosition,
@@ -37,7 +38,7 @@ from core.translation_history import (
 
 # Compact table columns (resolved per UI language). The full record shows in the
 # detail panel below, so the table stays uncluttered (no truncated columns).
-_COLUMN_KEYS = ["Status", "Upload File", "File Type", "Time"]
+_COLUMN_KEYS = ["Status", "File Name", "File Type", "Time"]
 # (sort_by, descending) per sort option, aligned with _SORT_KEYS
 _SORT_OPTIONS = [("start_time", True), ("start_time", False),
                  ("file_type", False), ("input_file", False), ("total_tokens", True)]
@@ -150,7 +151,7 @@ class HistoryPage(QWidget):
         layout.setSpacing(14)
 
         top = QHBoxLayout()
-        self.title = StrongBodyLabel(tr("Translation History", lang))
+        self.title = TitleLabel(tr("Translation History", lang))
         top.addWidget(self.title)
         top.addStretch(1)
         # Browse controls: filter by file type, sort by time/type/name.

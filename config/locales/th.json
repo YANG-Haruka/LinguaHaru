@@ -206,7 +206,6 @@
   "Unfinished Translation Detected": "ตรวจพบการแปลที่ยังไม่เสร็จ — คุณสามารถคลิก 'แปลต่อ' ได้",
   "Uninstall": "Uninstall",
   "Uninstalling": "Uninstalling...",
-  "Upload File": "อัปโหลดไฟล์ (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "อัปโหลดไฟล์",
   "Use Online Model": "ใช้โมเดลออนไลน์",
   "Video ffmpeg note": "Video/Audio also requires ffmpeg on your PATH.",
@@ -388,6 +387,13 @@
   "Up To Date": "เป็นเวอร์ชันล่าสุด",
   "New Version": "มีเวอร์ชันใหม่",
   "Not Downloaded": "ยังไม่ได้ดาวน์โหลด",
-  "Model Not Downloaded Go": "「{model}」ยังไม่ได้ดาวน์โหลด ไปที่หน้าปลั๊กอินเพื่อดาวน์โหลดหรือไม่?",
-  "Live Page Subtitle": "พูดใส่ไมโครโฟน ระบบจะรู้จำและแปลขณะที่คุณพูด"
+  "Live Page Subtitle": "พูดใส่ไมโครโฟน ระบบจะรู้จำและแปลขณะที่คุณพูด",
+  "Plugin Market Hint": "กด「รีเฟรชตลาด」เพื่อดูปลั๊กอินที่ดาวน์โหลดได้",
+  "File Name": "ชื่อไฟล์",
+  "Refresh Market": "รีเฟรชตลาด",
+  "Plugin Market": "ตลาดปลั๊กอิน",
+  "Downloaded": "ดาวน์โหลดแล้ว",
+  "Use Model": "ใช้",
+  "In Use": "กำลังใช้",
+  "Tag JapaneseOnly": "ภาษาญี่ปุ่นเท่านั้น"
 }

@@ -783,7 +783,6 @@ class LivePage(ScrollArea):
         self.stt_label = BodyLabel(tr("Speech-to-Text Model", lang))
         stt_row.addWidget(self.stt_label)
         self.stt_picker = ModelPicker("Real-Time Voice", lang)
-        self.stt_picker.on_open_plugins = lambda: self.on_open_plugins and self.on_open_plugins()
         stt_row.addWidget(self.stt_picker, 1)
         ctrl.addLayout(stt_row)
 
@@ -826,8 +825,12 @@ class LivePage(ScrollArea):
         ctrl.addLayout(cap_row)
         layout.addWidget(ctrl_card)
 
+        # One row for the session status and the missing-plugin hint (two empty
+        # rows used to leave a big gap above the panels).
         hint_row = QHBoxLayout()
         hint_row.setSpacing(8)
+        self.status_label = CaptionLabel("")
+        hint_row.addWidget(self.status_label)
         self.hint_label = CaptionLabel("")
         self.hint_label.setWordWrap(True)
         hint_row.addWidget(self.hint_label, 1)
@@ -836,9 +839,6 @@ class LivePage(ScrollArea):
         self.plugin_btn.hide()
         hint_row.addWidget(self.plugin_btn)
         layout.addLayout(hint_row)
-
-        self.status_label = CaptionLabel("")
-        layout.addWidget(self.status_label)
 
         # --- Transcript panels: source on the LEFT, translation on the RIGHT ---
         panels = QHBoxLayout()

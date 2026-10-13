@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 from qfluentwidgets import (
+    TitleLabel,
     ScrollArea, BodyLabel, StrongBodyLabel, SwitchButton, CaptionLabel,
     CardWidget, PushButton, LineEdit, FluentIcon, MessageBox, ComboBox,
     ToolTipFilter, ToolTipPosition, MessageBoxBase, SpinBox, DoubleSpinBox,
@@ -230,7 +231,7 @@ class SettingsPage(ScrollArea):
 
         config = backend.read_config()
 
-        self.section_translation = StrongBodyLabel(tr("Settings", lang))
+        self.section_translation = TitleLabel(tr("Settings", lang))
         layout.addWidget(self.section_translation)
         self.per_model_hint = BodyLabel(tr("Per Model Hint", lang))
         self.per_model_hint.setWordWrap(True)

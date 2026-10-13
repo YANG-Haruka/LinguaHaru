@@ -206,7 +206,6 @@
   "Unfinished Translation Detected": "Tradução incompleta detectada — você pode clicar em \"Continuar tradução\".",
   "Uninstall": "Uninstall",
   "Uninstalling": "Uninstalling...",
-  "Upload File": "Enviar arquivo (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "Enviar arquivos",
   "Use Online Model": "Usar modelo online",
   "Video ffmpeg note": "Video/Audio also requires ffmpeg on your PATH.",
@@ -388,6 +387,13 @@
   "Up To Date": "Atualizado",
   "New Version": "Nova versão",
   "Not Downloaded": "não baixado",
-  "Model Not Downloaded Go": "\"{model}\" ainda não foi baixado. Ir à página de Plugins para baixá-lo?",
-  "Live Page Subtitle": "Fale ao microfone; sua fala é reconhecida e traduzida enquanto você fala."
+  "Live Page Subtitle": "Fale ao microfone; sua fala é reconhecida e traduzida enquanto você fala.",
+  "Plugin Market Hint": "Clique em «Atualizar mercado» para ver os plugins disponíveis.",
+  "File Name": "Nome do arquivo",
+  "Refresh Market": "Atualizar mercado",
+  "Plugin Market": "Mercado de plugins",
+  "Downloaded": "Baixado",
+  "Use Model": "Usar",
+  "In Use": "Em uso",
+  "Tag JapaneseOnly": "Só japonês"
 }

@@ -342,7 +342,6 @@ class TranslatePage(QStackedWidget):
         ocr_row.setContentsMargins(0, 8, 0, 0)
         self.ocr_label = BodyLabel(tr("Image OCR Model", lang))
         self.ocr_picker = ModelPicker("Image OCR", lang)
-        self.ocr_picker.on_open_plugins = lambda: callable(self.on_open_plugins) and self.on_open_plugins()
         self.ocr_remote = BodyLabel()   # remote OCR engine: nothing local to pick
         ocr_row.addWidget(self.ocr_label)
         ocr_row.addWidget(self.ocr_picker, 1)

@@ -1545,7 +1545,11 @@ def preload_recognizer(model_id=None, progress_cb=None):
     from core.optional_modules import _capture_progress
     last_preload_error = ""
     try:
-        with _capture_progress(progress_cb):
+        # Whole preload under the load lock, warm-up included: the loaders lock
+        # only the load itself, so a second model (picked while the live page was
+        # still warming SenseVoice on the GPU) started ctranslate2's CUDA init
+        # alongside torch inference and took the whole process down.
+        with _capture_progress(progress_cb), _LOAD_LOCK:
             return _preload_recognizer(model_id)
     except Exception as e:  # noqa: BLE001
         last_preload_error = f"{type(e).__name__}: {e}"[:400]

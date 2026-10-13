@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from qfluentwidgets import (
+    TitleLabel,
     ComboBox, PushButton, PrimaryPushButton, TableWidget, BodyLabel,
     StrongBodyLabel, InfoBar, InfoBarPosition, FluentIcon,
     MessageBoxBase, MessageBox, SubtitleLabel, LineEdit,
@@ -49,7 +50,7 @@ class GlossaryPage(QWidget):
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
-        self.title = StrongBodyLabel(tr("Edit Glossary", lang))
+        self.title = TitleLabel(tr("Edit Glossary", lang))
         layout.addWidget(self.title)
 
         top = QHBoxLayout()
@@ -131,7 +132,7 @@ class GlossaryPage(QWidget):
         header = self.table.horizontalHeader()
         header.setMinimumSectionSize(90)
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        self._info(f"Loaded {len(rows)} entries from {name}.csv")
+        self._info(f"{name}: " + tr("已加载 {n} 条", self._lang).format(n=len(rows)))
 
     def _table_rows(self):
         rows = []

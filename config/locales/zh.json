@@ -308,7 +308,7 @@
   "Original Text": "原文",
   "Output Folder": "输出文件夹",
   "PDF Bilingual": "PDF 双语模式",
-  "Per Model Hint": "每个模型的 API 密钥、RPM、线程数、最大重试次数请在「接口管理」中双击对应接口单独设置；Google 实时语音密钥也在「接口管理」里。",
+  "Per Model Hint": "每个模型的 API 密钥、RPM、线程数、最大重试次数请在「接口管理」中双击对应接口单独设置。",
   "Please Configure API Key First": "请先配置 API Key（在“设置”中填写）",
   "Please select a model first": "请先选择模型。",
   "Please select file(s) to translate.": "请选择要翻译的文件。",
@@ -408,7 +408,6 @@
   "Upgrade": "升级",
   "Upgrade finished": "升级完成 —— 请重启程序以生效。",
   "Upgrading": "升级中...",
-  "Upload File": "上传文件 (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "上传文件",
   "Use Online Model": "使用在线模型",
   "Video ffmpeg note": "视频/音频还需要在 PATH 中安装 ffmpeg。",
@@ -512,7 +511,7 @@
   "Tag Fastest": "最快",
   "Tag Balanced": "均衡",
   "Tag Experimental": "实验",
-  "Tag CJKStrong": "中文强",
+  "Tag CJKStrong": "中日韩强",
   "In Use": "使用中",
   "Deleting": "删除中…",
   "Model Installed": "模型已安装",
@@ -734,6 +733,10 @@
   "Up To Date": "已是最新",
   "New Version": "有新版本",
   "Not Downloaded": "未下载",
-  "Model Not Downloaded Go": "「{model}」还没有下载。要去插件页下载吗？",
-  "Live Page Subtitle": "对着麦克风说话，边说边识别并翻译。"
+  "Live Page Subtitle": "对着麦克风说话，边说边识别并翻译。",
+  "Plugin Market Hint": "点「刷新市场」查看可下载的插件。",
+  "File Name": "文件名",
+  "Downloaded": "已下载",
+  "Use Model": "使用",
+  "Tag JapaneseOnly": "仅日语"
 }

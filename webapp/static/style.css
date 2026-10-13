@@ -774,14 +774,37 @@ td input { border: 1px solid transparent; background: transparent; padding: 7px 
 td input:hover { border-color: var(--border-2); background: var(--surface-2); }
 td input:focus { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-ring); }
 
-/* plugin model picker: per-model management rows (install/delete + size + active) */
-.picker-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+/* model list (Plugins page + file / live pages): name + tags, description,
+   state (in use / downloaded · size / not downloaded) and the action */
+#plugin-model-modal .modal { width: min(620px, 94vw); }
+.picker-row { display: flex; align-items: center; gap: 14px; padding: 11px 14px;
   border: 1px solid var(--border); border-radius: var(--r-sm); margin-bottom: 8px; }
-.picker-row.active { border-color: var(--accent); background: var(--surface-2); }
-.picker-main { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
-.picker-name { color: var(--text); font-size: 0.9rem; }
-.picker-size { color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
-.picker-act { flex: none; }
+.picker-row:hover { background: var(--surface-2); }
+.picker-row.active { border-color: var(--accent); background: var(--accent-soft); }
+.picker-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.picker-line { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.picker-name { color: var(--text); font-size: 0.92rem; font-weight: 600; }
+.picker-line .model-tag { white-space: nowrap; }
+.picker-desc { color: var(--muted); font-size: 0.8rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.picker-state { flex: none; color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+.picker-row.missing .picker-state { color: #b7791f; }
+.picker-act { flex: none; display: flex; gap: 6px; }
+
+/* select-look button that opens the model list */
+.model-select { display: flex; align-items: center; gap: 10px; width: 100%; height: 42px; padding: 0 13px;
+  border: 1px solid var(--border-2); border-radius: var(--r); background: var(--surface-2);
+  color: var(--text); font: inherit; font-size: 0.92rem; cursor: pointer; text-align: left; }
+.model-select:hover { border-color: var(--accent); }
+.model-select:disabled { opacity: .6; cursor: default; }
+.model-select .ms-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.model-select .ms-state { font-size: 0.74rem; padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  background: rgba(34,197,94,.12); color: #15803d; }
+.model-select .ms-state.warn { background: rgba(234,179,8,.16); color: #a16207; }
+.model-select .ms-chev svg { width: 15px; height: 15px; display: block; transform: rotate(90deg); color: var(--muted); }
+.model-select.pill { width: auto; height: 28px; border: none; background: transparent; padding: 0 4px; }
+/* inside a live-bar pill: undo the pill's small uppercase mono label style */
+.live-target-pill .model-select span { font-family: var(--font-sans); text-transform: none; letter-spacing: 0; }
+.live-target-pill .model-select .ms-name { font-size: 0.9rem; color: var(--text); }
 
 /* history: expandable rows + detail panel */
 #history-table .hist-row { cursor: pointer; }

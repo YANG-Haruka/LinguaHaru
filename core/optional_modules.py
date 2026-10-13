@@ -157,7 +157,7 @@ _STT_TAGS = {
     "whisper-small":          ["Tag Balanced"],
     "whisper-large-v3-turbo": ["Tag HighAccuracy"],
     "whisper-large-v2":       ["Tag HighAccuracy"],
-    "anime-whisper":          ["Tag CJKStrong"],
+    "anime-whisper":          ["Tag JapaneseOnly"],
     "qwen3-asr-0.6b":         ["Tag Lightweight"],
     "qwen3-asr-1.7b":         ["Tag HighAccuracy"],
 }

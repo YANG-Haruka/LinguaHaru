@@ -1,6 +1,6 @@
-# Model dropdowns on the File Translation / Real-Time Voice pages: the whole
-# catalog is listed, but only a downloaded model may become active; picking one
-# that isn't on disk keeps the current model and offers the Plugins page.
+# Model control on the File Translation / Real-Time Voice pages: a button with
+# the active model + whether it's on disk, opening the Plugins page's model list
+# where every model shows its state and is switched / downloaded in place.
 import os
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -8,46 +8,79 @@ from PySide6.QtWidgets import QApplication
 
 app = QApplication.instance() or QApplication([])
 
-from qt_app import model_picker as mp
+from qfluentwidgets import PushButton
+
+from core import optional_modules as om
+from qt_app import model_picker as mp, plugins_page as pp
 
 STATES = [
-    {"id": "small", "label": "PP-OCRv6 Small", "downloaded": True, "active": True},
-    {"id": "medium", "label": "PP-OCRv6 Medium", "downloaded": True, "active": False},
-    {"id": "tiny", "label": "PP-OCRv6 Tiny", "downloaded": False, "active": False},
+    {"id": "small", "label": "PP-OCRv6 Small", "tags": [], "size": "100 MB", "downloaded": True},
+    {"id": "medium", "label": "PP-OCRv6 Medium", "tags": [], "size": "140 MB", "downloaded": True},
+    {"id": "tiny", "label": "PP-OCRv6 Tiny", "tags": [], "size": "55 MB", "downloaded": False},
 ]
 
 
-def test_picker(monkeypatch):
-    saved, asked, jumped = [], [], []
-    monkeypatch.setattr(mp, "plugin_model_states", lambda name: STATES)
-    monkeypatch.setattr(mp, "set_plugin_model", lambda name, mid: saved.append((name, mid)))
+def _fake(monkeypatch, active):
+    cur = {"id": active}
+    def states(name, with_size=False):
+        return [dict(s, active=s["id"] == cur["id"], disk_human="1 MB") for s in STATES]
+    monkeypatch.setattr(om, "plugin_model_states", states)
+    monkeypatch.setattr(mp, "plugin_model_states", states)
+    monkeypatch.setattr(om, "plugin_current_model", lambda name: cur["id"])
+    monkeypatch.setattr(om, "set_plugin_model", lambda name, mid: cur.update(id=mid))
+    return cur
 
-    class Box:
-        def __init__(self, title, msg, parent):
-            asked.append(msg)
 
-        def exec(self):
-            return True
-    monkeypatch.setattr(mp, "MessageBox", Box)
+def _texts(w):
+    return [b.text() for b in w.findChildren(PushButton)]
 
-    p = mp.ModelPicker("Image OCR", "zh")
-    p.on_open_plugins = lambda: jumped.append(1)
-    assert p.currentIndex() == 0
-    assert p.itemText(2).startswith("PP-OCRv6 Tiny") and p.itemText(2) != "PP-OCRv6 Tiny"   # marked
 
-    p.setCurrentIndex(2)                     # not downloaded
-    assert p.currentIndex() == 0 and not saved and jumped == [1]
-    assert "PP-OCRv6 Tiny" in asked[0]
+def test_button_shows_state(monkeypatch):
+    _fake(monkeypatch, "tiny")
+    b = mp.ModelPicker("Image OCR", "zh")
+    assert b._name.text() == "PP-OCRv6 Tiny" and b._state.text() == "未下载"
+    _fake(monkeypatch, "small")
+    b.reload()
+    assert b._state.text() == "已下载"
 
-    p.setCurrentIndex(1)                     # downloaded -> becomes active
-    assert saved == [("Image OCR", "medium")] and p.currentIndex() == 1
 
-    p.setCurrentIndex(2)                     # reverts to the NEW current one
-    assert p.currentIndex() == 1 and len(saved) == 1
+def test_list_switches_and_downloads(monkeypatch):
+    cur = _fake(monkeypatch, "small")
+    from PySide6.QtWidgets import QWidget
+    host = QWidget(); host.resize(800, 600)
+    dlg = pp._ModelPickerDialog("Image OCR", "zh", parent=host)
+    buttons = dlg.widget.findChildren(PushButton)
+    assert "下载" in _texts(dlg.widget) and "使用" in _texts(dlg.widget)   # tiny / medium
+
+    next(b for b in buttons if b.text() == "使用").click()            # medium
+    assert cur["id"] == "medium"
+
+    started = []
+    class W:                                   # stand-in for ModelDownloadWorker
+        def __init__(self, plugin, mid, parent=None):
+            started.append(mid)
+            from PySide6.QtCore import QObject, Signal
+            class Sig(QObject):
+                progress = Signal(float, str); detail = Signal(str); finished_ok = Signal(bool)
+            self._s = Sig()
+            self.progress, self.detail, self.finished_ok = self._s.progress, self._s.detail, self._s.finished_ok
+        def start(self):
+            pass
+    monkeypatch.setattr(pp, "ModelDownloadWorker", W)
+    app.processEvents()   # the rebuilt rows replace the old ones
+    dl = next(b for b in dlg.widget.findChildren(PushButton) if b.text() == "下载" and b.isEnabled())
+    dl.click()
+    assert started == ["tiny"]
+    assert not dlg.yesButton.isEnabled()      # can't close mid-download (would kill the worker)
+    cur["id"] = "tiny"; STATES[2]["downloaded"] = True
+    try:
+        dlg._workers[-1].finished_ok.emit(True)
+        assert dlg.yesButton.isEnabled()
+    finally:
+        STATES[2]["downloaded"] = False
 
 
 def test_ocr_size_follows_plugin_choice(monkeypatch):
-    from core import optional_modules as om
     from core.pipelines import image_translation_pipeline as ip
     monkeypatch.setattr(om, "_cfg_read", lambda: {"ocr_model_size": "tiny"})
     # Manga keeps its own default (medium), exactly what the Plugins page shows.

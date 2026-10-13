@@ -206,7 +206,6 @@
   "Unfinished Translation Detected": "Đã phát hiện bản dịch chưa hoàn tất — bạn có thể nhấp 'Tiếp tục dịch'.",
   "Uninstall": "Uninstall",
   "Uninstalling": "Uninstalling...",
-  "Upload File": "Tải lên tệp (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "Tải lên tệp",
   "Use Online Model": "Sử dụng mô hình trực tuyến",
   "Video ffmpeg note": "Video/Audio also requires ffmpeg on your PATH.",
@@ -388,6 +387,13 @@
   "Up To Date": "Đã là bản mới nhất",
   "New Version": "Có phiên bản mới",
   "Not Downloaded": "chưa tải",
-  "Model Not Downloaded Go": "\"{model}\" chưa được tải. Đến trang Plugin để tải về?",
-  "Live Page Subtitle": "Nói vào micrô; giọng nói được nhận dạng và dịch ngay khi bạn nói."
+  "Live Page Subtitle": "Nói vào micrô; giọng nói được nhận dạng và dịch ngay khi bạn nói.",
+  "Plugin Market Hint": "Nhấn «Làm mới chợ» để xem các plugin có thể tải.",
+  "File Name": "Tên tệp",
+  "Refresh Market": "Làm mới chợ",
+  "Plugin Market": "Chợ plugin",
+  "Downloaded": "Đã tải",
+  "Use Model": "Dùng",
+  "In Use": "Đang dùng",
+  "Tag JapaneseOnly": "Chỉ tiếng Nhật"
 }

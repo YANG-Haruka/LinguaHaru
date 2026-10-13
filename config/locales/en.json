@@ -296,7 +296,7 @@
   "Original Text": "Original",
   "Output Folder": "Output Folder",
   "PDF Bilingual": "Enable PDF Bilingual Mode",
-  "Per Model Hint": "Set each model's API key, RPM, thread count and max retries by double-clicking its card in Interface Management; the Google realtime-voice key is there too.",
+  "Per Model Hint": "Set each model's API key, RPM, thread count and max retries by double-clicking its card in Interface Management.",
   "Please Configure API Key First": "Please configure your API key first (Settings tab)",
   "Please select a model first": "Please select a model first.",
   "Please select file(s) to translate.": "Please select file(s) to translate.",
@@ -396,7 +396,6 @@
   "Upgrade": "Upgrade",
   "Upgrade finished": "Upgrade finished — restart to apply.",
   "Upgrading": "Upgrading...",
-  "Upload File": "Upload Office File (.docx, .pptx, .xlsx, .pdf)",
   "Upload Files": "Upload Files",
   "Use Online Model": "Use Online Model",
   "Video ffmpeg note": "Video/Audio also requires ffmpeg on your PATH.",
@@ -723,6 +722,10 @@
   "Up To Date": "Up to date",
   "New Version": "New version",
   "Not Downloaded": "not downloaded",
-  "Model Not Downloaded Go": "\"{model}\" isn't downloaded yet. Go to the Plugins page to download it?",
-  "Live Page Subtitle": "Speak into your microphone; your speech is recognized and translated as you talk."
+  "Live Page Subtitle": "Speak into your microphone; your speech is recognized and translated as you talk.",
+  "Plugin Market Hint": "Click \"Refresh Market\" to see the plugins you can download.",
+  "File Name": "File name",
+  "Downloaded": "Downloaded",
+  "Use Model": "Use",
+  "Tag JapaneseOnly": "Japanese only"
 }

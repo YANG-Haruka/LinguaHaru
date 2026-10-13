@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from qfluentwidgets import (
+    TitleLabel,
     ComboBox, PushButton, PrimaryPushButton, TableWidget, BodyLabel,
     StrongBodyLabel, InfoBar, InfoBarPosition, FluentIcon, ToolButton,
 )
@@ -62,7 +63,7 @@ class ProofreadPage(QWidget):
         layout.setContentsMargins(30, 20, 30, 20)
         layout.setSpacing(14)
 
-        self.title = StrongBodyLabel(tr("Proofread", lang))
+        self.title = TitleLabel(tr("Proofread", lang))
         layout.addWidget(self.title)
 
         top = QHBoxLayout()
@@ -149,7 +150,7 @@ class ProofreadPage(QWidget):
     def _relabel_table_headers(self):
         if self.table.columnCount() == 3:
             self.table.setHorizontalHeaderLabels([
-                "count_src",
+                "#",   # source line number (internal column count_src)
                 tr("Original Text", self._lang),
                 tr("Translated Text", self._lang),
             ])
