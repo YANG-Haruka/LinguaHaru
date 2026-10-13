@@ -16,8 +16,10 @@ analysis two times per translation.
 
 import json
 import os
+import re
 import shutil
 import threading
+from collections import Counter
 from pathlib import Path
 
 from babeldoc.translator.translator import BaseTranslator
@@ -31,6 +33,7 @@ from core.engine.base_translator import DocumentTranslator
 from core.engine.text_separator import load_glossary, find_terms_with_hashtable
 from core.pipelines.skip_pipeline import should_translate
 from core.engine.translation_checker import clean_json, is_translation_valid
+from core.engine.translation_qa import localize_scale_numbers, scale_number_mismatches
 from core.log_config import app_logger
 from core import model_store
 
@@ -39,6 +42,16 @@ from core import model_store
 # babeldoc warnings still reach system.log) rather than corrupting the first
 # PDF's log — and without blocking, so the 2nd PDF isn't stalled.
 _BABELDOC_FALLBACK_LOCK = threading.Lock()
+
+# Placeholder-shaped tokens BabelDOC puts into / parses out of paragraph text:
+# formula "{v1}", rich-text "<b1>…</b1>", and the mangled "<1>"/"</1>" forms
+# small models produce. Anything of this shape the source paragraph does not
+# carry would be drawn literally into the PDF.
+_BD_TAG = re.compile(r"\{\s*v\s*\d+\s*\}|<\s*/?\s*b?\s*\d+\s*>", re.IGNORECASE)
+
+# Short fragments (chart legends, axis titles: "withdrawals", "Self-supply")
+# get the document's opening text as disambiguation context.
+_FRAGMENT_MAX_CHARS = 40
 
 # Redirect BabelDOC's hardcoded ~/.cache/babeldoc into the unified models dir
 # BEFORE init / first download, so the PDF layout model + fonts live alongside
@@ -50,6 +63,39 @@ try:
     babeldoc_init()
 except Exception as e:
     app_logger.warning(f"BabelDOC initialization warning: {e}")
+
+
+def _repair_placeholders(src, out):
+    """Make ``out`` carry exactly the BabelDOC tags of ``src`` (see _BD_TAG).
+
+    Tags the source lacks, or extra copies, are removed (models "close" a
+    lone placeholder with "</b1>", or mangle it to "<1>"). A dropped tag that
+    sat at the very start/end of the source (a bullet glyph) is put back
+    there. Returns None if a mid-text tag is still missing — its position is
+    unknown, so the caller retries (and finally keeps the source)."""
+    need = Counter(re.sub(r"\s+", "", t).lower() for t in _BD_TAG.findall(src))
+    if not need and not _BD_TAG.search(out):
+        return out
+    left = Counter(need)
+
+    def _keep(m):
+        tok = re.sub(r"\s+", "", m.group(0)).lower()
+        if left[tok] > 0:
+            left[tok] -= 1
+            return tok
+        return ""
+
+    out = re.sub(r"[ \t]{2,}", " ", _BD_TAG.sub(_keep, out)).strip()
+    for tok, n in left.items():
+        if n <= 0:
+            continue
+        if n == 1 and src.startswith(tok):
+            out = tok + out
+        elif n == 1 and src.endswith(tok):
+            out = out + tok
+        else:
+            return None
+    return out
 
 
 class _CallbackTranslator(BaseTranslator):
@@ -92,6 +138,24 @@ class _CallbackTranslator(BaseTranslator):
 
     def do_llm_translate(self, text, rate_limit_params=None):
         raise NotImplementedError("Use do_translate instead")
+
+    # BabelDOC's BaseTranslator returns BARE strings from these three, and its
+    # il_translator compiles its "hallucinated placeholder" regexes from `[1]`
+    # of the result — i.e. the single characters "b" and "/". Every "B"/"b"/"/"
+    # the source paragraph lacked was deleted from the translation
+    # ("Bewässerung" -> "ewässerung", "</b1>" -> "<1>"). (text, regex) tuples,
+    # as BabelDOC's own OpenAITranslator returns, make those regexes real.
+    # Formulas (e.g. a bullet glyph) use "{v1}" instead of the default "<b1>":
+    # models "closed" the lone HTML-like <b1> with a literal </b1>, while {v1}
+    # is a machine token is_translation_valid already checks round-trips.
+    def get_formular_placeholder(self, placeholder_id):
+        return "{v" + str(placeholder_id) + "}", r"\{\s*v\s*" + str(placeholder_id) + r"\s*\}"
+
+    def get_rich_text_left_placeholder(self, placeholder_id):
+        return f"<b{placeholder_id}>", rf"<\s*b\s*{placeholder_id}\s*>"
+
+    def get_rich_text_right_placeholder(self, placeholder_id):
+        return f"</b{placeholder_id}>", rf"<\s*/\s*b\s*{placeholder_id}\s*>"
 
 
 class PdfTranslator(DocumentTranslator):
@@ -136,6 +200,8 @@ class PdfTranslator(DocumentTranslator):
         # that _translate_paragraph returns instead of calling the LLM.
         self._proofread_pairs = []
         self._proofread_overrides = None
+        # Opening text of the document, fed as context to short fragments
+        self._doc_context = ""
 
     def _preflight_check(self):
         """Catch the two silent-failure PDFs before the expensive BabelDOC run.
@@ -204,6 +270,18 @@ class PdfTranslator(DocumentTranslator):
         finally:
             doc.close()
 
+    def _document_context(self):
+        """The first page's opening text (≤300 chars), given as context to short
+        fragments — chart legends / axis titles like "withdrawals" were
+        translated as banking terms with no hint what the document is about."""
+        try:
+            import pymupdf
+            with pymupdf.open(self.input_file_path) as doc:
+                text = doc[0].get_text() if len(doc) else ""
+        except Exception:  # noqa: BLE001 — context is optional
+            return ""
+        return " ".join(text.split())[:300]
+
     def _ensure_layout_model(self):
         """Lazily load the document layout model."""
         if self.doc_layout_model is None:
@@ -265,7 +343,10 @@ class PdfTranslator(DocumentTranslator):
             from core.engine import translation_qa
             dst_items = [{"count_src": i, "original": src, "translated": dst}
                          for i, (src, dst) in enumerate(self._qa_pairs)]
-            warns = translation_qa.run(qa_list, dst_items, self._glossary_entries)
+            # + "numbers": number-scale check (322 billion -> 3220亿), see
+            # translation_qa.scale_number_mismatches.
+            warns = translation_qa.run(list(qa_list) + ["numbers"], dst_items,
+                                       self._glossary_entries, self.dst_lang, self.src_lang)
             if warns:
                 app_logger.info("QA warnings (" + ", ".join(
                     f"{k}: {len(v)}" for k, v in warns.items()) + ")")
@@ -304,7 +385,9 @@ class PdfTranslator(DocumentTranslator):
         # the source, so re-export never silently calls the API.
         if self._proofread_overrides is not None:
             edited = self._proofread_overrides.get(stripped)
-            return edited if (edited and edited.strip()) else text
+            if edited and edited.strip():
+                return _repair_placeholders(stripped, edited) or text
+            return text
 
         with self.lock:
             self._paragraph_counter += 1
@@ -314,12 +397,19 @@ class PdfTranslator(DocumentTranslator):
         if self._glossary_entries:
             glossary_terms = find_terms_with_hashtable(stripped, self._glossary_entries)
 
-        segment = {"1": stripped}
+        # "322 billion" -> "3220亿/億/억" for CJK targets, so the model copies
+        # the number instead of converting the scale (it got ×10 wrong).
+        segment = {"1": localize_scale_numbers(stripped, self.src_lang, self.dst_lang)}
+        previous_text = self.previous_text_default
+        doc_context = getattr(self, "_doc_context", "")
+        if doc_context and len(stripped) <= _FRAGMENT_MAX_CHARS:
+            previous_text = doc_context
+        number_fallback = None   # valid translation whose only flaw is a number
         # translate_text retries API failures internally; this loop only
         # retries malformed (unparseable) model output
         for attempt in range(2):
             translated_text, success, token_usage = translate_text(
-                segment, self.previous_text_default, self.model, self.use_online,
+                segment, previous_text, self.model, self.use_online,
                 self.api_key, self.system_prompt, self.user_prompt,
                 self.previous_prompt, self.glossary_prompt, glossary_terms,
                 check_stop_callback=self._check_stop_and_signal_cancel,
@@ -336,6 +426,14 @@ class PdfTranslator(DocumentTranslator):
                     f"Unparseable translation output for paragraph {paragraph_index} "
                     f"(attempt {attempt + 1}): {str(translated_text)[:100]}")
                 continue
+            # Drop invented/duplicated BabelDOC tags, restore a dropped one that
+            # sat at the paragraph edge (the bullet), so none renders literally.
+            result = _repair_placeholders(stripped, result)
+            if result is None:
+                app_logger.warning(
+                    f"Paragraph {paragraph_index} lost a mid-text placeholder "
+                    f"(attempt {attempt + 1})")
+                continue
             # Apply the SAME validation as the document path: drop placeholders/
             # formula markers, copied source, or wrong-language output -> retry,
             # then keep the source paragraph rather than shipping a broken one.
@@ -346,6 +444,15 @@ class PdfTranslator(DocumentTranslator):
                 app_logger.warning(
                     f"Paragraph {paragraph_index} failed validation (attempt {attempt + 1}): "
                     f"{result[:100]!r}")
+                continue
+            # "322 billion" must keep its value ("322 亿" is ×10 off): retry
+            # once; if the retry is no better, ship the first (flagged by QA).
+            bad_numbers = scale_number_mismatches(stripped, result, self.src_lang, self.dst_lang)
+            if bad_numbers and attempt == 0:
+                app_logger.warning(
+                    f"Paragraph {paragraph_index} changed number magnitude {bad_numbers} "
+                    f"(attempt 1): {result[:100]!r}")
+                number_fallback = result
                 continue
             if result:
                 # Optional polish second pass (same gating as the document path).
@@ -358,6 +465,8 @@ class PdfTranslator(DocumentTranslator):
                             check_stop=self._check_stop_and_signal_cancel, options=self.topts)
                         self._add_token_usage(pol_usage)
                         pv = self._parse_single_translation(polished)
+                        if pv:
+                            pv = _repair_placeholders(stripped, pv)
                         # Re-validate the polish: a second pass can drop
                         # placeholders, copy the source, or emit the wrong language.
                         # Only accept it if it passes the SAME check as the first
@@ -372,6 +481,11 @@ class PdfTranslator(DocumentTranslator):
                 with self.lock:
                     self._qa_pairs.append((stripped, result))
                 return result
+
+        if number_fallback is not None:
+            with self.lock:
+                self._qa_pairs.append((stripped, number_fallback))
+            return number_fallback
 
         with self.lock:
             self._failed_paragraphs.append(paragraph_index)
@@ -507,6 +621,7 @@ class PdfTranslator(DocumentTranslator):
         # Fail fast on encrypted / scanned PDFs instead of silently producing
         # an empty or untranslated output.
         self._preflight_check()
+        self._doc_context = self._document_context()
 
         # Optional: AI-extract a glossary from the PDF's text layer first, so the
         # per-paragraph translation below uses it (same as the document path).
@@ -537,6 +652,9 @@ class PdfTranslator(DocumentTranslator):
                 "mode": str((self.topts or {}).get("mode", "")) if hasattr(self, "topts") else "",
                 "temp": str(_params.get("temperature")),
                 "top_p": str(_params.get("top_p")),
+                # fragment context + placeholder/number rules change outputs
+                "ctx": _hl.sha1(self._doc_context.encode("utf-8")).hexdigest()[:8],
+                "rules": "2",
             },
             record_cb=self._record_pair,   # capture proofread pairs (cache-proof)
         )

@@ -11,6 +11,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from .skip_pipeline import should_translate, is_base64_data
 from core.log_config import app_logger
 from core.engine.text_separator import safe_convert_to_int
+from core.engine.short_tokens import is_untranslatable_short_token
 import shutil
 import tempfile
 import contextvars
@@ -934,7 +935,7 @@ def process_sdt_table_recursive(table, content_data, item_id, sdt_index, table_i
                     )
                     toc_structure = None
                 
-                if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
+                if cell_text and cell_text.strip() and should_translate_table_cell(cell_text):
                     item_id += 1
                     cell_data = {
                         "id": item_id,
@@ -1346,7 +1347,7 @@ def process_table_rows_recursive(table, content_data, item_id, table_index, numb
                     )
                     toc_structure = None
                 
-                if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
+                if cell_text and cell_text.strip() and should_translate_table_cell(cell_text):
                     item_id += 1
                     cell_data = {
                         "id": item_id,
@@ -1632,7 +1633,7 @@ def process_header_footer_table_recursive(table, content_data, item_id, table_in
                     )
                     toc_structure = None
                 
-                if cell_text and cell_text.strip() and should_translate_enhanced(cell_text):
+                if cell_text and cell_text.strip() and should_translate_table_cell(cell_text):
                     item_id += 1
                     cell_data = {
                         "id": item_id,
@@ -1987,15 +1988,48 @@ def is_dot_leader(text):
     
     return False
 
+def _vert_marker_kind(run, namespaces):
+    """'SUP'/'SUB' if `run` is a short superscript/subscript marker (footnote
+    letter/number/symbol such as "e", "7", "*"), else None. Such runs are kept
+    verbatim behind a {{SUP_n}} placeholder: re-flowing the translation into
+    the original runs by length moved the superscript onto the wrong
+    characters ("ᵉ2,630" -> "²630", "apparent¹" -> "ᵃᵖᵃʳᵉⁿᵗᵉ¹")."""
+    va = run.find('w:rPr/w:vertAlign', namespaces)
+    if va is None:
+        return None
+    val = va.get(f'{{{namespaces["w"]}}}val')
+    if val not in ('superscript', 'subscript'):
+        return None
+    if any(etree.QName(c).localname not in ('rPr', 't') for c in run):
+        return None
+    text = ''.join(t.text or '' for t in run.findall('w:t', namespaces)).strip()
+    if not text or len(text) > 3 or sum(c.isalpha() for c in text) > 1:
+        return None
+    return 'SUP' if val == 'superscript' else 'SUB'
+
+
+_MARKER_RE = re.compile(r'\{\{[^}]+\}\}|\[formula_\d+\]')
+
+
+def should_translate_table_cell(text):
+    """Table cells additionally skip short tokens ("W", "NA", "e", "—",
+    "2,630", "146,000"): data markers and numbers the LLM can only corrupt."""
+    if not should_translate_enhanced(text):
+        return False
+    bare = _MARKER_RE.sub('', text).strip()
+    return is_likely_date_format(bare) or not is_untranslatable_short_token(bare)
+
+
 def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, numbering_info=None, exclude_textbox_runs=True):
     """Extract paragraph text including page variables and math formulas, but excluding textbox content"""
     full_text = ""
     field_info = []
     math_info = []
-    
+
     # Counter for math formulas
     formula_counter = 0
     hyperlink_counter = 0
+    vert_counter = 0
 
     # Get all runs in the paragraph
     if exclude_textbox_runs:
@@ -2152,7 +2186,21 @@ def extract_paragraph_text_with_variables_and_formulas(paragraph, namespaces, nu
                     
                     app_logger.debug(f"Found math formula, created placeholder: {placeholder}")
                 continue
-            
+
+            # Superscript/subscript footnote marker: keep the run verbatim
+            marker_kind = _vert_marker_kind(child, namespaces)
+            if marker_kind:
+                vert_counter += 1
+                placeholder = f'{{{{{marker_kind}_{vert_counter}}}}}'
+                full_text += placeholder
+                field_info.append({
+                    'type': 'vert_run',
+                    'display_text': placeholder,
+                    'index': vert_counter,
+                    'run_xml': etree.tostring(child, encoding='unicode'),
+                })
+                continue
+
             # Process all child elements in order, but only text-related ones
             for run_child in child:
                 run_tag_name = run_child.tag.split('}')[-1]
@@ -4303,7 +4351,14 @@ def restore_paragraph_properties(paragraph, original_pPr_xml, namespaces):
 
 def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namespaces, numbering_info=None, field_info=None, math_info=None, original_structure=None):
     """Update paragraph text with enhanced format preservation including math formulas"""
-    
+
+    # Superscript/subscript markers alone don't need the generic field path
+    # (which flattens every text run to one format); they anchor the
+    # run-preserving path below instead.
+    vert_runs = {f['display_text']: f for f in (field_info or []) if f.get('type') == 'vert_run'}
+    if vert_runs and len(vert_runs) == len(field_info) and not math_info:
+        field_info = None
+
     # Find all runs that are direct children of the paragraph
     all_runs = paragraph.xpath('./w:r', namespaces=namespaces)
     
@@ -4392,7 +4447,7 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
     if original_structure and original_structure.get('runs_info'):
         # Find the first text run with formatting
         for run_info in original_structure['runs_info']:
-            if run_info.get('has_text') and run_info.get('rPr_xml'):
+            if run_info.get('has_text') and run_info.get('rPr_xml') and 'vertAlign' not in run_info['rPr_xml']:
                 try:
                     formatting = etree.fromstring(run_info['rPr_xml'])
                     break
@@ -4428,6 +4483,8 @@ def update_paragraph_text_with_enhanced_preservation(paragraph, new_text, namesp
         update_paragraph_content_with_math_and_fields_enhanced(
             paragraph, new_text, namespaces, field_info, math_info, formatting, original_structure
         )
+    elif vert_runs:
+        add_text_around_vert_markers(paragraph, new_text, namespaces, original_run_infos, vert_runs)
     elif _should_distribute_runs(original_run_infos, new_text):
         # Plain multi-run paragraph with differing formatting and no special
         # inline objects: distribute the translated text across the original
@@ -4635,7 +4692,11 @@ def process_field_placeholder(paragraph, placeholder, field_mapping, field_usage
     if key in field_mapping:
         field = field_mapping[key]
         field_type = field.get('type')
-        
+
+        if field_type == 'vert_run':
+            paragraph.append(etree.fromstring(field['run_xml']))
+            return None
+
         if field_type == 'simple_field':
             # Create simple field using original XML
             if current_run is None:
@@ -4831,7 +4892,8 @@ def _collect_text_run_infos(text_runs, namespaces):
                 text += "\t"
         rPr_elements = run.xpath('./w:rPr', namespaces=namespaces)
         rPr_xml = etree.tostring(rPr_elements[0]) if rPr_elements else None
-        infos.append({'rPr_xml': rPr_xml, 'text': text, 'length': len(text)})
+        infos.append({'rPr_xml': rPr_xml, 'text': text, 'length': len(text),
+                      'is_marker': _vert_marker_kind(run, namespaces) is not None})
     return infos
 
 
@@ -4932,6 +4994,39 @@ def add_text_with_distributed_run_formatting(paragraph, text, namespaces, origin
         # Always emit a w:t (empty if no characters were allotted) so each run
         # stays well-formed; _append_run_text also restores any tab characters.
         _append_run_text(run, run_text, namespaces)
+
+
+def add_text_around_vert_markers(paragraph, text, namespaces, original_run_infos, vert_runs):
+    """Write `text` whose {{SUP_n}}/{{SUB_n}} placeholders stand for verbatim
+    superscript/subscript marker runs. Each marker run is restored at its
+    placeholder; the text after marker n takes the formatting of the runs that
+    followed marker n in the original (group n), so markers never re-flow onto
+    neighbouring words and bold/plain spans stay on their own segment."""
+    # groups[n] = plain runs after the n-th marker (groups[0] = before any)
+    groups = [[]]
+    for info in original_run_infos:
+        if info['is_marker']:
+            groups.append([])
+        else:
+            groups[-1].append(info)
+    groups = [[i for i in g if i['length'] > 0] for g in groups]
+    fallback = next((g for g in groups if g), [])
+
+    group = groups[0] or fallback
+    pattern = '(' + '|'.join(re.escape(p) for p in vert_runs) + ')'
+    for part in re.split(pattern, text):
+        if part in vert_runs:
+            f = vert_runs[part]
+            paragraph.append(etree.fromstring(f['run_xml']))
+            n = f['index']
+            group = (groups[n] if n < len(groups) else None) or fallback
+        elif part:
+            if _should_distribute_runs(group, part):
+                add_text_with_distributed_run_formatting(paragraph, part, namespaces, group)
+            else:
+                rpr = group[0]['rPr_xml'] if group else None
+                add_text_with_enhanced_formatting(
+                    paragraph, part, namespaces, etree.fromstring(rpr) if rpr else None)
 
 
 def add_text_with_enhanced_formatting(paragraph, text, namespaces, formatting=None):

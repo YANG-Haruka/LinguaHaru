@@ -3,6 +3,8 @@ import os
 import re
 from .txt_translation_pipeline import read_file_with_encoding
 from .subtitle_formats_pipeline import subtitle_result_path
+from .subtitle_groups import (
+    drop_fabricated_tags, flat, group_cues, join_texts, seconds, split_across_cues)
 from core.log_config import app_logger
 
 
@@ -24,6 +26,10 @@ def _read_srt_text(file_path):
         return content.lstrip("﻿")
 
 
+def _srt_info(cue):
+    return (flat(cue["value"]), seconds(cue["start_time"]), seconds(cue["end_time"]), False, None)
+
+
 def extract_srt_content_to_json(file_path, temp_dir):
     """
     Extract subtitles from an SRT file and save them in a JSON format.
@@ -43,30 +49,47 @@ def extract_srt_content_to_json(file_path, temp_dir):
         re.DOTALL
     )
 
-    content_data = []
-
-    # Renumber sequentially: count_src is the translation lookup key, and
-    # malformed files can repeat cue numbers, which would collapse entries
-    for idx, match in enumerate(srt_pattern.finditer(srt_content), start=1):
+    cues = []
+    for match in srt_pattern.finditer(srt_content):
         start_time, end_time, extra, value = match.groups()
-        value = value.replace("\n", "␊").replace("\r", "␍")
-
-        content_data.append({
-            "count_src": idx,
+        cues.append({
             "start_time": start_time.replace(".", ","),
             "end_time": end_time.replace(".", ","),
             "extra_time": (extra or "").rstrip(),   # e.g. " X1:100 X2:200 Y1:50 Y2:80"
-            "value": value
+            # rstrip: the last cue would otherwise keep the file's trailing
+            # newline as a ␊ marker the model must echo or the cue fails
+            "value": value.rstrip("\r\n").replace("\n", "␊").replace("\r", "␍"),
         })
 
     # Cues that don't match the pattern are silently absent from the output
     # file, so make the loss visible
     cue_count = srt_content.count("-->")
-    if cue_count != len(content_data):
+    if cue_count != len(cues):
         app_logger.warning(
             f"SRT parse mismatch: file contains {cue_count} cues but only "
-            f"{len(content_data)} were extracted; unparsed cues will be missing from the output"
+            f"{len(cues)} were extracted; unparsed cues will be missing from the output"
         )
+
+    # One translation unit per SENTENCE GROUP, not per cue. Real captions split a
+    # sentence over 2-3 timed cues; sent as separate ids the model merges the
+    # next cue's half-sentence into the current one and every later id drifts
+    # (filled at the end with an invented "[Music]" or a repeated line). A unit
+    # that is a whole sentence leaves nothing to merge; the writer splits its
+    # translation back over the group's cues. count_src (renumbered, so repeated
+    # cue numbers can't collapse) is the group id.
+    content_data = []
+    for idx, group in enumerate(group_cues(cues, _srt_info), start=1):
+        content_data.append({
+            "count_src": idx,
+            "start_time": group[0]["start_time"],
+            "end_time": group[-1]["end_time"],
+            "extra_time": group[0]["extra_time"],
+            # A lone cue keeps its line markers; a multi-cue group is joined
+            # into one line of text (cue wrapping is re-done per cue on output).
+            "value": group[0]["value"] if len(group) == 1
+                     else join_texts([flat(c["value"]) for c in group]),
+            "cues": group,
+        })
     
     filename = os.path.splitext(os.path.basename(file_path))[0]
     temp_folder = os.path.join(temp_dir, filename)
@@ -96,24 +119,29 @@ def write_translated_content_to_srt(file_path, original_json_path, translated_js
     translations = {str(item["count_src"]): item["translated"] for item in translated_data}
 
     output_srt_lines = []
+    count = 0
 
     for item in original_data:
-        count = item["count_src"]
-        start_time = item["start_time"]
-        end_time = item["end_time"]
-        extra = item.get("extra_time", "")   # preserved position coords, if any
         value = item["value"]
-        translated_text = translations.get(str(count), value)
-        translated_text = translated_text.replace("␊", "\n").replace("␍", "\r")
+        translated_text = drop_fabricated_tags(value, translations.get(str(item["count_src"]), value))
+        # Older src.json (history / proofread re-export) has one item per cue.
+        group = item.get("cues") or [item]
+        if len(group) == 1:
+            pieces = [translated_text]
+        else:
+            pieces = split_across_cues(value, [flat(c["value"]) for c in group], translated_text)
 
-        if bilingual_mode:
-            original_text = value.replace("␊", "\n").replace("␍", "\r")
-            if translated_text.strip() != original_text.strip():
-                from core.engine.bilingual_format import style_markup
-                translated_text = f"{style_markup(translated_text, 'srt')}\n{original_text}"
-
-        ts_line = f"{start_time} --> {end_time}" + (f" {extra}" if extra else "")
-        output_srt_lines.append(f"{count}\n{ts_line}\n{translated_text}\n\n")
+        for cue, piece in zip(group, pieces):
+            count += 1
+            piece = piece.replace("␊", "\n").replace("␍", "\r")
+            if bilingual_mode:
+                original_text = cue["value"].replace("␊", "\n").replace("␍", "\r")
+                if piece.strip() != original_text.strip():
+                    from core.engine.bilingual_format import style_markup
+                    piece = f"{style_markup(piece, 'srt')}\n{original_text}"
+            extra = cue.get("extra_time", "")   # preserved position coords, if any
+            ts_line = f"{cue['start_time']} --> {cue['end_time']}" + (f" {extra}" if extra else "")
+            output_srt_lines.append(f"{count}\n{ts_line}\n{piece}\n\n")
 
     result_path = subtitle_result_path(file_path, result_dir, src_lang, dst_lang, ".srt")
     

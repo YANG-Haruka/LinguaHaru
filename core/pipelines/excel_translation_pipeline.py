@@ -113,6 +113,116 @@ def _rewrite_sheet_refs(result_path, renames):
     app_logger.info(f"Rewrote cross-sheet references for renamed sheets: {renames}")
 
 
+_STRUCT_REF_RE = re.compile(r"(?<![\w.\\])([A-Za-z_\\][\w.\\]*)\[")
+_STRUCT_ITEM_RE = re.compile(r"\[((?:'.|[^\]'])*)\]", re.S)
+
+
+def _rename_structured_refs(formula, renames):
+    """Rewrite column names inside structured references (`Tbl[Col]`,
+    `Tbl[[#This Row],[Col]]`). Excel stores them fully qualified in the file;
+    `[`, `]`, `#`, `'` inside a name are escaped with a leading `'`.
+    renames: {table_name_lower: {old_col_lower: new_col}}.
+    # ponytail: `Tbl[` inside a string literal is rewritten too — harmless and rare."""
+    out, pos = [], 0
+    for m in _STRUCT_REF_RE.finditer(formula):
+        cols = renames.get(m.group(1).lower())
+        if m.start() < pos or not cols:
+            continue
+        i, depth = m.end(), 1
+        while i < len(formula) and depth:
+            c = formula[i]
+            if c == "'":
+                i += 2
+                continue
+            depth += {"[": 1, "]": -1}.get(c, 0)
+            i += 1
+        body = formula[m.end():i - 1]
+
+        def swap(item):
+            if item.startswith("#"):
+                return item
+            new = cols.get(re.sub(r"'(.)", r"\1", item, flags=re.S).lower())
+            return item if new is None else re.sub(r"([\[\]#'])", r"'\1", new)
+
+        if body.startswith("["):
+            body = _STRUCT_ITEM_RE.sub(lambda im: "[" + swap(im.group(1)) + "]", body)
+        else:
+            body = swap(body)
+        out.append(formula[pos:m.end()] + body + "]")
+        pos = i
+    return "".join(out) + formula[pos:] if out else formula
+
+
+def _sync_table_columns(workbook):
+    """Make every Excel Table (ListObject) consistent with its translated cells.
+    Excel requires each <tableColumn name> to equal its header cell text (unique,
+    case-insensitive; line breaks stored as _x000a_) and totalsRowLabel to equal
+    the totals-row cell — otherwise it 'repairs' the file and reverts the headers.
+    Mirrors Excel: a duplicate header gets a numeric suffix in both the cell and
+    the column name. Structured references to renamed columns are rewritten.
+    Table name/displayName are identifiers and stay untouched."""
+    def xs(text):    # ST_Xstring escape, as Excel writes table column names
+        return text.replace("\r", "_x000d_").replace("\n", "_x000a_")
+
+    def unxs(text):
+        return re.sub(r"_x([0-9A-Fa-f]{4})_", lambda m: chr(int(m.group(1), 16)), text)
+
+    renames = {}
+    for ws in workbook.worksheets:
+        for table in ws.tables.values():
+            min_col, min_row, _max_col, max_row = range_boundaries(table.ref)
+            has_header = table.headerRowCount is None or table.headerRowCount > 0
+            used, cols = set(), {}
+            for idx, col in enumerate(table.tableColumns):
+                if col.totalsRowLabel is not None and table.totalsRowCount:
+                    label = ws.cell(row=max_row, column=min_col + idx).value
+                    if label is not None:
+                        col.totalsRowLabel = xs(str(label))
+                if not has_header:
+                    continue
+                old = unxs(col.name or "")
+                cell = ws.cell(row=min_row, column=min_col + idx)
+                base = "" if cell.value is None else str(cell.value)
+                base = base or old or f"Column{idx + 1}"
+                name, n = base, 2
+                while name.lower() in used:
+                    name, n = f"{base}{n}", n + 1
+                used.add(name.lower())
+                if cell.value != name:
+                    cell.value = name
+                col.name = xs(name)
+                if old != name:
+                    cols[old.lower()] = name
+            if cols:
+                renames[table.displayName.lower()] = cols
+                if table.name and table.name != table.displayName:
+                    renames[table.name.lower()] = cols
+    if not renames:
+        return
+
+    def fix(f):
+        return _rename_structured_refs(f, renames) if isinstance(f, str) else f
+
+    from openpyxl.worksheet.formula import ArrayFormula
+    for ws in workbook.worksheets:
+        for cell in ws._cells.values():
+            v = cell.value
+            if isinstance(v, str) and v.startswith("="):
+                cell.value = fix(v)
+            elif isinstance(v, ArrayFormula):
+                v.text = fix(v.text)
+        for table in ws.tables.values():
+            for col in table.tableColumns:
+                for tf in (col.calculatedColumnFormula, col.totalsRowFormula):
+                    if tf is not None:
+                        tf.attr_text = fix(tf.attr_text)
+        for dn in ws.defined_names.values():
+            dn.attr_text = fix(dn.attr_text)
+    for dn in workbook.defined_names.values():
+        dn.attr_text = fix(dn.attr_text)
+    app_logger.info(f"Synced Excel table column names with translated headers: {renames}")
+
+
 def _apply_shrink_to_fit(cell, original_text, translated_value):
     """Set 'shrink to fit' on a cell whose translation is longer than the source, so
     it scales down to the column width. Skips cells set to wrap (Excel makes shrink &
@@ -496,6 +606,12 @@ def _write_with_openpyxl(file_path, original_json_path, translated_json_path, re
                         value.replace("␊", "\n").replace("␍", "\r"))
         except Exception as e:
             app_logger.error(f"Error writing data-validation text back: {str(e)}")
+
+    # Excel Tables: tableColumn names must match the (translated) header cells.
+    try:
+        _sync_table_columns(workbook)
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(f"Failed to sync Excel table column names: {str(e)}")
 
     # Final pass: Rename sheets with their translations
     renamed_sheets = {}
