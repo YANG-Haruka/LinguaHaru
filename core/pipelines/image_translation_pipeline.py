@@ -787,12 +787,14 @@ def _fit_text(draw, text, rect, font_path):
     return font, text.split("\n"), 12
 
 
-def _apply_inpaint(image, mask):
+def _apply_inpaint(image, mask, dilate=True):
     """Inpaint the masked text regions out of a BGR image (LaMa when enabled +
     installed, else OpenCV Telea). Returns the cleaned BGR image. This is the slow
-    step; manga proofread caches its result (see inpaint_page)."""
+    step; manga proofread caches its result (see inpaint_page). dilate=False for an
+    already-tight glyph mask (ink erase)."""
     k = max(3, int(round(0.005 * max(image.shape[:2]))))   # dilation ~ image scale
-    mask = cv2.dilate(mask, np.ones((k, k), np.uint8), iterations=1)
+    if dilate:
+        mask = cv2.dilate(mask, np.ones((k, k), np.uint8), iterations=1)
     if _lama_enabled():
         try:
             from core.pipelines.lama_inpaint import inpaint as _lama_inpaint
@@ -806,20 +808,299 @@ def _apply_inpaint(image, mask):
     return cv2.inpaint(image, mask, max(5, k), cv2.INPAINT_TELEA)
 
 
+def _erase_mode():
+    """Config `image_erase_mode`: "ink" (default) erases only the text strokes found
+    inside each OCR box; "box" is the legacy behaviour (inpaint the whole dilated
+    OCR box, which smears tight speech-balloon outlines)."""
+    try:
+        from core.paths import SYSTEM_CONFIG
+        with open(SYSTEM_CONFIG, encoding="utf-8") as f:
+            return "box" if json.load(f).get("image_erase_mode") == "box" else "ink"
+    except Exception:  # noqa: BLE001
+        return "ink"
+
+
+_FLAT_BG_MAD = 8.0   # per-channel median abs. deviation (0-255) under which a
+                     # background counts as flat -> fill with its colour, no inpaint
+
+
+def _char_size(region):
+    """~one character size: median short side of the region's OCR line boxes."""
+    rects = region.get("erase_rects") or [region["rect"]]
+    return max(4, int(np.median([min(r[2] - r[0], r[3] - r[1]) for r in rects])))
+
+
+def _ink(gray, ref):
+    """(ink, faint) bool masks of gray, judged against ref (the OCR box): ink =
+    clearly darker than the box's background (median) - text strokes; faint = any
+    clear tone step (thin/light outlines, coloured ground) - only used to find walls.
+    Flipped when the box holds light text on a dark ground."""
+    bg = float(np.median(ref))
+    lo, hi = np.percentile(ref, (2, 98))
+    if hi - bg > bg - lo:
+        gray, bg, lo = 255 - gray, 255 - bg, 255 - hi
+    return gray < bg - max(35.0, 0.5 * (bg - lo)), gray < bg - 35.0
+
+
+def _balloon(walls, rect, cs):
+    """Interior (bool mask) of the closed shape around rect in a window whose
+    non-text ink is `walls` (balloon outline, panel border, art), or None.
+
+    The light area is opened by ~cs/3 so a speech tail or small outline gap does not
+    leak it; the region holding the text box must then not reach the window edge
+    (= enclosed), and its holes (the glyphs) are filled."""
+    g = max(3, cs // 6) | 1                           # seal small breaks in the outline
+    walls = cv2.morphologyEx(walls.astype(np.uint8), cv2.MORPH_CLOSE,
+                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (g, g)))
+    light = 1 - walls
+    rad = max(2, cs // 3)
+    k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * rad + 1, 2 * rad + 1))
+    n, lab, st, _ = cv2.connectedComponentsWithStats(cv2.erode(light, k), connectivity=4)
+    x0, y0, x1, y1 = rect
+    counts = np.bincount(lab[y0:y1, x0:x1].ravel(), minlength=n)
+    counts[0] = 0
+    o = int(counts.argmax())
+    if counts[o] == 0:
+        return None
+    l, t, w, h = st[o, :4]
+    if l == 0 or t == 0 or l + w >= walls.shape[1] or t + h >= walls.shape[0]:
+        return None                                   # leaks out: no closed balloon
+    # Grow back geodesically (never across a wall) to fill the corners and the
+    # pockets around glyphs; 2*rad steps reach into a tail only a little.
+    comp = (lab == o).astype(np.uint8)
+    cross = cv2.getStructuringElement(cv2.MORPH_CROSS, (3, 3))
+    for _ in range(2 * rad):
+        comp = cv2.dilate(comp, cross) & light
+    # Light pockets cut off by a character touching the outline: enclosed light
+    # areas lying inside the text box, right next to the interior, and not mere
+    # slivers (e.g. the gap between an outline and a panel border).
+    rest = light & (1 - comp)
+    n2, lab2, st2, _ = cv2.connectedComponentsWithStats(rest, connectivity=4)
+    l2, t2, w2, h2 = (st2[:, i] for i in range(4))
+    q = max(2, cs // 4)
+    thick = np.zeros(n2)
+    np.maximum.at(thick, lab2.ravel(), cv2.distanceTransform(rest, cv2.DIST_L2, 3).ravel())
+    pocket = (l2 >= x0 - q) & (t2 >= y0 - q) & (l2 + w2 <= x1 + q) & (t2 + h2 <= y1 + q) & (thick >= cs / 8)
+    nearby = np.zeros(n2, bool)
+    nearby[np.unique(lab2[cv2.dilate(comp, k) > 0])] = True
+    pocket &= nearby
+    pocket[0] = False
+    interior = _fill_holes(comp | pocket[lab2].astype(np.uint8))
+    if interior[y0:y1, x0:x1].sum() < 0.4 * max(1, (x1 - x0) * (y1 - y0)):
+        return None
+    return interior.astype(bool)
+
+
+def _fused_glyphs(ink, interior, cs, boxes):
+    """Characters touching the balloon outline merge into it (a wall). Return their
+    strokes: the wall ink next to the interior that lies deeper than the outline's
+    own stroke width from the light outside (the outline itself never does), in
+    glyph-sized pieces (a long piece = dark art, left alone)."""
+    b = max(3, cs // 4)
+    kb = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * b + 1, 2 * b + 1))
+    near = cv2.dilate(interior.astype(np.uint8), kb).astype(bool) & ink & ~interior
+    if not near.any():
+        return near
+    dt = cv2.distanceTransform(near.astype(np.uint8), cv2.DIST_L2, 3)
+    ridge = near & (dt >= cv2.dilate(dt, np.ones((3, 3), np.uint8)))
+    ow = 2 * float(np.median(dt[ridge]))        # stroke width, from the stroke centre lines
+    # the outside = light areas except small pockets between a glyph and the outline
+    light = (~ink & ~interior).astype(np.uint8)
+    n, lab, st, cents = cv2.connectedComponentsWithStats(light, connectivity=4)
+    hull = np.zeros_like(light)
+    pts = cv2.findNonZero(interior.astype(np.uint8))
+    cv2.fillConvexPoly(hull, cv2.convexHull(pts), 1)
+    pocket = np.zeros(n, bool)          # touches a text box, centred inside the balloon
+    pocket[np.unique(lab[boxes & light.astype(bool)])] = True
+    cx = np.clip(cents[:, 0].round().astype(int), 0, light.shape[1] - 1)
+    cy = np.clip(cents[:, 1].round().astype(int), 0, light.shape[0] - 1)
+    pocket &= hull[cy, cx] > 0
+    big = (st[:, 4] > cs * cs // 2) | ~pocket
+    big[0] = False
+    deep = cv2.distanceTransform((~big[lab]).astype(np.uint8), cv2.DIST_L2, 3) > ow + 1
+    n, lab, st, _ = cv2.connectedComponentsWithStats((near & deep).astype(np.uint8), connectivity=8)
+    ok = np.maximum(st[:, 2], st[:, 3]) <= cs
+    ok[0] = False
+    return ok[lab]
+
+
+def _close(m, cs):
+    """Morphological closing with a ~character-sized disc (fills character-sized
+    dents); padded so the window edge counts as outside."""
+    p = cs | 1
+    padded = cv2.copyMakeBorder(m.astype(np.uint8), p, p, p, p, cv2.BORDER_CONSTANT, value=0)
+    return cv2.morphologyEx(padded, cv2.MORPH_CLOSE, cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE, (p, p)))[p:-p, p:-p].astype(bool)
+
+
+def _fill_holes(m):
+    cnts, _ = cv2.findContours(m, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    out = np.zeros_like(m)
+    cv2.drawContours(out, cnts, -1, 1, -1)
+    return out
+
+
+def _text_layout(image, region):
+    """Find one region's text ink. Returns (X0, Y0, glyphs, interior, ink, cs) for a
+    window at (X0, Y0) around the region, or None. glyphs = bool mask of text
+    strokes to erase; interior = enclosing balloon interior or None; ink = all ink.
+
+    Text = ink components lying inside a (slightly padded) OCR line box that are not
+    long thin lines/loops; everything else is a wall. If the walls close a balloon
+    around the text, every small ink mark inside it is text (also lines the OCR
+    missed), and the outline itself is never touched."""
+    cs = _char_size(region)
+    H, W = image.shape[:2]
+    rx0, ry0, rx1, ry1 = (int(v) for v in region["rect"])
+    p = 4 * cs
+    X0, Y0, X1, Y1 = max(0, rx0 - p), max(0, ry0 - p), min(W, rx1 + p), min(H, ry1 + p)
+    win = image[Y0:Y1, X0:X1]
+    gray = cv2.cvtColor(win, cv2.COLOR_BGR2GRAY) if win.ndim == 3 else win
+    rect = (max(0, rx0 - X0), max(0, ry0 - Y0), max(0, rx1 - X0), max(0, ry1 - Y0))
+    ref = gray[rect[1]:rect[3], rect[0]:rect[2]]
+    if ref.size < 16:
+        return None
+    ink, faint = _ink(gray, ref)
+    n, lab, st, _ = cv2.connectedComponentsWithStats(ink.astype(np.uint8), connectivity=8)
+    l, t, w, h, a = (st[:, i] for i in range(5))
+    q = max(2, cs // 4)
+    text = np.zeros(n, bool)
+    boxes = np.zeros(ink.shape, np.uint8)
+    for er in region.get("erase_rects") or [region["rect"]]:
+        ex0, ey0, ex1, ey1 = er[0] - X0 - q, er[1] - Y0 - q, er[2] - X0 + q, er[3] - Y0 + q
+        text |= (l >= ex0) & (t >= ey0) & (l + w <= ex1) & (t + h <= ey1)
+        cv2.rectangle(boxes, (int(ex0), int(ey0)), (int(ex1), int(ey1)), 1, -1)
+    big = np.maximum(w, h) > 2 * cs
+    text &= ~(big & ((np.minimum(w, h) < q) | (a < 0.1 * w * h)))   # lines / loops
+    text[0] = False
+    glyphs = text[lab]
+    # Walls: every non-glyph-sized mark, faint ones included (a thin light outline
+    # must still close the balloon); glyph-sized marks incl. text the OCR missed are not.
+    nf, labf, stf, _ = cv2.connectedComponentsWithStats(faint.astype(np.uint8), connectivity=8)
+    big_f = np.maximum(stf[:, 2], stf[:, 3]) > 1.5 * cs
+    # a chain of touching characters stays inside the text box; an outline doesn't
+    lf, tf, wf, hf = (stf[:, i] for i in range(4))
+    big_f &= ~((lf >= rect[0] - q) & (tf >= rect[1] - q)
+               & (lf + wf <= rect[2] + q) & (tf + hf <= rect[3] + q))
+    big_f[0] = False
+    interior = _balloon(big_f[labf] & ~glyphs, rect, cs)
+    if interior is not None:
+        # Every ink mark enclosed by the balloon is text — unless something big
+        # (a drawing) is in there, i.e. the "balloon" is really a panel: reject.
+        inside = np.bincount(lab[interior], minlength=n) == a
+        inside[0] = False
+        if np.any(inside & ~text & (np.maximum(w, h) > 1.5 * cs)):
+            interior = None
+        else:
+            interior |= _fused_glyphs(ink, interior, cs, boxes.astype(bool))
+            glyphs = ink & interior
+            # + OCR'd glyphs touching the outline (merged into the wall in the faint
+            # mask): they sit in character-sized dents of the interior
+            dent = np.bincount(lab[ink & _close(interior, cs)], minlength=n) >= 0.6 * a
+            glyphs |= (text & dent & (np.maximum(w, h) <= 1.5 * cs))[lab]
+            # complete glyph-sized strokes mostly inside (tips touching the outline)
+            part = np.bincount(lab[glyphs], minlength=n) >= 0.8 * a
+            part &= np.maximum(w, h) <= 1.5 * cs
+            part[0] = False
+            glyphs |= part[lab]
+    return X0, Y0, glyphs, interior, ink, cs
+
+
+def _erase(image, regions):
+    """Return a BGR copy with the text of `regions` removed.
+
+    Default ("ink" mode): per region, only the text strokes are masked (dilated a
+    little for anti-aliasing / JPEG halos), never the balloon outline. On a flat
+    background (typical white balloon) the strokes are filled with the local
+    background colour; on a textured one they are inpainted locally. A region whose
+    ink can't be isolated falls back to the legacy box inpaint."""
+    if _erase_mode() == "box":
+        mask = np.zeros(image.shape[:2], np.uint8)
+        for region in regions:
+            for er in region.get("erase_rects", [region["rect"]]):
+                cv2.rectangle(mask, (er[0], er[1]), (er[2], er[3]), 255, -1)
+        return _apply_inpaint(image, mask) if regions else image.copy()
+
+    out = image.copy()
+    legacy = np.zeros(image.shape[:2], np.uint8)
+    for region in regions:
+        lay = _text_layout(image, region)
+        x0, y0, x1, y1 = (int(v) for v in region["rect"])
+        area = (x1 - x0) * (y1 - y0) if lay is None or lay[3] is None else lay[3].sum()
+        if lay is None or not lay[2].any() or lay[2].sum() > 0.6 * max(1, area):
+            for er in region.get("erase_rects", [region["rect"]]):
+                cv2.rectangle(legacy, (er[0], er[1]), (er[2], er[3]), 255, -1)
+            continue
+        X0, Y0, glyphs, interior, ink, cs = lay
+        d = max(2, cs // 12)
+        m = cv2.dilate(glyphs.astype(np.uint8),
+                       cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * d + 1, 2 * d + 1)))
+        # never paint over (or right next to) ink that isn't text: outlines, art
+        m &= 1 - cv2.dilate((ink & ~glyphs).astype(np.uint8), np.ones((3, 3), np.uint8))
+        mb = m.astype(bool)
+        clean = ~mb & ~cv2.dilate(ink.astype(np.uint8), np.ones((3, 3), np.uint8)).astype(bool)
+        if interior is not None:
+            clean &= interior
+        win = out[Y0:Y0 + m.shape[0], X0:X0 + m.shape[1]]
+        # local background (normalised blur over clean pixels) + its grain
+        k = 2 * cs + 1
+        cf = clean.astype(np.float32)
+        den = cv2.blur(cf, (k, k))
+        local = cv2.blur(win.astype(np.float32) * cf[..., None], (k, k)) / np.maximum(den, 1e-6)[..., None]
+        ring = clean & (cv2.dilate(m, np.ones((k, k), np.uint8)) > 0)
+        if ring.sum() >= 20 and den[mb].min() > 0.02:
+            res = win[ring].astype(np.float32) - local[ring]
+            mad = np.median(np.abs(res), axis=0)
+            if mad.max() <= _FLAT_BG_MAD:
+                # flat: local background colour plus grain drawn from around the
+                # text (a plain colour fill shows up as smooth glyph ghosts)
+                res = res[(np.abs(res) <= 3 * mad + 3).all(axis=1)]
+                grain = res[np.random.default_rng(0).integers(len(res), size=int(mb.sum()))]
+                win[mb] = np.clip(local[mb] + grain, 0, 255).astype(np.uint8)
+                continue
+        win[:] = _apply_inpaint(win, m * 255, dilate=False)    # textured: local inpaint
+    if legacy.any():
+        out = _apply_inpaint(out, legacy)
+    return out
+
+
+def _render_rects(image, regions):
+    """Where to letter each region's translation: the OCR rect kept inside its
+    speech balloon's interior (minus a margin); in a box-like balloon (tight 1920s
+    balloons, where the OCR rect pokes out over the outline) spread over the whole
+    interior - unless another region shares that balloon (then each keeps its own
+    OCR rect, clamped to the interior)."""
+    full, own = [], []
+    for region in regions:
+        rect = [int(v) for v in region["rect"]]
+        lay = None if _erase_mode() == "box" else _text_layout(image, region)
+        if lay is None or lay[3] is None:
+            full.append(rect)
+            own.append(rect)
+            continue
+        X0, Y0, _g, interior, _ink, cs = lay
+        ys, xs = np.nonzero(interior)
+        mg = max(2, cs // 4)
+        ib = [int(X0 + xs.min() + mg), int(Y0 + ys.min() + mg),
+              int(X0 + xs.max() - mg), int(Y0 + ys.max() - mg)]
+        cl = [max(rect[0], ib[0]), max(rect[1], ib[1]), min(rect[2], ib[2]), min(rect[3], ib[3])]
+        cl = cl if cl[2] - cl[0] >= 8 and cl[3] - cl[1] >= 8 else rect
+        boxy = interior.sum() >= 0.8 * (np.ptp(xs) + 1) * (np.ptp(ys) + 1)
+        full.append(ib if boxy and ib[2] - ib[0] >= 8 and ib[3] - ib[1] >= 8 else cl)
+        own.append(cl)
+
+    def overlap(r, o):
+        return min(r[2], o[2]) > max(r[0], o[0]) and min(r[3], o[3]) > max(r[1], o[1])
+    return [own[i] if any(overlap(f, full[j]) for j in range(len(full)) if j != i) else f
+            for i, f in enumerate(full)]
+
+
 def inpaint_page(image, regions):
     """Return a clean (text-erased) BGR copy with EVERY translatable region removed,
     independent of the current translations. Cacheable: manga proofread re-export
     redraws edited text on this clean page instead of re-running the slow inpaint
     (~70s -> near-instant for a 10-page book)."""
-    mask = np.zeros(image.shape[:2], np.uint8)
-    erased = False
-    for region in regions:
-        if not region.get("needs_translation"):
-            continue
-        for er in region.get("erase_rects", [region["rect"]]):
-            cv2.rectangle(mask, (er[0], er[1]), (er[2], er[3]), 255, -1)
-            erased = True
-    return _apply_inpaint(image, mask) if erased else image.copy()
+    return _erase(image, [r for r in regions if r.get("needs_translation")])
 
 
 def render_on_image(image, regions, translations, dst_lang=None, clean_bgr=None):
@@ -830,22 +1111,21 @@ def render_on_image(image, regions, translations, dst_lang=None, clean_bgr=None)
     (e.g. a cached clean page) — when given, the slow inpaint step is skipped and
     text is drawn straight onto it. Returns a PIL RGB image. Pure in-memory (no
     disk) so the manga PDF translator can reuse it per page."""
-    mask = np.zeros(image.shape[:2], np.uint8)
-    to_render = []
+    erase, texts = [], []
     for region in regions:
         translated = translations.get(region["count_src"])
         if not region.get("needs_translation") or not translated:
             continue
-        # Manga-grouped regions erase each member text-line box (precise); plain
-        # regions erase their single rect. Text is rendered into the union rect.
-        for er in region.get("erase_rects", [region["rect"]]):
-            cv2.rectangle(mask, (er[0], er[1]), (er[2], er[3]), 255, -1)
-        to_render.append((region["rect"], translated))
+        # Text is erased per member text-line (see _erase) and rendered into the
+        # region rect, kept inside its speech balloon (see _render_rects).
+        erase.append(region)
+        texts.append(translated)
+    to_render = list(zip(_render_rects(image, erase), texts)) if erase else []
 
     if clean_bgr is not None:
         image = clean_bgr            # pre-inpainted clean page -> skip the slow step
     elif to_render:
-        image = _apply_inpaint(image, mask)
+        image = _erase(image, erase)
 
     # Render translations with PIL (proper CJK shaping)
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
