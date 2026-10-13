@@ -716,24 +716,30 @@ def _text_colors(rgb, rect):
 # No HarfBuzz 'vert' substitution in PIL, so punctuation would be drawn in its
 # horizontal form (comma in the bottom-left corner, brackets lying sideways).
 # Swap in the Unicode vertical presentation forms instead; the CJK fonts
-# _find_font_path picks (YaHei, Meiryo, PingFang, Noto CJK) all carry them.
+# _find_font_path picks (YaHei, Meiryo, PingFang, Noto CJK) carry them (YaHei all
+# of these; Meiryo lacks only ︴).
 _VERTICAL_FORMS = str.maketrans({
     "，": "︐", ",": "︐", "、": "︑", "。": "︒", "：": "︓", ":": "︓",
     "；": "︔", ";": "︔", "！": "︕", "!": "︕", "？": "︖", "?": "︖",
-    "…": "︙", "—": "︱", "～": "︴", "（": "︵", "(": "︵", "）": "︶", ")": "︶",
+    "…": "︙", "—": "︱", "ー": "︱", "～": "︴", "〜": "︴",
+    "（": "︵", "(": "︵", "）": "︶", ")": "︶", "〔": "︹", "〕": "︺",
+    "〈": "︿", "〉": "﹀", "｛": "︷", "｝": "︸", "〖": "︗", "〗": "︘", "［": "﹇", "］": "﹈",
     "【": "︻", "】": "︼", "《": "︽", "》": "︾", "「": "﹁", "」": "﹂",
     "『": "﹃", "』": "﹄", "“": "﹁", "”": "﹂", "‘": "﹃", "’": "﹄",
 })
 
 
-# Closing punctuation never starts a column (Chinese/Japanese line-breaking rule).
-_NO_COLUMN_START = set("︐︑︒︓︔︕︖︙︶︼︾﹂﹄")
+# Closing punctuation never starts a column, opening never ends one
+# (Chinese/Japanese line-breaking rule).
+_NO_COLUMN_START = set("︐︑︒︓︔︕︖︙︶︺﹀︸︘﹈︼︾﹂﹄")
+_NO_COLUMN_END = set("︵︹︿︷︗﹇︻︽﹁﹃")
 
 
 def _columns(chars, per_col):
     """Split chars into columns of <= per_col. A column that would end mid-phrase
     ends after its last punctuation instead (if that keeps it at least half full),
-    and never leaves closing punctuation to start the next column."""
+    never leaves closing punctuation to start the next column, nor ends a column on
+    opening punctuation."""
     cols, i = [], 0
     while i < len(chars):
         n = min(per_col, len(chars) - i)
@@ -742,6 +748,8 @@ def _columns(chars, per_col):
             if cut * 2 >= n:
                 n = cut
         while n > 1 and i + n < len(chars) and chars[i + n] in _NO_COLUMN_START:
+            n -= 1
+        while n > 1 and i + n < len(chars) and chars[i + n - 1] in _NO_COLUMN_END:
             n -= 1
         cols.append(chars[i:i + n])
         i += n
@@ -1053,15 +1061,16 @@ def _text_layout(image, region):
     return X0, Y0, glyphs, interior, ink, cs
 
 
-def _erase(image, regions):
+def _erase(image, regions, mode=None):
     """Return a BGR copy with the text of `regions` removed.
 
-    Default ("ink" mode): per region, only the text strokes are masked (dilated a
-    little for anti-aliasing / JPEG halos), never the balloon outline. On a flat
-    background (typical white balloon) the strokes are filled with the local
-    background colour; on a textured one they are inpainted locally. A region whose
-    ink can't be isolated falls back to the legacy box inpaint."""
-    if _erase_mode() == "box":
+    Default ("ink" mode): per manga-grouped region (has erase_rects), only the text
+    strokes are masked (dilated a little for anti-aliasing / JPEG halos), never the
+    balloon outline. On a flat background (typical white balloon) the strokes are
+    filled with the local background colour; on a textured one they are inpainted
+    locally. Plain (non-manga) regions, and a region whose ink can't be isolated,
+    use the legacy box inpaint (coloured text on a photo/gradient isn't "dark ink")."""
+    if (mode or _erase_mode()) == "box":
         mask = np.zeros(image.shape[:2], np.uint8)
         for region in regions:
             for er in region.get("erase_rects", [region["rect"]]):
@@ -1071,7 +1080,7 @@ def _erase(image, regions):
     out = image.copy()
     legacy = np.zeros(image.shape[:2], np.uint8)
     for region in regions:
-        lay = _text_layout(image, region)
+        lay = _text_layout(image, region) if "erase_rects" in region else None
         x0, y0, x1, y1 = (int(v) for v in region["rect"])
         area = (x1 - x0) * (y1 - y0) if lay is None or lay[3] is None else lay[3].sum()
         if lay is None or not lay[2].any() or lay[2].sum() > 0.6 * max(1, area):
@@ -1152,16 +1161,18 @@ def _inner_rect(body, mg):
     return x0, y0, x1, y1
 
 
-def _render_rects(image, regions):
-    """Where to letter each region's translation: the OCR rect kept inside its
+def _render_rects(image, regions, mode=None):
+    """Where to letter each region's translation: for a manga-grouped region (has
+    erase_rects; plain regions keep their OCR rect) the OCR rect kept inside its
     speech balloon's interior (minus a margin); in a box-like balloon (tight 1920s
     balloons, where the OCR rect pokes out over the outline) spread over the whole
     interior - unless another region shares that balloon (then each keeps its own
     OCR rect, clamped to the interior)."""
     full, own = [], []
+    ink = (mode or _erase_mode()) == "ink"
     for region in regions:
         rect = [int(v) for v in region["rect"]]
-        lay = None if _erase_mode() == "box" else _text_layout(image, region)
+        lay = _text_layout(image, region) if ink and "erase_rects" in region else None
         if lay is None or lay[3] is None:
             full.append(rect)
             own.append(rect)
@@ -1208,12 +1219,13 @@ def render_on_image(image, regions, translations, dst_lang=None, clean_bgr=None)
         # region rect, kept inside its speech balloon (see _render_rects).
         erase.append(region)
         texts.append(translated)
-    to_render = list(zip(_render_rects(image, erase), texts, erase)) if erase else []
+    mode = _erase_mode() if erase else None          # config read once per image
+    to_render = list(zip(_render_rects(image, erase, mode), texts, erase)) if erase else []
 
     if clean_bgr is not None:
         image = clean_bgr            # pre-inpainted clean page -> skip the slow step
     elif to_render:
-        image = _erase(image, erase)
+        image = _erase(image, erase, mode)
 
     # Render translations with PIL (proper CJK shaping)
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

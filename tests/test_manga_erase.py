@@ -92,7 +92,8 @@ def test_textured_background_falls_back_to_inpaint(monkeypatch):
     for c in range(4):                                                    # dark text
         x = 100 + c * 30
         cv2.line(img, (x + 4, 105), (x + 24, 105), (0, 0, 0), 3)
-    region = {"rect": [96, 86, 224, 124], "needs_translation": True, "count_src": 1}
+    region = {"rect": [96, 86, 224, 124], "erase_rects": [[96, 86, 224, 124]],
+              "needs_translation": True, "count_src": 1}
     calls = []
     real = M._apply_inpaint
     monkeypatch.setattr(M, "_apply_inpaint",
@@ -101,6 +102,21 @@ def test_textured_background_falls_back_to_inpaint(monkeypatch):
     assert calls == [False]                     # local inpaint of the glyph mask only
     assert (out[:80] == img[:80]).all() and (out[140:] == img[140:]).all()
     assert cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)[100:110, 104:224].min() > 30
+
+
+def test_plain_image_region_keeps_the_box_erase(monkeypatch):
+    """Ink erase is manga-only: coloured text on a gradient isn't "dark ink", so a
+    plain (non-manga, no erase_rects) region must get the old box inpaint, not a
+    partial ink erase that leaves most of the text."""
+    img = np.zeros((300, 600, 3), np.uint8)
+    img[:] = np.linspace(40, 200, 600)[None, :, None].astype(np.uint8)
+    img[..., 0] = 120
+    cv2.putText(img, "Sale 50%", (60, 180), cv2.FONT_HERSHEY_SIMPLEX, 2.5, (30, 30, 220), 6)
+    region = {"rect": [50, 110, 450, 200], "needs_translation": True, "count_src": 1}
+    mask = np.zeros(img.shape[:2], np.uint8)
+    cv2.rectangle(mask, (50, 110), (450, 200), 255, -1)
+    assert (M.inpaint_page(img, [region]) == M._apply_inpaint(img, mask)).all()
+    assert M._render_rects(img, [region]) == [region["rect"]]
 
 
 def test_lettering_stays_inside_balloon():
@@ -163,6 +179,7 @@ def test_vertical_text_uses_vertical_punctuation():
 
     M._render_vertical(Draw(), "（一），好。", (0, 0, 40, 400), None, (0, 0, 0), (255, 255, 255))
     assert drawn == ["︵", "一", "︶", "︐", "好", "︒"]
+    assert "ー〜～〔〕〈〉｛｝〖〗［］".translate(M._VERTICAL_FORMS) == "︱︴︴︹︺︿﹀︷︸︗︘﹇﹈"
 
 
 def test_closing_punctuation_never_starts_a_column():
@@ -172,3 +189,5 @@ def test_closing_punctuation_never_starts_a_column():
     # a column that would split a phrase breaks after its last punctuation instead
     assert M._columns(list("下次冒险︐也带上我吧︕"), 6) == [list("下次冒险︐"), list("也带上我吧︕")]
     assert M._clean_breaks(M._columns(list("有了弟弟︐真开心︕"), 5))
+    # opening punctuation never ends a column
+    assert [c[-1] for c in M._columns(list("你好世﹁界﹂"), 4)] == ["世", "﹂"]
