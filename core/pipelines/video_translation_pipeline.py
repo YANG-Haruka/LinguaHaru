@@ -1526,7 +1526,11 @@ def warm_import_live_engine():
                "qwen3asr": "mlx_qwen3_asr" if _mlx_qwen_ok() else "qwen_asr"}.get(engine)
         if mod:
             t0 = time.time()
-            importlib.import_module(mod)
+            # Under the loaders' lock: funasr imports transformers too, and a
+            # concurrent `from transformers import pipeline` in a video task can
+            # see the half-initialized package ("cannot import name 'pipeline'").
+            with _LOAD_LOCK:
+                importlib.import_module(mod)
             app_logger.info(f"Real-time STT engine '{mod}' pre-imported in {time.time() - t0:.1f}s")
     except Exception as e:  # noqa: BLE001 — an optimization; the real load still works
         app_logger.debug(f"STT engine pre-import skipped: {e}")
