@@ -1,19 +1,19 @@
 {
-    "version": "7.0.7",
+    "version": "7.0.8",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.7: manga text removal erases only the glyph strokes, so balloon outlines stay clean (and whole pages process much faster); manga lettering stays inside the balloon, and vertical text uses vertical punctuation with better column breaks. / 7.0.7：漫画抹字只擦掉文字笔画，气泡边框不再被涂花，整页处理也快了很多；漫画译文留在气泡内，竖排使用竖排标点，换列更自然。",
+    "notes": "7.0.8: floating captions can be locked (always on top, clicks pass through); unticking a page in \"Features visible to normal users\" hides it instantly here and on LAN devices; fixed an occasional \"cannot import name 'pipeline'\" error in video tasks. / 7.0.8：悬浮字幕可锁定（始终置顶、鼠标穿透）；「普通用户可见功能」取消勾选的页面本机和局域网设备立即隐藏；修复视频任务偶发 \"cannot import name 'pipeline'\" 报错。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.7/LinguaHaru-7.0.7-web-portable.zip",
-            "sha256": "ad9d83bcaad40ad65715e4f2f889282083e4597e5c3612e6843f2c5bb94c7afa"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.8/LinguaHaru-7.0.8-web-portable.zip",
+            "sha256": "e66cdece303ab8f9a01036079ea93c2fdb46a2278096080f37786e8e932b8960"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.7/LinguaHaru-7.0.7-desktop-portable.zip",
-            "sha256": "f4e1b832ea9e1b939b8943a41b350929fb3f88d71a5b4ec665bba76efaff7286"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.8/LinguaHaru-7.0.8-desktop-portable.zip",
+            "sha256": "47263517d0172e8c459abc0da53c333787183b6409411ebd726bf7d50dd1843d"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.7/LinguaHaru-7.0.7-desktop-mac.zip",
-            "sha256": "95f14f45593a20b9dec3574456b605c6e93fc17f81036ea0f4be3fdb73da491b"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.8/LinguaHaru-7.0.8-desktop-mac.zip",
+            "sha256": "3ac95815865285fb4ba77400747c2e4a472a99bfe95b9f90f992e36e9d228240"
         }
     }
 }
