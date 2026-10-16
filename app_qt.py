@@ -11,6 +11,12 @@ import os
 import sys
 from pathlib import Path
 
+# pythonw (the desktop shortcut) has no console: sys.stdout/stderr are None and
+# any write (our Qt log handler, tqdm, libraries) raises mid-UI-build.
+for _name in ("stdout", "stderr"):
+    if getattr(sys, _name) is None:
+        setattr(sys, _name, open(os.devnull, "w", encoding="utf-8"))
+
 
 def _patch_tiktoken():
     """Use bundled tiktoken BPE files when present."""
