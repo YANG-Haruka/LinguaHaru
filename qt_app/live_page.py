@@ -183,7 +183,7 @@ class _CaptionBar(QWidget):
     # bg is #AARRGGBB so its alpha doubles as the background opacity.
     _STYLE_DEFAULT = {"bg": "#db12141a", "dst_color": "#f1f5f9", "src_color": "#9aa6b2",
                       "family": "", "bold": True, "italic": False, "size": 20,
-                      "mode": "bilingual", "geometry": None}
+                      "mode": "bilingual", "geometry": None, "locked": False}
 
     def __init__(self, parent=None, lang="en"):
         # No parent + Qt.Window (NOT Qt.Tool): an INDEPENDENT top-level window.
@@ -250,10 +250,41 @@ class _CaptionBar(QWidget):
         self._plus_btn.setToolTip(tr("Font Size", self._lang))
         self._plus_btn.clicked.connect(lambda: self._bump_font(2))
         top.addWidget(self._plus_btn)
+        self._lock_btn = self._mk_btn("🔒", 26, 22)
+        self._lock_btn.setToolTip(tr("Lock Captions", self._lang))
+        self._lock_btn.clicked.connect(lambda: self._set_locked(True))
+        top.addWidget(self._lock_btn)
         self._close_btn = self._mk_btn("×", 22, 22, big=True)
         self._close_btn.clicked.connect(self.hide)
         top.addWidget(self._close_btn)
         inner.addLayout(top)
+
+        # Locked = stays on top AND clicks pass through to whatever is behind.
+        # A click-through window can't receive its own clicks, so unlock/close
+        # live on this tiny separate top-level pinned over the bar's corner.
+        self._handle = QWidget(None)
+        self._handle.setWindowFlags(
+            Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
+        self._handle.setAttribute(Qt.WA_TranslucentBackground, True)
+        self._handle.setAttribute(Qt.WA_ShowWithoutActivating, True)
+        self._handle.setAttribute(Qt.WA_MacAlwaysShowToolWindow, True)
+        hpanel = QWidget(self._handle)
+        hpanel.setObjectName("captionHandle")
+        hpanel.setStyleSheet("#captionHandle{background:rgba(18,20,26,0.85);border-radius:8px;}")
+        hl = QHBoxLayout(hpanel)
+        hl.setContentsMargins(4, 0, 4, 0)
+        hl.setSpacing(0)
+        self._unlock_btn = self._mk_btn("🔓", 26, 22)
+        self._unlock_btn.setToolTip(tr("Unlock Captions", self._lang))
+        self._unlock_btn.clicked.connect(lambda: self._set_locked(False))
+        hl.addWidget(self._unlock_btn)
+        hclose = self._mk_btn("×", 22, 22, big=True)
+        hclose.clicked.connect(self.hide)
+        hl.addWidget(hclose)
+        hroot = QHBoxLayout(self._handle)
+        hroot.setContentsMargins(0, 0, 0, 0)
+        hroot.addWidget(hpanel)
+        self._handle.adjustSize()
 
         # Auto-scrolling multi-line caption area: holds several recent lines and
         # pins the newest to the bottom, so resizing the window taller shows more.
@@ -278,6 +309,13 @@ class _CaptionBar(QWidget):
         self._grip.setFixedSize(14, 14)
         grip_row.addWidget(self._grip, 0, Qt.AlignRight | Qt.AlignBottom)
         inner.addLayout(grip_row)
+        # Controls hidden while locked keep their space, so the text doesn't jump.
+        self._lockable = (self._mode_btn, self._gear_btn, self._minus_btn,
+                          self._plus_btn, self._lock_btn, self._close_btn, self._grip)
+        for w in self._lockable:
+            sp = w.sizePolicy()
+            sp.setRetainSizeWhenHidden(True)
+            w.setSizePolicy(sp)
 
         self._update_mode_btn()
         self._render()
@@ -513,7 +551,33 @@ class _CaptionBar(QWidget):
         self._drag_pos = None
         super().mouseReleaseEvent(event)
 
+    def _set_locked(self, on):
+        self._style["locked"] = on
+        self._save_style()
+        self._apply_lock()
+
+    def _apply_lock(self):
+        on = bool(self._style.get("locked"))
+        for w in self._lockable:
+            w.setVisible(not on)
+        if self.windowHandle() is not None:
+            # On the QWindow, not QWidget.setWindowFlag: that would re-create
+            # (hide + show) the window, firing hideEvent -> closed.
+            self.windowHandle().setFlag(Qt.WindowTransparentForInput, on)
+        if on and self.isVisible():
+            self._handle.move(self.x() + self.width() - self._handle.width() - 14,
+                              self.y() + 6)
+            self._handle.show()
+            self._handle.raise_()
+        else:
+            self._handle.hide()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._apply_lock()
+
     def hideEvent(self, event):
+        self._handle.hide()
         # Remember where/how big the user left it (e.g. stretched full-width).
         g = self.geometry()
         self._style["geometry"] = [g.x(), g.y(), g.width(), g.height()]

@@ -571,6 +571,13 @@ def bootstrap():
     }
 
 
+@app.get("/api/lan-features")
+def lan_features():
+    """Cheap poll target so normal LAN clients follow the admin's feature
+    checkboxes live (bootstrap is too heavy to re-fetch every few seconds)."""
+    return {"hidden": backend.get_config("lan_hidden_features", []) or []}
+
+
 @app.get("/api/sysmon")
 def sysmon_usage():
     """Live CPU/GPU usage for the task dashboard (polled while a run is active)."""

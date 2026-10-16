@@ -351,12 +351,29 @@ class MainWindow(FluentWindow):
                 return True
             return False
         self.history_page.on_continue_resume_batch = _continue_batch_on_dashboard
+        self.settings_page.on_features_changed = self.apply_hidden_pages
+        self.apply_hidden_pages(backend.get_config("lan_hidden_features", []) or [])
         self._auto_nav(animate=False)
 
         # First-run onboarding tutorial (once per install; deferred so it pops
         # over a fully-painted window).
         from PySide6.QtCore import QTimer
         QTimer.singleShot(120, self._maybe_onboard)
+
+    # LAN feature key -> nav routeKey of the page it hides.
+    _FEATURE_ROUTES = {"translate": "TranslatePage", "live": "LivePage",
+                       "glossary": "GlossaryPage", "proofread": "ProofreadPage",
+                       "history": "HistoryPage"}
+
+    def apply_hidden_pages(self, hidden):
+        """Hide (or restore) the nav items of pages unchecked in Settings → LAN
+        User Features, live. The pages stay built; only the nav entry goes."""
+        for key, route in self._FEATURE_ROUTES.items():
+            item = self.navigationInterface.widget(route)
+            if item is not None:
+                item.setVisible(key not in hidden)
+            if key in hidden and self.stackedWidget.currentWidget().objectName() == route:
+                self.switchTo(self.quick_page)
 
     def _maybe_onboard(self):
         from qt_app.onboarding import maybe_show_onboarding

@@ -217,6 +217,7 @@ class SettingsPage(ScrollArea):
         self._lan_port = 8080
         # Set by MainWindow so the language selector can drive a global retranslate.
         self.on_ui_lang_changed = None
+        self.on_features_changed = None   # set by the main window: live nav hiding
         self.setWidgetResizable(True)
         self.enableTransparentBackground()
 
@@ -745,6 +746,8 @@ class SettingsPage(ScrollArea):
         hidden). Same lan_hidden_features config the Web UI reads."""
         hidden = [k for k, (cb, _lbl) in self._feat_boxes.items() if not cb.isChecked()]
         backend.set_config("lan_hidden_features", hidden)
+        if self.on_features_changed:
+            self.on_features_changed(hidden)
 
     # --- data & storage handlers ---
     def _save_hist_max(self):

@@ -434,5 +434,7 @@
   "Downloaded": "ダウンロード済み",
   "Use Model": "使用する",
   "In Use": "使用中",
-  "Tag JapaneseOnly": "日本語のみ"
+  "Tag JapaneseOnly": "日本語のみ",
+  "Lock Captions": "ロック（最前面に固定・クリック透過）",
+  "Unlock Captions": "ロック解除で移動・サイズ変更"
 }

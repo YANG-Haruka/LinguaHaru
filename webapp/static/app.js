@@ -877,6 +877,25 @@ function applyServerMode() {
   $("apikey-warning").hidden = true;
 }
 
+// Show/hide what the admin unchecked for normal LAN users: page tabs + inline
+// options tagged data-feat. Idempotent (also un-hides), so it can re-run live.
+const _LAN_PAGE_TABS = ["translate", "live", "glossary", "proofread", "history"];
+function _applyLanHidden(hidden) {
+  const show = (el, on) => { el.style.display = on ? "" : "none"; };
+  _LAN_PAGE_TABS.forEach((t) => {
+    const btn = document.querySelector(`.tab[data-tab="${t}"]`);
+    if (btn) show(btn, !hidden.includes(t));
+  });
+  document.querySelectorAll("[data-feat]:not(.lan-feat)").forEach((el) => show(el, !hidden.includes(el.dataset.feat)));
+  // If every PDF sub-option is hidden, drop the now-empty "PDF Options" header.
+  const pdfCard = $("pdf-options");
+  const head = pdfCard && pdfCard.querySelector(".pdf-options-head");
+  if (head) show(head, !!pdfCard.querySelector(".pdf-opt:not([style*='display: none'])"));
+  // If the active tab got hidden, fall back to the primary Translate page.
+  const active = document.querySelector(".tab.active");
+  if (active && active.style.display === "none") switchTab("quick");
+}
+
 // Role gating (LAN mode): a device that isn't the admin sees a translate-only UI;
 // the management pages (settings / plugins / interface / server model picker) are
 // hidden. An "Admin Login" entry (shown only when a LAN admin password exists)
@@ -886,25 +905,20 @@ function applyRole() {
   const c = BOOT.config || {};
   if (!isAdmin) {
     document.body.classList.add("user-role");
-    const hidden = c.lan_hidden_features || [];
     _hideTabs(["interface", "modules", "settings"]);   // always admin-only
-    _hideTabs(hidden);                                 // admin-hidden pages (tab keys)
-    // Admin-hidden inline options (bilingual / subtitles / manga / pdf-*), each
-    // tagged with data-feat on its container.
-    document.querySelectorAll("[data-feat]").forEach((el) => {
-      if (hidden.includes(el.dataset.feat)) el.style.display = "none";
-    });
-    // If every PDF sub-option is hidden, drop the now-empty "PDF Options" header.
-    const pdfCard = $("pdf-options");
-    if (pdfCard && !pdfCard.querySelector(".pdf-opt:not([style*='display: none'])")) {
-      const head = pdfCard.querySelector(".pdf-options-head");
-      if (head) head.style.display = "none";
-    }
     const modelField = $("model").closest(".field");
     if (modelField) modelField.style.display = "none";
-    // If the active tab got hidden, fall back to the primary Translate page.
-    const active = document.querySelector(".tab.active");
-    if (active && active.style.display === "none") switchTab("quick");
+    _applyLanHidden(c.lan_hidden_features || []);
+    // Follow the admin's checkbox changes live (no page refresh needed).
+    setInterval(async () => {
+      try {
+        const r = await api("/api/lan-features");
+        if (JSON.stringify(r.hidden) !== JSON.stringify(BOOT.config.lan_hidden_features || [])) {
+          BOOT.config.lan_hidden_features = r.hidden;
+          _applyLanHidden(r.hidden);
+        }
+      } catch (e) { /* server briefly unreachable: keep the current view */ }
+    }, 5000);
   }
   // The login entry only makes sense on a LAN host that HAS an admin password.
   const grp = $("admin-login-group");

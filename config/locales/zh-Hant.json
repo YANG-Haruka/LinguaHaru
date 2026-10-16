@@ -474,5 +474,7 @@
   "Downloaded": "已下載",
   "Use Model": "使用",
   "In Use": "使用中",
-  "Tag JapaneseOnly": "僅日語"
+  "Tag JapaneseOnly": "僅日語",
+  "Lock Captions": "鎖定（置頂 + 滑鼠穿透）",
+  "Unlock Captions": "解鎖後可移動/調整大小"
 }
