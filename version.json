@@ -1,19 +1,19 @@
 {
-    "version": "7.0.8",
+    "version": "7.0.9",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.8: floating captions can be locked (always on top, clicks pass through); unticking a page in \"Features visible to normal users\" hides it instantly here and on LAN devices; fixed an occasional \"cannot import name 'pipeline'\" error in video tasks. / 7.0.8：悬浮字幕可锁定（始终置顶、鼠标穿透）；「普通用户可见功能」取消勾选的页面本机和局域网设备立即隐藏；修复视频任务偶发 \"cannot import name 'pipeline'\" 报错。",
+    "notes": "7.0.9: fixed the desktop app losing most pages (Real-Time Voice, Glossary, Proofread, History, Plugins, Settings) when launched from the desktop shortcut; settings and data were not affected. / 7.0.9：修复从桌面快捷方式打开时实时语音、词汇表、校对、历史记录、插件、设置等页面消失的问题；设置和数据不受影响。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.8/LinguaHaru-7.0.8-web-portable.zip",
-            "sha256": "e66cdece303ab8f9a01036079ea93c2fdb46a2278096080f37786e8e932b8960"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.9/LinguaHaru-7.0.9-web-portable.zip",
+            "sha256": "5ebf1715bdd06031f5646a91a3731c91093cd0257e465fa19aeb802b8a553918"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.8/LinguaHaru-7.0.8-desktop-portable.zip",
-            "sha256": "47263517d0172e8c459abc0da53c333787183b6409411ebd726bf7d50dd1843d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.9/LinguaHaru-7.0.9-desktop-portable.zip",
+            "sha256": "5fda34af616f11cd0e5febc316a1e18768568c72e81cb4600a068383b48501aa"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.8/LinguaHaru-7.0.8-desktop-mac.zip",
-            "sha256": "3ac95815865285fb4ba77400747c2e4a472a99bfe95b9f90f992e36e9d228240"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.9/LinguaHaru-7.0.9-desktop-mac.zip",
+            "sha256": "61f420e64ea6b564db00d34aa0e06b1ecfd6bd333fb685b5843c9bae86826e94"
         }
     }
 }
