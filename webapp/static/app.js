@@ -877,23 +877,26 @@ function applyServerMode() {
   $("apikey-warning").hidden = true;
 }
 
-// Show/hide what the admin unchecked for normal LAN users: page tabs + inline
-// options tagged data-feat. Idempotent (also un-hides), so it can re-run live.
+// Show/hide what the admin unchecked: page tabs (for everyone, like the Qt nav)
+// + inline options tagged data-feat (normal LAN users only, pagesOnly=false).
+// Idempotent (also un-hides), so it can re-run live.
 const _LAN_PAGE_TABS = ["translate", "live", "glossary", "proofread", "history"];
-function _applyLanHidden(hidden) {
+function _applyLanHidden(hidden, pagesOnly = false) {
   const show = (el, on) => { el.style.display = on ? "" : "none"; };
   _LAN_PAGE_TABS.forEach((t) => {
     const btn = document.querySelector(`.tab[data-tab="${t}"]`);
     if (btn) show(btn, !hidden.includes(t));
   });
-  document.querySelectorAll("[data-feat]:not(.lan-feat)").forEach((el) => show(el, !hidden.includes(el.dataset.feat)));
-  // If every PDF sub-option is hidden, drop the now-empty "PDF Options" header.
-  const pdfCard = $("pdf-options");
-  const head = pdfCard && pdfCard.querySelector(".pdf-options-head");
-  if (head) show(head, !!pdfCard.querySelector(".pdf-opt:not([style*='display: none'])"));
+  if (!pagesOnly) {
+    document.querySelectorAll("[data-feat]:not(.lan-feat)").forEach((el) => show(el, !hidden.includes(el.dataset.feat)));
+    // If every PDF sub-option is hidden, drop the now-empty "PDF Options" header.
+    const pdfCard = $("pdf-options");
+    const head = pdfCard && pdfCard.querySelector(".pdf-options-head");
+    if (head) show(head, !!pdfCard.querySelector(".pdf-opt:not([style*='display: none'])"));
+  }
   // If the active tab got hidden, fall back to the primary Translate page.
   const active = document.querySelector(".tab.active");
-  if (active && active.style.display === "none") switchTab("quick");
+  if (active && active.style.display === "none") document.querySelector('.tab[data-tab="quick"]').click();
 }
 
 // Role gating (LAN mode): a device that isn't the admin sees a translate-only UI;
@@ -919,6 +922,8 @@ function applyRole() {
         }
       } catch (e) { /* server briefly unreachable: keep the current view */ }
     }, 5000);
+  } else {
+    _applyLanHidden(c.lan_hidden_features || [], true);
   }
   // The login entry only makes sense on a LAN host that HAS an admin password.
   const grp = $("admin-login-group");
@@ -1526,6 +1531,7 @@ document.querySelectorAll(".lan-feat").forEach((cb) => {
     const hidden = [...document.querySelectorAll(".lan-feat")].filter((x) => !x.checked).map((x) => x.dataset.feat);
     saveConfig({ lan_hidden_features: hidden });
     if (BOOT.config) BOOT.config.lan_hidden_features = hidden;
+    _applyLanHidden(hidden, true);   // admin's own tabs follow live (Qt parity)
     toast(_label("Saved", "已保存"), "ok");
   };
 });

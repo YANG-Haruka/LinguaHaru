@@ -338,7 +338,7 @@
   "Admin Password Saved": "LAN-Admin-Passwort aktualisiert",
   "Saved": "Gespeichert",
   "LAN User Features": "Für normale Nutzer sichtbare Funktionen (andere Geräte im LAN, nicht als Admin angemeldet)",
-  "LAN User Features Hint": "Deaktivieren blendet die Funktion für normale Nutzer aus (Verwaltungsseiten bleiben immer nur für Admins).",
+  "LAN User Features Hint": "Deaktivieren blendet die Funktion für normale Nutzer aus; deaktivierte Seiten werden auch auf diesem Gerät ausgeblendet (Verwaltungsseiten bleiben immer nur für Admins).",
   "Feature Group Pages": "Seiten",
   "Feature Group Options": "Übersetzungsoptionen",
   "Feature Group PDF": "PDF-Optionen",
