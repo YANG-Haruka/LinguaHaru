@@ -1,19 +1,19 @@
 {
-    "version": "7.0.9",
+    "version": "7.0.10",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.9: fixed the desktop app losing most pages (Real-Time Voice, Glossary, Proofread, History, Plugins, Settings) when launched from the desktop shortcut; settings and data were not affected. / 7.0.9：修复从桌面快捷方式打开时实时语音、词汇表、校对、历史记录、插件、设置等页面消失的问题；设置和数据不受影响。",
+    "notes": "7.0.10: fixed PDF translation failing with \"cannot import name 'BitStream' from 'bitstring'\"; updating repairs it automatically, no plugin reinstall needed. / 7.0.10：修复 PDF 翻译报错 \"cannot import name 'BitStream' from 'bitstring'\"；更新后自动修复，无需重装插件。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.9/LinguaHaru-7.0.9-web-portable.zip",
-            "sha256": "5ebf1715bdd06031f5646a91a3731c91093cd0257e465fa19aeb802b8a553918"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.10/LinguaHaru-7.0.10-web-portable.zip",
+            "sha256": "8835dcadbb13b682343c54f3009effe04d4cad390ecb5ac4b5be32d3d79c4cf8"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.9/LinguaHaru-7.0.9-desktop-portable.zip",
-            "sha256": "5fda34af616f11cd0e5febc316a1e18768568c72e81cb4600a068383b48501aa"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.10/LinguaHaru-7.0.10-desktop-portable.zip",
+            "sha256": "fe4b9bab1fa2c5f3f7f361f43a2982d9a4e74d0465142d752319f44978195075"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.9/LinguaHaru-7.0.9-desktop-mac.zip",
-            "sha256": "61f420e64ea6b564db00d34aa0e06b1ecfd6bd333fb685b5843c9bae86826e94"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.10/LinguaHaru-7.0.10-desktop-mac.zip",
+            "sha256": "ce02a5557009133bb17b363d15728735c78cc834d74a9c0be0d35b202f4e6cb0"
         }
     }
 }
