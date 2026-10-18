@@ -876,3 +876,25 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
             except:
                 pass
         return f"Error parsing API response: {str(e)}", True, None
+
+def test_interface(base_url, model, api_key, timeout=30):
+    """One tiny chat request with the given (possibly unsaved) interface values,
+    for the interface dialog's Test button. Returns (ok, detail): latency + the
+    model's reply on success, the provider's error text on failure."""
+    if not base_url or not model:
+        return False, "Base URL / Model ID is empty"
+    t0 = time.time()
+    try:
+        client = OpenAI(api_key=_pick_api_key(api_key) or "none", base_url=base_url,
+                        timeout=timeout, max_retries=0)
+        p_upd, eb = _thinking_off_params(base_url)   # thinking would only slow the ping
+        params = {"model": model, "stream": False,
+                  "messages": [{"role": "user", "content": "Reply with exactly: OK"}], **p_upd}
+        if eb:
+            params["extra_body"] = eb
+        r = _create_completion(client, params)
+        reply = ((r.choices[0].message.content or "") if r.choices else "").strip()
+        return True, f"{int((time.time() - t0) * 1000)} ms · {reply[:40] or '(empty reply)'}"
+    except Exception as e:  # noqa: BLE001 — every failure is a result to show
+        status = _http_status(e)
+        return False, (f"HTTP {status}: " if status else "") + str(e)[:300]

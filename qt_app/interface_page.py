@@ -10,7 +10,7 @@ Translate page picks it up). "Add Interface" opens a MessageBoxBase dialog that
 writes a new config/api_config/<name>.json.
 """
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFormLayout,
@@ -20,13 +20,29 @@ from qfluentwidgets import (
     ScrollArea, TitleLabel, SubtitleLabel, BodyLabel, CaptionLabel,
     StrongBodyLabel, PrimaryPushButton, PillPushButton, FluentIcon, FlowLayout,
     SimpleCardWidget, IconWidget, InfoBar, InfoBarPosition, MessageBoxBase,
-    LineEdit, RoundMenu, Action,
+    LineEdit, RoundMenu, Action, PushButton,
 )
 
 from core import backend
 from qt_app.i18n import tr
 from qt_app.widgets import EntryCard
 from core.api_keys import load_api_key_for_model, save_api_key_for_model
+
+
+_ORPHAN_TESTS = []   # test threads outliving their closed dialog
+
+
+class _TestWorker(QThread):
+    """Runs one tiny request off the UI thread (it can take up to ~30s)."""
+    done = Signal(bool, str)
+
+    def __init__(self, base_url, model, key):
+        super().__init__()
+        self._args = (base_url, model, key)
+
+    def run(self):
+        from core.llm.online_translation import test_interface
+        self.done.emit(*test_interface(*self._args))
 
 
 class AddInterfaceDialog(MessageBoxBase):
@@ -73,6 +89,15 @@ class AddInterfaceDialog(MessageBoxBase):
         form.addRow(tr("Max Retries", lang), self.retries_edit)
         self.viewLayout.addWidget(form_host)
 
+        # Test the values as typed (no save needed): one tiny request.
+        self.test_result = CaptionLabel("", self)
+        self.test_result.setWordWrap(True)
+        self.viewLayout.addWidget(self.test_result)
+        self.test_btn = PushButton(tr("Test Interface", lang), self)
+        self.test_btn.clicked.connect(self._on_test)
+        self.buttonLayout.insertWidget(0, self.test_btn)
+        self._test_worker = None
+
         self.yesButton.setText(tr("Save", lang))
         self.cancelButton.setText(tr("Cancel", lang))
         self.widget.setMinimumWidth(420)
@@ -93,6 +118,31 @@ class AddInterfaceDialog(MessageBoxBase):
 
     def api_key(self):
         return self.key_edit.text().strip()
+
+    def _on_test(self):
+        self.test_btn.setEnabled(False)
+        self.test_result.setStyleSheet("")
+        self.test_result.setText(tr("Testing Interface", self._lang))
+        self._test_worker = _TestWorker(self.base_edit.text().strip(),
+                                        self.model_edit.text().strip(), self.api_key())
+        self._test_worker.done.connect(self._on_test_done)
+        self._test_worker.start()
+
+    def _on_test_done(self, ok, detail):
+        self.test_btn.setEnabled(True)
+        self.test_result.setStyleSheet("color:#16a34a;" if ok else "color:#e0503c;")
+        self.test_result.setText(
+            tr("Interface OK" if ok else "Interface Failed", self._lang) + " — " + detail)
+
+    def done(self, r):
+        # Closing mid-test: keep the QThread alive until it ends (destroying a
+        # running QThread aborts the app) without blocking the UI on it.
+        w = self._test_worker
+        if w is not None and w.isRunning():
+            w.done.disconnect()
+            _ORPHAN_TESTS.append(w)
+            w.finished.connect(lambda: _ORPHAN_TESTS.remove(w))
+        super().done(r)
 
     def values(self):
         def _num(text):

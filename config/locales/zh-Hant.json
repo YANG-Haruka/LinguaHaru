@@ -476,5 +476,9 @@
   "In Use": "使用中",
   "Tag JapaneseOnly": "僅日語",
   "Lock Captions": "鎖定（置頂 + 滑鼠穿透）",
-  "Unlock Captions": "解鎖後可移動/調整大小"
+  "Unlock Captions": "解鎖後可移動/調整大小",
+  "Test Interface": "測試",
+  "Testing Interface": "正在測試…",
+  "Interface OK": "介面正常",
+  "Interface Failed": "介面無法使用"
 }

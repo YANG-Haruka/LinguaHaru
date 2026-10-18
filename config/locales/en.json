@@ -729,5 +729,9 @@
   "Use Model": "Use",
   "Tag JapaneseOnly": "Japanese only",
   "Lock Captions": "Lock (stay on top, clicks pass through)",
-  "Unlock Captions": "Unlock to move or resize"
+  "Unlock Captions": "Unlock to move or resize",
+  "Test Interface": "Test",
+  "Testing Interface": "Testing…",
+  "Interface OK": "Interface OK",
+  "Interface Failed": "Interface failed"
 }

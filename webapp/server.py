@@ -805,6 +805,19 @@ def save_interface(payload: dict):
     return {"ok": True}
 
 
+@app.post("/api/interface/test")
+def test_interface_ep(payload: dict):
+    """One tiny request with the dialog's (possibly unsaved) values. Admin-only:
+    it can use the stored key and reach an arbitrary base_url."""
+    _block_in_server_mode()
+    from core.llm.online_translation import test_interface
+    name = (payload.get("name") or "").strip()
+    key = (payload.get("api_key") or "").strip() or (load_api_key_for_model(name) if name else "")
+    ok, detail = test_interface((payload.get("base_url") or "").strip(),
+                                (payload.get("model") or "").strip(), key)
+    return {"ok": ok, "detail": detail}
+
+
 @app.post("/api/interface/delete")
 def delete_interface(payload: dict):
     _block_in_server_mode()

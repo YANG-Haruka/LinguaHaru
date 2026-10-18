@@ -740,5 +740,9 @@
   "Use Model": "使用",
   "Tag JapaneseOnly": "仅日语",
   "Lock Captions": "锁定（置顶 + 鼠标穿透）",
-  "Unlock Captions": "解锁后可移动/调整大小"
+  "Unlock Captions": "解锁后可移动/调整大小",
+  "Test Interface": "测试",
+  "Testing Interface": "正在测试…",
+  "Interface OK": "接口正常",
+  "Interface Failed": "接口不可用"
 }

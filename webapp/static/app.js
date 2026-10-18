@@ -479,6 +479,7 @@ async function openIfaceConfig(name) {
     } catch {}
   }
   $("iface-modal").hidden = false;
+  if ($("if-test-result")) $("if-test-result").hidden = true;
 }
 function closeIfaceConfig() { $("iface-modal").hidden = true; }
 async function saveIfaceConfig() {
@@ -491,6 +492,21 @@ async function saveIfaceConfig() {
       max_retries: $("if-retries").value.trim() }) });
   closeIfaceConfig(); loadInterfaces();
 }
+// Test the values as typed (no save needed). A blank key = the stored one.
+async function testIfaceConfig() {
+  const out = $("if-test-result"), btn = $("if-test");
+  out.hidden = false; out.style.color = ""; btn.disabled = true;
+  out.textContent = _label("Testing Interface", "正在测试…");
+  try {
+    const r = await api("/api/interface/test", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: $("if-name").value.trim(), base_url: $("if-base").value.trim(),
+        model: $("if-model").value.trim(), api_key: $("if-key").value }) });
+    out.style.color = r.ok ? "#16a34a" : "#e0503c";
+    out.textContent = _label(r.ok ? "Interface OK" : "Interface Failed", r.ok ? "接口正常" : "接口不可用") + " — " + r.detail;
+  } catch (e) {
+    out.style.color = "#e0503c"; out.textContent = String(e);
+  } finally { btn.disabled = false; }
+}
 async function deleteIface() {
   if (!_ifaceEditing) return;
   await api("/api/interface/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: _ifaceEditing }) });
@@ -499,6 +515,7 @@ async function deleteIface() {
 if ($("add-interface")) $("add-interface").onclick = () => openIfaceConfig(null);
 if ($("if-cancel")) $("if-cancel").onclick = closeIfaceConfig;
 if ($("if-save")) $("if-save").onclick = saveIfaceConfig;
+if ($("if-test")) $("if-test").onclick = testIfaceConfig;
 if ($("if-delete")) $("if-delete").onclick = deleteIface;
 if ($("iface-modal")) $("iface-modal").onclick = (e) => { if (e.target.id === "iface-modal") closeIfaceConfig(); };
 
