@@ -1,19 +1,19 @@
 {
-    "version": "7.0.10",
+    "version": "7.0.11",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.10: fixed PDF translation failing with \"cannot import name 'BitStream' from 'bitstring'\"; updating repairs it automatically, no plugin reinstall needed. / 7.0.10：修复 PDF 翻译报错 \"cannot import name 'BitStream' from 'bitstring'\"；更新后自动修复，无需重装插件。",
+    "notes": "7.0.11: PDF translation no longer reports 'completed' with an untranslated file — invalid key / no balance stop with a clear message, and a PDF that kept coming back untranslated is retranslated; new 'Test' button for interfaces. / 7.0.11：PDF 翻译失败不再显示「翻译完成」却输出原文——密钥无效/余额不足会明确提示；一直翻出原文的 PDF 重新翻即可恢复；接口新增「测试」按钮。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.10/LinguaHaru-7.0.10-web-portable.zip",
-            "sha256": "8835dcadbb13b682343c54f3009effe04d4cad390ecb5ac4b5be32d3d79c4cf8"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.11/LinguaHaru-7.0.11-web-portable.zip",
+            "sha256": "e97c5235ef0284bcb3a9ef5ebd23969248c3dffd1ffaf28797af738faa0570e7"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.10/LinguaHaru-7.0.10-desktop-portable.zip",
-            "sha256": "fe4b9bab1fa2c5f3f7f361f43a2982d9a4e74d0465142d752319f44978195075"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.11/LinguaHaru-7.0.11-desktop-portable.zip",
+            "sha256": "bd3137752b1e0851440babb1027d0a6f671c389c91709a27cc0798d9b75cf2e4"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.10/LinguaHaru-7.0.10-desktop-mac.zip",
-            "sha256": "ce02a5557009133bb17b363d15728735c78cc834d74a9c0be0d35b202f4e6cb0"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.11/LinguaHaru-7.0.11-desktop-mac.zip",
+            "sha256": "019bcb7b9a65972d617d4ab6a5412ac4981def8f5d33ba487576be81e23fac70"
         }
     }
 }
