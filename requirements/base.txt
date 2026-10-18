@@ -28,3 +28,7 @@ tqdm
 tenacity
 rich>=13.0    # core: translation_checker renders the per-batch results table
 psutil>=5.9   # task dashboard: live CPU usage (GPU via nvidia-smi, no dep)
+# Not used by the core; pinned here so an in-app update's dependency sync
+# repairs PDF-plugin envs that got bitstring 5.0 (it dropped BitStream, which
+# BabelDOC imports). Drop once BabelDOC supports bitstring 5.
+bitstring>=4,<5
