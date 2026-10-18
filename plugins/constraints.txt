@@ -15,3 +15,8 @@
 # it) — only the too-new series is fenced off. Raise the cap once a stable
 # numba supports the new numpy series.
 numpy<2.5
+
+# bitstring: 5.0 removed BitStream, which BabelDOC (PDF plugin) imports
+# ("cannot import name 'BitStream' from 'bitstring'"). Raise once BabelDOC
+# supports bitstring 5.
+bitstring<5
