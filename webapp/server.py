@@ -1299,7 +1299,9 @@ def _run_translation(task_id, session_id, file_paths, model, use_online,
         _mark_web_queued_stopped(session_id, leftover)
         set_state(status="stopped", desc="Stopped")
     elif not outputs:
-        set_state(status="error", error="All files failed. See log.")
+        # One file: show its actual reason, not a generic pointer to the log.
+        set_state(status="error", error=(file_results[0][2] if total == 1 and file_results
+                                         else "All files failed. See log."))
     elif total == 1:
         u = _usage_summary()
         set_state(status="done", progress=1.0, desc="Translation completed",

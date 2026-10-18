@@ -173,7 +173,7 @@ def test_pdf_log_distinguishes_validation_from_parse():
         api_key="", system_prompt="s", user_prompt="u", previous_prompt="p",
         glossary_prompt="", topts={}, _check_stop_and_signal_cancel=lambda: None,
         _add_token_usage=lambda u: None, src_lang="en", dst_lang="zh",
-        _qa_pairs=[], _failed_paragraphs=[],
+        _qa_pairs=[], _failed_paragraphs=[], _fatal_error=None,
         _parse_single_translation=pt.PdfTranslator._parse_single_translation)
     out = pt.PdfTranslator._translate_paragraph(fake, src)
     text = " | ".join(m for _, m in logs)
