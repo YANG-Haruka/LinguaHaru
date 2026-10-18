@@ -22,7 +22,7 @@ import threading
 from collections import Counter
 from pathlib import Path
 
-from babeldoc.translator.translator import BaseTranslator
+from babeldoc.translator.translator import BaseTranslator, _translate_rate_limiter
 from babeldoc.format.pdf.translation_config import TranslationConfig, WatermarkOutputMode
 from babeldoc.format.pdf.high_level import do_translate, get_translation_stage, init as babeldoc_init
 from babeldoc.docvision.base_doclayout import DocLayoutModel
@@ -126,8 +126,26 @@ class _CallbackTranslator(BaseTranslator):
         # do_translate) so it's recorded even when BabelDOC serves the paragraph
         # from its SQLite cache — otherwise re-translating a PDF you've translated
         # before captures nothing and it can't be proofread.
-        result = super().translate(text, ignore_cache=ignore_cache,
-                                   rate_limit_params=rate_limit_params)
+        # BabelDOC's own translate() caches whatever do_translate returns — and a
+        # failed paragraph (bad key, network, out of credit) returns the SOURCE
+        # text. That poisoned the cache: every later run of the same PDF served
+        # the untranslated text, spent 0 tokens and output an unchanged file.
+        # Same flow, but only a real translation (!= source) is cached.
+        use_cache = not (self.ignore_cache or ignore_cache)
+        result = None
+        if use_cache:
+            try:
+                result = self.cache.get(text)
+            except Exception:  # noqa: BLE001 — a cache read must never break translation
+                result = None
+        if result is not None and result != text:
+            self.translate_cache_call_count += 1
+        else:
+            _translate_rate_limiter.wait()
+            result = self.do_translate(text, rate_limit_params)
+            if use_cache and result != text:
+                self.cache.set(text, result)
+        self.translate_call_count += 1
         if self._record_cb:
             try:
                 self._record_cb(text, result)
