@@ -1,19 +1,19 @@
 {
-    "version": "7.0.12",
+    "version": "7.0.13",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.12: the API is checked before translating — a bad key / no balance / unreachable interface stops in seconds with a clear message; failed tasks show why; 'Download log' in History; plugin install/uninstall finish with one 'Restart now'. / 7.0.12：翻译前先检查 API，密钥无效/余额不足/连不上会在几秒内明确提示；任务失败显示原因；历史记录可「下载日志」；插件安装/卸载点「立即重启」即可完成。",
+    "notes": "7.0.13: manga mode's text-removal model now downloads reliably in mainland China (ModelScope); safer plugin uninstall (never half-deletes when files are in use). / 7.0.13：漫画抹字模型在大陆网络下改从 ModelScope 下载，不再卡住失败；插件卸载更安全（文件被占用时不会删一半）。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.12/LinguaHaru-7.0.12-web-portable.zip",
-            "sha256": "41642bd2da71b2e4fe8b26848bd50882e6195e17e3c8270c4294e65ec44b0ffe"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.13/LinguaHaru-7.0.13-web-portable.zip",
+            "sha256": "8d044033cc9379045d4729d5d0c96088bd31e668dd964d0d9bf4872e67ce5d04"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.12/LinguaHaru-7.0.12-desktop-portable.zip",
-            "sha256": "ae7015c6667501a74610b4f8858864cc37bd71cc1bcb971d8a46d9d0d9c409cb"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.13/LinguaHaru-7.0.13-desktop-portable.zip",
+            "sha256": "d8da105ab08b3ca743daa3b46c3a67397983b5597d7fcf9fc5dda20fc2a4b347"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.12/LinguaHaru-7.0.12-desktop-mac.zip",
-            "sha256": "18adad96664590168568e75d0b3719bb4c9b5e4c6cbed429e46653848ffffdab"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.13/LinguaHaru-7.0.13-desktop-mac.zip",
+            "sha256": "1beccef751ba5ff767da0478b1db2a94b35619e1268ec4e49e9ff7b459bae8a9"
         }
     }
 }
