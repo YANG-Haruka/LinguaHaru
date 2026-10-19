@@ -722,6 +722,18 @@ class SettingsPage(ScrollArea):
             self._lan_timer.stop()
             self.lan_url.setText("启动超时，请检查端口或防火墙")
 
+    def shutdown(self):
+        """App closing: stop the LAN web child WITHOUT turning LAN mode off (it
+        restarts with the app). Left running, it kept the plugins' DLLs locked,
+        so a restart couldn't finish a queued plugin install/uninstall."""
+        proc, self._web_proc = self._web_proc, None
+        if proc is not None and proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(5)
+            except Exception:  # noqa: BLE001
+                proc.kill()
+
     def _stop_web_server(self):
         backend.set_config("lan_mode", False)
         if self._web_proc is not None and self._web_proc.poll() is None:

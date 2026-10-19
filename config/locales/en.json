@@ -741,5 +741,6 @@
   "Uninstall After Restart": "This plugin is in use, so its uninstall is queued — it finishes automatically when you restart the app.",
   "Restart Now": "Restart now",
   "Edit Interface": "Edit Interface",
-  "Install After Restart": "A component this plugin needs is in use, so the install is queued — it runs automatically when you restart the app."
+  "Install After Restart": "A component this plugin needs is in use, so the install is queued — it runs automatically when you restart the app.",
+  "Plugin In Use Elsewhere": "The plugin's files are in use by another LinguaHaru process (another window or the LAN web service). Close it, then uninstall again. Nothing was changed."
 }

@@ -488,5 +488,6 @@
   "Uninstall After Restart": "外掛正在使用中，已安排在下次啟動程式時自動解除安裝。重新啟動程式即可完成。",
   "Restart Now": "立即重新啟動",
   "Edit Interface": "編輯介面",
-  "Install After Restart": "有元件正在使用中，已安排在下次啟動程式時自動安裝。重新啟動程式即可完成。"
+  "Install After Restart": "有元件正在使用中，已安排在下次啟動程式時自動安裝。重新啟動程式即可完成。",
+  "Plugin In Use Elsewhere": "外掛檔案正被另一個 LinguaHaru 程序佔用（例如另一個視窗或區域網路網頁服務），請先關閉它再解除安裝。未做任何變更。"
 }

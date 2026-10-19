@@ -23,7 +23,7 @@ from qfluentwidgets import (
     MessageBox, MessageBoxBase,
 )
 
-from core.module_manager import PENDING_RESTART, PENDING_INSTALL_RESTART
+from core.module_manager import PENDING_RESTART, PENDING_INSTALL_RESTART, IN_USE_ELSEWHERE
 
 
 class _MarketFetchWorker(QThread):
@@ -834,6 +834,13 @@ class PluginsPage(ScrollArea):
                 # In use this session -> queued; finishes automatically on restart.
                 self._ask_restart(card._mod["name"], "Uninstall After Restart")
                 system_event(f"Plugin uninstall queued for restart: {card._mod['name']}")
+                self._drain_install_queue()
+                return
+            if not ok and str(msg).startswith(IN_USE_ELSEWHERE):
+                # Another process (LAN web service / 2nd window) holds its files:
+                # nothing was touched. Say what to close.
+                self._info(card._mod["name"], tr("Plugin In Use Elsewhere", self._lang)
+                           + str(msg)[len(IN_USE_ELSEWHERE):].split(" — ")[0], error=True)
                 self._drain_install_queue()
                 return
             if not ok:

@@ -2065,6 +2065,11 @@ async function moduleAction(name, action, btn, statTd) {
       statTd.innerHTML = pill("busy", _label("Restart to apply", "重启后生效"), ICON.check);
       $("modules-status").textContent = `${name}: ` + _label("Install After Restart",
         "有组件正在使用中，已安排在下次启动程序时自动安装。重启程序即可完成。");
+    } else if ((s.output || "").startsWith("In use by another LinguaHaru process")) {
+      // Another process holds its files; nothing was touched.
+      statTd.innerHTML = pill("bad", _label("Failed", "失败"), ICON.cross);
+      $("modules-status").textContent = `${name}: ` + _label("Plugin In Use Elsewhere",
+        "插件文件正被另一个 LinguaHaru 进程占用（例如另一个窗口或局域网网页服务），请先关闭它再卸载。未做任何改动。");
     } else if (s.output === "__UNINSTALL_PENDING_RESTART__") {
       // In use this session -> queued; the next start finishes it automatically.
       statTd.innerHTML = pill("busy", _label("Restart to apply", "重启后生效"), ICON.check);

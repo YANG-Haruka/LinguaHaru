@@ -41,24 +41,57 @@ def lama_available():
     return os.path.exists(p) and os.path.getsize(p) > 1_000_000
 
 
+# The SAME file (identical sha256) is mirrored on ModelScope, which mainland
+# China reaches reliably. hf-mirror.com alone wasn't enough: it can redirect to
+# huggingface.co, and a blocked HF host cost ~7 min of retries before failing.
+_LAMA_SHA256 = "1faef5301d78db7dda502fe59966957ec4b79dd64e16f03ed96913c7a4eb68d6"
+_MODELSCOPE_URL = ("https://www.modelscope.cn/models/codetrend/LaMa_Inpainting_Model_ONNX"
+                   "/resolve/master/lama_fp32.onnx")
+
+
+def _fetch(url, dst, timeout=30):
+    """Stream url -> dst via a temp file; verify sha256 before the rename."""
+    import hashlib
+    import urllib.request
+    tmp = dst + ".part"
+    h = hashlib.sha256()
+    req = urllib.request.Request(url, headers={"User-Agent": "LinguaHaru"})
+    with urllib.request.urlopen(req, timeout=timeout) as r, open(tmp, "wb") as f:
+        while chunk := r.read(1 << 20):
+            f.write(chunk)
+            h.update(chunk)
+    if h.hexdigest() != _LAMA_SHA256:
+        os.remove(tmp)
+        raise RuntimeError(f"checksum mismatch from {url}")
+    os.replace(tmp, dst)
+
+
 def download_lama(progress=None):
-    """Download lama_fp32.onnx into data/models/lama (HF official-first, like the
-    rest of the model stack). Returns the path, or raises on failure."""
+    """Download lama_fp32.onnx into data/models/lama. Source order: HuggingFace
+    first when it's directly reachable, otherwise ModelScope first (mainland
+    China); each source is tried with bounded timeouts, and every result is
+    sha256-checked. Returns the path, or raises with every source's reason."""
     if lama_available():
         return _model_path()
-    from huggingface_hub import hf_hub_download
     from core.model_store import setup_model_env
     setup_model_env()
     if progress:
         progress("Downloading LaMa inpainting model…")
-    src = hf_hub_download(repo_id=_LAMA_REPO, filename=_LAMA_FILE)
-    # Copy into the stable project dir (hf cache may be elsewhere).
-    import shutil
     dst = _model_path()
-    if os.path.abspath(src) != os.path.abspath(dst):
-        shutil.copyfile(src, dst)
-    app_logger.info(f"LaMa model ready: {dst}")
-    return dst
+    hf = os.environ.get("HF_ENDPOINT", "https://huggingface.co").rstrip("/")
+    hf_url = f"{hf}/{_LAMA_REPO}/resolve/main/{_LAMA_FILE}"
+    sources = ([hf_url, _MODELSCOPE_URL] if "huggingface.co" in hf
+               else [_MODELSCOPE_URL, hf_url])
+    errors = []
+    for url in sources:
+        try:
+            _fetch(url, dst)
+            app_logger.info(f"LaMa model ready: {dst} (from {url.split('/')[2]})")
+            return dst
+        except Exception as e:  # noqa: BLE001 — try the next source
+            errors.append(f"{url.split('/')[2]}: {e}")
+            app_logger.warning(f"LaMa download from {url.split('/')[2]} failed: {e}")
+    raise RuntimeError("LaMa model download failed — " + " | ".join(errors))
 
 
 def _get_session():

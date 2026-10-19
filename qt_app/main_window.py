@@ -392,6 +392,7 @@ class MainWindow(FluentWindow):
             lambda: self.quick_page.shutdown(),
             lambda: self.translate_page and self.translate_page.shutdown(),
             lambda: self.plugins_page and self.plugins_page.shutdown(),
+            lambda: self.settings_page and self.settings_page.shutdown(),   # LAN web child
             lambda: (self._update_worker.isRunning() and self._update_worker.wait(2000)),
             lambda: (getattr(self, "_self_update_worker", None)
                      and self._self_update_worker.isRunning()

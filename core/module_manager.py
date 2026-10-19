@@ -449,6 +449,32 @@ def _run_install(req, upgrade=False):
                     pass
 
 
+def _locked_by_other_process(pkgs):
+    """Native files (.pyd/.dll) of these packages that ANOTHER process has loaded
+    (e.g. the LAN web service, a second LinguaHaru window). Windows can't delete
+    them, and uv would abort MID-uninstall, leaving half-deleted packages. A
+    mapped DLL can't be opened for writing, so probe that. Returns dist names."""
+    if os.name != "nt":
+        return set()
+    locked = set()
+    for p in pkgs:
+        try:
+            dist = importlib.metadata.distribution(p)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+        for f in dist.files or []:
+            if str(f).lower().endswith((".pyd", ".dll")):
+                try:
+                    with open(dist.locate_file(f), "r+b"):
+                        pass
+                except PermissionError:
+                    locked.add(p)
+                    break
+                except OSError:
+                    pass
+    return locked
+
+
 def _run_uninstall(pkgs):
     """Uninstall packages from THIS interpreter (uv if available, else pip)."""
     blocked = _frozen_block()
@@ -1237,6 +1263,8 @@ def _forget_plugin(name, removed):
 # Returned by uninstall_module when the plugin's native libs are loaded in this
 # process: the uninstall is queued for the next start (UI: "restart to finish").
 PENDING_RESTART = "__UNINSTALL_PENDING_RESTART__"
+# Prefix of the refusal when ANOTHER process holds the plugin's native files.
+IN_USE_ELSEWHERE = "In use by another LinguaHaru process"
 # Same for an install that must replace a loaded component: the UI restarts the
 # app, which then re-runs the install (take_pending_installs) before warming anything.
 PENDING_INSTALL_RESTART = "__INSTALL_PENDING_RESTART__"
@@ -1291,13 +1319,17 @@ def run_pending_uninstalls():
     locked. Never raises: a failure is logged and the queue entry dropped (the
     user can retry from the Plugins page)."""
     for name in pending_uninstalls():
+        out = ""
         try:
             from core.optional_modules import uninstall_plugin
             ok, out, _freed = uninstall_plugin(name)
             app_logger.info(f"Pending uninstall of {name}: {'done' if ok else 'FAILED'} {str(out)[-200:]}")
         except Exception as e:  # noqa: BLE001 — must never block startup
             app_logger.warning(f"Pending uninstall of {name} failed: {e}")
-        _set_pending(name, False)
+        # Another process still holds its files: nothing was touched, try again
+        # next start. Anything else (done / real failure): drop it.
+        if not str(out).startswith(IN_USE_ELSEWHERE):
+            _set_pending(name, False)
 
 
 def uninstall_module(name):
@@ -1326,6 +1358,13 @@ def uninstall_module(name):
         # delta), else it would protect the shared stack forever.
         _forget_plugin(name, removed=[])
         return True, "All dependencies are shared with another plugin; kept."
+    other = _locked_by_other_process(pkgs)
+    if other:
+        # Don't start: uv would delete half of them and then fail.
+        app_logger.warning(f"Uninstall of {name} refused: in use by another process "
+                           f"({', '.join(sorted(other)[:5])})")
+        return False, (IN_USE_ELSEWHERE + f" ({', '.join(sorted(other)[:3])}) — "
+                       "close the other LinguaHaru window / LAN web service and try again.")
     ok, out = _run_uninstall(pkgs)
     if ok:
         _forget_plugin(name, removed=pkgs)

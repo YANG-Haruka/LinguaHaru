@@ -752,5 +752,6 @@
   "Uninstall After Restart": "插件正在使用中，已安排在下次启动程序时自动卸载。重启程序即可完成。",
   "Restart Now": "立即重启",
   "Edit Interface": "编辑接口",
-  "Install After Restart": "有组件正在使用中，已安排在下次启动程序时自动安装。重启程序即可完成。"
+  "Install After Restart": "有组件正在使用中，已安排在下次启动程序时自动安装。重启程序即可完成。",
+  "Plugin In Use Elsewhere": "插件文件正被另一个 LinguaHaru 进程占用（例如另一个窗口或局域网网页服务），请先关闭它再卸载。未做任何改动。"
 }

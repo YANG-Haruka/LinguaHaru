@@ -38,7 +38,7 @@ def _err(code, msg):
 def _segment(text):
     """The {"1": "..."} JSON the app sends (last JSON object in the message)."""
     dec = json.JSONDecoder()
-    for i in [m.start() for m in re.finditer(r'\{"', text)][::-1]:
+    for i in [m.start() for m in re.finditer(r'\{\s*"', text)][::-1]:
         try:
             return dec.raw_decode(text[i:])[0]
         except ValueError:

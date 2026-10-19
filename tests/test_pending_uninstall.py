@@ -49,3 +49,24 @@ def test_locked_install_is_queued_once_then_taken(tmp_path, monkeypatch):
     # Still locked after the restart: report it, don't queue again (no restart loop).
     ok, out = mm.install_module("PDF")
     assert not ok and out != mm.PENDING_INSTALL_RESTART and mm.pending_installs() == []
+
+
+def test_files_held_by_other_process_refuse_without_touching(tmp_path, monkeypatch):
+    monkeypatch.setattr(core.paths, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(mm.plugins_registry, "get", lambda name: {"name": name})
+    monkeypatch.setattr(mm, "packages_to_uninstall", lambda name: ["opencv-python"])
+    monkeypatch.setattr(mm, "_transitive_to_remove", lambda name: [])
+    monkeypatch.setattr(mm, "_drop_still_required", lambda pkgs: pkgs)
+    monkeypatch.setattr(mm, "_loaded_blockers", lambda pkgs: set())
+    monkeypatch.setattr(mm, "_locked_by_other_process", lambda pkgs: {"opencv-python"})
+    ran = []
+    monkeypatch.setattr(mm, "_run_uninstall", lambda pkgs: ran.append(pkgs) or (True, ""))
+    ok, out = mm.uninstall_module("Image OCR")
+    assert not ok and out.startswith(mm.IN_USE_ELSEWHERE) and ran == []   # nothing deleted
+
+    # Queued at a restart while the other process still runs: stays queued.
+    mm._set_pending("Image OCR", True)
+    deleted_models = []
+    monkeypatch.setattr(om, "cleanup_plugin_models", lambda n: deleted_models.append(n) or ([], 0))
+    mm.run_pending_uninstalls()
+    assert mm.pending_uninstalls() == ["Image OCR"] and deleted_models == []   # models kept too
