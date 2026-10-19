@@ -583,6 +583,12 @@ def _thinking_off_params(base_url):
 
 
 def _looks_like_param_error(err):
+    # Auth / balance / rate-limit / server errors are never about our optional
+    # params — DeepSeek's 401 body even says "invalid_request_error", which made
+    # every bad-key call retry once for nothing.
+    status = _http_status(err)
+    if status in (401, 402, 403, 429) or (status or 0) >= 500:
+        return False
     msg = str(err).lower()
     return any(m in msg for m in (
         "thinking", "unexpected", "unrecognized", "unknown", "invalid_request",
