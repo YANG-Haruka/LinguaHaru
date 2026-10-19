@@ -352,6 +352,7 @@ class MainWindow(FluentWindow):
             return False
         self.history_page.on_continue_resume_batch = _continue_batch_on_dashboard
         self.settings_page.on_features_changed = self.apply_hidden_pages
+        self.plugins_page.run_pending_installs()   # queued before a restart
         self.apply_hidden_pages(backend.get_config("lan_hidden_features", []) or [])
         self._auto_nav(animate=False)
 

@@ -447,5 +447,6 @@
   "No Log Available": "この記録にはログがありません",
   "Uninstall After Restart": "プラグインが使用中のため、次回起動時に自動でアンインストールされます。アプリを再起動すると完了します。",
   "Restart Now": "今すぐ再起動",
-  "Edit Interface": "インターフェースを編集"
+  "Edit Interface": "インターフェースを編集",
+  "Install After Restart": "使用中のコンポーネントがあるため、次回起動時に自動でインストールされます。アプリを再起動すると完了します。"
 }

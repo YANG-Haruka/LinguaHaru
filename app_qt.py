@@ -170,7 +170,9 @@ def _start_background_warmup(window):
             # daemon thread: this QThread is waited on at close, an import isn't.
             try:
                 from core.optional_modules import realtime_voice_available
-                if realtime_voice_available():
+                from core.module_manager import pending_installs
+                # A queued install must replace files the warm-up would lock.
+                if not pending_installs() and realtime_voice_available():
                     import threading
                     from core.pipelines.video_translation_pipeline import warm_import_live_engine
                     threading.Thread(target=warm_import_live_engine, daemon=True).start()

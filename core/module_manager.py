@@ -400,6 +400,9 @@ def _is_locked_file(out):
                                 "failed to remove file", "used by another process"))
 
 
+_LOCK_MARK = "\n\n⚠"   # starts _run_install's "component in use" hint
+
+
 def _run_install(req, upgrade=False):
     """Install from a requirements file into THIS interpreter (uv with --python, else
     pip). Auto-uses a China PyPI mirror when the official host is unreachable / fails.
@@ -419,7 +422,7 @@ def _run_install(req, upgrade=False):
     # the relaxed retry so the resolver upgrades everything else the conflict was
     # about instead of dying on an os-error-5 rename of numpy/cv2.
     loaded_con = None if upgrade else _write_constraint_file(_loaded_native_dists())
-    _lock_hint = ("\n\n⚠ 某个正在使用的组件无法更新（文件被占用）。请完全退出 "
+    _lock_hint = (_LOCK_MARK + " 某个正在使用的组件无法更新（文件被占用）。请完全退出 "
                   "LinguaHaru 后重新安装该插件。/ A component in use couldn't be updated "
                   "— fully close LinguaHaru, then reinstall this plugin.")
     try:
@@ -1041,6 +1044,13 @@ def install_module(name):
     if ok and m:
         _record_install_delta(m["key"], before)   # for full cleanup on uninstall
         _refresh_after_change()
+    if not ok and _LOCK_MARK in out and name not in _RETRIED_AFTER_RESTART:
+        # A component it must replace is loaded in this process (locked on
+        # Windows). Queue it: after a restart the app skips its warm-up imports
+        # and re-runs this install before anything locks those files again.
+        app_logger.info(f"Install of {name} deferred to next start (component in use)")
+        _set_pending(name, True, kind="install")
+        return False, PENDING_INSTALL_RESTART
     return ok, out
 
 
@@ -1227,26 +1237,52 @@ def _forget_plugin(name, removed):
 # Returned by uninstall_module when the plugin's native libs are loaded in this
 # process: the uninstall is queued for the next start (UI: "restart to finish").
 PENDING_RESTART = "__UNINSTALL_PENDING_RESTART__"
+# Same for an install that must replace a loaded component: the UI restarts the
+# app, which then re-runs the install (take_pending_installs) before warming anything.
+PENDING_INSTALL_RESTART = "__INSTALL_PENDING_RESTART__"
 
 
-def _pending_path():
+def _pending_path(kind="uninstall"):
     from core.paths import DATA_DIR
-    return os.path.join(DATA_DIR, "plugin_state", "pending_uninstall.json")
+    return os.path.join(DATA_DIR, "plugin_state", f"pending_{kind}.json")
 
 
-def pending_uninstalls():
+def _pending(kind):
     try:
-        with open(_pending_path(), encoding="utf-8") as f:
+        with open(_pending_path(kind), encoding="utf-8") as f:
             return [n for n in json.load(f) if isinstance(n, str)]
     except (OSError, ValueError):
         return []
 
 
-def _set_pending(name, on):
-    names = [n for n in pending_uninstalls() if n != name] + ([name] if on else [])
-    os.makedirs(os.path.dirname(_pending_path()), exist_ok=True)
-    with open(_pending_path(), "w", encoding="utf-8") as f:
+def pending_uninstalls():
+    return _pending("uninstall")
+
+
+def pending_installs():
+    """Installs queued for this start. The frontends skip their STT warm-up while
+    any is pending (it would lock the very files the install must replace)."""
+    return _pending("install")
+
+
+def _set_pending(name, on, kind="uninstall"):
+    names = [n for n in _pending(kind) if n != name] + ([name] if on else [])
+    os.makedirs(os.path.dirname(_pending_path(kind)), exist_ok=True)
+    with open(_pending_path(kind), "w", encoding="utf-8") as f:
         json.dump(names, f)
+
+
+_RETRIED_AFTER_RESTART = set()   # never re-queue these again (no restart loop)
+
+
+def take_pending_installs():
+    """Pop the queued installs; the frontend runs them through its normal install
+    flow (with progress). If one fails again it is reported like any failure."""
+    names = pending_installs()
+    for n in names:
+        _set_pending(n, False, kind="install")
+        _RETRIED_AFTER_RESTART.add(n)
+    return names
 
 
 def run_pending_uninstalls():

@@ -31,3 +31,21 @@ def test_pending_does_not_delete_models_now(monkeypatch):
     monkeypatch.setattr(om, "cleanup_plugin_models", lambda name: called.append(name) or ([], 0))
     assert om.uninstall_plugin("PDF") == (False, mm.PENDING_RESTART, 0)
     assert called == []                              # models go with the real uninstall
+
+
+def test_locked_install_is_queued_once_then_taken(tmp_path, monkeypatch):
+    monkeypatch.setattr(core.paths, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(mm, "_RETRIED_AFTER_RESTART", set())
+    monkeypatch.setattr(mm.plugins_registry, "requirements_path", lambda name: "req.txt")
+    monkeypatch.setattr(mm.plugins_registry, "get", lambda name: {"name": name, "key": "pdf"})
+    monkeypatch.setattr(mm, "_frozen_block", lambda: None)
+    monkeypatch.setattr(mm, "_freeze_names", lambda: set())
+    monkeypatch.setattr(mm, "_maybe_install_cuda_torch", lambda name: None)
+    monkeypatch.setattr(mm, "_run_install", lambda req, upgrade=False: (False, "os error 5" + mm._LOCK_MARK))
+
+    assert mm.install_module("PDF") == (False, mm.PENDING_INSTALL_RESTART)
+    assert mm.pending_installs() == ["PDF"]
+    assert mm.take_pending_installs() == ["PDF"] and mm.pending_installs() == []
+    # Still locked after the restart: report it, don't queue again (no restart loop).
+    ok, out = mm.install_module("PDF")
+    assert not ok and out != mm.PENDING_INSTALL_RESTART and mm.pending_installs() == []

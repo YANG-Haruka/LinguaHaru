@@ -751,5 +751,6 @@
   "No Log Available": "这条记录没有日志",
   "Uninstall After Restart": "插件正在使用中，已安排在下次启动程序时自动卸载。重启程序即可完成。",
   "Restart Now": "立即重启",
-  "Edit Interface": "编辑接口"
+  "Edit Interface": "编辑接口",
+  "Install After Restart": "有组件正在使用中，已安排在下次启动程序时自动安装。重启程序即可完成。"
 }

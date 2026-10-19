@@ -40,7 +40,9 @@ def _startup_warmup():
     # Real-Time Voice only waits for the model itself. No model / VRAM.
     try:
         from core.optional_modules import realtime_voice_available
-        if realtime_voice_available():
+        from core.module_manager import pending_installs
+        # A queued install must replace files the warm-up would lock.
+        if not pending_installs() and realtime_voice_available():
             from core.pipelines.video_translation_pipeline import warm_import_live_engine
             warm_import_live_engine()
     except Exception:  # noqa: BLE001
@@ -2219,6 +2221,16 @@ def modules_download(payload: dict):
 # /download routes (a POST to /api/modules/model matched here with action="model"
 # -> "action must be install|uninstall|upgrade"). FastAPI matches in declaration
 # order, so static paths must come first.
+# Installs queued before a restart (a component they replace was in use): run
+# them now, before anything locks those files, through the normal job queue.
+try:
+    from core.module_manager import take_pending_installs
+    for _pn in take_pending_installs():
+        _enqueue_module_job(_pn, lambda _n=_pn: _run_module_job(_n, "install"))
+except Exception:  # noqa: BLE001 — must never block startup
+    pass
+
+
 @app.post("/api/modules/{action}")
 async def module_action(action: str, payload: dict):
     _block_in_server_mode()

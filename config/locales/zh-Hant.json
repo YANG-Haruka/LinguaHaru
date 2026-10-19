@@ -487,5 +487,6 @@
   "No Log Available": "這筆記錄沒有日誌",
   "Uninstall After Restart": "外掛正在使用中，已安排在下次啟動程式時自動解除安裝。重新啟動程式即可完成。",
   "Restart Now": "立即重新啟動",
-  "Edit Interface": "編輯介面"
+  "Edit Interface": "編輯介面",
+  "Install After Restart": "有元件正在使用中，已安排在下次啟動程式時自動安裝。重新啟動程式即可完成。"
 }

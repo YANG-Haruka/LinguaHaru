@@ -740,5 +740,6 @@
   "No Log Available": "No log available for this record",
   "Uninstall After Restart": "This plugin is in use, so its uninstall is queued — it finishes automatically when you restart the app.",
   "Restart Now": "Restart now",
-  "Edit Interface": "Edit Interface"
+  "Edit Interface": "Edit Interface",
+  "Install After Restart": "A component this plugin needs is in use, so the install is queued — it runs automatically when you restart the app."
 }

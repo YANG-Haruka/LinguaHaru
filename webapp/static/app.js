@@ -2060,6 +2060,11 @@ async function moduleAction(name, action, btn, statTd) {
       // (Was the bug: card still showed "未安装" after a successful install.)
       try { BOOT = await api("/api/bootstrap"); } catch (e) {}
       renderModules();
+    } else if (s.output === "__INSTALL_PENDING_RESTART__") {
+      // A component it must replace is in use -> queued; the next start installs it.
+      statTd.innerHTML = pill("busy", _label("Restart to apply", "重启后生效"), ICON.check);
+      $("modules-status").textContent = `${name}: ` + _label("Install After Restart",
+        "有组件正在使用中，已安排在下次启动程序时自动安装。重启程序即可完成。");
     } else if (s.output === "__UNINSTALL_PENDING_RESTART__") {
       // In use this session -> queued; the next start finishes it automatically.
       statTd.innerHTML = pill("busy", _label("Restart to apply", "重启后生效"), ICON.check);
