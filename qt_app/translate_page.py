@@ -1058,6 +1058,9 @@ class TranslatePage(QStackedWidget):
             summary += f" | {tr('Failed', self._lang)}: {len(failed)}"
         if stopped:
             summary += f" | {tr('Status Stopped', self._lang)}: {len(stopped)}"
+        # Say WHY a file failed (it used to vanish behind "失败: 1" / a 4s toast).
+        for name, _st, msg in failed[:3]:
+            summary += "\n" + f"{name}: {str(msg)[:300]}"
         self._refresh_dashboard()
         # Stay on the dashboard so the metrics (speed/tokens/time) remain visible;
         # just show a "done" banner + Open-folder / New-translation buttons.
@@ -1132,7 +1135,7 @@ class TranslatePage(QStackedWidget):
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success
         bar(title, text, orient=1, isClosable=True,
-            position=InfoBarPosition.TOP, duration=4000, parent=self)
+            position=InfoBarPosition.TOP, duration=(15000 if error else 4000), parent=self)
 
 
 def _parse_tokens(desc):

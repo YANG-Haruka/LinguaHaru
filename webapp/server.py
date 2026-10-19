@@ -47,6 +47,11 @@ def _startup_warmup():
         pass
 
 
+try:   # finish uninstalls queued while their libs were loaded — BEFORE the warmup
+    from core.module_manager import run_pending_uninstalls   # thread imports them
+    run_pending_uninstalls()
+except Exception:  # noqa: BLE001
+    pass
 threading.Thread(target=_startup_warmup, daemon=True).start()
 try:   # let downloaded market plugins hook into the app (best-effort)
     from core import plugins_registry as _pr
@@ -1142,12 +1147,17 @@ def _friendly_api_error(error, lang="en"):
         "insufficient_balance": "Err Insufficient Balance",
         "invalid_key": "Err Invalid Key",
         "server_error": "Err Server",
+        "unreachable": "Err Unreachable",    # preflight: interface can't be reached
+        "bad_request": "Err Bad Request",    # preflight: wrong model id / URL
     }
     key = keys.get(category, "Err Api Generic")
     labels = LABEL_TRANSLATIONS.get(lang) or {}
-    return (labels.get(key)
-            or LABEL_TRANSLATIONS.get("en", {}).get(key)
-            or "Translation stopped due to an API error.")
+    msg = (labels.get(key)
+           or LABEL_TRANSLATIONS.get("en", {}).get(key)
+           or "Translation stopped due to an API error.")
+    if category in ("unreachable", "bad_request"):
+        msg += f" ({str(error)[:200]})"   # the provider's own words help a lot here
+    return msg
 
 
 def _precreate_web_batch(session_id, batch_id, file_paths, file_ids, model,
@@ -1823,6 +1833,24 @@ def history_download(id: str, request: Request):
     if not out or not os.path.exists(out):
         raise HTTPException(404, "Output not available")
     return FileResponse(out, filename=os.path.basename(out))
+
+
+@app.get("/api/history/log")
+def history_log(id: str, request: Request):
+    """Zip of a record's own log (+ system.log for the host's admin) so a user can
+    send it for support. Session-scoped like the other history endpoints;
+    system.log is host-wide, so normal LAN users only get their own task log."""
+    import tempfile
+    from core.translation_history import TranslationHistoryManager
+    h = TranslationHistoryManager(log_dir=history_log_dir(request.state.session_id))
+    rec = h.get_record_by_id(id) if id else None
+    if not rec:
+        raise HTTPException(404, "Record not found")
+    dest = os.path.join(tempfile.mkdtemp(prefix="lh_log_"), "log.zip")
+    if not backend.build_log_bundle(rec, dest, include_system=_is_admin()):
+        raise HTTPException(404, "No log available for this record")
+    stem = os.path.splitext(os.path.basename(rec.get("input_file") or "translation"))[0]
+    return FileResponse(dest, filename=f"LinguaHaru-log-{stem}.zip")
 
 
 @app.post("/api/pick-folder")

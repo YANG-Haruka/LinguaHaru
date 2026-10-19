@@ -1224,6 +1224,46 @@ def _forget_plugin(name, removed):
     _refresh_after_change()
 
 
+# Returned by uninstall_module when the plugin's native libs are loaded in this
+# process: the uninstall is queued for the next start (UI: "restart to finish").
+PENDING_RESTART = "__UNINSTALL_PENDING_RESTART__"
+
+
+def _pending_path():
+    from core.paths import DATA_DIR
+    return os.path.join(DATA_DIR, "plugin_state", "pending_uninstall.json")
+
+
+def pending_uninstalls():
+    try:
+        with open(_pending_path(), encoding="utf-8") as f:
+            return [n for n in json.load(f) if isinstance(n, str)]
+    except (OSError, ValueError):
+        return []
+
+
+def _set_pending(name, on):
+    names = [n for n in pending_uninstalls() if n != name] + ([name] if on else [])
+    os.makedirs(os.path.dirname(_pending_path()), exist_ok=True)
+    with open(_pending_path(), "w", encoding="utf-8") as f:
+        json.dump(names, f)
+
+
+def run_pending_uninstalls():
+    """Finish uninstalls queued because the plugin was in use. Call at startup
+    BEFORE anything imports plugin packages (numpy/torch/...), so nothing is
+    locked. Never raises: a failure is logged and the queue entry dropped (the
+    user can retry from the Plugins page)."""
+    for name in pending_uninstalls():
+        try:
+            from core.optional_modules import uninstall_plugin
+            ok, out, _freed = uninstall_plugin(name)
+            app_logger.info(f"Pending uninstall of {name}: {'done' if ok else 'FAILED'} {str(out)[-200:]}")
+        except Exception as e:  # noqa: BLE001 — must never block startup
+            app_logger.warning(f"Pending uninstall of {name} failed: {e}")
+        _set_pending(name, False)
+
+
 def uninstall_module(name):
     m = plugins_registry.get(name)
     if not m:
@@ -1237,10 +1277,12 @@ def uninstall_module(name):
     blockers = _loaded_blockers(pkgs)
     if blockers:
         # Loaded in-process -> deleting now would fail on Windows and corrupt the
-        # env. Tell the user to restart, then uninstall on a fresh process.
-        return False, ("This plugin is in use this session "
-                       f"({', '.join(sorted(blockers)[:3])}…). Please restart the app, "
-                       "then uninstall without translating first.")
+        # env. Queue it: the next start runs it BEFORE anything imports these
+        # (run_pending_uninstalls), so the user only has to restart.
+        app_logger.info(f"Uninstall of {name} deferred to next start (in use: "
+                        f"{', '.join(sorted(blockers)[:5])})")
+        _set_pending(name, True)
+        return False, PENDING_RESTART
     if not pkgs:
         # All of this plugin's packages are shared with an installed sibling ->
         # removing them would break the sibling. Nothing to uninstall at the pip

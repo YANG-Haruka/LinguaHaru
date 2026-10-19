@@ -653,6 +653,8 @@ def uninstall_plugin(name):
     Returns (ok, message, freed_bytes)."""
     from core import module_manager
     ok, out = module_manager.uninstall_module(name)   # shared-aware pip removal
+    if out == module_manager.PENDING_RESTART:
+        return ok, out, 0   # queued for next start; models go with it then
     clear_size_caches()   # pip deps changed -> stale lib-size
     removed_models, freed = cleanup_plugin_models(name)
     if removed_models:

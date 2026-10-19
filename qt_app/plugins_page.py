@@ -828,6 +828,13 @@ class PluginsPage(ScrollArea):
         from core.log_config import system_event
         from core.model_store import human_size
         if action == "uninstall":
+            from core.module_manager import PENDING_RESTART
+            if msg == PENDING_RESTART:
+                # In use this session -> queued; finishes automatically on restart.
+                self._ask_restart(card._mod["name"])
+                system_event(f"Plugin uninstall queued for restart: {card._mod['name']}")
+                self._drain_install_queue()
+                return
             if not ok:
                 # Honor the failure — don't report success when uninstall errored.
                 self._info(card._mod["name"], f"{tr('Failed', self._lang)}: {(msg or '')[-200:]}", error=True)
@@ -875,6 +882,16 @@ class PluginsPage(ScrollArea):
             self._info(card._mod["name"],
                        f"{tr('Install failed', self._lang)}: {msg}", error=True)
         self._drain_install_queue()
+
+    def _ask_restart(self, title):
+        """'Uninstall finishes after a restart' + a Restart-now button."""
+        from qfluentwidgets import PushButton
+        bar = InfoBar.warning(title, tr("Uninstall After Restart", self._lang), orient=1,
+                              isClosable=True, position=InfoBarPosition.TOP,
+                              duration=-1, parent=self)
+        btn = PushButton(tr("Restart Now", self._lang))
+        btn.clicked.connect(lambda: getattr(self.window(), "_relaunch", lambda: None)())
+        bar.addWidget(btn)
 
     def _info(self, title, text, error=False):
         bar = InfoBar.error if error else InfoBar.success

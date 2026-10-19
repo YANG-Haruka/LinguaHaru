@@ -1285,3 +1285,26 @@ def add_language(name):
 
 def labels_for(lang="en"):
     return LABEL_TRANSLATIONS.get(lang, LABEL_TRANSLATIONS["en"])
+
+
+def build_log_bundle(rec, dest_zip, include_system=True):
+    """Zip a history record's own log (+ the program-wide log/system.log, where
+    plugin / startup errors land) into dest_zip, for a user to send for support.
+    Returns dest_zip, or None when there is no log to bundle."""
+    import zipfile
+    files = []
+    task_log = (rec or {}).get("log_file_path")
+    if task_log and os.path.isfile(task_log):
+        files.append((task_log, os.path.basename(task_log)))
+    if include_system:
+        sys_log = os.path.join(RUNTIME_ROOT, "log", "system.log")
+        if os.path.isfile(sys_log):
+            files.append((sys_log, "system.log"))
+    if not files:
+        return None
+    from core.version import __version__
+    with zipfile.ZipFile(dest_zip, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("version.txt", f"LinguaHaru {__version__}\n")
+        for path, arc in files:
+            z.write(path, arc)
+    return dest_zip

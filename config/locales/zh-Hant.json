@@ -480,5 +480,12 @@
   "Test Interface": "測試",
   "Testing Interface": "正在測試…",
   "Interface OK": "介面正常",
-  "Interface Failed": "介面無法使用"
+  "Interface Failed": "介面無法使用",
+  "Err Unreachable": "翻譯未開始：無法連線 API。請檢查網路和介面位址（介面管理 → 測試）。",
+  "Err Bad Request": "翻譯未開始：API 拒絕了請求。請檢查介面的模型 ID 和位址（介面管理 → 測試）。",
+  "Download Log": "下載日誌",
+  "No Log Available": "這筆記錄沒有日誌",
+  "Uninstall After Restart": "外掛正在使用中，已安排在下次啟動程式時自動解除安裝。重新啟動程式即可完成。",
+  "Restart Now": "立即重新啟動",
+  "Edit Interface": "編輯介面"
 }

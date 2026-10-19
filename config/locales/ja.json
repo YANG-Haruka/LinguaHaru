@@ -440,5 +440,12 @@
   "Test Interface": "テスト",
   "Testing Interface": "テスト中…",
   "Interface OK": "接続 OK",
-  "Interface Failed": "接続できません"
+  "Interface Failed": "接続できません",
+  "Err Unreachable": "翻訳を開始できません：API に接続できません。ネットワークとインターフェースの URL を確認してください（インターフェース管理 → テスト）。",
+  "Err Bad Request": "翻訳を開始できません：API がリクエストを拒否しました。モデル ID と URL を確認してください（インターフェース管理 → テスト）。",
+  "Download Log": "ログをダウンロード",
+  "No Log Available": "この記録にはログがありません",
+  "Uninstall After Restart": "プラグインが使用中のため、次回起動時に自動でアンインストールされます。アプリを再起動すると完了します。",
+  "Restart Now": "今すぐ再起動",
+  "Edit Interface": "インターフェースを編集"
 }

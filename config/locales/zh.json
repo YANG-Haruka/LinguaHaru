@@ -744,5 +744,12 @@
   "Test Interface": "测试",
   "Testing Interface": "正在测试…",
   "Interface OK": "接口正常",
-  "Interface Failed": "接口不可用"
+  "Interface Failed": "接口不可用",
+  "Err Unreachable": "翻译未开始：无法连接 API。请检查网络和接口地址（接口管理 → 测试）。",
+  "Err Bad Request": "翻译未开始：API 拒绝了请求。请检查接口的模型 ID 和地址（接口管理 → 测试）。",
+  "Download Log": "下载日志",
+  "No Log Available": "这条记录没有日志",
+  "Uninstall After Restart": "插件正在使用中，已安排在下次启动程序时自动卸载。重启程序即可完成。",
+  "Restart Now": "立即重启",
+  "Edit Interface": "编辑接口"
 }

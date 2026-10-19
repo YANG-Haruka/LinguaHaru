@@ -416,6 +416,10 @@ class HistoryPage(QWidget):
         open_btn = PushButton(FluentIcon.FOLDER, tr("Open Folder", L))
         open_btn.clicked.connect(lambda: self._open_record_folder(rec))
         self.detail_acts.addWidget(open_btn)
+        if rec.get("log_file_path"):
+            log_btn = PushButton(FluentIcon.DOWNLOAD, tr("Download Log", L))
+            log_btn.clicked.connect(lambda: self._save_log_bundle(rec))
+            self.detail_acts.addWidget(log_btn)
         if _is_resumable(rec):
             cont = PrimaryPushButton(FluentIcon.PLAY, tr("Continue Translation", L))
             cont.clicked.connect(lambda: self._continue_record(rec))
@@ -534,6 +538,21 @@ class HistoryPage(QWidget):
             if info.get("result_dir") and os.path.exists(info["result_dir"]):
                 open_folder(info["result_dir"])
                 return
+
+    def _save_log_bundle(self, rec):
+        """Save this run's log (+ system.log) as a zip the user can send for support."""
+        from PySide6.QtWidgets import QFileDialog
+        stem = os.path.splitext(os.path.basename(rec.get("input_file") or "translation"))[0]
+        dest, _ = QFileDialog.getSaveFileName(
+            self, tr("Download Log", self._lang),
+            os.path.join(os.path.expanduser("~"), "Desktop", f"LinguaHaru-log-{stem}.zip"),
+            "Zip (*.zip)")
+        if not dest:
+            return
+        ok = backend.build_log_bundle(rec, dest)
+        bar = InfoBar.success if ok else InfoBar.error
+        bar(tr("Download Log", self._lang), dest if ok else tr("No Log Available", self._lang),
+            orient=1, isClosable=True, position=InfoBarPosition.TOP, duration=5000, parent=self)
 
     def _open_record_folder(self, rec):
         # Prefer the output folder; fall back to the result dir from resume_info.

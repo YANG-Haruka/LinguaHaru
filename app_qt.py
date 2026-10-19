@@ -55,6 +55,11 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 # is shown, so the UI appears instantly.
 from core.model_store import setup_model_env  # noqa: E402
 setup_model_env(defer_network=True)
+try:   # finish uninstalls queued while their libs were loaded (before anything imports them)
+    from core.module_manager import run_pending_uninstalls  # noqa: E402
+    run_pending_uninstalls()
+except Exception:  # noqa: BLE001
+    pass
 try:   # let downloaded market plugins hook into the app (best-effort)
     from core import plugins_registry as _pr  # noqa: E402
     _pr.activate_downloaded_plugins()

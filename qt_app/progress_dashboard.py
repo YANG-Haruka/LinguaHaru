@@ -249,7 +249,7 @@ class ProgressDashboard(QWidget):
         self.back_btn.setText(tr("New Translation", self._lang))
         self.back_btn.show()
         if summary:
-            self.status.setText("✓ " + summary)
+            self.status.setText(("✓ " if can_open else "✗ ") + summary)   # nothing produced = failed
         self._show_coverage(coverage)
         self._show_qa(qa)
 

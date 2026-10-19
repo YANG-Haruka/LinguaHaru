@@ -56,6 +56,11 @@ class VideoTranslator(DocumentTranslator):
         except Exception:
             return True
 
+    @property
+    def needs_llm(self):
+        """Transcribe-only runs never call the LLM: skip the interface preflight."""
+        return self._translate_subtitles_enabled()
+
     def _process_impl(self, file_name, file_extension, progress_callback=None):
         if not self._translate_subtitles_enabled():
             # Transcribe-only: emit the source-language SRT, skip LLM translation.

@@ -496,5 +496,10 @@ class TranslationWorker(QThread):
             "insufficient_balance": "Err Insufficient Balance",
             "invalid_key": "Err Invalid Key",
             "server_error": "Err Server",
+            "unreachable": "Err Unreachable",    # preflight: interface can't be reached
+            "bad_request": "Err Bad Request",    # preflight: wrong model id / URL
         }
-        return tr(keys.get(category, "Err Api Generic"), self.session_lang)
+        msg = tr(keys.get(category, "Err Api Generic"), self.session_lang)
+        if category in ("unreachable", "bad_request"):
+            msg += f" ({str(error)[:200]})"   # the provider's own words help a lot here
+        return msg

@@ -733,5 +733,12 @@
   "Test Interface": "Test",
   "Testing Interface": "Testing…",
   "Interface OK": "Interface OK",
-  "Interface Failed": "Interface failed"
+  "Interface Failed": "Interface failed",
+  "Err Unreachable": "Translation did not start: cannot connect to the API. Check the network and the interface's Base URL (Interface Management → Test).",
+  "Err Bad Request": "Translation did not start: the API rejected the request. Check the interface's Model ID and Base URL (Interface Management → Test).",
+  "Download Log": "Download log",
+  "No Log Available": "No log available for this record",
+  "Uninstall After Restart": "This plugin is in use, so its uninstall is queued — it finishes automatically when you restart the app.",
+  "Restart Now": "Restart now",
+  "Edit Interface": "Edit Interface"
 }

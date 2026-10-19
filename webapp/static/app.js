@@ -2060,6 +2060,11 @@ async function moduleAction(name, action, btn, statTd) {
       // (Was the bug: card still showed "未安装" after a successful install.)
       try { BOOT = await api("/api/bootstrap"); } catch (e) {}
       renderModules();
+    } else if (s.output === "__UNINSTALL_PENDING_RESTART__") {
+      // In use this session -> queued; the next start finishes it automatically.
+      statTd.innerHTML = pill("busy", _label("Restart to apply", "重启后生效"), ICON.check);
+      $("modules-status").textContent = `${name}: ` + _label("Uninstall After Restart",
+        "插件正在使用中，已安排在下次启动程序时自动卸载。重启程序即可完成。");
     } else {
       statTd.innerHTML = pill("bad", _label("Failed", "失败"), ICON.cross);
       $("modules-status").textContent = `${name} ${_label("Failed", "操作失败")}: ` + (s.output || "").slice(-300);
@@ -3251,6 +3256,10 @@ function buildHistoryDetail(r) {
     _histActBtn(acts, _label("Download", "下载"),
       () => window.open("/api/history/download?id=" + encodeURIComponent(r.id), "_blank"));
   }
+  if (r.log_file_path) {   // zip of this run's log, to send for support
+    _histActBtn(acts, _label("Download Log", "下载日志"),
+      () => window.open("/api/history/log?id=" + encodeURIComponent(r.id), "_blank"));
+  }
   if (_histResumable(r)) _histActBtn(acts, _label("Continue Translation", "继续翻译"), () => resumeHistory(r.id), "primary");
   _histActBtn(acts, _label("Delete Record", "删除"), () => deleteHistory(r.id), "danger");
   box.appendChild(acts);
@@ -3278,6 +3287,12 @@ function buildBatchDetail(recs) {
       d.textContent = _label("Download", "下载");
       d.onclick = (e) => { e.stopPropagation(); window.open("/api/history/download?id=" + encodeURIComponent(r.id), "_blank"); };
       row.appendChild(d);
+    }
+    if (r.log_file_path) {
+      const lg = document.createElement("button"); lg.type = "button"; lg.className = "hist-act";
+      lg.textContent = _label("Download Log", "下载日志");
+      lg.onclick = (e) => { e.stopPropagation(); window.open("/api/history/log?id=" + encodeURIComponent(r.id), "_blank"); };
+      row.appendChild(lg);
     }
     if (_histResumable(r)) {
       const b = document.createElement("button"); b.type = "button"; b.className = "hist-act primary";

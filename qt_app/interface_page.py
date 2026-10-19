@@ -51,7 +51,7 @@ class AddInterfaceDialog(MessageBoxBase):
     def __init__(self, parent=None, lang="en", existing=None):
         super().__init__(parent)
         self._lang = lang
-        self.titleLabel = SubtitleLabel(tr("Add Interface", lang), self)
+        self.titleLabel = SubtitleLabel(tr("Edit Interface" if existing else "Add Interface", lang), self)
         self.viewLayout.addWidget(self.titleLabel)
 
         form_host = QWidget(self)

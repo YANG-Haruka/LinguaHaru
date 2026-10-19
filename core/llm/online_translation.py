@@ -877,24 +877,71 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
                 pass
         return f"Error parsing API response: {str(e)}", True, None
 
+
+def _ping(base_url, model, api_key, timeout=30):
+    """One tiny chat request; returns the reply text or raises the SDK error."""
+    client = OpenAI(api_key=_pick_api_key(api_key) or "none", base_url=base_url,
+                    timeout=timeout, max_retries=0)
+    p_upd, eb = _thinking_off_params(base_url)   # thinking would only slow the ping
+    params = {"model": model, "stream": False,
+              "messages": [{"role": "user", "content": "Reply with exactly: OK"}], **p_upd}
+    if eb:
+        params["extra_body"] = eb
+    r = _create_completion(client, params)
+    return ((r.choices[0].message.content or "") if r.choices else "").strip()
+
+
 def test_interface(base_url, model, api_key, timeout=30):
-    """One tiny chat request with the given (possibly unsaved) interface values,
-    for the interface dialog's Test button. Returns (ok, detail): latency + the
-    model's reply on success, the provider's error text on failure."""
+    """For the interface dialog's Test button, with the (possibly unsaved) values.
+    Returns (ok, detail): latency + the model's reply on success, the provider's
+    error text on failure."""
     if not base_url or not model:
         return False, "Base URL / Model ID is empty"
     t0 = time.time()
     try:
-        client = OpenAI(api_key=_pick_api_key(api_key) or "none", base_url=base_url,
-                        timeout=timeout, max_retries=0)
-        p_upd, eb = _thinking_off_params(base_url)   # thinking would only slow the ping
-        params = {"model": model, "stream": False,
-                  "messages": [{"role": "user", "content": "Reply with exactly: OK"}], **p_upd}
-        if eb:
-            params["extra_body"] = eb
-        r = _create_completion(client, params)
-        reply = ((r.choices[0].message.content or "") if r.choices else "").strip()
+        reply = _ping(base_url, model, api_key, timeout)
         return True, f"{int((time.time() - t0) * 1000)} ms · {reply[:40] or '(empty reply)'}"
     except Exception as e:  # noqa: BLE001 — every failure is a result to show
         status = _http_status(e)
         return False, (f"HTTP {status}: " if status else "") + str(e)[:300]
+
+
+_preflight_ok = {}   # (model, base_url, model id, key) -> time of last success
+_PREFLIGHT_TTL = 60  # a batch of files pings once; any config/key change re-checks
+
+
+def preflight(model, api_key):
+    """Check the interface BEFORE a translation starts, so a dead endpoint, bad
+    key or empty balance fails in seconds with the reason — instead of every
+    paragraph retrying for many minutes and ending as an unexplained failure
+    with 0 tokens. Raises HardApiError (key / balance / unreachable / rejected:
+    the UI shows a localized "check the API" message). Transient trouble (429,
+    5xx) doesn't block: the translation's own retries handle it."""
+    cfg = load_model_config(model)
+    if not cfg or not cfg.get("base_url") or not cfg.get("model"):
+        return
+    base_url = cfg["base_url"]
+    cache_key = (model, base_url, cfg["model"], api_key or "")
+    if time.time() - _preflight_ok.get(cache_key, 0) < _PREFLIGHT_TTL:
+        return
+    last = None
+    for _ in range(2):   # one retry: a single network blip shouldn't abort a job
+        try:
+            _ping(base_url, cfg["model"], api_key, timeout=45)
+            _preflight_ok[cache_key] = time.time()
+            return
+        except Exception as e:  # noqa: BLE001
+            last, kind = e, _classify_api_exception(e)
+            if kind not in ("connection", "timeout"):
+                break
+    app_logger.error(f"Interface preflight failed ({base_url}): {str(last)[:300]}")
+    if kind == "hard":
+        raise HardApiError(f"Unrecoverable API error: {last}",
+                           category=classify_fatal_error(str(last).lower()))
+    # HardApiError: the UI shows a localized "check the API" message and a
+    # multi-file batch aborts at once (every file would fail the same way).
+    if kind in ("connection", "timeout"):
+        raise HardApiError(f"{base_url}: {str(last)[:200]}", category="unreachable")
+    if kind == "invalid_request":
+        status = _http_status(last)
+        raise HardApiError(f"HTTP {status}: {str(last)[:200]}", category="bad_request")

@@ -1056,6 +1056,11 @@ class DocumentTranslator:
             f"threads={self.num_threads} max_token={self.max_token} | out={self.result_dir}")
         start_t = time.time()
         try:
+            # Fail in seconds with the reason when the interface is down / the key
+            # is bad, instead of retrying every segment for minutes (0 tokens).
+            if self.use_online and getattr(self, "needs_llm", True):
+                from core.llm.online_translation import preflight
+                preflight(self.model, self.api_key)
             result = self._process_impl(file_name, file_extension, progress_callback)
             out = result[0] if isinstance(result, (tuple, list)) else result
             missing = result[1] if isinstance(result, (tuple, list)) and len(result) > 1 else None
