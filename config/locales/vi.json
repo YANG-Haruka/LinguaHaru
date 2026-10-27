@@ -395,5 +395,17 @@
   "Downloaded": "Đã tải",
   "Use Model": "Dùng",
   "In Use": "Đang dùng",
-  "Tag JapaneseOnly": "Chỉ tiếng Nhật"
+  "Tag JapaneseOnly": "Chỉ tiếng Nhật",
+  "Iface Err invalid_key": "Khóa API không hợp lệ hoặc đã hết hạn (401). Hãy kiểm tra đã sao chép đầy đủ chưa, hoặc tạo khóa mới.",
+  "Iface Err insufficient_balance": "Không đủ số dư/hạn mức (402). Hãy nạp tiền với nhà cung cấp rồi kiểm tra lại.",
+  "Iface Err forbidden": "Truy cập bị từ chối (403). Tài khoản có thể cần xác minh, bị hạn chế, hoặc dịch vụ không hỗ trợ khu vực của bạn.",
+  "Iface Err not_found": "Không tìm thấy (404). Kiểm tra Base URL (nhiều nơi cần /v1 ở cuối) và ID mô hình.",
+  "Iface Err bad_request": "Yêu cầu bị từ chối (400). Thường là ID mô hình sai — hãy kiểm tra tên mô hình chính xác trên trang của nhà cung cấp.",
+  "Iface Err rate_limit": "Quá nhiều yêu cầu hoặc đã hết hạn mức (429). Đợi một lát hoặc kiểm tra giới hạn gói của bạn.",
+  "Iface Err server": "Máy chủ của nhà cung cấp đang gặp sự cố (5xx). Vui lòng thử lại sau.",
+  "Iface Err timeout": "Hết thời gian chờ — máy chủ phản hồi quá chậm. Kiểm tra mạng rồi thử lại.",
+  "Iface Err connection": "Không thể kết nối tới Base URL. Kiểm tra địa chỉ, mạng hoặc proxy; tường lửa hoặc phần mềm bảo mật cũng có thể chặn.",
+  "Iface Err unknown": "Lỗi không xác định — xem lỗi gốc bên dưới.",
+  "Iface Err empty": "Cần nhập Base URL và ID mô hình.",
+  "Raw Error": "Lỗi gốc"
 }

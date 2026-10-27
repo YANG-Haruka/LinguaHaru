@@ -502,7 +502,12 @@ async function testIfaceConfig() {
       body: JSON.stringify({ name: $("if-name").value.trim(), base_url: $("if-base").value.trim(),
         model: $("if-model").value.trim(), api_key: $("if-key").value }) });
     out.style.color = r.ok ? "#16a34a" : "#e0503c";
-    out.textContent = _label(r.ok ? "Interface OK" : "Interface Failed", r.ok ? "接口正常" : "接口不可用") + " — " + r.detail;
+    out.style.whiteSpace = "pre-wrap";
+    // Failure: what it means + what to do (UI language), then the raw error.
+    out.textContent = r.ok
+      ? _label("Interface OK", "接口正常") + " — " + r.detail
+      : _label("Interface Failed", "接口不可用") + " — " + _label("Iface Err " + r.kind, "")
+        + "\n" + _label("Raw Error", "原始错误") + ": " + r.detail;
   } catch (e) {
     out.style.color = "#e0503c"; out.textContent = String(e);
   } finally { btn.disabled = false; }

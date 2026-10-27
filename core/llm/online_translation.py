@@ -897,19 +897,50 @@ def _ping(base_url, model, api_key, timeout=30):
     return ((r.choices[0].message.content or "") if r.choices else "").strip()
 
 
+def interface_error_kind(exc):
+    """What a failed interface call means, as a stable key the UI localizes
+    ("Iface Err <kind>"): invalid_key / insufficient_balance / forbidden /
+    not_found / bad_request / rate_limit / server / timeout / connection /
+    unknown. HTTP status first; the message decides where providers differ
+    (e.g. a 400/403 whose body says "insufficient balance")."""
+    status = _http_status(exc)
+    msg = str(exc).lower()
+    kind = _classify_api_exception(exc)
+    if status == 402 or (status in (400, 403, 429) and classify_fatal_error(msg) == "insufficient_balance"):
+        return "insufficient_balance"
+    if status == 401:
+        return "invalid_key"
+    if status == 403:
+        return "forbidden"
+    if status == 404:
+        return "not_found"
+    if status in (400, 422):
+        return "bad_request"
+    if status == 429 or kind == "rate_limit":
+        return "rate_limit"
+    if (status or 0) >= 500 or kind == "server":
+        return "server"
+    if kind in ("timeout", "connection"):
+        return kind
+    if kind == "hard":
+        return classify_fatal_error(msg) if classify_fatal_error(msg) != "api_error" else "invalid_key"
+    return "unknown"
+
+
 def test_interface(base_url, model, api_key, timeout=30):
     """For the interface dialog's Test button, with the (possibly unsaved) values.
-    Returns (ok, detail): latency + the model's reply on success, the provider's
-    error text on failure."""
+    Returns (ok, detail, kind): latency + the model's reply on success; on
+    failure the provider's raw error text plus interface_error_kind() so the UI
+    can say in the user's language WHAT went wrong (no balance, bad key...)."""
     if not base_url or not model:
-        return False, "Base URL / Model ID is empty"
+        return False, "Base URL / Model ID is empty", "empty"
     t0 = time.time()
     try:
         reply = _ping(base_url, model, api_key, timeout)
-        return True, f"{int((time.time() - t0) * 1000)} ms · {reply[:40] or '(empty reply)'}"
+        return True, f"{int((time.time() - t0) * 1000)} ms · {reply[:40] or '(empty reply)'}", ""
     except Exception as e:  # noqa: BLE001 — every failure is a result to show
         status = _http_status(e)
-        return False, (f"HTTP {status}: " if status else "") + str(e)[:300]
+        return False, (f"HTTP {status}: " if status else "") + str(e)[:300], interface_error_kind(e)
 
 
 _preflight_ok = {}   # (model, base_url, model id, key) -> time of last success

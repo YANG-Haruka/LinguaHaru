@@ -395,5 +395,17 @@
   "Downloaded": "Baixado",
   "Use Model": "Usar",
   "In Use": "Em uso",
-  "Tag JapaneseOnly": "Só japonês"
+  "Tag JapaneseOnly": "Só japonês",
+  "Iface Err invalid_key": "A chave de API é inválida ou expirou (401). Verifique se foi copiada por completo ou crie uma nova.",
+  "Iface Err insufficient_balance": "Saldo/cota insuficiente (402). Recarregue sua conta com o provedor e teste novamente.",
+  "Iface Err forbidden": "Acesso negado (403). A conta pode precisar de verificação, estar restrita ou o serviço não estar disponível na sua região.",
+  "Iface Err not_found": "Não encontrado (404). Verifique a Base URL (muitas terminam com /v1) e o ID do modelo.",
+  "Iface Err bad_request": "Solicitação rejeitada (400). Geralmente o ID do modelo está errado — confira o nome exato no site do provedor.",
+  "Iface Err rate_limit": "Solicitações demais ou cota esgotada (429). Aguarde um momento ou verifique os limites do seu plano.",
+  "Iface Err server": "O servidor do provedor está com problemas (5xx). Tente novamente mais tarde.",
+  "Iface Err timeout": "Tempo esgotado — o servidor respondeu devagar demais. Verifique a rede e tente de novo.",
+  "Iface Err connection": "Não foi possível conectar à Base URL. Verifique o endereço, a rede ou o proxy; firewall ou software de segurança também podem bloquear.",
+  "Iface Err unknown": "Erro desconhecido — veja o erro original abaixo.",
+  "Iface Err empty": "A Base URL e o ID do modelo são obrigatórios.",
+  "Raw Error": "Erro original"
 }

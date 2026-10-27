@@ -753,5 +753,17 @@
   "Restart Now": "立即重启",
   "Edit Interface": "编辑接口",
   "Install After Restart": "有组件正在使用中，已安排在下次启动程序时自动安装。重启程序即可完成。",
-  "Plugin In Use Elsewhere": "插件文件正被另一个 LinguaHaru 进程占用（例如另一个窗口或局域网网页服务），请先关闭它再卸载。未做任何改动。"
+  "Plugin In Use Elsewhere": "插件文件正被另一个 LinguaHaru 进程占用（例如另一个窗口或局域网网页服务），请先关闭它再卸载。未做任何改动。",
+  "Iface Err invalid_key": "API 密钥无效或已过期（401）。请检查是否复制完整，或重新创建一个密钥。",
+  "Iface Err insufficient_balance": "余额 / 额度不足（402）。请到服务商处充值后再测试。",
+  "Iface Err forbidden": "拒绝访问（403）。账号可能需要实名认证、被限制使用，或该服务不支持你所在的地区。",
+  "Iface Err not_found": "找不到（404）。请检查接口地址（很多需要以 /v1 结尾）和模型 ID。",
+  "Iface Err bad_request": "请求被拒绝（400）。通常是模型 ID 写错了，请到服务商网站核对准确的模型名称。",
+  "Iface Err rate_limit": "请求太频繁或额度已用完（429）。请稍等片刻，或检查套餐限制。",
+  "Iface Err server": "服务商的服务器出现故障（5xx）。请稍后再试。",
+  "Iface Err timeout": "连接超时，服务器响应太慢。请检查网络后重试。",
+  "Iface Err connection": "无法连接到接口地址。请检查地址、网络或代理；防火墙或安全软件也可能会拦截。",
+  "Iface Err unknown": "未知错误，请查看下方的原始错误。",
+  "Iface Err empty": "请填写接口地址和模型 ID。",
+  "Raw Error": "原始错误"
 }

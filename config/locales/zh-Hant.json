@@ -489,5 +489,17 @@
   "Restart Now": "立即重新啟動",
   "Edit Interface": "編輯介面",
   "Install After Restart": "有元件正在使用中，已安排在下次啟動程式時自動安裝。重新啟動程式即可完成。",
-  "Plugin In Use Elsewhere": "外掛檔案正被另一個 LinguaHaru 程序佔用（例如另一個視窗或區域網路網頁服務），請先關閉它再解除安裝。未做任何變更。"
+  "Plugin In Use Elsewhere": "外掛檔案正被另一個 LinguaHaru 程序佔用（例如另一個視窗或區域網路網頁服務），請先關閉它再解除安裝。未做任何變更。",
+  "Iface Err invalid_key": "API 金鑰無效或已過期（401）。請檢查是否複製完整，或重新建立一個金鑰。",
+  "Iface Err insufficient_balance": "餘額 / 額度不足（402）。請到服務商處儲值後再測試。",
+  "Iface Err forbidden": "拒絕存取（403）。帳號可能需要實名驗證、被限制使用，或該服務不支援你所在的地區。",
+  "Iface Err not_found": "找不到（404）。請檢查介面位址（很多需要以 /v1 結尾）和模型 ID。",
+  "Iface Err bad_request": "請求被拒絕（400）。通常是模型 ID 寫錯了，請到服務商網站核對正確的模型名稱。",
+  "Iface Err rate_limit": "請求太頻繁或額度已用完（429）。請稍候片刻，或檢查方案限制。",
+  "Iface Err server": "服務商的伺服器發生故障（5xx）。請稍後再試。",
+  "Iface Err timeout": "連線逾時，伺服器回應太慢。請檢查網路後重試。",
+  "Iface Err connection": "無法連線到介面位址。請檢查位址、網路或代理；防火牆或安全軟體也可能會攔截。",
+  "Iface Err unknown": "未知錯誤，請查看下方的原始錯誤。",
+  "Iface Err empty": "請填寫介面位址和模型 ID。",
+  "Raw Error": "原始錯誤"
 }

@@ -34,7 +34,7 @@ _ORPHAN_TESTS = []   # test threads outliving their closed dialog
 
 class _TestWorker(QThread):
     """Runs one tiny request off the UI thread (it can take up to ~30s)."""
-    done = Signal(bool, str)
+    done = Signal(bool, str, str)   # ok, raw detail, error kind
 
     def __init__(self, base_url, model, key):
         super().__init__()
@@ -128,11 +128,16 @@ class AddInterfaceDialog(MessageBoxBase):
         self._test_worker.done.connect(self._on_test_done)
         self._test_worker.start()
 
-    def _on_test_done(self, ok, detail):
+    def _on_test_done(self, ok, detail, kind):
         self.test_btn.setEnabled(True)
         self.test_result.setStyleSheet("color:#16a34a;" if ok else "color:#e0503c;")
+        if ok:
+            self.test_result.setText(tr("Interface OK", self._lang) + " — " + detail)
+            return
+        # What it means + what to do, in the UI language; then the raw error.
         self.test_result.setText(
-            tr("Interface OK" if ok else "Interface Failed", self._lang) + " — " + detail)
+            tr("Interface Failed", self._lang) + " — " + tr(f"Iface Err {kind}", self._lang)
+            + "\n" + tr("Raw Error", self._lang) + ": " + detail)
 
     def done(self, r):
         # Closing mid-test: keep the QThread alive until it ends (destroying a

@@ -742,5 +742,17 @@
   "Restart Now": "Restart now",
   "Edit Interface": "Edit Interface",
   "Install After Restart": "A component this plugin needs is in use, so the install is queued — it runs automatically when you restart the app.",
-  "Plugin In Use Elsewhere": "The plugin's files are in use by another LinguaHaru process (another window or the LAN web service). Close it, then uninstall again. Nothing was changed."
+  "Plugin In Use Elsewhere": "The plugin's files are in use by another LinguaHaru process (another window or the LAN web service). Close it, then uninstall again. Nothing was changed.",
+  "Iface Err invalid_key": "The API key is invalid or expired (401). Check that it was copied completely, or create a new key.",
+  "Iface Err insufficient_balance": "Insufficient balance / quota (402). Top up your account with the provider, then test again.",
+  "Iface Err forbidden": "Access denied (403). The account may need verification, be restricted, or the service isn't available in your region.",
+  "Iface Err not_found": "Not found (404). Check the Base URL (many need /v1 at the end) and the Model ID.",
+  "Iface Err bad_request": "Request rejected (400). Usually the Model ID is wrong — check the exact model name on the provider's site.",
+  "Iface Err rate_limit": "Too many requests or quota exhausted (429). Wait a moment, or check your plan's limits.",
+  "Iface Err server": "The provider's server is having problems (5xx). Try again later.",
+  "Iface Err timeout": "Timed out — the server answered too slowly. Check the network and try again.",
+  "Iface Err connection": "Cannot connect to the Base URL. Check the address, your network or proxy; firewall / security software may also block it.",
+  "Iface Err unknown": "Unknown error — see the raw error below.",
+  "Iface Err empty": "Base URL and Model ID are required.",
+  "Raw Error": "Raw error"
 }

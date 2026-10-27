@@ -820,9 +820,9 @@ def test_interface_ep(payload: dict):
     from core.llm.online_translation import test_interface
     name = (payload.get("name") or "").strip()
     key = (payload.get("api_key") or "").strip() or (load_api_key_for_model(name) if name else "")
-    ok, detail = test_interface((payload.get("base_url") or "").strip(),
-                                (payload.get("model") or "").strip(), key)
-    return {"ok": ok, "detail": detail}
+    ok, detail, kind = test_interface((payload.get("base_url") or "").strip(),
+                                      (payload.get("model") or "").strip(), key)
+    return {"ok": ok, "detail": detail, "kind": kind}
 
 
 @app.post("/api/interface/delete")
