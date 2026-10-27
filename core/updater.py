@@ -198,10 +198,15 @@ def _sync_base_deps(root):
     from core.module_manager import pick_pypi_index, _PYPI_MIRROR
 
     def _run_sync(index):
-        cmd = ([uv, "pip", "install", "--python", py, "--index-url", index, *args]
-               if uv else [py, "-m", "pip", "install", "--index-url", index, *args])
+        pip_cmd = [py, "-m", "pip", "install", "--index-url", index, *args]
+        cmd = [uv, "pip", "install", "--python", py, "--index-url", index, *args] if uv else pip_cmd
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+            if (proc.returncode != 0 and uv
+                    and "Failed to inspect Python interpreter" in (proc.stdout + proc.stderr)):
+                # Injected software printing to python's stdout breaks uv's
+                # interpreter query; pip doesn't need it (see module_manager._run).
+                proc = subprocess.run(pip_cmd, capture_output=True, text=True, timeout=900)
             return proc.returncode == 0
         except Exception:  # noqa: BLE001
             return False

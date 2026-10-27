@@ -130,9 +130,45 @@ def _emit(line):
             pass
 
 
+# uv can't use this Python when something injected into every process (security
+# / anti-cheat software) prints extra lines to stdout: uv's interpreter query then
+# reads "trailing characters" and refuses ("Failed to inspect Python interpreter").
+# pip doesn't do that query, so from then on the session uses pip.
+_UV_UNUSABLE = False
+_UV_INSPECT_FAIL = "Failed to inspect Python interpreter"
+
+
+def _uv_to_pip(cmd):
+    """The pip equivalent of a `uv pip <sub> --python X ...` command."""
+    sub, rest, py = cmd[2], [], sys.executable
+    it = iter(cmd[3:])
+    for a in it:
+        if a == "--python":
+            py = next(it, py)
+        elif a == "--reinstall":
+            rest.append("--force-reinstall")
+        else:
+            rest.append(a)
+    return [py, "-m", "pip", sub, *(["-y"] if sub == "uninstall" else []), *rest]
+
+
 def _run(cmd):
     """Run a command list, STREAMING output lines to the progress sink; return
-    (ok, tail_of_output)."""
+    (ok, tail_of_output). A uv command that can't inspect this Python is
+    re-run with pip (and uv is skipped for the rest of the session)."""
+    global _UV_UNUSABLE
+    ok, out = _run_once(cmd)
+    if (not ok and _UV_INSPECT_FAIL in out and len(cmd) > 2
+            and os.path.basename(cmd[0]).lower().startswith("uv") and cmd[1] == "pip"):
+        app_logger.warning("uv can't inspect this Python (extra stdout from injected "
+                           "software?) — falling back to pip for this session")
+        _emit("⚠ uv 无法使用（有其他软件干扰 Python 输出），改用 pip 重试… / uv unusable, retrying with pip…")
+        _UV_UNUSABLE = True
+        ok, out = _run_once(_uv_to_pip(cmd))
+    return ok, out
+
+
+def _run_once(cmd):
     app_logger.info(f"Running: {' '.join(cmd)}")
     tail = []
     # On Windows, hide the child console window (uv/pip would otherwise flash a
@@ -159,6 +195,8 @@ def _uv_exe():
     """A uv executable if available — bundled next to python.exe (portable build)
     or on PATH. uv installs MUCH faster than pip (parallel, cached resolver), so it
     is used when present; pip is the universal fallback. Returns None if absent."""
+    if _UV_UNUSABLE:
+        return None
     exe = "uv.exe" if os.name == "nt" else "uv"
     cand = os.path.join(os.path.dirname(sys.executable), exe)
     if os.path.exists(cand):
@@ -307,15 +345,20 @@ def _freeze_constraints():
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=120,
                              creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+        ok, text = out.returncode == 0, out.stdout
     except Exception:  # noqa: BLE001
-        return None
-    if out.returncode != 0:
-        return None
+        ok, text = False, ""
+    if not ok:
+        # e.g. uv can't inspect this Python (see _run): pin from our own metadata
+        # instead of installing UNPINNED (which could try to replace a loaded lib).
+        text = "\n".join(f"{d.metadata['Name']}=={d.version}"
+                         for d in importlib.metadata.distributions()
+                         if d.metadata and d.metadata.get("Name"))
     # Keep only plain 'name==version' pins; drop editable / @-url / -e / blank lines
     # (not valid as constraints).
-    lines = [ln.strip() for ln in out.stdout.splitlines()
+    lines = [ln.strip() for ln in text.splitlines()
              if "==" in ln and " @ " not in ln and not ln.startswith(("-e", "-", "#"))]
-    return _write_constraint_file(lines)
+    return _write_constraint_file(lines) if lines else None
 
 
 def _loaded_native_dists():
