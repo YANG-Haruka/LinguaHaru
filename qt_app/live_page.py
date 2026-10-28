@@ -1345,11 +1345,18 @@ class LivePage(ScrollArea):
             tokens = int(self._session_tokens or 0)
             # history_dir(), the DB the History page reads — the legacy log_dir
             # made every desktop real-time session invisible in History.
-            save_live_session(src, dst, "Auto",
+            rec = save_live_session(src, dst, "Auto",
                                     self.target_combo.currentText(), model, online,
                                     result_dir, backend.history_dir(), total_tokens=tokens,
                                     cost_amount=None, cost_currency=None,
                                     start_time=self._rec_start, audio_path=audio_path)
+            if rec and audio_path:
+                # WAV -> Opus in the background (~17x smaller; 2 h ≈ 13 MB). The
+                # record keeps pointing at the WAV until the .ogg is complete.
+                import threading
+                from core.translation_history import compress_live_recording
+                threading.Thread(target=compress_live_recording,
+                                 args=(rec["id"], backend.history_dir()), daemon=True).start()
             if not getattr(self, "_shutting_down", False):   # no modal during app close
                 from qt_app.thanks import show_thanks
                 show_thanks(self.window(), self._lang, tokens)
@@ -1430,6 +1437,14 @@ class LivePage(ScrollArea):
 
     # --- local mode: neural VAD (TEN-VAD) over 16k PCM16, per 16ms frame ---
     def _reset_vad(self):
+        # Commit mode for this session: "final" = only the complete utterance's
+        # recognition is committed/translated (slow autoregressive STT), else
+        # stream on partials. See video_translation_pipeline.live_commit_mode.
+        try:
+            from core.pipelines.video_translation_pipeline import live_commit_mode
+            self._final_mode = live_commit_mode() == "final"
+        except Exception:  # noqa: BLE001
+            self._final_mode = False
         # Trailing-silence (hang) that ends an utterance — user-tunable in
         # Settings so slow speakers can keep their phrases from being chopped.
         try:
@@ -1775,6 +1790,28 @@ class LivePage(ScrollArea):
             consumed = len(text)
         return units, consumed
 
+    @classmethod
+    def _split_sentences(cls, text):
+        """Final-mode split of a COMPLETE utterance: break only at real sentence
+        ends (。！？!? and a '.' before a space/the end — not "3.5"), never by
+        length, so unpunctuated Japanese isn't cut mid-word ("えっ|と"). A unit
+        shorter than _SENT_MIN_CELLS stays attached to its neighbour."""
+        units, cur, w = [], "", 0
+        for i, ch in enumerate(text):
+            cur += ch
+            w += cls._cell(ch)
+            end = ch in "。！？!?" or (ch == "." and (i + 1 == len(text) or text[i + 1] == " "))
+            if end and w >= cls._SENT_MIN_CELLS:
+                units.append(cur.strip())
+                cur, w = "", 0
+        if cur.strip():
+            if units and w < cls._SENT_MIN_CELLS:
+                sep = " " if units[-1][-1].isascii() else ""   # keep latin spacing
+                units[-1] += sep + cur.strip()
+            else:
+                units.append(cur.strip())
+        return [u for u in units if u]
+
     @staticmethod
     def _common_prefix(a, b):
         n = min(len(a), len(b))
@@ -1852,9 +1889,13 @@ class LivePage(ScrollArea):
         if detected:
             self._note_detected(detected)
         text = text or ""
+        final_mode = getattr(self, "_final_mode", False)
         if is_final:
             # Flush only the not-yet-committed tail (aligned, never re-emitted).
-            units, _ = self._split_scored(self._uncommitted_tail(text), True)
+            # Final mode committed nothing yet: the whole complete recognition,
+            # broken only at real sentence ends (no forced mid-word cuts).
+            units = (self._split_sentences(text) if final_mode
+                     else self._split_scored(self._uncommitted_tail(text), True)[0])
             for s in units:
                 self._commit_stream_sentence(s)
             # The utterance is closed: reset its stream state HERE, in result
@@ -1867,6 +1908,10 @@ class LivePage(ScrollArea):
             self._set_caption_interim("")
             if self._is_listening():
                 self.status_label.setText(self._listening_text())
+        elif final_mode:
+            # Preview only (dim line); nothing is committed from half-heard audio.
+            self._stream_last = text
+            self._set_caption_interim(text)
         else:
             tail = self._uncommitted_tail(text)
             last_tail = self._uncommitted_tail(self._stream_last) \

@@ -275,6 +275,32 @@ def get_selected_live_stt_model():
     return "qwen3-asr-1.7b" if _mlx_qwen_ok() else DEFAULT_STT_MODEL
 
 
+def live_commit_mode():
+    """How real-time voice commits text: "stream" = LocalAgreement on ~360 ms
+    partials (words appear while speaking; needs a fast non-autoregressive model
+    like SenseVoice), or "final" = commit + translate only each utterance's
+    COMPLETE recognition, partials just preview the dim line.
+
+    Config "live_commit_mode": auto (default) | stream | final. Auto picks
+    "final" for autoregressive models (Qwen3-ASR / Whisper): they take ~3 s per
+    10 s of audio, so partials lag and the committed text came from half-heard
+    audio. Replaying a real 10-min Japanese meeting with Qwen3-ASR 1.7B: 11.6%
+    of the streamed text differed from the complete-utterance result (e.g.
+    「一が最高」 vs 「一月以降」) and words were split across lines."""
+    try:
+        with open(_SYSTEM_CONFIG, encoding="utf-8") as f:
+            mode = str(json.load(f).get("live_commit_mode") or "auto").lower()
+    except Exception:  # noqa: BLE001
+        mode = "auto"
+    if mode in ("stream", "final"):
+        return mode
+    try:
+        engine, _ = _resolve_stt_engine(get_stt_model(get_selected_live_stt_model()))
+    except Exception:  # noqa: BLE001
+        return "stream"
+    return "stream" if engine == "sensevoice" else "final"
+
+
 def get_selected_quick_stt_model():
     """STT model id for QUICK-TRANSLATE voice input (config 'quick_stt_model'),
     independent of the live/video models."""

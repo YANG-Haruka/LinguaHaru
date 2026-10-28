@@ -1294,6 +1294,8 @@ def build_log_bundle(rec, dest_zip, include_system=True):
     import zipfile
     files = []
     task_log = (rec or {}).get("log_file_path")
+    if (rec or {}).get("file_type") == "realtime":
+        task_log = None   # a live session keeps its RECORDING in that field, not a log
     if task_log and os.path.isfile(task_log):
         files.append((task_log, os.path.basename(task_log)))
     if include_system:

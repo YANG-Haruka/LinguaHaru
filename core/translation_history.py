@@ -532,6 +532,59 @@ def save_live_session(
     return rec
 
 
+# Opus at this bitrate (mono speech): ~20 MB for 2 h, vs ~230 MB as 16 kHz WAV.
+# Measured on a real 10-min Japanese meeting re-transcribed with Qwen3-ASR 1.7B
+# (kana CER vs the WAV's own transcript; 64k = run-to-run floor 10.7%):
+# 16k 21.1%, 24k 16.8%, 32k 18.8% — 16k visibly hurts re-transcription.
+_REC_OPUS_BITRATE = "24k"
+
+
+def compress_live_recording(record_id: str, log_dir: str) -> Optional[str]:
+    """Re-encode a finished live session's WAV recording to Opus (.ogg) and point
+    the history record at it; the WAV is deleted only after the .ogg is written
+    and the record updated. Slow for long sessions (~1.5 min for 2 h) -> call it
+    off the UI thread. Returns the new path, or None (WAV kept as-is) when ffmpeg
+    is unavailable or anything fails."""
+    import subprocess
+    mgr = TranslationHistoryManager(log_dir=log_dir)
+    rec = mgr.get_record_by_id(record_id) or {}
+    wav = rec.get("log_file_path") or ""
+    if not wav.lower().endswith(".wav") or not os.path.isfile(wav):
+        return None
+    from core.optional_modules import ffmpeg_exe
+    ff = ffmpeg_exe()
+    if not ff:
+        return None
+    ogg = os.path.splitext(wav)[0] + ".ogg"
+    tmp = ogg + ".part"
+    try:
+        subprocess.run([ff, "-y", "-loglevel", "error", "-i", wav, "-ac", "1",
+                        "-c:a", "libopus", "-b:a", _REC_OPUS_BITRATE,
+                        "-application", "voip", "-f", "ogg", tmp],
+                       check=True, capture_output=True, timeout=3600,
+                       creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
+        os.replace(tmp, ogg)
+        rec["log_file_path"] = ogg
+        if not mgr.add_record(rec):
+            raise RuntimeError("history update failed")
+    except Exception as e:  # noqa: BLE001 — keep the WAV; never lose a recording
+        app_logger.warning(f"Recording compression skipped ({os.path.basename(wav)}): {e}")
+        for p in (tmp, ogg):
+            if os.path.exists(p) and rec.get("log_file_path") != p:
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        return None
+    try:
+        os.remove(wav)
+    except OSError:
+        pass
+    app_logger.info(f"Recording compressed: {os.path.basename(ogg)} "
+                    f"({os.path.getsize(ogg) / 1e6:.1f} MB)")
+    return ogg
+
+
 SUMMARY_MARK = "# Summary"
 
 

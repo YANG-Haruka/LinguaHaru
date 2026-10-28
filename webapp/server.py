@@ -2348,7 +2348,11 @@ async def live_recognize(payload: dict, request: Request):
     if res is None:
         return {"source": "", "detected": "", "busy": True}
     source, detected = res
-    return {"source": source or "", "detected": detected or ""}
+    # Tell the page how to commit (stream on partials vs. complete utterances
+    # only) — per response, so a model switch mid-session takes effect at once.
+    from core.pipelines.video_translation_pipeline import live_commit_mode
+    return {"source": source or "", "detected": detected or "",
+            "commit_mode": live_commit_mode()}
 
 
 @app.post("/api/live-translate-text")

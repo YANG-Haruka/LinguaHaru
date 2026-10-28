@@ -2896,6 +2896,26 @@ function commonPrefix(a, b) {
 // (last ~10 committed chars, punctuation-stripped: re-decodes love flipping
 // 。<->， at the seam) -> length skip. Twin of Qt live_page._uncommitted_tail.
 const SEAM_PUNCT = /^[。！？!?.，、,；;\s]+/;
+// Final-mode split of a COMPLETE utterance (twin of Qt LivePage._split_sentences):
+// break only at real sentence ends (。！？!? and '.' before a space/the end, not
+// "3.5"), never by length; a unit shorter than 8 cells stays attached.
+function splitSentences(text) {
+  const units = [];
+  let cur = "", w = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    cur += ch; w += _cell(ch);
+    const end = "。！？!?".includes(ch) || (ch === "." && (i + 1 === text.length || text[i + 1] === " "));
+    if (end && w >= 8) { units.push(cur.trim()); cur = ""; w = 0; }
+  }
+  if (cur.trim()) {
+    if (units.length && w < 8) {
+      const last = units[units.length - 1];
+      units[units.length - 1] = last + (last.charCodeAt(last.length - 1) < 128 ? " " : "") + cur.trim();
+    } else units.push(cur.trim());
+  }
+  return units.filter(Boolean);
+}
 function uncommittedTail(text, committed) {
   if (!committed) return text;
   let tail;
@@ -2945,6 +2965,13 @@ async function runPartial(int16) {
     if (r.busy) return;   // server dropped this partial under load — keep state, retry next
     noteDetected(r.detected);
     const text = r.source || "";
+    if (r.commit_mode === "final") {
+      // Slow autoregressive STT (Qwen3-ASR / Whisper): partials only preview the
+      // dim line; nothing is committed from half-heard audio (see runFinal).
+      liveLastText = text; pipInterim = text; updatePipCaption();
+      if (liveRunning && text) setLiveStatus(_label("识别中…", "识别中…") + " " + text);
+      return;
+    }
     // LocalAgreement-2 on the UNCOMMITTED TAIL: only tail text two consecutive
     // partials agree on is committed. Committed text is NEVER re-emitted, even
     // when the STT rewrites the utterance head (no more duplicated captions).
@@ -2967,7 +2994,10 @@ async function runFinal(int16) {
     const text = r.source || "";
     // Flush only the not-yet-committed tail (aligned even across head rewrites
     // — never re-emits committed text, never drops the tail).
-    const { units } = splitScored(uncommittedTail(text, liveCommittedText), true);
+    // Final mode committed nothing yet: the whole complete recognition, broken
+    // only at real sentence ends (no forced mid-word cuts) — twin of Qt.
+    const units = r.commit_mode === "final" ? splitSentences(text)
+      : splitScored(uncommittedTail(text, liveCommittedText), true).units;
     for (const u of units) commitLiveSentence(u);
   } catch (e) { /* drop */ }
   // The utterance is closed: reset its stream state HERE, in result order.
@@ -3271,7 +3301,7 @@ function buildHistoryDetail(r) {
     _histActBtn(acts, _label("Download", "下载"),
       () => window.open("/api/history/download?id=" + encodeURIComponent(r.id), "_blank"));
   }
-  if (r.log_file_path) {   // zip of this run's log, to send for support
+  if (r.log_file_path && r.file_type !== "realtime") {   // zip of this run's log (realtime: it's the recording)
     _histActBtn(acts, _label("Download Log", "下载日志"),
       () => window.open("/api/history/log?id=" + encodeURIComponent(r.id), "_blank"));
   }
@@ -3303,7 +3333,7 @@ function buildBatchDetail(recs) {
       d.onclick = (e) => { e.stopPropagation(); window.open("/api/history/download?id=" + encodeURIComponent(r.id), "_blank"); };
       row.appendChild(d);
     }
-    if (r.log_file_path) {
+    if (r.log_file_path && r.file_type !== "realtime") {
       const lg = document.createElement("button"); lg.type = "button"; lg.className = "hist-act";
       lg.textContent = _label("Download Log", "下载日志");
       lg.onclick = (e) => { e.stopPropagation(); window.open("/api/history/log?id=" + encodeURIComponent(r.id), "_blank"); };

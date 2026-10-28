@@ -416,7 +416,7 @@ class HistoryPage(QWidget):
         open_btn = PushButton(FluentIcon.FOLDER, tr("Open Folder", L))
         open_btn.clicked.connect(lambda: self._open_record_folder(rec))
         self.detail_acts.addWidget(open_btn)
-        if rec.get("log_file_path"):
+        if rec.get("log_file_path") and rec.get("file_type") != "realtime":   # realtime: that's the recording
             log_btn = PushButton(FluentIcon.DOWNLOAD, tr("Download Log", L))
             log_btn.clicked.connect(lambda: self._save_log_bundle(rec))
             self.detail_acts.addWidget(log_btn)
@@ -449,7 +449,7 @@ class HistoryPage(QWidget):
         doc_btn = PushButton(FluentIcon.DOCUMENT, tr("Open Transcript", L))
         doc_btn.clicked.connect(lambda: open_folder(txt))
         self.detail_acts.addWidget(doc_btn)
-        if audio.lower().endswith(".wav") and os.path.isfile(audio):
+        if audio.lower().endswith((".wav", ".ogg")) and os.path.isfile(audio):
             play_btn = PushButton(FluentIcon.PLAY, tr("Play Recording", L))
             play_btn.clicked.connect(lambda: open_folder(audio))
             self.detail_acts.addWidget(play_btn)
