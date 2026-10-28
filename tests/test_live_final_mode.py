@@ -106,3 +106,34 @@ def test_translation_waits_for_a_complete_sentence():
                  ("k12", "これは決まっていない。"), ("k13", "那我们明天再聊吧。")):
         page._queue_translation(k, s)              # real sentence ends translate alone
         assert page.sent[-1] == (k, s), s
+
+
+def test_live_default_model_follows_hardware_without_surprise_downloads(monkeypatch):
+    """Never-picked real-time model: Qwen3-ASR 1.7B where it keeps up (MLX, or an
+    NVIDIA GPU >= 8 GB with CUDA torch), else SenseVoice — and an install that
+    already has SenseVoice but not Qwen keeps SenseVoice (no 4.7 GB download)."""
+    from core import model_store
+    from core.pipelines import video_translation_pipeline as v
+    monkeypatch.setattr(v, "_mlx_qwen_ok", lambda: False)
+    disk = {}
+    monkeypatch.setattr(model_store, "find_model_dirs", lambda subs: dict(disk))
+
+    def pick(hw, on_disk):
+        v._live_default.update(t=-1e9, id=None, hw=hw)
+        disk.clear(); disk.update({k: ["x"] for k in on_disk})
+        return v.live_stt_default()
+    assert pick(True, []) == "qwen3-asr-1.7b"                       # fresh install
+    assert pick(True, ["qwen3-asr-1.7b", "sensevoicesmall"]) == "qwen3-asr-1.7b"
+    assert pick(True, ["sensevoicesmall"]) == "sensevoice-small"     # keep, no download
+    assert pick(False, []) == "sensevoice-small"                     # CPU / small GPU
+    from core import sysmon
+    import importlib.metadata
+    monkeypatch.setattr(importlib.metadata, "version", lambda _p: "2.7.0+cu126")
+    monkeypatch.setattr(sysmon, "_gpu_mem", lambda: (100, 8188))
+    assert v._live_qwen_hw_ok()
+    monkeypatch.setattr(sysmon, "_gpu_mem", lambda: (100, 6144))
+    assert not v._live_qwen_hw_ok()                                  # 6 GB card
+    monkeypatch.setattr(sysmon, "_gpu_mem", lambda: (100, 24564))
+    monkeypatch.setattr(importlib.metadata, "version", lambda _p: "2.7.0+cpu")
+    assert not v._live_qwen_hw_ok()                                  # CPU torch build
+    v._live_default.update(t=-1e9, id=None, hw=None)

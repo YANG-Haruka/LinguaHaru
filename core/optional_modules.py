@@ -213,10 +213,10 @@ def _stt_default():
 
 
 def _live_stt_default():
-    """Must match get_selected_live_stt_model()'s default (Qwen3-ASR 1.7B on Apple
-    Silicon), or the plugin card shows/downloads a model the page doesn't use."""
-    from core.pipelines.video_translation_pipeline import _mlx_qwen_ok
-    return "qwen3-asr-1.7b" if _mlx_qwen_ok() else _stt_default()
+    """Must match get_selected_live_stt_model()'s default, or the plugin card
+    shows/downloads a model the page doesn't use."""
+    from core.pipelines.video_translation_pipeline import live_stt_default
+    return live_stt_default()
 
 
 # name -> {config_key, default, models()}  (only plugins that have a model choice)
@@ -433,8 +433,13 @@ def download_plugin_model(name, model_id=None, progress_cb=None):
             # Download the default STT model so voice input is ready (TTS/edge-tts
             # is online, needs no model).
             from core.pipelines import video_translation_pipeline as vtp
-            ok = bool(vtp.preload_recognizer(plugin_current_model(name)))
+            model_id = plugin_current_model(name)
+            ok = bool(vtp.preload_recognizer(model_id))
             last_download_error = "" if ok else vtp.last_preload_error
+            if ok and name == "Real-Time Voice" and model_id != vtp._PREVIEW_MODEL:
+                # A slow live model previews the dim line with SenseVoice
+                # (live_preview_model) — fetch that too; best effort.
+                vtp.preload_recognizer(vtp._PREVIEW_MODEL)
             return ok
         if name == "PDF":
             from core import model_store

@@ -264,15 +264,67 @@ def get_selected_stt_model():
 
 def get_selected_live_stt_model():
     """STT model id for REAL-TIME VOICE (config 'live_stt_model'), independent
-    of the video-subtitle model so each plugin picks its own.
+    of the video-subtitle model so each plugin picks its own."""
+    return _selected_model_for("live_stt_model") or live_stt_default()
 
-    Default on Apple Silicon with MLX: Qwen3-ASR 1.7B. Replaying real meetings
-    on an M5, it got the terms SenseVoice mangled (AWS, CRMシステム, SIMカード)
-    and SenseVoice dropped 30-60% of the words; 15 s windows still keep up."""
-    picked = _selected_model_for("live_stt_model")
-    if picked:
-        return picked
-    return "qwen3-asr-1.7b" if _mlx_qwen_ok() else DEFAULT_STT_MODEL
+
+_LIVE_QWEN = "qwen3-asr-1.7b"
+_live_default = {"t": -1e9, "id": None, "hw": None}
+
+
+def _live_qwen_hw_ok():
+    """Hardware where Qwen3-ASR 1.7B keeps up live: Apple Silicon (MLX), or an
+    NVIDIA GPU with >= 8 GB (the model ~6 GB + the SenseVoice previewer) AND a
+    CUDA torch build — read from nvidia-smi / package metadata, never by
+    importing torch (seconds)."""
+    if _mlx_qwen_ok():
+        return True
+    import importlib.metadata
+    import importlib.util
+    import sys
+    if importlib.util.find_spec("qwen_asr") is None:
+        return False
+    try:
+        tv = importlib.metadata.version("torch")
+    except importlib.metadata.PackageNotFoundError:
+        return False
+    # Windows PyPI torch is CPU-only (no local tag); CUDA builds carry +cuNNN.
+    if "+cu" not in tv and not (sys.platform.startswith("linux") and "+cpu" not in tv):
+        return False
+    from core import sysmon
+    _used, total = sysmon._gpu_mem()
+    return bool(total and total >= 7600)      # "8 GB" cards report ~8188 MB
+
+
+def live_stt_default():
+    """Real-time model when the user never picked one: Qwen3-ASR 1.7B where the
+    hardware keeps up (_live_qwen_hw_ok), else SenseVoice. Replaying real
+    Japanese meetings, Qwen got the terms SenseVoice mangled (AWS, CRMシステム,
+    SIMカード) and SenseVoice dropped ~18-30% of the words; Qwen shows a
+    translation ~5 s after its sentence ends (final mode), SenseVoice ~1.7 s.
+    An install that already has SenseVoice but not Qwen keeps SenseVoice:
+    changing the default must not start a surprise 4.7 GB download."""
+    now = time.monotonic()
+    if now - _live_default["t"] < 60:
+        return _live_default["id"]
+    if _live_default["hw"] is None:
+        try:
+            _live_default["hw"] = _live_qwen_hw_ok()
+        except Exception:  # noqa: BLE001 — any probe failure -> the safe default
+            _live_default["hw"] = False
+    pick = DEFAULT_STT_MODEL
+    if _live_default["hw"]:
+        pick = _LIVE_QWEN
+        if not _mlx_qwen_ok():
+            try:
+                from core import model_store
+                hits = model_store.find_model_dirs(["Qwen3-ASR-1.7B", "SenseVoiceSmall"])
+                if hits.get("sensevoicesmall") and not hits.get("qwen3-asr-1.7b"):
+                    pick = DEFAULT_STT_MODEL
+            except Exception:  # noqa: BLE001
+                pass
+    _live_default.update(t=now, id=pick)
+    return pick
 
 
 def live_commit_mode():
