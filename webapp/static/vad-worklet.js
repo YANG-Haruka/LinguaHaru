@@ -68,7 +68,7 @@ class VADProcessor extends AudioWorkletProcessor {
     let o = 0; for (let i = 0; i < this.seg.length; i++) { pcm.set(this.seg[i], o); o += this.seg[i].length; }
     return pcm;
   }
-  _flush(durMs) {
+  _flush(durMs, cap = false) {
     const total = this.segN;
     const pcm = new Float32Array(total);
     let o = 0; for (let i = 0; i < this.seg.length; i++) { pcm.set(this.seg[i], o); o += this.seg[i].length; }
@@ -78,7 +78,9 @@ class VADProcessor extends AudioWorkletProcessor {
     // twice at the seam). Restart the ring from here. Twin of Qt _vad_step.
     this.ringPos = 0; this.ringFull = false;
     if (durMs < this.minSegMs || total === 0) { this.port.postMessage({ type: 'drop', reason: 'too-short' }); return; }
-    this.port.postMessage({ type: 'segment', sampleRate: this.sr, pcm: pcm.buffer }, [pcm.buffer]);
+    // cap: cut by the length ceiling while speech goes on (not a pause) — the
+    // page must not translate this segment's unfinished tail on its own.
+    this.port.postMessage({ type: 'segment', sampleRate: this.sr, pcm: pcm.buffer, cap }, [pcm.buffer]);
   }
 
   process(inputs) {
@@ -138,7 +140,7 @@ class VADProcessor extends AudioWorkletProcessor {
       if (this.silenceMs >= hang) { this._flush(durMs); }
       else if (durMs > this.noiseMaxMs && !this.segDip && (this.segMax <= 0 || (this.segMax - this.segMin) / this.segMax < 0.45)) {
         this.port.postMessage({ type: 'drop', reason: 'steady-noise' }); this._abort();
-      } else if (durMs > this.maxSegMs) { this._flush(durMs); }
+      } else if (durMs > this.maxSegMs) { this._flush(durMs, true); }
     }
     return true;
   }

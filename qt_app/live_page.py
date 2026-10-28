@@ -1479,6 +1479,7 @@ class LivePage(ScrollArea):
         self._ctx_history = []
         self._held = ""                   # backchannels waiting to ride with the next line
         self._tr_hold = []                # mid-sentence lines waiting to translate as one
+        self._final_kinds = []            # per dispatched final: "pause" | "cap" (in order)
         self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1581,6 +1582,10 @@ class LivePage(ScrollArea):
                 utt = bytes(self._vad_buf[:cut])
                 self._vad_buf = bytearray(self._vad_buf[cut:])
                 self._partial_ms = 0.0
+                # Speech goes on: this "final" ends mid-sentence (half of all
+                # finals in a real 2 h meeting). Its tail must not be translated
+                # on its own — see _on_recognized_stream.
+                self.__dict__.setdefault("_final_kinds", []).append("cap")
                 self._dispatch_recognize(utt, is_final=True)
                 return
             if self._vad_sil_ms >= hang:
@@ -1594,6 +1599,7 @@ class LivePage(ScrollArea):
                 # same words twice at the seam ("图像。" then "像啊…").
                 self._vad_preroll = bytearray()
                 if dur_ms >= _VAD_MIN_MS:
+                    self.__dict__.setdefault("_final_kinds", []).append("pause")
                     self._dispatch_recognize(utt, is_final=True)   # flush remainder
             elif self._partial_ms >= _VAD_PARTIAL_MS and dur_ms >= _VAD_MIN_MS:
                 self._partial_ms = 0.0
@@ -1898,9 +1904,13 @@ class LivePage(ScrollArea):
             # broken only at real sentence ends (no forced mid-word cuts).
             units = (self._split_sentences(text) if final_mode
                      else self._split_scored(self._uncommitted_tail(text), True)[0])
+            # Finals come back in dispatch order, so this pops THIS final's kind.
+            kinds = self.__dict__.setdefault("_final_kinds", [])
+            cut = bool(kinds) and kinds.pop(0) == "cap"
             for i, s in enumerate(units):
-                self._commit_stream_sentence(s, final_piece=(i == len(units) - 1))
-            self._flush_tr_hold()   # utterance over: held fragments translate now
+                self._commit_stream_sentence(s, final_piece=(i == len(units) - 1 and not cut))
+            if not cut:
+                self._flush_tr_hold()   # a real pause: held fragments translate now
             # The utterance is closed: reset its stream state HERE, in result
             # order — never at the next utterance's onset (see _vad_step).
             self._stream_committed = ""

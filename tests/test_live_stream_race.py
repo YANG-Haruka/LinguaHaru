@@ -277,7 +277,7 @@ def test_web_twin_has_the_same_fix():
     check("web app.js commits each sentence exactly once", "RESULT: CLEAN" in r.stdout,
           (r.stdout + r.stderr)[-600:])
     worklet = open(os.path.join(ROOT, "webapp", "static", "vad-worklet.js"), encoding="utf-8").read()
-    flush = worklet[worklet.index("_flush(durMs) {"):worklet.index("process(inputs)")]
+    flush = worklet[worklet.index("_flush(durMs"):worklet.index("process(inputs)")]
     check("web worklet restarts the pre-roll ring on flush",
           "this.ringPos = 0; this.ringFull = false;" in flush)
 

@@ -498,9 +498,17 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
             params["temperature"] = _temp
         if _top_p is not None:
             params["top_p"] = _top_p
+        # Thinking OFF like the non-stream path: without it DeepSeek reasoned
+        # before the first token — streamed lines took ~1.8 s to start vs
+        # ~0.85 s for a whole non-streamed reply.
+        from core.llm.online_translation import _thinking_off_params, _create_completion
+        p_upd, eb = _thinking_off_params(base_url)
+        params.update(p_upd)
+        if eb:
+            params["extra_body"] = eb
         client = OpenAI(api_key=api_key, base_url=base_url)
         acc = ""
-        for chunk in client.chat.completions.create(**params):
+        for chunk in _create_completion(client, params):
             usage = getattr(chunk, "usage", None)
             if usage is not None:   # final chunk: usage present, choices empty
                 _sink({"total_tokens": getattr(usage, "total_tokens", 0) or 0})

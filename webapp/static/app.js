@@ -2683,7 +2683,7 @@ async function startLocal() {
 // more sensitive (picks up softer speech); higher = needs a louder voice.
 const VAD_SENS = { high: [0.004, 0.0026], standard: [0.006, 0.004], low: [0.010, 0.0066] };
 async function startWorkletVad() {
-  await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260911A");
+  await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20261028C");
   const cfg = BOOT.config || {};
   const hangMs = cfg.live_vad_hang_ms || 900;
   const maxSegMs = cfg.live_vad_max_seg_ms || 15000;
@@ -2811,7 +2811,7 @@ function onVadMessage(e) {
   } else if (m.type === "partial") {
     streamPartial(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
   } else if (m.type === "segment") {
-    finalizeUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
+    finalizeUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate), !!m.cap);
   }
 }
 function liveTimeStamp() {
@@ -2946,21 +2946,24 @@ async function recognizeInt16(int16, final) {
 // own reset then wiped the new utterance's progress. A queued final is never
 // dropped; queued partials go stale once anything newer arrives.
 // Twin of Qt live_page._dispatch_recognize.
-function dispatchRecognize(int16, final) {
+function dispatchRecognize(int16, final, cap = false) {
   if (liveRecogBusy) {
     liveRecogQueue = liveRecogQueue.filter((q) => q.final);
-    liveRecogQueue.push({ int16, final });
+    liveRecogQueue.push({ int16, final, cap });
     return;
   }
   liveRecogBusy = true;
-  (final ? runFinal(int16) : runPartial(int16)).finally(() => {
+  (final ? runFinal(int16, cap) : runPartial(int16)).finally(() => {
     liveRecogBusy = false;
     const next = liveRecogQueue.shift();
-    if (next) dispatchRecognize(next.int16, next.final);
+    if (next) dispatchRecognize(next.int16, next.final, next.cap);
   });
 }
 function streamPartial(int16) { dispatchRecognize(int16, false); }
-function finalizeUtterance(int16) { dispatchRecognize(int16, true); }
+// cap: the segment was cut by the length ceiling mid-speech (half of all
+// segments in a real 2 h meeting) — its unfinished tail stays held for
+// translation until the sentence really ends (twin of Qt _final_kinds).
+function finalizeUtterance(int16, cap = false) { dispatchRecognize(int16, true, cap); }
 async function runPartial(int16) {
   try {
     const r = await recognizeInt16(int16, false);
@@ -2989,7 +2992,7 @@ async function runPartial(int16) {
     if (liveRunning && pipInterim) setLiveStatus(_label("识别中…", "识别中…") + " " + pipInterim);
   } catch (e) { /* transient; next partial retries */ }
 }
-async function runFinal(int16) {
+async function runFinal(int16, cap = false) {
   try {
     const r = await recognizeInt16(int16, true);
     noteDetected(r.detected);
@@ -3000,9 +3003,9 @@ async function runFinal(int16) {
     // only at real sentence ends (no forced mid-word cuts) — twin of Qt.
     const units = r.commit_mode === "final" ? splitSentences(text)
       : splitScored(uncommittedTail(text, liveCommittedText), true).units;
-    units.forEach((u, i) => commitLiveSentence(u, i === units.length - 1));
+    units.forEach((u, i) => commitLiveSentence(u, i === units.length - 1 && !cap));
   } catch (e) { /* drop */ }
-  liveFlushHold();   // utterance over: held fragments translate now
+  if (!cap) liveFlushHold();   // a real pause: held fragments translate now
   // The utterance is closed: reset its stream state HERE, in result order.
   liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; updatePipCaption();
   if (liveRunning) setLiveStatus(liveListenMsg());
@@ -3706,7 +3709,7 @@ async function quickMic() {
   _quickRecCtx = new AudioContext();
   _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
   try {
-    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20260911A");
+    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20261028C");
     _quickRecNode = new AudioWorkletNode(_quickRecCtx, "vad-processor",
       { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 900, minSegMs: 280, maxSegMs: 15000,
                             onAbs: 0.006, offAbs: 0.004 } });
