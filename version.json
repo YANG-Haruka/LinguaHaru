@@ -1,19 +1,19 @@
 {
-    "version": "7.0.13",
+    "version": "7.0.14",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.13: manga mode's text-removal model now downloads reliably in mainland China (ModelScope); safer plugin uninstall (never half-deletes when files are in use). / 7.0.13：漫画抹字模型在大陆网络下改从 ModelScope 下载，不再卡住失败；插件卸载更安全（文件被占用时不会删一半）。",
+    "notes": "7.0.14: real-time voice is more accurate and faster (Qwen mode shows a translation ~5 s after a sentence ends, and half sentences are no longer translated alone); NVIDIA GPUs with 8 GB+ now default to Qwen3-ASR 1.7B; the interface Test button explains what failed; plugin installs fall back to pip. / 7.0.14：实时语音更准更快（千问模式一句话说完约 5 秒出译文，不再把半句单独翻译）；显存 8GB 以上的 N 卡默认用千问 1.7B；接口「测试」会说明出错原因；插件安装失败时自动改用 pip。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.13/LinguaHaru-7.0.13-web-portable.zip",
-            "sha256": "8d044033cc9379045d4729d5d0c96088bd31e668dd964d0d9bf4872e67ce5d04"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.14/LinguaHaru-7.0.14-web-portable.zip",
+            "sha256": "525b9d051848f90e2520791044ba0fb967581410c6dfe12a3bad79141de5a424"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.13/LinguaHaru-7.0.13-desktop-portable.zip",
-            "sha256": "d8da105ab08b3ca743daa3b46c3a67397983b5597d7fcf9fc5dda20fc2a4b347"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.14/LinguaHaru-7.0.14-desktop-portable.zip",
+            "sha256": "097e8ba9e6788b8de6b4934cd842e16229ff9a101dfc99203762207d47aca794"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.13/LinguaHaru-7.0.13-desktop-mac.zip",
-            "sha256": "1beccef751ba5ff767da0478b1db2a94b35619e1268ec4e49e9ff7b459bae8a9"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.14/LinguaHaru-7.0.14-desktop-mac.zip",
+            "sha256": "c94a05e4ef09da3f28e862d0634fbd25d104d67e283fa63ce4d39e67903c6459"
         }
     }
 }
