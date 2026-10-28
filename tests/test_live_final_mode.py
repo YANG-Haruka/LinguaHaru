@@ -69,3 +69,27 @@ def test_recording_compressed_and_history_repointed(tmp_path):
     assert new and new.endswith(".ogg") and not os.path.exists(old)
     assert os.path.getsize(new) < wav_size / 5
     assert TranslationHistoryManager(log_dir=str(tmp_path)).get_record_by_id(rec["id"])["log_file_path"] == new
+
+
+def test_translation_waits_for_a_complete_sentence():
+    """Stream mode shows each line at once but translates per COMPLETE sentence:
+    a line cut mid-sentence is held and translated with its continuation."""
+    import types
+    P = LivePage
+    page = types.SimpleNamespace(_SENT_END=P._SENT_END, _HOLD_MAX_CHARS=P._HOLD_MAX_CHARS,
+                                 _tr_hold=[], rows={}, sent=[])
+    page._set_out_row = lambda k, t: page.rows.__setitem__(k, t)
+    page._start_line_translation = lambda k, s: page.sent.append((k, s))
+    for name in ("_queue_translation", "_flush_tr_hold"):
+        setattr(page, name, types.MethodType(getattr(P, name), page))
+    page._queue_translation("k1", "今回作ったモデルをいろんなシーンに")
+    assert page.sent == [] and page.rows["k1"] == "…"
+    page._queue_translation("k2", "対応させていくのかっていう方法もありますし。")
+    assert page.sent == [("k2", "今回作ったモデルをいろんなシーンに対応させていくのかっていう方法もありますし。")]
+    assert page.rows["k1"] == "↓"
+    page._queue_translation("k3", "the meeting starts")
+    page._queue_translation("k4", "at nine", final_piece=True)   # utterance ended
+    assert page.sent[-1] == ("k4", "the meeting starts at nine")
+    page._queue_translation("k5", "最後の話")
+    page._flush_tr_hold()                                          # stop
+    assert page.sent[-1] == ("k5", "最後の話")

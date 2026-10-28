@@ -52,7 +52,8 @@ def _page():
     page._recog_busy = False; page._recog_pending = []
     page._local_workers = []
     page.commits = []
-    page._commit_stream_sentence = lambda s: page.commits.append(s.strip())
+    page._commit_stream_sentence = lambda s, final_piece=False: page.commits.append(s.strip())
+    page._flush_tr_hold = lambda: None   # translation side: not under test here
 
     page.dispatched = []
     class _Worker:

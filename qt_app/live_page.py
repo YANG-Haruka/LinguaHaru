@@ -1259,6 +1259,7 @@ class LivePage(ScrollArea):
         if self._preloader is not None:
             self._preloader.wait(2000)
             self._preloader = None
+        self._flush_tr_hold()   # fragments still held for a sentence end
         # Best-effort wait for in-flight STT/translate workers, but NEVER drop a
         # reference to a thread that's still running (Qt would destroy it mid-run
         # and abort). Finished ones are removed; still-running ones retire
@@ -1477,6 +1478,7 @@ class LivePage(ScrollArea):
         self._det_hist = []
         self._ctx_history = []
         self._held = ""                   # backchannels waiting to ride with the next line
+        self._tr_hold = []                # mid-sentence lines waiting to translate as one
         self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1896,8 +1898,9 @@ class LivePage(ScrollArea):
             # broken only at real sentence ends (no forced mid-word cuts).
             units = (self._split_sentences(text) if final_mode
                      else self._split_scored(self._uncommitted_tail(text), True)[0])
-            for s in units:
-                self._commit_stream_sentence(s)
+            for i, s in enumerate(units):
+                self._commit_stream_sentence(s, final_piece=(i == len(units) - 1))
+            self._flush_tr_hold()   # utterance over: held fragments translate now
             # The utterance is closed: reset its stream state HERE, in result
             # order — never at the next utterance's onset (see _vad_step).
             self._stream_committed = ""
@@ -1956,7 +1959,7 @@ class LivePage(ScrollArea):
     _WORDLIKE = re.compile(r"[0-9A-Za-z぀-ヿ㐀-鿿"
                            r"가-힯Ѐ-ӿ฀-๿]")
 
-    def _commit_stream_sentence(self, source):
+    def _commit_stream_sentence(self, source, final_piece=False):
         source = (source or "").strip()
         if not source or not self._WORDLIKE.search(source):
             return
@@ -1998,6 +2001,45 @@ class LivePage(ScrollArea):
         # their sources in order even when replies come back out of order.
         self._out_rows.append([key, ""])
         self._render_output()
+        self._queue_translation(key, source, final_piece)
+
+    # Translate per COMPLETE sentence even while the source streams: a line
+    # force-cut mid-sentence (31% of SenseVoice lines in a real Japanese meeting,
+    # e.g. 「…シーンに」|「対応させて…」) is held, not translated alone; it is
+    # translated together with its continuation once a sentence end arrives or
+    # the utterance ends. The translation lands on the last line; earlier held
+    # lines show "↓". Capped so an unpunctuated monologue still gets translated.
+    _HOLD_MAX_CHARS = 200
+
+    def _queue_translation(self, key, source, final_piece=False):
+        hold = self.__dict__.setdefault("_tr_hold", [])
+        complete = source.rstrip().endswith(tuple(self._SENT_END) + ("？", "！", "…"))
+        if (not complete and not final_piece
+                and sum(len(s) for _, s in hold) + len(source) < self._HOLD_MAX_CHARS):
+            hold.append((key, source))
+            self._set_out_row(key, "…")
+            return
+        if hold:
+            self._flush_tr_hold(extra=(key, source))
+        else:
+            self._start_line_translation(key, source)
+
+    def _flush_tr_hold(self, extra=None):
+        """Translate the held fragments (+ the line completing them) as one
+        sentence, on the LAST line's row."""
+        hold = self.__dict__.get("_tr_hold") or []
+        parts = hold + ([extra] if extra else [])
+        self._tr_hold = []
+        if not parts:
+            return
+        for k, _ in parts[:-1]:
+            self._set_out_row(k, "↓")
+        text = ""
+        for _, s in parts:   # latin pieces need a space between them, CJK none
+            text += (" " if text and text[-1].isascii() and s[:1].isascii() else "") + s
+        self._start_line_translation(parts[-1][0], text)
+
+    def _start_line_translation(self, key, source):
         # No context for very short/garbled lines: the model then "translates"
         # the context instead and the line gets content its source never had.
         ctx = self._live_context() if len(source) >= 12 else ""

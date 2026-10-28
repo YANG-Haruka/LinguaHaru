@@ -2676,6 +2676,7 @@ async function startLocal() {
   }
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   liveCtxHistory = [];   // fresh coherence context per session
+  liveTrHold = [];
   startMicMeter();
 }
 // Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
@@ -2752,7 +2753,8 @@ async function startSileroVad() {
   liveSilero.start();
 }
 function stopLocal() {
-  saveLiveHistory();
+  // Held mid-sentence lines translate first, then the session is saved.
+  liveFlushHold().then(saveLiveHistory);
   stopMicMeter();
   try {
     if (liveSilero) { liveSilero.pause(); liveSilero.destroy(); }
@@ -2998,8 +3000,9 @@ async function runFinal(int16) {
     // only at real sentence ends (no forced mid-word cuts) — twin of Qt.
     const units = r.commit_mode === "final" ? splitSentences(text)
       : splitScored(uncommittedTail(text, liveCommittedText), true).units;
-    for (const u of units) commitLiveSentence(u);
+    units.forEach((u, i) => commitLiveSentence(u, i === units.length - 1));
   } catch (e) { /* drop */ }
+  liveFlushHold();   // utterance over: held fragments translate now
   // The utterance is closed: reset its stream state HERE, in result order.
   liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; updatePipCaption();
   if (liveRunning) setLiveStatus(liveListenMsg());
@@ -3008,15 +3011,44 @@ async function runFinal(int16) {
 // are serialized through a promise chain so the optional stream mode can safely
 // grow the last output line without races between overlapping sentences.
 let liveCommitChain = Promise.resolve();
-function commitLiveSentence(source) {
+function commitLiveSentence(source, finalPiece = false) {
   source = (source || "").trim();
   if (!source || !WORDLIKE.test(source)) return;   // drop bare-punct noise units
-  liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source));
+  liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source, finalPiece));
   return liveCommitChain;
 }
-async function _doCommitSentence(source) {
+// Translate per COMPLETE sentence while the source streams (twin of Qt
+// _queue_translation): a line force-cut mid-sentence (31% of SenseVoice lines in
+// a real Japanese meeting) is shown at once but held, then translated together
+// with its continuation at the next sentence end / utterance end / stop.
+let liveTrHold = [];
+const LIVE_HOLD_MAX = 200;
+function _joinHeld(parts) {
+  let t = "";
+  for (const s of parts) t += (t && t.charCodeAt(t.length - 1) < 128 && s.charCodeAt(0) < 128 ? " " : "") + s;
+  return t;
+}
+function liveFlushHold() {          // queue on the commit chain (keeps order)
+  liveCommitChain = liveCommitChain.then(() => {
+    if (!liveTrHold.length) return;
+    const text = _joinHeld(liveTrHold); liveTrHold = [];
+    return _translateLiveLine(liveTimeStamp(), text);
+  });
+  return liveCommitChain;
+}
+async function _doCommitSentence(source, finalPiece) {
   const ts = liveTimeStamp();
   appendLive("live-input", `[${ts}] ${source}\n`);
+  const complete = /[。！？!?.…]$/.test(source);
+  const held = liveTrHold.reduce((n, s) => n + s.length, 0);
+  if (!complete && !finalPiece && held + source.length < LIVE_HOLD_MAX) {
+    liveTrHold.push(source);
+    return;
+  }
+  const text = _joinHeld([...liveTrHold, source]); liveTrHold = [];
+  return _translateLiveLine(ts, text);
+}
+async function _translateLiveLine(ts, source) {
   const ctx = liveContext();
   liveCtxHistory.push(source);                 // after building ctx (don't include self)
   if (liveCtxHistory.length > 6) liveCtxHistory.splice(0, liveCtxHistory.length - 6);
