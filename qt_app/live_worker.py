@@ -48,6 +48,9 @@ class PreloadWorker(QObject):
                     except RuntimeError:  # page destroyed mid-download
                         pass
             ok = bool(preload_recognizer(progress_cb=_cb))
+            if ok:   # final mode previews with a fast model — load it up front too
+                from core.pipelines.video_translation_pipeline import preload_live_preview
+                preload_live_preview()
         except Exception:  # noqa: BLE001
             ok = False
         try:
@@ -102,17 +105,19 @@ class LiveRecognizeWorker(QThread):
     utterance pass (flush the remainder)."""
     done = Signal(str, str, bool)   # (text, detected_lang, is_final)
 
-    def __init__(self, pcm_bytes, sample_rate, is_final, parent=None):
+    def __init__(self, pcm_bytes, sample_rate, is_final, parent=None, model_id=None):
         super().__init__(parent)
         self._pcm = pcm_bytes
         self._sr = sample_rate
         self._final = is_final
+        self._model_id = model_id     # None = the live-voice model
 
     def run(self):
         try:
             from core.pipelines.video_translation_pipeline import recognize_utterance
             with _STT_LOCK:   # serialize recognition (one worker at a time)
-                text, detected = recognize_utterance(self._pcm, sample_rate=self._sr)
+                text, detected = recognize_utterance(self._pcm, sample_rate=self._sr,
+                                                     model_id=self._model_id)
             self.done.emit(text or "", detected or "auto", self._final)
         except Exception:  # noqa: BLE001 — transient; the next partial retries
             self.done.emit("", "auto", self._final)

@@ -2265,7 +2265,7 @@ async def live_preload(payload: dict = None):
     if not realtime_voice_available():
         raise HTTPException(400, "实时语音需要语音(STT)插件。")
     from core.pipelines.video_translation_pipeline import (
-        preload_recognizer, recognizer_ready,
+        preload_recognizer, recognizer_ready, live_commit_mode,
         get_selected_live_stt_model, get_selected_quick_stt_model)
     scope = (payload or {}).get("scope", "live")
     # scope='quick' serves the Quick-Translate mic, not the Real-Time Voice page.
@@ -2274,7 +2274,11 @@ async def live_preload(payload: dict = None):
     model_id = (get_selected_quick_stt_model() if scope == "quick"
                 else get_selected_live_stt_model())
     if scope == "live" and recognizer_ready():
-        return {"ready": True}
+        from core.pipelines.video_translation_pipeline import live_preview_model, preload_live_preview
+        pm = live_preview_model()
+        if pm and not recognizer_ready(lambda: pm):
+            await asyncio.get_event_loop().run_in_executor(None, preload_live_preview)
+        return {"ready": True, "commit_mode": live_commit_mode()}
     from core.optional_modules import format_download_line, is_network_error
 
     def _cb(line):
@@ -2285,8 +2289,11 @@ async def live_preload(payload: dict = None):
     loop = asyncio.get_event_loop()
     ready = await loop.run_in_executor(None, lambda: preload_recognizer(model_id, progress_cb=_cb))
     _PRELOAD_PROGRESS["line"] = ""
+    if ready and scope == "live":   # final mode previews with a fast model: load it too
+        from core.pipelines.video_translation_pipeline import preload_live_preview
+        await loop.run_in_executor(None, preload_live_preview)
     if ready:
-        return {"ready": True}
+        return {"ready": True, "commit_mode": live_commit_mode()}
     from core.pipelines import video_translation_pipeline as vtp
     err = _public_error(vtp.last_preload_error)
     return {"ready": False, "error": err, "network": is_network_error(err)}
@@ -2329,7 +2336,9 @@ async def live_recognize(payload: dict, request: Request):
     if len(pcm) > _MAX_LIVE_AUDIO_BYTES:
         pcm = pcm[-_MAX_LIVE_AUDIO_BYTES:]
     is_final = bool(payload.get("final", False))
-    from core.pipelines.video_translation_pipeline import recognize_utterance
+    from core.pipelines.video_translation_pipeline import recognize_utterance, live_preview_model
+    # Final mode: a partial only previews the dim line -> fast model, GPU free for finals.
+    model_id = None if is_final else live_preview_model()
     loop = asyncio.get_event_loop()
 
     def _recognize():
@@ -2340,7 +2349,7 @@ async def live_recognize(payload: dict, request: Request):
         if not _STT_LOCK.acquire(timeout=timeout):
             return None
         try:
-            text, det = recognize_utterance(pcm, sample_rate=16000)
+            text, det = recognize_utterance(pcm, sample_rate=16000, model_id=model_id)
             return text, det
         finally:
             _STT_LOCK.release()

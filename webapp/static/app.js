@@ -2656,21 +2656,22 @@ async function startLocal() {
   showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
   const pre = await preloadSttModel("live");
   if (pre && !pre.ready) { stopLocal(); setLiveStatus(sttLoadErrorText(pre)); return; }
+  const finalMode = !!(pre && pre.commit_mode === "final");
   // The long await may have dropped the gesture activation; ensure the context
   // is actually running before wiring up the mic graph.
   if (liveCtx.state === "suspended") { try { await liveCtx.resume(); } catch (e) {} }
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   // Fresh per-utterance stream state (no longer reset at every speechstart).
   liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = "";
-  liveRecogBusy = false; liveRecogQueue = [];
+  liveRecogBusy = false; liveRecogQueue = []; liveQuiet = false;
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
   try {
     if (useSilero) await startSileroVad();
-    else await startWorkletVad();
+    else await startWorkletVad(finalMode);
   } catch (e) {
     if (useSilero) {   // neural VAD failed (network/CDN?) -> fall back to energy
       setLiveStatus(_label("Silero VAD 不可用（", "Silero VAD 不可用（") + e.message + _label("），回退能量 VAD…", "），回退能量 VAD…"));
-      try { await startWorkletVad(); }
+      try { await startWorkletVad(finalMode); }
       catch (e2) { setLiveStatus(_label("VAD 初始化失败：", "VAD 初始化失败：") + e2.message); stopLocal(); return; }
     } else { setLiveStatus(_label("VAD 初始化失败：", "VAD 初始化失败：") + e.message); stopLocal(); return; }
   }
@@ -2682,15 +2683,17 @@ async function startLocal() {
 // Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
 // more sensitive (picks up softer speech); higher = needs a louder voice.
 const VAD_SENS = { high: [0.004, 0.0026], standard: [0.006, 0.004], low: [0.010, 0.0066] };
-async function startWorkletVad() {
-  await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20261028C");
+async function startWorkletVad(finalMode = false) {
+  await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20261028D");
   const cfg = BOOT.config || {};
   const hangMs = cfg.live_vad_hang_ms || 900;
-  const maxSegMs = cfg.live_vad_max_seg_ms || 15000;
+  // Final mode translates a segment only once it ends: cap it at 10 s (twin of
+  // Qt _FINAL_MAX_MS) and end it on shorter pauses as it grows (in the worklet).
+  const maxSegMs = Math.min(cfg.live_vad_max_seg_ms || 15000, finalMode ? 10000 : Infinity);
   const [onAbs, offAbs] = VAD_SENS[cfg.live_vad_sensitivity] || VAD_SENS.standard;
   liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
     { processorOptions: { prerollMs: 500, onMs: 90, hangMs, minSegMs: 280, maxSegMs,
-                          onAbs, offAbs } });
+                          onAbs, offAbs, finalMode } });
   liveNode.port.onmessage = onVadMessage;
   liveNode.port.postMessage({ type: "mode", mode: "open" });
   liveSrc.connect(liveNode); liveNode.connect(liveCtx.destination);
@@ -2735,7 +2738,7 @@ async function startSileroVad() {
     onSpeechStart() {
       // Stream state is reset when the previous utterance's FINAL is processed,
       // not here — that final may still be in flight (see dispatchRecognize).
-      liveSileroSpeaking = true;
+      liveSileroSpeaking = true; liveQuiet = false;
       liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus(_label("识别中…", "识别中…"));
     },
     onFrameProcessed(_probs, frame) {
@@ -2745,7 +2748,7 @@ async function startSileroVad() {
       if (now - liveSileroLast > 360) { liveSileroLast = now; streamPartial(floatsToInt16(liveSileroBuf)); }
     },
     onSpeechEnd(audio) {
-      liveSileroSpeaking = false;
+      liveSileroSpeaking = false; liveQuiet = true;   // held lines go once this result is in
       finalizeUtterance(floatToInt16(audio)); liveSileroBuf = [];
     },
   });
@@ -2807,11 +2810,14 @@ function onVadMessage(e) {
   if (m.type === "speechstart") {
     // Don't reset the stream state here: the previous utterance's final may
     // still be in flight (see dispatchRecognize).
+    liveQuiet = false;
     setLiveStatus(_label("识别中…", "识别中…"));
   } else if (m.type === "partial") {
     streamPartial(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
   } else if (m.type === "segment") {
-    finalizeUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate), !!m.cap);
+    finalizeUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
+  } else if (m.type === "silence") {        // the pause reached the full hang
+    liveQuiet = true; liveFlushHold(true);
   }
 }
 function liveTimeStamp() {
@@ -2946,24 +2952,27 @@ async function recognizeInt16(int16, final) {
 // own reset then wiped the new utterance's progress. A queued final is never
 // dropped; queued partials go stale once anything newer arrives.
 // Twin of Qt live_page._dispatch_recognize.
-function dispatchRecognize(int16, final, cap = false) {
+function dispatchRecognize(int16, final) {
   if (liveRecogBusy) {
     liveRecogQueue = liveRecogQueue.filter((q) => q.final);
-    liveRecogQueue.push({ int16, final, cap });
+    liveRecogQueue.push({ int16, final });
     return;
   }
   liveRecogBusy = true;
-  (final ? runFinal(int16, cap) : runPartial(int16)).finally(() => {
+  (final ? runFinal(int16) : runPartial(int16)).finally(() => {
     liveRecogBusy = false;
     const next = liveRecogQueue.shift();
-    if (next) dispatchRecognize(next.int16, next.final, next.cap);
+    if (next) dispatchRecognize(next.int16, next.final);
+    else if (liveQuiet) liveFlushHold(true);
   });
 }
 function streamPartial(int16) { dispatchRecognize(int16, false); }
-// cap: the segment was cut by the length ceiling mid-speech (half of all
-// segments in a real 2 h meeting) — its unfinished tail stays held for
-// translation until the sentence really ends (twin of Qt _final_kinds).
-function finalizeUtterance(int16, cap = false) { dispatchRecognize(int16, true, cap); }
+function finalizeUtterance(int16) { dispatchRecognize(int16, true); }
+// A pause is not a sentence end by itself: segments end early (to start STT
+// sooner) and the speaker often goes on. Held unfinished lines translate once
+// the silence reached the full hang ('silence' / Silero speech end) AND every
+// pending result is in (keeps their order) — liveFlushHold(true). Twin of Qt _vad_step.
+let liveQuiet = false;
 async function runPartial(int16) {
   try {
     const r = await recognizeInt16(int16, false);
@@ -2992,7 +3001,7 @@ async function runPartial(int16) {
     if (liveRunning && pipInterim) setLiveStatus(_label("识别中…", "识别中…") + " " + pipInterim);
   } catch (e) { /* transient; next partial retries */ }
 }
-async function runFinal(int16, cap = false) {
+async function runFinal(int16) {
   try {
     const r = await recognizeInt16(int16, true);
     noteDetected(r.detected);
@@ -3003,9 +3012,10 @@ async function runFinal(int16, cap = false) {
     // only at real sentence ends (no forced mid-word cuts) — twin of Qt.
     const units = r.commit_mode === "final" ? splitSentences(text)
       : splitScored(uncommittedTail(text, liveCommittedText), true).units;
-    units.forEach((u, i) => commitLiveSentence(u, i === units.length - 1 && !cap));
+    // Ended at a pause OR the length cap — neither means the sentence did: an
+    // unfinished last line stays held (see liveQuiet).
+    units.forEach((u) => commitLiveSentence(u));
   } catch (e) { /* drop */ }
-  if (!cap) liveFlushHold();   // a real pause: held fragments translate now
   // The utterance is closed: reset its stream state HERE, in result order.
   liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; updatePipCaption();
   if (liveRunning) setLiveStatus(liveListenMsg());
@@ -3014,10 +3024,10 @@ async function runFinal(int16, cap = false) {
 // are serialized through a promise chain so the optional stream mode can safely
 // grow the last output line without races between overlapping sentences.
 let liveCommitChain = Promise.resolve();
-function commitLiveSentence(source, finalPiece = false) {
+function commitLiveSentence(source) {
   source = (source || "").trim();
   if (!source || !WORDLIKE.test(source)) return;   // drop bare-punct noise units
-  liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source, finalPiece));
+  liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source));
   return liveCommitChain;
 }
 // Translate per COMPLETE sentence while the source streams (twin of Qt
@@ -3031,20 +3041,27 @@ function _joinHeld(parts) {
   for (const s of parts) t += (t && t.charCodeAt(t.length - 1) < 128 && s.charCodeAt(0) < 128 ? " " : "") + s;
   return t;
 }
-function liveFlushHold() {          // queue on the commit chain (keeps order)
+// onlyIfQuiet: checked when the chain gets there — the hold list itself is only
+// up to date inside the chain (commits are queued on it).
+function liveFlushHold(onlyIfQuiet = false) {   // queue on the commit chain (keeps order)
   liveCommitChain = liveCommitChain.then(() => {
     if (!liveTrHold.length) return;
+    if (onlyIfQuiet && (!liveQuiet || liveRecogBusy || liveRecogQueue.length)) return;
     const text = _joinHeld(liveTrHold); liveTrHold = [];
     return _translateLiveLine(liveTimeStamp(), text);
   });
   return liveCommitChain;
 }
-async function _doCommitSentence(source, finalPiece) {
+// A Japanese line ending in a particle, te-form or filler is unfinished even with
+// a "。": the STT punctuates the end of ITS audio although the speaker goes on
+// (2/3 of the "。" at segment cuts in a real meeting). Twin of Qt _DANGLING.
+const LIVE_DANGLING = /(?:[てでにがはをのともへや]|という|っていう|というか|まあ|例えば|なんか|また|だから|こんな)[。.]$/;
+async function _doCommitSentence(source) {
   const ts = liveTimeStamp();
   appendLive("live-input", `[${ts}] ${source}\n`);
-  const complete = /[。！？!?.…]$/.test(source);
+  const complete = /[。！？!?.…]$/.test(source) && !LIVE_DANGLING.test(source);
   const held = liveTrHold.reduce((n, s) => n + s.length, 0);
-  if (!complete && !finalPiece && held + source.length < LIVE_HOLD_MAX) {
+  if (!complete && held + source.length < LIVE_HOLD_MAX) {
     liveTrHold.push(source);
     return;
   }
@@ -3709,7 +3726,7 @@ async function quickMic() {
   _quickRecCtx = new AudioContext();
   _quickRecSrc = _quickRecCtx.createMediaStreamSource(_quickRecStream);
   try {
-    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20261028C");
+    await _quickRecCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20261028D");
     _quickRecNode = new AudioWorkletNode(_quickRecCtx, "vad-processor",
       { processorOptions: { prerollMs: 500, onMs: 90, hangMs: 900, minSegMs: 280, maxSegMs: 15000,
                             onAbs: 0.006, offAbs: 0.004 } });

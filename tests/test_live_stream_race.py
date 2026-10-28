@@ -52,12 +52,13 @@ def _page():
     page._recog_busy = False; page._recog_pending = []
     page._local_workers = []
     page.commits = []
-    page._commit_stream_sentence = lambda s, final_piece=False: page.commits.append(s.strip())
+    page._commit_stream_sentence = lambda s: page.commits.append(s.strip())
+    page._tr_hold = []
     page._flush_tr_hold = lambda: None   # translation side: not under test here
 
     page.dispatched = []
     class _Worker:
-        def __init__(self, pcm, rate, is_final):
+        def __init__(self, pcm, rate, is_final, **_kw):
             page.dispatched.append((pcm, is_final))
             self.done = types.SimpleNamespace(connect=lambda f: None)
             self.finished = types.SimpleNamespace(connect=lambda f: None)
@@ -151,6 +152,42 @@ def test_hard_cap_cuts_at_a_pause_without_loss_or_overlap():
           onset >= 0 and finals[0] + bytes(page._vad_buf) == bytes(fed[onset:]))
     cut_frame = (onset + len(finals[0])) // (lp._VAD_FRAME * 2)
     check("cut landed in the quiet dip, not mid-word", 146 <= cut_frame <= 154, str(cut_frame))
+
+
+def test_held_line_waits_for_the_full_pause():
+    print("Live: a held unfinished line translates only after a FULL pause, once results are in")
+    page, lp = _page()
+    page._hang_ms = 900.0
+    flushed = []
+    page._flush_tr_hold = lambda: (flushed.append(list(page._tr_hold)), page._tr_hold.clear())
+    page._tr_hold = [("k1", "資料の中で。")]
+    page._recog_busy = True                       # its segment's result is not in yet
+    _frames(page, lp, 70, False, 0)               # 1.1 s of silence
+    check("not while a recognition result is pending", flushed == [])
+    page._recog_busy = False
+    _frames(page, lp, 1, False, 0)
+    check("then at once: the silence already reached the hang", len(flushed) == 1, str(flushed))
+    page._tr_hold = [("k2", "例えば。")]
+    page._vad_sil_ms = 0.0
+    _frames(page, lp, 30, False, 0)               # ~0.5 s pause, then the speaker goes on
+    _frames(page, lp, 10, True, 100)
+    check("a short pause is not a sentence end", len(flushed) == 1 and page._tr_hold, str(flushed))
+
+
+def test_final_mode_ends_long_segments_on_short_pauses():
+    print("Live (final mode): past 6 s a ~300 ms pause ends the segment; early on it doesn't")
+    page, lp = _page()
+    page._final_mode = True
+    page._hang_ms, page._max_seg_ms = 900.0, float(lp._FINAL_MAX_MS)
+    _frames(page, lp, 2000 // 16, True, 100)       # 2 s of speech
+    _frames(page, lp, 320 // 16, False, 0)         # a 320 ms pause: too early to cut
+    check("a short pause early in a segment doesn't end it",
+          not any(f for _, f in page.dispatched + page._recog_pending) and page._vad_on)
+    _frames(page, lp, 5000 // 16, True, 100)       # now ~7.3 s in
+    _frames(page, lp, 320 // 16, False, 0)
+    finals = [p for p, f in page.dispatched + page._recog_pending if f]
+    check("past 6 s it does", len(finals) == 1 and not page._vad_on, str(len(finals)))
+    check("final-mode segments are capped at 10 s", lp._FINAL_MAX_MS <= 10000)
 
 
 def test_redecode_spacing_neither_repeats_nor_drops():
@@ -280,12 +317,24 @@ def test_web_twin_has_the_same_fix():
     flush = worklet[worklet.index("_flush(durMs"):worklet.index("process(inputs)")]
     check("web worklet restarts the pre-roll ring on flush",
           "this.ringPos = 0; this.ringFull = false;" in flush)
+    r = subprocess.run([node, os.path.join(ROOT, "tests", "web_vad_cap.mjs"),
+                        os.path.join(ROOT, "webapp", "static", "vad-worklet.js")],
+                       capture_output=True, text=True, encoding="utf-8", timeout=60)
+    check("web worklet: cap cuts at a pause, 'silence' only after a full pause",
+          "RESULT: OK" in r.stdout, (r.stdout + r.stderr)[-600:])
+    r = subprocess.run([node, os.path.join(ROOT, "tests", "web_live_hold.mjs"),
+                        os.path.join(ROOT, "webapp", "static", "app.js")],
+                       capture_output=True, text=True, encoding="utf-8", timeout=60)
+    check("web holds unfinished lines until a sentence end / full pause",
+          "RESULT: OK" in r.stdout, (r.stdout + r.stderr)[-600:])
 
 
 if __name__ == "__main__":
     run([test_final_after_next_onset_is_not_recommitted,
          test_queue_keeps_order_and_never_drops_a_final,
          test_hard_cap_cuts_at_a_pause_without_loss_or_overlap,
+         test_held_line_waits_for_the_full_pause,
+         test_final_mode_ends_long_segments_on_short_pauses,
          test_redecode_spacing_neither_repeats_nor_drops,
          test_fragments_and_soft_cap,
          test_runon_japanese_breaks_at_a_particle,

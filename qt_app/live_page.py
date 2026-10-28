@@ -40,6 +40,13 @@ _VAD_ON_ABS, _VAD_ON_MUL = 0.006, 2.2
 _VAD_OFF_ABS, _VAD_OFF_MUL = 0.004, 1.6
 _VAD_ON_MS, _VAD_HANG_MS = 90, 900
 _VAD_MIN_MS, _VAD_MAX_MS = 280, 15000
+# Final mode translates a segment only once it ends, so every sentence inside a
+# long segment waits for its end: in a real 10-min meeting (Qwen3-ASR 1.7B) the
+# 15 s cap / >=500 ms pauses gave a median 9.5 s from a sentence's end to its
+# translation. Ending on shorter pauses as the segment grows, and capping it at
+# 10 s, gave 6.2 s (recognition 21.7% vs 20.6% off the offline transcript).
+_FINAL_MAX_MS = 10000
+_FINAL_HANG_STEPS = ((3000, 450.0), (6000, 300.0))   # (segment length ms, pause ms)
 # Mic sensitivity preset -> (energy onset threshold, TEN-VAD threshold). Lower =
 # more sensitive (picks up softer speech); higher = needs a louder voice (better
 # in a noisy room). User-tunable in Settings (config live_vad_sensitivity).
@@ -1442,10 +1449,14 @@ class LivePage(ScrollArea):
         # recognition is committed/translated (slow autoregressive STT), else
         # stream on partials. See video_translation_pipeline.live_commit_mode.
         try:
-            from core.pipelines.video_translation_pipeline import live_commit_mode
+            from core.pipelines.video_translation_pipeline import (
+                live_commit_mode, live_preview_model)
             self._final_mode = live_commit_mode() == "final"
+            # Final mode: partials only preview the dim line — decode them with a
+            # fast model so the GPU stays free for the finals.
+            self._preview_model = live_preview_model() if self._final_mode else None
         except Exception:  # noqa: BLE001
-            self._final_mode = False
+            self._final_mode, self._preview_model = False, None
         # Trailing-silence (hang) that ends an utterance — user-tunable in
         # Settings so slow speakers can keep their phrases from being chopped.
         try:
@@ -1460,6 +1471,8 @@ class LivePage(ScrollArea):
             self._max_seg_ms = float(backend.get_config("live_vad_max_seg_ms", _VAD_MAX_MS))
         except (TypeError, ValueError):
             self._max_seg_ms = float(_VAD_MAX_MS)
+        if self._final_mode:
+            self._max_seg_ms = min(self._max_seg_ms, float(_FINAL_MAX_MS))
         # Rebuild the cached TEN-VAD if the sensitivity threshold changed.
         if getattr(self, "_ten_vad_threshold", None) != ten_th:
             self._ten_vad_threshold = ten_th
@@ -1479,7 +1492,6 @@ class LivePage(ScrollArea):
         self._ctx_history = []
         self._held = ""                   # backchannels waiting to ride with the next line
         self._tr_hold = []                # mid-sentence lines waiting to translate as one
-        self._final_kinds = []            # per dispatched final: "pause" | "cap" (in order)
         self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1547,6 +1559,14 @@ class LivePage(ScrollArea):
                     self._vad_buf = bytearray(self._vad_preroll)
             else:
                 self._vad_voice_ms = 0.0
+                self._vad_sil_ms += dt_ms
+                # A pause is not a sentence end by itself: segments end early to
+                # start recognition sooner, and the speaker often goes on. Held
+                # unfinished lines translate once the silence reaches the full
+                # hang and every pending result is in (so order is kept).
+                if (self._tr_hold and not self._recog_busy and not self._recog_pending
+                        and self._vad_sil_ms >= getattr(self, "_hang_ms", float(_VAD_HANG_MS))):
+                    self._flush_tr_hold()
         else:
             self._vad_buf += frame
             self._vad_sil_ms = 0.0 if speech else self._vad_sil_ms + dt_ms
@@ -1557,7 +1577,12 @@ class LivePage(ScrollArea):
             # The floor stays >=500ms so a slow speaker's natural between-phrase
             # pauses don't chop a sentence into fragments. Mirrors the Web worklet.
             base_hang = getattr(self, "_hang_ms", float(_VAD_HANG_MS))
-            if dur_ms < 4000:
+            if getattr(self, "_final_mode", False):
+                hang = base_hang
+                for at_ms, short in _FINAL_HANG_STEPS:
+                    if dur_ms >= at_ms:
+                        hang = min(base_hang, short)
+            elif dur_ms < 4000:
                 hang = base_hang
             elif dur_ms < 8000:
                 hang = base_hang * 0.7
@@ -1582,10 +1607,6 @@ class LivePage(ScrollArea):
                 utt = bytes(self._vad_buf[:cut])
                 self._vad_buf = bytearray(self._vad_buf[cut:])
                 self._partial_ms = 0.0
-                # Speech goes on: this "final" ends mid-sentence (half of all
-                # finals in a real 2 h meeting). Its tail must not be translated
-                # on its own — see _on_recognized_stream.
-                self.__dict__.setdefault("_final_kinds", []).append("cap")
                 self._dispatch_recognize(utt, is_final=True)
                 return
             if self._vad_sil_ms >= hang:
@@ -1599,7 +1620,6 @@ class LivePage(ScrollArea):
                 # same words twice at the seam ("图像。" then "像啊…").
                 self._vad_preroll = bytearray()
                 if dur_ms >= _VAD_MIN_MS:
-                    self.__dict__.setdefault("_final_kinds", []).append("pause")
                     self._dispatch_recognize(utt, is_final=True)   # flush remainder
             elif self._partial_ms >= _VAD_PARTIAL_MS and dur_ms >= _VAD_MIN_MS:
                 self._partial_ms = 0.0
@@ -1639,7 +1659,8 @@ class LivePage(ScrollArea):
             self._recog_pending.append((pcm, is_final))
             return
         self._recog_busy = True
-        w = LiveRecognizeWorker(pcm, _IN_RATE, is_final)
+        w = LiveRecognizeWorker(pcm, _IN_RATE, is_final,
+                                model_id=None if is_final else getattr(self, "_preview_model", None))
         w.done.connect(self._on_recognized_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
@@ -1904,13 +1925,11 @@ class LivePage(ScrollArea):
             # broken only at real sentence ends (no forced mid-word cuts).
             units = (self._split_sentences(text) if final_mode
                      else self._split_scored(self._uncommitted_tail(text), True)[0])
-            # Finals come back in dispatch order, so this pops THIS final's kind.
-            kinds = self.__dict__.setdefault("_final_kinds", [])
-            cut = bool(kinds) and kinds.pop(0) == "cap"
-            for i, s in enumerate(units):
-                self._commit_stream_sentence(s, final_piece=(i == len(units) - 1 and not cut))
-            if not cut:
-                self._flush_tr_hold()   # a real pause: held fragments translate now
+            # The segment ended at a pause OR at the length cap — neither means
+            # the sentence did: an unfinished last line stays held until speech
+            # resumes or the silence reaches the full hang (see _vad_step).
+            for s in units:
+                self._commit_stream_sentence(s)
             # The utterance is closed: reset its stream state HERE, in result
             # order — never at the next utterance's onset (see _vad_step).
             self._stream_committed = ""
@@ -1969,7 +1988,7 @@ class LivePage(ScrollArea):
     _WORDLIKE = re.compile(r"[0-9A-Za-z぀-ヿ㐀-鿿"
                            r"가-힯Ѐ-ӿ฀-๿]")
 
-    def _commit_stream_sentence(self, source, final_piece=False):
+    def _commit_stream_sentence(self, source):
         source = (source or "").strip()
         if not source or not self._WORDLIKE.search(source):
             return
@@ -2011,7 +2030,7 @@ class LivePage(ScrollArea):
         # their sources in order even when replies come back out of order.
         self._out_rows.append([key, ""])
         self._render_output()
-        self._queue_translation(key, source, final_piece)
+        self._queue_translation(key, source)
 
     # Translate per COMPLETE sentence even while the source streams: a line
     # force-cut mid-sentence (31% of SenseVoice lines in a real Japanese meeting,
@@ -2020,12 +2039,19 @@ class LivePage(ScrollArea):
     # the utterance ends. The translation lands on the last line; earlier held
     # lines show "↓". Capped so an unpunctuated monologue still gets translated.
     _HOLD_MAX_CHARS = 200
+    # A Japanese line ending in a particle, te-form or filler is unfinished even
+    # with a "。": the STT punctuates the end of ITS audio although the speaker
+    # goes on — 2/3 of the "。" at segment cuts in a real meeting were
+    # mid-sentence ("…資料の中で。", "…で例えば。", "…決まっちゃって。").
+    _DANGLING = re.compile(r"(?:[てでにがはをのともへや]|という|っていう|というか|まあ|例えば"
+                           r"|なんか|また|だから|こんな)[。.]$")
 
-    def _queue_translation(self, key, source, final_piece=False):
+    def _queue_translation(self, key, source):
         hold = self.__dict__.setdefault("_tr_hold", [])
-        complete = source.rstrip().endswith(tuple(self._SENT_END) + ("？", "！", "…"))
-        if (not complete and not final_piece
-                and sum(len(s) for _, s in hold) + len(source) < self._HOLD_MAX_CHARS):
+        tail = source.rstrip()
+        complete = (tail.endswith(tuple(self._SENT_END) + ("？", "！", "…"))
+                    and not self._DANGLING.search(tail))
+        if not complete and sum(len(s) for _, s in hold) + len(source) < self._HOLD_MAX_CHARS:
             hold.append((key, source))
             self._set_out_row(key, "…")
             return

@@ -301,6 +301,44 @@ def live_commit_mode():
     return "stream" if engine == "sensevoice" else "final"
 
 
+_PREVIEW_MODEL = "sensevoice-small"
+_preview_state = {"t": -1e9, "ok": False, "failed": False}
+
+
+def live_preview_model():
+    """STT model for final-mode PREVIEW partials, or None = use the live model.
+
+    In final mode the slow live model (Qwen3-ASR / Whisper) also re-decoded the
+    growing audio every ~360 ms just to preview the dim line, and each segment's
+    FINAL queued behind such a preview on the GPU: replaying a real 10-min
+    meeting that added ~1.5 s to every translation. SenseVoice decodes a preview
+    in ~0.1 s — used when it's installed and already on disk (never downloaded
+    just for this)."""
+    import importlib.util
+    if _preview_state["failed"] or live_commit_mode() != "final":
+        return None
+    if get_selected_live_stt_model() == _PREVIEW_MODEL or importlib.util.find_spec("funasr") is None:
+        return None
+    now = time.monotonic()
+    if now - _preview_state["t"] > 60:      # the probe walks the models dir
+        try:
+            from core import model_store
+            hits = model_store.find_model_dirs(["SenseVoiceSmall"])
+            _preview_state["ok"] = bool(hits.get("sensevoicesmall"))
+        except Exception:  # noqa: BLE001
+            _preview_state["ok"] = False
+        _preview_state["t"] = now
+    return _PREVIEW_MODEL if _preview_state["ok"] else None
+
+
+def preload_live_preview():
+    """Load the preview model (if any) like preload_recognizer; if it can't load,
+    previews fall back to the live model for the rest of the run."""
+    pm = live_preview_model()
+    if pm and not preload_recognizer(pm):
+        _preview_state["failed"] = True
+
+
 def get_selected_quick_stt_model():
     """STT model id for QUICK-TRANSLATE voice input (config 'quick_stt_model'),
     independent of the live/video models."""
@@ -374,9 +412,11 @@ def _inuse_stt_keys():
     (video subtitles / real-time voice / quick-translate voice)."""
     keys = set()
     for getter in (get_selected_stt_model, get_selected_live_stt_model,
-                   get_selected_quick_stt_model):
+                   get_selected_quick_stt_model, live_preview_model):
         try:
-            keys.add(_resolve_stt_engine(get_stt_model(getter())))
+            model_id = getter()
+            if model_id:
+                keys.add(_resolve_stt_engine(get_stt_model(model_id)))
         except Exception:  # noqa: BLE001
             pass
     return keys

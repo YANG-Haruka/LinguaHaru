@@ -77,7 +77,7 @@ def test_translation_waits_for_a_complete_sentence():
     import types
     P = LivePage
     page = types.SimpleNamespace(_SENT_END=P._SENT_END, _HOLD_MAX_CHARS=P._HOLD_MAX_CHARS,
-                                 _tr_hold=[], rows={}, sent=[])
+                                 _DANGLING=P._DANGLING, _tr_hold=[], rows={}, sent=[])
     page._set_out_row = lambda k, t: page.rows.__setitem__(k, t)
     page._start_line_translation = lambda k, s: page.sent.append((k, s))
     for name in ("_queue_translation", "_flush_tr_hold"):
@@ -88,8 +88,21 @@ def test_translation_waits_for_a_complete_sentence():
     assert page.sent == [("k2", "今回作ったモデルをいろんなシーンに対応させていくのかっていう方法もありますし。")]
     assert page.rows["k1"] == "↓"
     page._queue_translation("k3", "the meeting starts")
-    page._queue_translation("k4", "at nine", final_piece=True)   # utterance ended
+    page._queue_translation("k4", "at nine")
+    page._flush_tr_hold()                         # the silence reached the full hang
     assert page.sent[-1] == ("k4", "the meeting starts at nine")
     page._queue_translation("k5", "最後の話")
     page._flush_tr_hold()                                          # stop
     assert page.sent[-1] == ("k5", "最後の話")
+    # The STT ends ITS audio with "。" even mid-sentence (real meeting cuts):
+    # a particle / te-form / filler ending is still unfinished -> held.
+    page.sent.clear()
+    page._queue_translation("k6", "ちなみにそこってあの。")
+    page._queue_translation("k7", "前にいただいた資料の中で。")
+    assert page.sent == [] and page.rows["k7"] == "…"
+    page._queue_translation("k8", "十月十日って書いてありました。")
+    assert page.sent == [("k8", "ちなみにそこってあの。前にいただいた資料の中で。十月十日って書いてありました。")]
+    for k, s in (("k9", "それで大丈夫です。"), ("k10", "わかりました。"), ("k11", "どうしますか？"),
+                 ("k12", "これは決まっていない。"), ("k13", "那我们明天再聊吧。")):
+        page._queue_translation(k, s)              # real sentence ends translate alone
+        assert page.sent[-1] == (k, s), s

@@ -7,6 +7,7 @@
 //                  { type:'speechstart' }               (confirmed voice onset)
 //                  { type:'partial', sampleRate, pcm }  (Float32 audio-so-far, COPIED — for live streaming captions)
 //                  { type:'segment', sampleRate, pcm }  (Float32 utterance, transferred — final)
+//                  { type:'silence' }                   (the pause after a segment reached hangMs)
 //                  { type:'drop', reason }              (too-short / steady-noise)
 class VADProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -18,7 +19,10 @@ class VADProcessor extends AudioWorkletProcessor {
     this.noiseMaxMs = o.noiseMaxMs || 6000;   // flat loud noise dropped after this
     this.maxSegMs = o.maxSegMs || 30000;      // hard ceiling → force-send
     this.partialMs = o.partialMs || 360;      // emit a live partial this often while capturing
+    this.finalMode = !!o.finalMode;           // page commits only complete segments: end long ones sooner
+    this.quietMs = 0; this.quietSent = true;  // silence since the last segment (-> 'silence')
     this.lastPartial = 0;
+    this.lastCapTry = 0;
     const prerollMs = o.prerollMs || 500;
     this.onAbs = o.onAbs || 0.009; this.onMul = o.onMul || 2.5;       // onset
     this.offAbs = o.offAbs || 0.006; this.offMul = o.offMul || 1.7;   // end-of-speech
@@ -68,7 +72,8 @@ class VADProcessor extends AudioWorkletProcessor {
     let o = 0; for (let i = 0; i < this.seg.length; i++) { pcm.set(this.seg[i], o); o += this.seg[i].length; }
     return pcm;
   }
-  _flush(durMs, cap = false) {
+  _flush(durMs) {
+    this.quietMs = this.silenceMs; this.quietSent = false;   // keep timing this pause
     const total = this.segN;
     const pcm = new Float32Array(total);
     let o = 0; for (let i = 0; i < this.seg.length; i++) { pcm.set(this.seg[i], o); o += this.seg[i].length; }
@@ -78,9 +83,37 @@ class VADProcessor extends AudioWorkletProcessor {
     // twice at the seam). Restart the ring from here. Twin of Qt _vad_step.
     this.ringPos = 0; this.ringFull = false;
     if (durMs < this.minSegMs || total === 0) { this.port.postMessage({ type: 'drop', reason: 'too-short' }); return; }
-    // cap: cut by the length ceiling while speech goes on (not a pause) — the
-    // page must not translate this segment's unfinished tail on its own.
-    this.port.postMessage({ type: 'segment', sampleRate: this.sr, pcm: pcm.buffer, cap }, [pcm.buffer]);
+    this.port.postMessage({ type: 'segment', sampleRate: this.sr, pcm: pcm.buffer }, [pcm.buffer]);
+  }
+  // Quietest ~80 ms window of the last 2 s: [segment sample offset of its
+  // centre, depth = its energy / the median window's — near 0 is a real pause,
+  // near 1 means there is none]. Twin of Qt LivePage._quiet_cut. Windows
+  // overlap (20 ms hop): an end-aligned grid of whole windows, re-checked every
+  // 80 ms, kept straddling the same short pause and never saw it.
+  _quietCut() {
+    const win = Math.floor(this.sr * 0.08), hop = win >> 2;
+    const len = Math.min(this.segN >> 1, this.sr * 2);
+    if (len < 2 * win) return [this.segN, 0];
+    const tail = new Float32Array(len);
+    for (let i = this.seg.length - 1, pos = len; i >= 0 && pos > 0; i--) {
+      const c = this.seg[i], take = Math.min(pos, c.length);
+      tail.set(c.subarray(c.length - take), pos - take); pos -= take;
+    }
+    const cum = new Float64Array(len + 1);
+    for (let i = 0; i < len; i++) cum[i + 1] = cum[i] + tail[i] * tail[i];
+    const e = [];
+    for (let s = 0; s + win <= len; s += hop) e.push([cum[s + win] - cum[s], s]);
+    let best = e[0]; for (const x of e) if (x[0] < best[0]) best = x;
+    const med = e.map((x) => x[0]).sort((a, b) => a - b)[e.length >> 1];
+    return [this.segN - len + best[1] + (win >> 1), best[0] / Math.max(med, 1e-12)];
+  }
+  // Length cap mid-speech: send the audio up to `cut` and keep capturing the
+  // rest — nothing dropped or recognized twice.
+  _cutAt(cut) {
+    const pcm = this._snapshotSeg();
+    const head = pcm.slice(0, cut), rest = pcm.slice(cut);
+    this.seg = [rest]; this.segN = rest.length;
+    this.port.postMessage({ type: 'segment', sampleRate: this.sr, pcm: head.buffer }, [head.buffer]);
   }
 
   process(inputs) {
@@ -115,10 +148,15 @@ class VADProcessor extends AudioWorkletProcessor {
       // Adapt the ambient floor ONLY on quiet frames so speech can't drag the
       // threshold above your own voice.
       if (level < onTh) this.noiseFloor = this.noiseFloor * 0.99 + level * 0.01;
+      if (!this.quietSent) {
+        if (level <= onTh) this.quietMs += dtMs;
+        if (this.quietMs >= this.hangMs) { this.quietSent = true; this.port.postMessage({ type: 'silence' }); }
+      }
       if (level > onTh) {
         this.voiceMs += dtMs;
         if (this.voiceMs >= this.onMs) {           // confirmed speech → capture with pre-roll
           this.capturing = true; this.silenceMs = 0; this.segDip = false; this.segMin = 1; this.segMax = 0;
+          this.quietSent = true;                   // the speaker went on: no 'silence' for this pause
           this.lastPartial = currentTime;        // first partial ~partialMs after onset
           const pre = this._ringSnapshot();
           this.seg = [pre]; this.segN = pre.length;
@@ -134,13 +172,24 @@ class VADProcessor extends AudioWorkletProcessor {
       // latency on long speech). Mirrors the Qt side. The floor is kept high
       // enough (>=500ms) that a slow speaker's natural between-phrase pauses
       // don't chop a sentence into fragments.
-      const hang = durMs < 4000 ? this.hangMs
+      // Final mode (twin of Qt _FINAL_HANG_STEPS): every sentence of a segment
+      // waits for its end, so past 3 s / 6 s a 450 / 300 ms pause ends it.
+      const hang = this.finalMode
+                 ? (durMs < 3000 ? this.hangMs : Math.min(this.hangMs, durMs < 6000 ? 450 : 300))
+                 : durMs < 4000 ? this.hangMs
                  : durMs < 8000 ? this.hangMs * 0.7
                  : Math.max(500, this.hangMs * 0.55);
       if (this.silenceMs >= hang) { this._flush(durMs); }
       else if (durMs > this.noiseMaxMs && !this.segDip && (this.segMax <= 0 || (this.segMax - this.segMin) / this.segMax < 0.45)) {
         this.port.postMessage({ type: 'drop', reason: 'steady-noise' }); this._abort();
-      } else if (durMs > this.maxSegMs) { this._flush(durMs, true); }
+      } else if (durMs > this.maxSegMs && currentTime - this.lastCapTry >= 0.08) {
+        // Cutting at this exact frame split words in half ("大家好" -> "大"+"家好").
+        // Cut at the quietest moment of the last 2 s instead; no real dip there
+        // yet? Keep listening for one, up to 1.5x the cap. Twin of Qt _vad_step.
+        this.lastCapTry = currentTime;
+        const [cut, depth] = this._quietCut();
+        if (depth <= 0.15 || durMs >= 1.5 * this.maxSegMs) this._cutAt(cut);
+      }
     }
     return true;
   }
