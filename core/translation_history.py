@@ -545,7 +545,9 @@ def compress_live_recording(record_id: str, log_dir: str) -> Optional[str]:
     and the record updated. Slow for long sessions (~1.5 min for 2 h) -> call it
     off the UI thread. Returns the new path, or None (WAV kept as-is) when ffmpeg
     is unavailable or anything fails."""
+    import glob
     import subprocess
+    import uuid
     mgr = TranslationHistoryManager(log_dir=log_dir)
     rec = mgr.get_record_by_id(record_id) or {}
     wav = rec.get("log_file_path") or ""
@@ -556,7 +558,10 @@ def compress_live_recording(record_id: str, log_dir: str) -> Optional[str]:
     if not ff:
         return None
     ogg = os.path.splitext(wav)[0] + ".ogg"
-    tmp = ogg + ".part"
+    # A temp of our own: ffmpeg outlives an app closed mid-run (child processes
+    # aren't killed with it), so an earlier attempt may still be writing its
+    # .part — two writers on one file could yield a broken .ogg.
+    tmp = f"{ogg}.{uuid.uuid4().hex[:8]}.part"
     try:
         subprocess.run([ff, "-y", "-loglevel", "error", "-i", wav, "-ac", "1",
                         "-c:a", "libopus", "-b:a", _REC_OPUS_BITRATE,
@@ -569,20 +574,32 @@ def compress_live_recording(record_id: str, log_dir: str) -> Optional[str]:
             raise RuntimeError("history update failed")
     except Exception as e:  # noqa: BLE001 — keep the WAV; never lose a recording
         app_logger.warning(f"Recording compression skipped ({os.path.basename(wav)}): {e}")
-        for p in (tmp, ogg):
-            if os.path.exists(p) and rec.get("log_file_path") != p:
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
+        # Only our temp, never ``ogg``: another attempt may already have
+        # finished it, pointed the record at it and deleted the WAV.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
         return None
-    try:
-        os.remove(wav)
-    except OSError:
-        pass
+    # The WAV, plus any .part an interrupted earlier attempt left behind.
+    for p in [wav] + glob.glob(glob.escape(ogg) + "*.part"):
+        try:
+            os.remove(p)
+        except OSError:
+            pass
     app_logger.info(f"Recording compressed: {os.path.basename(ogg)} "
                     f"({os.path.getsize(ogg) / 1e6:.1f} MB)")
     return ogg
+
+
+def compress_leftover_recordings(log_dir: str) -> None:
+    """Startup self-heal: compress the recordings an earlier run left as WAV.
+    Closing the app while ffmpeg compressed one kills the thread that would
+    have renamed the output and repointed history (the WAV and a stale .part
+    stay, and nothing retried). Sequential and slow: run it off the UI thread."""
+    for rec in TranslationHistoryManager(log_dir=log_dir).get_all_records(file_type="realtime"):
+        if (rec.get("log_file_path") or "").lower().endswith(".wav"):
+            compress_live_recording(rec["id"], log_dir)
 
 
 SUMMARY_MARK = "# Summary"

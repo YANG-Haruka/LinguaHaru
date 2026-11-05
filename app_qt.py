@@ -113,11 +113,16 @@ def main():
     # flip them to "interrupted" so they show up (and can be continued).
     try:
         from core import backend
-        from core.translation_history import TranslationHistoryManager
+        from core.translation_history import (TranslationHistoryManager,
+                                              compress_leftover_recordings)
         _n = TranslationHistoryManager(
             log_dir=backend.history_dir()).mark_running_as_interrupted()
         if _n:
             print(f"Recovered {_n} interrupted translation(s) from a previous session")
+        # Recordings left as WAV by an app closed mid-compression: finish them.
+        import threading
+        threading.Thread(target=compress_leftover_recordings,
+                         args=(backend.history_dir(),), daemon=True).start()
     except Exception:  # noqa: BLE001 — never block startup on history recovery
         pass
 
