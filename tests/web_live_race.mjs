@@ -54,6 +54,8 @@ const harness = `
   const downsamplePCM16 = (x) => x;
   const commitLiveSentence = (s) => { s = (s || "").trim(); if (s && WORDLIKE.test(s)) __commits.push([__now(), s]); };
   const liveFlushHold = () => Promise.resolve();   // translation side: not under test here
+  const liveAgeHold = () => Promise.resolve();
+  const liveRequestProvisional = () => Promise.resolve();
   async function recognizeInt16(id, final) {
     return new Promise((res) => __at(__now() + (final ? __LAT.final : __LAT.partial),
       () => res({ source: __HYP[id], detected: "zh" })));

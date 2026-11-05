@@ -2677,9 +2677,9 @@ async function startLocal() {
   }
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   liveCtxHistory = [];   // fresh coherence context per session
-  liveTrHold = [];
-  clearInterval(liveHoldTimer);
-  liveHoldTimer = setInterval(() => liveFlushHold("stale"), 250);
+  liveTrHold = []; liveTrHoldSeen = 0;
+  liveProvSeq++; liveProvText = ""; liveProvEntry = null;   // a late provisional is stale
+  if ($("live-output-prov")) $("live-output-prov").textContent = "";
   startMicMeter();
 }
 // Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
@@ -2759,7 +2759,6 @@ async function startSileroVad() {
 }
 function stopLocal() {
   // Held mid-sentence lines translate first, then the session is saved.
-  clearInterval(liveHoldTimer);
   liveFlushHold().then(saveLiveHistory);
   stopMicMeter();
   try {
@@ -2982,6 +2981,7 @@ async function runPartial(int16) {
     if (r.busy) return;   // server dropped this partial under load — keep state, retry next
     noteDetected(r.detected);
     const text = r.source || "";
+    liveFinalMode = r.commit_mode === "final";
     if (r.commit_mode === "final") {
       // Slow autoregressive STT (Qwen3-ASR / Whisper): partials only preview the
       // dim line; nothing is committed from half-heard audio (see runFinal).
@@ -3002,6 +3002,7 @@ async function runPartial(int16) {
     pipInterim = tail.slice(consumed);      // live, not-yet-committed tail
     updatePipCaption();
     if (liveRunning && pipInterim) setLiveStatus(_label("识别中…", "识别中…") + " " + pipInterim);
+    if (units.length) liveRequestProvisional();   // held text: show its gist now
   } catch (e) { /* transient; next partial retries */ }
 }
 async function runFinal(int16) {
@@ -3009,15 +3010,19 @@ async function runFinal(int16) {
     const r = await recognizeInt16(int16, true);
     noteDetected(r.detected);
     const text = r.source || "";
+    liveFinalMode = r.commit_mode === "final";
     // Flush only the not-yet-committed tail (aligned even across head rewrites
     // — never re-emits committed text, never drops the tail).
     // Final mode committed nothing yet: the whole complete recognition, broken
     // only at real sentence ends (no forced mid-word cuts) — twin of Qt.
-    const units = r.commit_mode === "final" ? splitSentences(text)
+    const units = r.commit_mode === "final" ? splitClauseTail(splitSentences(text))
       : splitScored(uncommittedTail(text, liveCommittedText), true).units;
     // Ended at a pause OR the length cap — neither means the sentence did: an
-    // unfinished last line stays held (see liveQuiet).
+    // unfinished last line stays held until the next segment (see liveAgeHold)
+    // or the pause reaches the full hang (see liveQuiet).
     units.forEach((u) => commitLiveSentence(u));
+    if (r.commit_mode === "final" && units.length) liveAgeHold();   // a segment with words (not noise)
+    if (units.length) liveRequestProvisional();   // held text: show its gist now
   } catch (e) { /* drop */ }
   // The utterance is closed: reset its stream state HERE, in result order.
   liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; updatePipCaption();
@@ -3033,83 +3038,193 @@ function commitLiveSentence(source) {
   liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source));
   return liveCommitChain;
 }
-// Translate per COMPLETE sentence while the source streams (twin of Qt
-// _queue_translation): a line force-cut mid-sentence (31% of SenseVoice lines in
-// a real Japanese meeting) is shown at once but held, then translated together
-// with its continuation at the next sentence end / utterance end / stop.
-let liveTrHold = [];
+// Translate whole sentences — or whole clauses, as an interpreter does with a
+// long run-on — never a phrase cut in half (twin of Qt _queue_translation): a
+// line that stops mid-phrase (31% of SenseVoice lines in a real Japanese meeting)
+// is shown at once but held, then translated together with its continuation.
+let liveTrHold = [];      // held lines: {src, entry} (entry = its floating-caption pair)
+let liveTrHoldSeen = 0;   // final mode: results since the oldest held line
+let liveFinalMode = false;   // the server's commit mode ("final": Qwen3-ASR / Whisper)
 const LIVE_HOLD_MAX = 200;
-// Held lines never wait longer than this: a fast speaker rarely pauses a full
-// hang, and held lines waited up to 27 s in a real meeting (twin of Qt _HOLD_MAX_MS).
-const LIVE_HOLD_MAX_MS = 5000;
-let liveTrHoldT0 = 0, liveHoldTimer = null;
 function _joinHeld(parts) {
   let t = "";
-  for (const s of parts) t += (t && t.charCodeAt(t.length - 1) < 128 && s.charCodeAt(0) < 128 ? " " : "") + s;
+  for (const { src: s } of parts) t += (t && t.charCodeAt(t.length - 1) < 128 && s.charCodeAt(0) < 128 ? " " : "") + s;
   return t;
 }
-// when: "quiet" = only once the pause reached the full hang and no result is
-// pending; "stale" = only once the oldest held line waited LIVE_HOLD_MAX_MS.
-// Checked when the chain gets there — the hold list itself is only up to date
-// inside the chain (commits are queued on it).
+// Translate the held lines (+ the line completing them) as one sentence, paired
+// with the LAST line (twin of Qt _flush_tr_hold). A provisional result still on
+// its way is stale now; one already shown stays until the final lands.
+function _sendHeld(ts, extra = null) {
+  const parts = extra ? [...liveTrHold, extra] : liveTrHold;
+  liveTrHold = []; liveTrHoldSeen = 0;
+  liveProvSeq++; liveProvText = "";
+  const prov = liveProvEntry; liveProvEntry = null;
+  return _translateLiveLine(ts, _joinHeld(parts), parts[parts.length - 1].entry, prov);
+}
+// when "quiet": only once the pause reached the full hang and no result is
+// pending. Checked when the chain gets there — the hold list itself is only up
+// to date inside the chain (commits are queued on it).
 function liveFlushHold(when = null) {   // queue on the commit chain (keeps order)
   liveCommitChain = liveCommitChain.then(() => {
     if (!liveTrHold.length) return;
     if (when === "quiet" && (!liveQuiet || liveRecogBusy || liveRecogQueue.length)) return;
-    if (when === "stale" && performance.now() - liveTrHoldT0 < LIVE_HOLD_MAX_MS) return;
-    const text = _joinHeld(liveTrHold); liveTrHold = [];
-    return _translateLiveLine(liveTimeStamp(), text);
+    return _sendHeld(liveTimeStamp());
   });
   return liveCommitChain;
 }
-// A Japanese line ending in a particle, te-form or filler is unfinished even with
-// a "。": the STT punctuates the end of ITS audio although the speaker goes on
-// (2/3 of the "。" at segment cuts in a real meeting). Twin of Qt _DANGLING.
-const LIVE_DANGLING = /(?:[てでにがはをのともへや]|という|っていう|というか|まあ|例えば|なんか|また|だから|こんな)[。.]$/;
-// ...but a trailing filler ("…ですけど、えっと。") is a fast speaker running on,
-// not an unfinished line: judge the words before it (twin of Qt _FILLER_END).
-const LIVE_FILLER_END = /[、,\s]*(?:えっと|えーと|えーっと|えー|あのー|あの|まあ|なんか|その|ちょっと)[。.]$/;
+// Two-layer captions (what Google / Azure / DeepL live translation do; twin of
+// Qt _request_provisional): held text gets a PROVISIONAL translation right away
+// — dim with "…" — and the whole sentence's translation replaces it once the
+// sentence is complete. No fragment is ever the final translation, but the gist
+// is on screen without waiting (real meeting replay: P90 15.0 s -> 12.2 s).
+let liveProvSeq = 0, liveProvText = "", liveProvEntry = null;
+function liveRequestProvisional() {   // on the chain: the hold is only current there
+  liveCommitChain = liveCommitChain.then(() => {
+    if (!liveTrHold.length) return;
+    const text = _joinHeld(liveTrHold);
+    if (text === liveProvText) return;      // already asked for this exact text
+    liveProvText = text;
+    _provisionalTranslate(++liveProvSeq, liveTrHold[liveTrHold.length - 1].entry, text);   // never blocks commits
+  });
+  return liveCommitChain;
+}
+async function _provisionalTranslate(seq, entry, source) {
+  let t;
+  try {
+    t = await api("/api/live-translate-text", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto",
+                             dst_lang: $("live-target").value, context: liveContext() }) });
+  } catch (e) { return; }                    // the whole sentence's translation will come
+  liveSessionTokens += (t.tokens || 0);
+  if (seq !== liveProvSeq || !t.translated) return;   // stale: the hold moved on
+  if (liveProvEntry && liveProvEntry !== entry && liveProvEntry.prov) {   // the hold grew
+    liveProvEntry.dst = ""; liveProvEntry.prov = false;
+  }
+  liveProvEntry = entry;
+  if (entry) { entry.dst = t.translated; entry.prov = true; }
+  const el = $("live-output-prov");
+  if (el) el.textContent = "… " + t.translated;
+  updatePipCaption();
+}
+// Final mode, after each recognized segment: a held line waits for ONE more
+// segment — its continuation is there, however long the speaker talks (a clock
+// would cut a long sentence wherever it fired). If that segment did not finish
+// it either, the speaker is in a long run-on: translate it now. Twin of Qt _age_tr_hold.
+function liveAgeHold() {
+  liveCommitChain = liveCommitChain.then(() => {
+    if (liveTrHold.length && ++liveTrHoldSeen > 1) {
+      return _sendHeld(liveTimeStamp());
+    }
+  });
+  return liveCommitChain;
+}
+// How a line ends (twin of Qt _line_end). The STT puts "。" at the end of EVERY
+// segment, mid-sentence too (2/3 of the "。" at segment cuts in a real meeting),
+// so the "。" says nothing — the last words do. Trailing fillers are dropped
+// first: "…ですけど、えっと。" ends a clause. "S" sentence, "C" clause (…して,
+// …ですが, …けど, …ので), "M" mid-phrase (particle, という, English "the"), "N"
+// bare noun or a word cut off ("…ご留意。"), "F" fillers only. S/C/F lines can
+// be translated on their own, M/N lines wait.
+const LIVE_FILLER_TAIL = /(?:[、,\s]*(?:えーっと|えーと|えっと|ええと|えー|あのー|あの|あー|まあ|なんか|その|ちょっと|うーん))+$/;
+const LIVE_CLAUSE_END = new RegExp("(?:けど|けれど|けれども|けども|ので|のに|ながら|ても|たら|だら|れば|えば|けば|せば|てば"
+  + "|まして|でして|ちゃって|じゃって|たり|だり|てから|でから"
+  + "|(?:[すただいるうくぬ]|ない)(?:が|から|し)|[んい]で|(?:[いきぎしちにびみりえけげせてねべめれ]|っ)て)$");
+const LIVE_QUOTE_TE = /(?:[A-Za-zァ-ヶー0-9]|さん|これ|それ|あれ|どれ|ここ|そこ|どこ|何|なに)って$/;
+const LIVE_MID_END = /(?:[てでにがはをのともへや]|という|っていう|というか|例えば|また|だから|こんな|って|とか|より|まで|から)$/;
+const LIVE_SENT_WORD = /(?:です|ます|でした|ました|ません|でしょう|[だたねよかなわぞさるうくすつむぶぐぬい])$/;
+const LIVE_EN_OPEN = new Set(("the a an to of and or but so that with for in on at by from as is are was were be "
+  + "been i we you he she they it my our your their this these those if because about than "
+  + "then like which who what when where how not no can could would should will do does did "
+  + "have has had there here also just very more most into onto over under between um uh ah").split(" "));
+function lineEnd(text) {
+  const raw = (text || "").trimEnd();
+  if (/[?？!！]$/.test(raw)) return "S";
+  let t = raw.replace(/[\s、。，,．.…」』）)]+$/, "");
+  t = t.replace(LIVE_FILLER_TAIL, "").replace(/[\s、，,]+$/, "");
+  if (!t) return "F";
+  const tail = t.slice(-20);
+  if ([...tail].filter((c) => c.charCodeAt(0) < 128).length > 0.7 * tail.length) {   // English
+    const w = tail.toLowerCase().match(/[a-z']+/g);
+    return w && !LIVE_EN_OPEN.has(w[w.length - 1]) && /[.?!]$/.test(raw) ? "S" : "M";
+  }
+  if (!/[぀-ヿ]/.test(t.slice(-12))) {          // no kana (Chinese…): punctuation
+    const last = raw.slice(-1);
+    return "。.！？!?".includes(last) ? "S" : "，、,;；".includes(last) ? "C" : "M";
+  }
+  if (LIVE_CLAUSE_END.test(t) && !LIVE_QUOTE_TE.test(t)) return "C";
+  if (LIVE_MID_END.test(t)) return "M";
+  return LIVE_SENT_WORD.test(t) ? "S" : "N";
+}
+// Final mode: a segment's last line is often cut mid-sentence (「…かもしれないです
+// けど、えっと三菱自動車からの。」). Translate it up to its last sentence/clause
+// end now; only the unfinished tail waits for the next segment. Twin of Qt.
+function splitClauseTail(units) {
+  if (!units.length || ["S", "C", "F"].includes(lineEnd(units[units.length - 1]))) return units;
+  const last = units[units.length - 1];
+  const body = last.replace(/[。.、，,\s]+$/, "").length;
+  let cut = 0;
+  for (const m of last.matchAll(/[、，,。！？!?]/g)) {
+    const p = m.index + 1;
+    if (p >= 6 && p < body && ["S", "C"].includes(lineEnd(last.slice(0, p)))) cut = p;
+  }
+  return cut ? [...units.slice(0, -1), last.slice(0, cut), last.slice(cut).trimStart()] : units;
+}
 async function _doCommitSentence(source) {
   const ts = liveTimeStamp();
-  appendLive("live-input", `[${ts}] ${source}\n`);
-  const judged = source.replace(LIVE_FILLER_END, "。");
-  const complete = /[。！？!?.…]$/.test(judged) && !LIVE_DANGLING.test(judged);
-  const held = liveTrHold.reduce((n, s) => n + s.length, 0);
-  if (!complete && held + source.length < LIVE_HOLD_MAX) {
-    if (!liveTrHold.length) liveTrHoldT0 = performance.now();
-    liveTrHold.push(source);
-    return;
+  const line = { src: source, entry: appendLive("live-input", `[${ts}] ${source}\n`) };
+  const held = liveTrHold.reduce((n, h) => n + h.src.length, 0);
+  if (!["S", "C", "F"].includes(lineEnd(source)) && held + source.length < LIVE_HOLD_MAX) {
+    if (!liveTrHold.length) liveTrHoldSeen = 0;
+    liveTrHold.push(line);
+    // Stream mode has no segments to wait for (see liveAgeHold): a held line
+    // waits for at most two more lines — about one segment of speech. Twin of Qt.
+    if (liveFinalMode || liveTrHold.length <= 2) return;
+    return _sendHeld(ts);
   }
-  const text = _joinHeld([...liveTrHold, source]); liveTrHold = [];
-  return _translateLiveLine(ts, text);
+  return _sendHeld(ts, line);
 }
-async function _translateLiveLine(ts, source) {
+// entry: the floating-caption pair this translation belongs to (a held
+// sentence's: its last line). prov: the pair showing this sentence's
+// provisional translation, which goes once the whole translation is shown.
+async function _translateLiveLine(ts, source, entry = null, prov = null) {
   const ctx = liveContext();
   liveCtxHistory.push(source);                 // after building ctx (don't include self)
   if (liveCtxHistory.length > 6) liveCtxHistory.splice(0, liveCtxHistory.length - 6);
   const streaming = !!(BOOT.config && BOOT.config.live_stream_translation);
   const dst = $("live-target").value;
+  const dropProv = () => {
+    if (prov && prov !== entry && prov.prov) { prov.dst = ""; prov.prov = false; }
+    const el = $("live-output-prov");
+    if (el) el.textContent = "";
+    updatePipCaption();
+  };
   if (!streaming) {
     try {
       const t = await api("/api/live-translate-text", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx }) });
       liveSessionTokens += (t.tokens || 0);
-      if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`);
+      if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`, entry);
     } catch (e) { /* leave source line; translation failed */ }
+    dropProv();
     return;
   }
-  // Stream mode: grow the last output line + a PiP entry token-by-token.
+  // Stream mode: grow the last output line + its PiP pair token-by-token.
   const out = $("live-output");
   const start = out.textContent.length;
   out.textContent += `[${ts}] \n`;
-  const entry = { src: source, dst: "" };
-  pipEntries.push(entry);
-  if (pipEntries.length > PIP_MAX) pipEntries.splice(0, pipEntries.length - PIP_MAX);
+  const ent = entry || { src: source, dst: "" };
+  if (!entry) {
+    pipEntries.push(ent);
+    if (pipEntries.length > PIP_MAX) pipEntries.splice(0, pipEntries.length - PIP_MAX);
+  }
+  let painted = false;
   const paint = (txt) => {
     out.textContent = out.textContent.slice(0, start) + `[${ts}] ${txt}\n`;
     out.scrollTop = out.scrollHeight;
-    entry.dst = txt; updatePipCaption();
+    ent.dst = txt; ent.prov = false;
+    if (!painted) { painted = true; dropProv(); } else updatePipCaption();
   };
   try {
     const resp = await fetch("/api/live-translate-stream", {
@@ -3136,6 +3251,7 @@ async function _translateLiveLine(ts, source) {
       }
     }
   } catch (e) { /* leave whatever streamed */ }
+  if (!painted) dropProv();
 }
 
 function downsamplePCM16(input, srcRate) {
@@ -3165,24 +3281,31 @@ function int16ToB64(int16) {
   let bin = ""; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
-function appendLive(id, text) {
+// Returns the floating-caption pair a source line opened; a translation goes to
+// the pair it belongs to (`entry`). Pairing by order went wrong as soon as a
+// line was held: one translation covers several lines, and every later
+// translation landed under the wrong source.
+function appendLive(id, text, entry = null) {
   const el = $(id); el.textContent += text; el.scrollTop = el.scrollHeight;
   // Feed the floating-caption buffer with the latest line (timestamp stripped).
   const last = (el.textContent.trim().split("\n").filter(Boolean).pop() || "")
     .replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
-  if (!last) return;
+  if (!last) return null;
+  let opened = null;
   if (id === "live-input") {
-    pipEntries.push({ src: last, dst: "" });
+    opened = { src: last, dst: "" };
+    pipEntries.push(opened);
   } else if (id === "live-output") {
-    // Pair with the OLDEST source still waiting (FIFO): translations run one
-    // request per sentence, so with fast speech 2+ sources are pending at once
-    // — pairing with the newest attached sentence N's translation to N+1.
-    const open = pipEntries.find((e) => e.src && !e.dst);
-    if (open) open.dst = last;
-    else pipEntries.push({ src: "", dst: last });
+    if (entry) { entry.dst = last; entry.prov = false; }
+    else {
+      const open = pipEntries.find((e) => e.src && !e.dst);
+      if (open) open.dst = last;
+      else pipEntries.push({ src: "", dst: last });
+    }
   }
   if (pipEntries.length > PIP_MAX) pipEntries.splice(0, pipEntries.length - PIP_MAX);
   updatePipCaption();
+  return opened;
 }
 
 // --- Live input hot-switch: change device mid-session without stopping ---
@@ -3227,8 +3350,10 @@ function updatePipCaption() {
     if (pipMode !== "src" && e.dst) {
       const t = d.createElement("div"); t.className = "c-dst";
       t.style.fontSize = pipFont + "px";
-      if (!newest) t.style.opacity = "0.72";
-      t.textContent = e.dst; block.appendChild(t);
+      if (e.prov) {          // provisional (the sentence isn't finished): dim, italic, "…"
+        t.style.opacity = "0.6"; t.style.fontStyle = "italic"; t.style.fontWeight = "400";
+      } else if (!newest) t.style.opacity = "0.72";
+      t.textContent = e.prov ? e.dst + " …" : e.dst; block.appendChild(t);
     }
     if (block.childNodes.length) cap.appendChild(block);
   });

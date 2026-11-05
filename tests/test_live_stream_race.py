@@ -53,8 +53,9 @@ def _page():
     page._local_workers = []
     page.commits = []
     page._commit_stream_sentence = lambda s: page.commits.append(s.strip())
-    page._tr_hold, page._HOLD_MAX_MS = [], P._HOLD_MAX_MS
+    page._tr_hold, page._tr_hold_seen = [], 0
     page._flush_tr_hold = lambda: None   # translation side: not under test here
+    page._request_provisional = lambda: None
 
     page.dispatched = []
     class _Worker:
@@ -174,18 +175,16 @@ def test_held_line_waits_for_the_full_pause():
     check("a short pause is not a sentence end", len(flushed) == 1 and page._tr_hold, str(flushed))
 
 
-def test_held_line_never_waits_more_than_5_s():
-    print("Live: a fast speaker never pauses a full hang -- held lines still go after 5 s")
+def test_long_sentence_is_not_cut_by_a_clock():
+    print("Live: no clock cuts a long sentence -- a held line waits for its continuation "
+          "however long the speaker talks (its next segment decides, see _age_tr_hold)")
     page, lp = _page()
-    page._hang_ms, page._HOLD_MAX_MS = 900.0, lp.LivePage._HOLD_MAX_MS
+    page._hang_ms = 900.0
     flushed = []
-    page._flush_tr_hold = lambda: (flushed.append(list(page._tr_hold)),
-                                   setattr(page, "_tr_hold", []), setattr(page, "_tr_hold_ms", 0.0))
-    page._tr_hold, page._tr_hold_ms = [("k1", "三菱自動車からの")], 0.0
-    _frames(page, lp, 4800 // 16, True, 100)       # continuous speech, 4.8 s
-    check("not before 5 s", flushed == [])
-    _frames(page, lp, 300 // 16, True, 100)
-    check("at 5 s, mid-speech", len(flushed) == 1, str(flushed))
+    page._flush_tr_hold = lambda: (flushed.append(list(page._tr_hold)), page._tr_hold.clear())
+    page._tr_hold = [("k1", "三菱自動車からコピーに対してのその秘密保持のレベルと、ネクストムーブとの")]
+    _frames(page, lp, 12000 // 16, True, 100)      # 12 s of continuous speech, no pause
+    check("still held while the speaker goes on", flushed == [] and page._tr_hold, str(flushed))
 
 
 def test_final_mode_ends_long_segments_on_short_pauses():
@@ -339,7 +338,7 @@ def test_web_twin_has_the_same_fix():
     r = subprocess.run([node, os.path.join(ROOT, "tests", "web_live_hold.mjs"),
                         os.path.join(ROOT, "webapp", "static", "app.js")],
                        capture_output=True, text=True, encoding="utf-8", timeout=60)
-    check("web holds unfinished lines until a sentence end / full pause",
+    check("web holds unfinished lines until a sentence/clause end, the next segment or a full pause",
           "RESULT: OK" in r.stdout, (r.stdout + r.stderr)[-600:])
 
 
@@ -348,7 +347,7 @@ if __name__ == "__main__":
          test_queue_keeps_order_and_never_drops_a_final,
          test_hard_cap_cuts_at_a_pause_without_loss_or_overlap,
          test_held_line_waits_for_the_full_pause,
-         test_held_line_never_waits_more_than_5_s,
+         test_long_sentence_is_not_cut_by_a_clock,
          test_final_mode_ends_long_segments_on_short_pauses,
          test_redecode_spacing_neither_repeats_nor_drops,
          test_fragments_and_soft_cap,

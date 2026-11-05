@@ -952,6 +952,12 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
   white-space: pre-wrap; word-break: break-word;
 }
 .live-text:empty::before { content: "等待语音…"; color: var(--faint); font-size: 0.88rem; font-family: var(--font-mono); }
+/* Provisional translation of a sentence still being spoken (replaced by the whole one). */
+.live-prov {
+  margin-top: 6px; font-size: 0.98rem; line-height: 1.7; color: var(--muted);
+  font-style: italic; white-space: pre-wrap; word-break: break-word;
+}
+.live-prov:empty { display: none; }
 .live-meter {
   display: inline-flex; align-items: center; gap: 7px; font-family: var(--font-mono);
   font-size: 0.72rem; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 14px;

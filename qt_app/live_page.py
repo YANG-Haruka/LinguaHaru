@@ -461,7 +461,13 @@ class _CaptionBar(QWidget):
                 parts.append(
                     "<div style='%scolor:%s;font-size:%dpx;margin-top:8px;'>%s</div>"
                     % (fam, src_c, src_px, _html.escape(e["src"])))
-            if show_dst and e.get("dst"):
+            if show_dst and e.get("dst") and e.get("prov"):
+                # Provisional (the sentence isn't finished yet): dim, italic, "…";
+                # the whole sentence's translation replaces it.
+                parts.append(
+                    "<div style='%sfont-style:italic;color:%s;font-size:%dpx;font-weight:400;'>%s …</div>"
+                    % (fam, old_c, self._font_size, _html.escape(e["dst"])))
+            elif show_dst and e.get("dst"):
                 color, weight = ((new_c.name(), bold) if newest
                                  else (old_c, max(400, bold - 100)))
                 parts.append(
@@ -484,7 +490,7 @@ class _CaptionBar(QWidget):
         self._trim()
         self._render()
 
-    def set_translated(self, text, key=None):
+    def set_translated(self, text, key=None, provisional=False):
         text = (text or "").strip()
         if not text:
             return
@@ -493,7 +499,7 @@ class _CaptionBar(QWidget):
             # caption by one line as soon as a single translation failed.)
             for e in self._entries:
                 if e.get("key") == key:
-                    e["dst"] = text
+                    e["dst"], e["prov"] = text, provisional
                     break
             else:
                 return              # its source already scrolled out of the buffer
@@ -507,6 +513,15 @@ class _CaptionBar(QWidget):
                 self._entries.append({"src": "", "dst": text})
         self._trim()
         self._render()
+
+    def clear_provisional(self, key):
+        """Drop a line's provisional translation (its sentence's whole
+        translation is now shown on a later line)."""
+        for e in self._entries:
+            if e.get("key") == key and e.get("prov"):
+                e["dst"], e["prov"] = "", False
+                self._render()
+                return
 
     def set_interim(self, text):
         """Live, not-yet-finalized source text (shown dim under the committed
@@ -1492,7 +1507,14 @@ class LivePage(ScrollArea):
         self._ctx_history = []
         self._held = ""                   # backchannels waiting to ride with the next line
         self._tr_hold = []                # mid-sentence lines waiting to translate as one
-        self._tr_hold_ms = 0.0            # how long the oldest held line has waited (audio)
+        self._tr_hold_seen = 0            # final mode: results since the oldest held line
+        # Provisional translation of the held text (see _request_provisional).
+        # The sequence only ever grows: a late result from an older hold or an
+        # earlier session can never match it.
+        self._prov_seq = getattr(self, "_prov_seq", 0) + 1
+        self._prov_text = ""              # held text the current provisional is for
+        self._prov_key = None             # the row showing a provisional translation
+        self._prov_clear = {}             # final's key -> earlier row whose provisional it replaces
         self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1537,13 +1559,6 @@ class LivePage(ScrollArea):
     def _vad_step(self, frame, frame_np):
         """Run the onset/hang/segment state machine for one 16 ms frame."""
         dt_ms = _VAD_FRAME / _IN_RATE * 1000.0       # 16 ms
-        # Held lines never wait longer than _HOLD_MAX_MS (audio time): a fast
-        # speaker rarely pauses a full hang, and lines held for their sentence
-        # end waited up to 27 s in a real meeting.
-        if getattr(self, "_tr_hold", None):
-            self._tr_hold_ms = getattr(self, "_tr_hold_ms", 0.0) + dt_ms
-            if self._tr_hold_ms >= self._HOLD_MAX_MS:
-                self._flush_tr_hold()
         speech = self._frame_is_speech(frame_np)
         # Rolling pre-roll so the lead-in before onset (key first words) isn't lost.
         self._vad_preroll += frame
@@ -1931,13 +1946,15 @@ class LivePage(ScrollArea):
             # Flush only the not-yet-committed tail (aligned, never re-emitted).
             # Final mode committed nothing yet: the whole complete recognition,
             # broken only at real sentence ends (no forced mid-word cuts).
-            units = (self._split_sentences(text) if final_mode
+            units = (self._split_clause_tail(self._split_sentences(text)) if final_mode
                      else self._split_scored(self._uncommitted_tail(text), True)[0])
             # The segment ended at a pause OR at the length cap — neither means
-            # the sentence did: an unfinished last line stays held until speech
-            # resumes or the silence reaches the full hang (see _vad_step).
+            # the sentence did: an unfinished last line stays held until the
+            # next segment, or the silence reaches the full hang (see _vad_step).
             for s in units:
                 self._commit_stream_sentence(s)
+            if final_mode and units:          # a segment with words (not noise)
+                self._age_tr_hold()
             # The utterance is closed: reset its stream state HERE, in result
             # order — never at the next utterance's onset (see _vad_step).
             self._stream_committed = ""
@@ -1963,6 +1980,7 @@ class LivePage(ScrollArea):
                 self._commit_stream_sentence(s)
             self._stream_committed += stable[:consumed]
             self._set_caption_interim(tail[consumed:])
+        self._request_provisional()                # held text: show its gist now
         if self._recog_pending:                    # next queued request, in order
             pcm, fin = self._recog_pending.pop(0)
             self._dispatch_recognize(pcm, fin)
@@ -2040,52 +2058,181 @@ class LivePage(ScrollArea):
         self._render_output()
         self._queue_translation(key, source)
 
-    # Translate per COMPLETE sentence even while the source streams: a line
-    # force-cut mid-sentence (31% of SenseVoice lines in a real Japanese meeting,
-    # e.g. 「…シーンに」|「対応させて…」) is held, not translated alone; it is
-    # translated together with its continuation once a sentence end arrives or
-    # the utterance ends. The translation lands on the last line; earlier held
-    # lines show "↓". Capped so an unpunctuated monologue still gets translated.
+    # Translate whole sentences — or whole clauses, as an interpreter does with a
+    # long run-on — never a phrase cut in half: a line that stops mid-phrase
+    # (31% of SenseVoice lines in a real Japanese meeting, e.g. 「…シーンに」|
+    # 「対応させて…」) is held and translated together with its continuation.
+    # The translation lands on the last line; earlier held lines show "↓".
+    # Capped so an unpunctuated monologue still gets translated.
     _HOLD_MAX_CHARS = 200
-    _HOLD_MAX_MS = 5000
-    # A Japanese line ending in a particle, te-form or filler is unfinished even
-    # with a "。": the STT punctuates the end of ITS audio although the speaker
-    # goes on — 2/3 of the "。" at segment cuts in a real meeting were
-    # mid-sentence ("…資料の中で。", "…で例えば。", "…決まっちゃって。").
-    _DANGLING = re.compile(r"(?:[てでにがはをのともへや]|という|っていう|というか|まあ|例えば"
-                           r"|なんか|また|だから|こんな)[。.]$")
-    # ...but a trailing filler ("…ですけど、えっと。") is how a fast speaker runs
-    # into the next sentence, not an unfinished one: judge the words before it.
-    _FILLER_END = re.compile(r"[、,\s]*(?:えっと|えーと|えーっと|えー|あのー|あの|まあ|なんか|その|ちょっと)[。.]$")
+    # How a line ends (twin of web app.js lineEnd). The STT puts "。" at the end
+    # of EVERY segment, mid-sentence too (2/3 of the "。" at segment cuts in a real
+    # meeting), so the "。" says nothing — the last words do. Trailing fillers are
+    # dropped first: "…ですけど、えっと。" ends a clause.
+    _FILLER_TAIL = re.compile(r"(?:[、,\s]*(?:えーっと|えーと|えっと|ええと|えー|あのー|あの|あー|まあ"
+                              r"|なんか|その|ちょっと|うーん))+$")
+    _CLAUSE_END = re.compile(
+        r"(?:けど|けれど|けれども|けども|ので|のに|ながら|ても|たら|だら|れば|えば|けば|せば|てば"
+        r"|まして|でして|ちゃって|じゃって|たり|だり|てから|でから"
+        r"|(?:[すただいるうくぬ]|ない)(?:が|から|し)|[んい]で|(?:[いきぎしちにびみりえけげせてねべめれ]|っ)て)$")
+    _QUOTE_TE = re.compile(r"(?:[A-Za-zァ-ヶー0-9]|さん|これ|それ|あれ|どれ|ここ|そこ|どこ|何|なに)って$")
+    _MID_END = re.compile(r"(?:[てでにがはをのともへや]|という|っていう|というか|例えば|また|だから|こんな"
+                          r"|って|とか|より|まで|から)$")
+    _SENT_WORD = re.compile(r"(?:です|ます|でした|ました|ません|でしょう|[だたねよかなわぞさるうくすつむぶぐぬい])$")
+    _EN_OPEN = frozenset((
+        "the a an to of and or but so that with for in on at by from as is are was were be "
+        "been i we you he she they it my our your their this these those if because about than "
+        "then like which who what when where how not no can could would should will do does did "
+        "have has had there here also just very more most into onto over under between um uh ah"
+    ).split())
+
+    @classmethod
+    def _line_end(cls, text):
+        """How a recognized line ends: "S" sentence; "C" clause (…して, …ですが,
+        …けど, …ので); "M" mid-phrase (particle, という, English "the"); "N" bare
+        noun or a word cut off ("…ご留意。", "…ありがとうござ。"); "F" fillers only.
+        S/C/F lines can be translated on their own, M/N lines wait."""
+        t = (text or "").rstrip()
+        if t[-1:] in "?？!！":
+            return "S"
+        t = re.sub(r"[\s、。，,．.…」』）)]+$", "", t)
+        t = re.sub(r"[\s、，,]+$", "", cls._FILLER_TAIL.sub("", t))
+        if not t:
+            return "F"
+        tail = t[-20:]
+        if sum(ch.isascii() for ch in tail) > 0.7 * len(tail):        # English
+            w = re.findall(r"[A-Za-z']+", tail.lower())
+            ok = w and w[-1] not in cls._EN_OPEN and text.rstrip()[-1:] in ".?!"
+            return "S" if ok else "M"
+        if not re.search(r"[぀-ヿ]", t[-12:]):          # no kana (Chinese…): punctuation
+            last = text.rstrip()[-1:]
+            return "S" if last in "。.！？!?" else "C" if last in "，、,;；" else "M"
+        if cls._CLAUSE_END.search(t) and not cls._QUOTE_TE.search(t):
+            return "C"
+        if cls._MID_END.search(t):
+            return "M"
+        return "S" if cls._SENT_WORD.search(t) else "N"
+
+    @classmethod
+    def _split_clause_tail(cls, units):
+        """Final mode: a segment's last line is often cut mid-sentence (「…かも
+        しれないですけど、えっと三菱自動車からの。」). Translate it up to its last
+        sentence/clause end now; only the unfinished tail waits for the next
+        segment."""
+        if not units or cls._line_end(units[-1]) in ("S", "C", "F"):
+            return units
+        last = units[-1]
+        body = len(re.sub(r"[。.、，,\s]+$", "", last))
+        cut = 0
+        for m in re.finditer(r"[、，,。！？!?]", last):
+            p = m.end()
+            if 6 <= p < body and cls._line_end(last[:p]) in ("S", "C"):
+                cut = p
+        return units[:-1] + [last[:cut], last[cut:].lstrip()] if cut else units
 
     def _queue_translation(self, key, source):
         hold = self.__dict__.setdefault("_tr_hold", [])
-        tail = self._FILLER_END.sub("。", source.rstrip())
-        complete = (tail.endswith(tuple(self._SENT_END) + ("？", "！", "…"))
-                    and not self._DANGLING.search(tail))
-        if not complete and sum(len(s) for _, s in hold) + len(source) < self._HOLD_MAX_CHARS:
+        if (self._line_end(source) not in ("S", "C", "F")
+                and sum(len(s) for _, s in hold) + len(source) < self._HOLD_MAX_CHARS):
+            if not hold:
+                self._tr_hold_seen = 0
             hold.append((key, source))
             self._set_out_row(key, "…")
+            # Stream mode has no segments to wait for (see _age_tr_hold): a held
+            # line waits for at most two more lines — about one segment of speech.
+            if not getattr(self, "_final_mode", False) and len(hold) > 2:
+                self._flush_tr_hold()
             return
         if hold:
             self._flush_tr_hold(extra=(key, source))
         else:
             self._start_line_translation(key, source)
 
+    def _age_tr_hold(self):
+        """Final mode, after each recognized segment: a held line waits for ONE
+        more segment — its continuation is there, however long the speaker talks
+        (a clock would cut a long sentence wherever it fired). If that segment did
+        not finish it either, the speaker is in a long run-on: translate it now."""
+        if getattr(self, "_tr_hold", None):
+            self._tr_hold_seen = getattr(self, "_tr_hold_seen", 0) + 1
+            if self._tr_hold_seen > 1:
+                self._flush_tr_hold()
+
     def _flush_tr_hold(self, extra=None):
         """Translate the held fragments (+ the line completing them) as one
         sentence, on the LAST line's row."""
         hold = self.__dict__.get("_tr_hold") or []
         parts = hold + ([extra] if extra else [])
-        self._tr_hold, self._tr_hold_ms = [], 0.0
+        self._tr_hold, self._tr_hold_seen = [], 0
+        # The whole sentence is being translated now: a provisional result still
+        # on its way is stale. One already shown stays until the final lands
+        # (no blank gap) — on an earlier row it is cleared then (_on_translated_stream).
+        prov = getattr(self, "_prov_key", None)
+        self._prov_seq = getattr(self, "_prov_seq", 0) + 1
+        self._prov_text, self._prov_key = "", None
         if not parts:
             return
+        if prov is not None and prov != parts[-1][0]:
+            self.__dict__.setdefault("_prov_clear", {})[parts[-1][0]] = prov
         for k, _ in parts[:-1]:
             self._set_out_row(k, "↓")
+        self._start_line_translation(parts[-1][0], self._join_held(parts))
+
+    @staticmethod
+    def _join_held(parts):
         text = ""
         for _, s in parts:   # latin pieces need a space between them, CJK none
             text += (" " if text and text[-1].isascii() and s[:1].isascii() else "") + s
-        self._start_line_translation(parts[-1][0], text)
+        return text
+
+    # Two-layer captions (what Google / Azure / DeepL live translation do): held
+    # text gets a PROVISIONAL translation right away — shown dim with "…" — and
+    # the whole-sentence translation replaces it once the sentence is complete.
+    # The wait for the sentence end stays (no fragment is ever the final
+    # translation), but the gist is on screen without it. Replayed on a real
+    # 69-min meeting: first translation seen, P90 15.0 s -> 12.2 s.
+    def _request_provisional(self):
+        hold = getattr(self, "_tr_hold", None)
+        if not hold:
+            return
+        text = self._join_held(hold)
+        if text == getattr(self, "_prov_text", ""):
+            return                              # already asked for this exact text
+        self._prov_text = text
+        self._prov_seq = getattr(self, "_prov_seq", 0) + 1
+        self._start_provisional(self._prov_seq, hold[-1][0], text)
+
+    def _start_provisional(self, seq, key, source):
+        ctx = self._live_context() if len(source) >= 12 else ""
+        online, model, api_key, dst = self._llm_target()
+        w = LiveTranslateWorker(key, source, self._stream_detected, dst, model,
+                                online, api_key, context=ctx)
+        w.done.connect(lambda k, t, tok=0, s=seq: self._on_provisional(s, k, t, tok))
+        w.finished.connect(lambda w=w: self._retire_local(w))
+        self._local_workers.append(w)
+        w.start()
+
+    def _on_provisional(self, seq, key, translated, tokens=0):
+        self._session_tokens += int(tokens or 0)
+        if seq != getattr(self, "_prov_seq", 0) or not translated:
+            return          # stale (the hold moved on) or failed: the final will come
+        old = getattr(self, "_prov_key", None)
+        if old is not None and old != key:      # the hold grew: one provisional at a time
+            self._set_out_row(old, "…")
+            self._clear_caption_prov(old)
+        self._prov_key = key
+        self._set_out_row(key, "… " + translated)
+        self._push_caption(translated=translated, key=key, provisional=True)
+
+    def _clear_caption_prov(self, key):
+        if self._caption_bar is not None:
+            self._caption_bar.clear_provisional(key)
+
+    def _llm_target(self):
+        online = backend.get_config("default_online", True)
+        model = backend.get_active_model(online)
+        api_key = load_api_key_for_model(model) if online else ""
+        return online, model, api_key, get_language_code(self.target_combo.currentText())
 
     def _start_line_translation(self, key, source):
         # No context for very short/garbled lines: the model then "translates"
@@ -2093,10 +2240,7 @@ class LivePage(ScrollArea):
         ctx = self._live_context() if len(source) >= 12 else ""
         self._ctx_history.append(source)   # after building ctx (don't include self)
         del self._ctx_history[:-6]         # keep only the last few lines
-        online = backend.get_config("default_online", True)
-        model = backend.get_active_model(online)
-        api_key = load_api_key_for_model(model) if online else ""
-        dst = get_language_code(self.target_combo.currentText())
+        online, model, api_key, dst = self._llm_target()
         if online and backend.get_config("live_stream_translation", False):
             # Stream mode: grow the reserved row token-by-token.
             self._stream_text[key] = ""
@@ -2121,6 +2265,14 @@ class LivePage(ScrollArea):
         text = translated or "⚠ " + tr("Translation Failed", self._lang)
         self._set_out_row(key, text)
         self._push_caption(translated=text, key=key)
+        self._final_replaces_provisional(key)
+
+    def _final_replaces_provisional(self, key):
+        """The whole sentence's translation is on screen: the provisional one
+        shown on an earlier line of that sentence goes."""
+        old = self.__dict__.get("_prov_clear", {}).pop(key, None)
+        if old is not None:
+            self._clear_caption_prov(old)
 
     def _render_output(self):
         """Rebuild the translation pane from the ordered rows (one per committed
@@ -2150,6 +2302,7 @@ class LivePage(ScrollArea):
             final = "⚠ " + tr("Translation Failed", self._lang)
             self._set_out_row(key, final)
         self._push_caption(translated=final, key=key)
+        self._final_replaces_provisional(key)
         self._set_caption_interim("")
 
     # --- floating captions ---
@@ -2173,7 +2326,7 @@ class LivePage(ScrollArea):
     def _on_caption_destroyed(self, *args):
         self._caption_bar = None
 
-    def _push_caption(self, source=None, translated=None, key=None):
+    def _push_caption(self, source=None, translated=None, key=None, provisional=False):
         """Update the floating caption bar (if open) with the latest lines.
         ``key`` pairs a translation with ITS source sentence (local mode)."""
         bar = self._caption_bar
@@ -2182,7 +2335,7 @@ class LivePage(ScrollArea):
         if source is not None:
             bar.set_source(source, key)
         if translated is not None:
-            bar.set_translated(translated, key)
+            bar.set_translated(translated, key, provisional=provisional)
 
     def _set_caption_interim(self, text):
         """Show the live, not-yet-finalized source text in the caption bar."""
