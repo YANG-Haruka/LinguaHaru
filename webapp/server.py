@@ -117,11 +117,15 @@ def _recover_interrupted_history():
     they show up and can be continued. Sweeps the global (local-mode) DB; LAN
     per-session DBs are transient and skipped."""
     try:
-        from core.translation_history import TranslationHistoryManager
+        from core.translation_history import (TranslationHistoryManager,
+                                              compress_leftover_recordings)
         n = TranslationHistoryManager(
             log_dir=backend.history_dir()).mark_running_as_interrupted()
         if n:
             app_logger.info(f"Recovered {n} interrupted translation(s) from a previous run")
+        # Recordings left as WAV by an app closed mid-compression: finish them.
+        threading.Thread(target=compress_leftover_recordings,
+                         args=(backend.history_dir(),), daemon=True).start()
     except Exception:  # noqa: BLE001
         pass
     try:

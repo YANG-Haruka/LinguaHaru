@@ -49,29 +49,80 @@ def test_split_sentences_keeps_decimals_and_latin_spacing():
     assert s("はい。") == ["はい。"]
 
 
+def _live_recording(tmp_path, seconds=20):
+    """A saved live session whose recording is a WAV (a 440 Hz tone)."""
+    import math, wave
+    from datetime import datetime
+    from core.translation_history import save_live_session
+    wav = tmp_path / "rec.wav"
+    with wave.open(str(wav), "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
+        w.writeframes(b"".join(int(8000 * math.sin(i / 16000 * 2 * math.pi * 440)).to_bytes(2, "little", signed=True)
+                               for i in range(16000 * seconds)))
+    return save_live_session(["[12:00:00] こんにちは"], ["[12:00:00] 你好"], "Auto", "中文", "m", True,
+                             str(tmp_path), str(tmp_path), start_time=datetime.now(), audio_path=str(wav))
+
+
 def test_recording_compressed_and_history_repointed(tmp_path):
     """A live session's WAV becomes a much smaller .ogg; history follows it."""
-    import shutil, wave
-    from datetime import datetime
     from core.optional_modules import ffmpeg_exe
     if not ffmpeg_exe():
         import pytest; pytest.skip("ffmpeg not installed")
-    from core.translation_history import (save_live_session, compress_live_recording,
-                                          TranslationHistoryManager)
-    wav = tmp_path / "rec.wav"
-    with wave.open(str(wav), "wb") as w:          # 20 s of a 440 Hz tone
-        import math
-        w.setnchannels(1); w.setsampwidth(2); w.setframerate(16000)
-        w.writeframes(b"".join(int(8000 * math.sin(i / 16000 * 2 * math.pi * 440)).to_bytes(2, "little", signed=True)
-                               for i in range(16000 * 20)))
-    rec = save_live_session(["[12:00:00] こんにちは"], ["[12:00:00] 你好"], "Auto", "中文", "m", True,
-                            str(tmp_path), str(tmp_path), start_time=datetime.now(), audio_path=str(wav))
+    from core.translation_history import compress_live_recording, TranslationHistoryManager
+    rec = _live_recording(tmp_path)
     old = rec["log_file_path"]
     wav_size = os.path.getsize(old)                # ~640 KB
     new = compress_live_recording(rec["id"], str(tmp_path))
     assert new and new.endswith(".ogg") and not os.path.exists(old)
     assert os.path.getsize(new) < wav_size / 5
     assert TranslationHistoryManager(log_dir=str(tmp_path)).get_record_by_id(rec["id"])["log_file_path"] == new
+
+
+def test_leftover_recording_compressed_at_next_start(tmp_path):
+    """The app was closed while ffmpeg compressed a recording: ffmpeg finished on
+    its own, but the thread that renames its .part and repoints history died
+    with the app — WAV + stale .part stay. The next start finishes the job."""
+    import glob
+    from core.optional_modules import ffmpeg_exe
+    if not ffmpeg_exe():
+        import pytest; pytest.skip("ffmpeg not installed")
+    from core.translation_history import compress_leftover_recordings, TranslationHistoryManager
+    rec = _live_recording(tmp_path)
+    wav = rec["log_file_path"]
+    wav_size = os.path.getsize(wav)
+    with open(wav[:-4] + ".ogg.part", "wb") as f:          # the closed app's leftover
+        f.write(b"OggS" + b"\0" * 1000)
+    compress_leftover_recordings(str(tmp_path))
+    new = TranslationHistoryManager(log_dir=str(tmp_path)).get_record_by_id(rec["id"])["log_file_path"]
+    assert new == wav[:-4] + ".ogg" and os.path.getsize(new) < wav_size / 5
+    assert not os.path.exists(wav) and not glob.glob(str(tmp_path / "*.part"))
+
+
+def test_failed_compression_never_deletes_a_finished_recording(tmp_path, monkeypatch):
+    """Two attempts on one recording (a restart while the closed app's ffmpeg
+    still runs, or Qt and its LAN web server both healing): one that fails must
+    not delete the .ogg the other finished, once that one removed the WAV."""
+    import glob, subprocess
+    from core import optional_modules
+    from core.translation_history import compress_live_recording, TranslationHistoryManager
+    rec = _live_recording(tmp_path, seconds=1)
+    wav = rec["log_file_path"]
+    ogg = wav[:-4] + ".ogg"
+    mgr = TranslationHistoryManager(log_dir=str(tmp_path))
+
+    def other_attempt_wins(cmd, **kw):
+        with open(cmd[-1], "wb") as f:                   # our partial output
+            f.write(b"OggS")
+        with open(ogg, "wb") as f:                       # the other attempt: done,
+            f.write(b"finished")
+        mgr.add_record({**rec, "log_file_path": ogg})    # history repointed,
+        os.remove(wav)                                   # WAV deleted
+        raise subprocess.CalledProcessError(1, cmd)      # -> ours fails
+    monkeypatch.setattr(optional_modules, "ffmpeg_exe", lambda: "ffmpeg")
+    monkeypatch.setattr(subprocess, "run", other_attempt_wins)
+    assert compress_live_recording(rec["id"], str(tmp_path)) is None
+    assert os.path.exists(ogg) and mgr.get_record_by_id(rec["id"])["log_file_path"] == ogg
+    assert not glob.glob(str(tmp_path / "*.part"))
 
 
 def test_translation_waits_for_a_complete_sentence():
