@@ -1,19 +1,19 @@
 {
-    "version": "7.0.14",
+    "version": "7.0.15",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.14: real-time voice is more accurate and faster (Qwen mode shows a translation ~5 s after a sentence ends, and half sentences are no longer translated alone); NVIDIA GPUs with 8 GB+ now default to Qwen3-ASR 1.7B; the interface Test button explains what failed; plugin installs fall back to pip. / 7.0.14：实时语音更准更快（千问模式一句话说完约 5 秒出译文，不再把半句单独翻译）；显存 8GB 以上的 N 卡默认用千问 1.7B；接口「测试」会说明出错原因；插件安装失败时自动改用 pip。",
+    "notes": "7.0.15: real-time translation shows a provisional translation at once and replaces it with the whole sentence's translation, instead of cutting a sentence in half on a timer; recordings left uncompressed when the app was closed are finished at the next start. / 7.0.15：实时翻译先显示暂定译文，整句说完再换成完整译文，不再到点就把一句话从中间切开；关程序时没压缩完的录音，下次启动会自动补完。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.14/LinguaHaru-7.0.14-web-portable.zip",
-            "sha256": "525b9d051848f90e2520791044ba0fb967581410c6dfe12a3bad79141de5a424"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.15/LinguaHaru-7.0.15-web-portable.zip",
+            "sha256": "7f57f0824700618a2a8aab70c6a7ab0635332fd4e1e30dfa23020bf88023ebc2"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.14/LinguaHaru-7.0.14-desktop-portable.zip",
-            "sha256": "097e8ba9e6788b8de6b4934cd842e16229ff9a101dfc99203762207d47aca794"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.15/LinguaHaru-7.0.15-desktop-portable.zip",
+            "sha256": "7f5885ce705042ed33a3f5e59a3262c61fd22daa4fdc14ee9cec3f55aaa5d5bb"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.14/LinguaHaru-7.0.14-desktop-mac.zip",
-            "sha256": "c94a05e4ef09da3f28e862d0634fbd25d104d67e283fa63ce4d39e67903c6459"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.15/LinguaHaru-7.0.15-desktop-mac.zip",
+            "sha256": "9d108affc7a36088573d9c03dd39b2af34974a7f23a128d3195a81200d78b7c7"
         }
     }
 }
