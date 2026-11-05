@@ -53,7 +53,7 @@ def _page():
     page._local_workers = []
     page.commits = []
     page._commit_stream_sentence = lambda s: page.commits.append(s.strip())
-    page._tr_hold = []
+    page._tr_hold, page._HOLD_MAX_MS = [], P._HOLD_MAX_MS
     page._flush_tr_hold = lambda: None   # translation side: not under test here
 
     page.dispatched = []
@@ -172,6 +172,20 @@ def test_held_line_waits_for_the_full_pause():
     _frames(page, lp, 30, False, 0)               # ~0.5 s pause, then the speaker goes on
     _frames(page, lp, 10, True, 100)
     check("a short pause is not a sentence end", len(flushed) == 1 and page._tr_hold, str(flushed))
+
+
+def test_held_line_never_waits_more_than_5_s():
+    print("Live: a fast speaker never pauses a full hang -- held lines still go after 5 s")
+    page, lp = _page()
+    page._hang_ms, page._HOLD_MAX_MS = 900.0, lp.LivePage._HOLD_MAX_MS
+    flushed = []
+    page._flush_tr_hold = lambda: (flushed.append(list(page._tr_hold)),
+                                   setattr(page, "_tr_hold", []), setattr(page, "_tr_hold_ms", 0.0))
+    page._tr_hold, page._tr_hold_ms = [("k1", "三菱自動車からの")], 0.0
+    _frames(page, lp, 4800 // 16, True, 100)       # continuous speech, 4.8 s
+    check("not before 5 s", flushed == [])
+    _frames(page, lp, 300 // 16, True, 100)
+    check("at 5 s, mid-speech", len(flushed) == 1, str(flushed))
 
 
 def test_final_mode_ends_long_segments_on_short_pauses():
@@ -334,6 +348,7 @@ if __name__ == "__main__":
          test_queue_keeps_order_and_never_drops_a_final,
          test_hard_cap_cuts_at_a_pause_without_loss_or_overlap,
          test_held_line_waits_for_the_full_pause,
+         test_held_line_never_waits_more_than_5_s,
          test_final_mode_ends_long_segments_on_short_pauses,
          test_redecode_spacing_neither_repeats_nor_drops,
          test_fragments_and_soft_cap,

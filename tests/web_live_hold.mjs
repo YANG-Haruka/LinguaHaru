@@ -15,7 +15,9 @@ if (start < 0 || end < 0) throw new Error("region markers not found");
 const sent = [];
 const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00:00", appendLive: () => {},
               _translateLiveLine: async (_ts, s) => { sent.push(s); },
-              liveQuiet: false, liveRecogBusy: false, liveRecogQueue: [] };
+              liveQuiet: false, liveRecogBusy: false, liveRecogQueue: [],
+              performance: { now: () => clock } };
+let clock = 0;
 vm.createContext(ctx);
 vm.runInContext(src.slice(start, end) + "\nthis.api = { commitLiveSentence, liveFlushHold };", ctx);
 const { commitLiveSentence, liveFlushHold } = ctx.api;
@@ -39,16 +41,29 @@ await settle();
 expect("a real sentence end translates alone", ["それで大丈夫です。"]);
 
 commitLiveSentence("では次の議題に");
-liveFlushHold(true);                    // a short pause: not quiet yet
+liveFlushHold("quiet");                 // a short pause: not quiet yet
 await settle();
 expect("not before the pause reached the full hang", []);
 ctx.liveQuiet = true; ctx.liveRecogBusy = true;
-liveFlushHold(true);
+liveFlushHold("quiet");
 await settle();
 expect("not while a recognition result is pending", []);
 ctx.liveRecogBusy = false;
 commitLiveSentence("ついて");             // still queued on the chain when ...
-liveFlushHold(true);                     // ... the flush is asked for: must include it
+liveFlushHold("quiet");                  // ... the flush is asked for: must include it
 await settle();
 expect("the flush sees lines still queued on the commit chain", ["では次の議題について"]);
+
+ctx.liveQuiet = false;                   // a fast speaker: never a full pause
+commitLiveSentence("要件はもう決まっていますけど、えっと。");
+await settle();
+expect("a trailing filler is not an unfinished line", ["要件はもう決まっていますけど、えっと。"]);
+commitLiveSentence("三菱自動車からの");
+await settle();                          // held at clock 0
+clock = 4900; liveFlushHold("stale");
+await settle();
+expect("held under 5 s", []);
+clock = 5100; liveFlushHold("stale");
+await settle();
+expect("after 5 s it goes, mid-speech", ["三菱自動車からの"]);
 console.log(fails.length ? "RESULT: FAIL\n" + fails.join("\n") : "RESULT: OK");

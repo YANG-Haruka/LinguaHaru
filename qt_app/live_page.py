@@ -1492,6 +1492,7 @@ class LivePage(ScrollArea):
         self._ctx_history = []
         self._held = ""                   # backchannels waiting to ride with the next line
         self._tr_hold = []                # mid-sentence lines waiting to translate as one
+        self._tr_hold_ms = 0.0            # how long the oldest held line has waited (audio)
         self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1536,6 +1537,13 @@ class LivePage(ScrollArea):
     def _vad_step(self, frame, frame_np):
         """Run the onset/hang/segment state machine for one 16 ms frame."""
         dt_ms = _VAD_FRAME / _IN_RATE * 1000.0       # 16 ms
+        # Held lines never wait longer than _HOLD_MAX_MS (audio time): a fast
+        # speaker rarely pauses a full hang, and lines held for their sentence
+        # end waited up to 27 s in a real meeting.
+        if getattr(self, "_tr_hold", None):
+            self._tr_hold_ms = getattr(self, "_tr_hold_ms", 0.0) + dt_ms
+            if self._tr_hold_ms >= self._HOLD_MAX_MS:
+                self._flush_tr_hold()
         speech = self._frame_is_speech(frame_np)
         # Rolling pre-roll so the lead-in before onset (key first words) isn't lost.
         self._vad_preroll += frame
@@ -2039,16 +2047,20 @@ class LivePage(ScrollArea):
     # the utterance ends. The translation lands on the last line; earlier held
     # lines show "↓". Capped so an unpunctuated monologue still gets translated.
     _HOLD_MAX_CHARS = 200
+    _HOLD_MAX_MS = 5000
     # A Japanese line ending in a particle, te-form or filler is unfinished even
     # with a "。": the STT punctuates the end of ITS audio although the speaker
     # goes on — 2/3 of the "。" at segment cuts in a real meeting were
     # mid-sentence ("…資料の中で。", "…で例えば。", "…決まっちゃって。").
     _DANGLING = re.compile(r"(?:[てでにがはをのともへや]|という|っていう|というか|まあ|例えば"
                            r"|なんか|また|だから|こんな)[。.]$")
+    # ...but a trailing filler ("…ですけど、えっと。") is how a fast speaker runs
+    # into the next sentence, not an unfinished one: judge the words before it.
+    _FILLER_END = re.compile(r"[、,\s]*(?:えっと|えーと|えーっと|えー|あのー|あの|まあ|なんか|その|ちょっと)[。.]$")
 
     def _queue_translation(self, key, source):
         hold = self.__dict__.setdefault("_tr_hold", [])
-        tail = source.rstrip()
+        tail = self._FILLER_END.sub("。", source.rstrip())
         complete = (tail.endswith(tuple(self._SENT_END) + ("？", "！", "…"))
                     and not self._DANGLING.search(tail))
         if not complete and sum(len(s) for _, s in hold) + len(source) < self._HOLD_MAX_CHARS:
@@ -2065,7 +2077,7 @@ class LivePage(ScrollArea):
         sentence, on the LAST line's row."""
         hold = self.__dict__.get("_tr_hold") or []
         parts = hold + ([extra] if extra else [])
-        self._tr_hold = []
+        self._tr_hold, self._tr_hold_ms = [], 0.0
         if not parts:
             return
         for k, _ in parts[:-1]:

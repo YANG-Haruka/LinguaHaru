@@ -2678,6 +2678,8 @@ async function startLocal() {
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   liveCtxHistory = [];   // fresh coherence context per session
   liveTrHold = [];
+  clearInterval(liveHoldTimer);
+  liveHoldTimer = setInterval(() => liveFlushHold("stale"), 250);
   startMicMeter();
 }
 // Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
@@ -2757,6 +2759,7 @@ async function startSileroVad() {
 }
 function stopLocal() {
   // Held mid-sentence lines translate first, then the session is saved.
+  clearInterval(liveHoldTimer);
   liveFlushHold().then(saveLiveHistory);
   stopMicMeter();
   try {
@@ -2817,7 +2820,7 @@ function onVadMessage(e) {
   } else if (m.type === "segment") {
     finalizeUtterance(downsamplePCM16(new Float32Array(m.pcm), m.sampleRate));
   } else if (m.type === "silence") {        // the pause reached the full hang
-    liveQuiet = true; liveFlushHold(true);
+    liveQuiet = true; liveFlushHold("quiet");
   }
 }
 function liveTimeStamp() {
@@ -2963,7 +2966,7 @@ function dispatchRecognize(int16, final) {
     liveRecogBusy = false;
     const next = liveRecogQueue.shift();
     if (next) dispatchRecognize(next.int16, next.final);
-    else if (liveQuiet) liveFlushHold(true);
+    else if (liveQuiet) liveFlushHold("quiet");
   });
 }
 function streamPartial(int16) { dispatchRecognize(int16, false); }
@@ -2971,7 +2974,7 @@ function finalizeUtterance(int16) { dispatchRecognize(int16, true); }
 // A pause is not a sentence end by itself: segments end early (to start STT
 // sooner) and the speaker often goes on. Held unfinished lines translate once
 // the silence reached the full hang ('silence' / Silero speech end) AND every
-// pending result is in (keeps their order) — liveFlushHold(true). Twin of Qt _vad_step.
+// pending result is in (keeps their order) — liveFlushHold("quiet"). Twin of Qt _vad_step.
 let liveQuiet = false;
 async function runPartial(int16) {
   try {
@@ -3036,17 +3039,24 @@ function commitLiveSentence(source) {
 // with its continuation at the next sentence end / utterance end / stop.
 let liveTrHold = [];
 const LIVE_HOLD_MAX = 200;
+// Held lines never wait longer than this: a fast speaker rarely pauses a full
+// hang, and held lines waited up to 27 s in a real meeting (twin of Qt _HOLD_MAX_MS).
+const LIVE_HOLD_MAX_MS = 5000;
+let liveTrHoldT0 = 0, liveHoldTimer = null;
 function _joinHeld(parts) {
   let t = "";
   for (const s of parts) t += (t && t.charCodeAt(t.length - 1) < 128 && s.charCodeAt(0) < 128 ? " " : "") + s;
   return t;
 }
-// onlyIfQuiet: checked when the chain gets there — the hold list itself is only
-// up to date inside the chain (commits are queued on it).
-function liveFlushHold(onlyIfQuiet = false) {   // queue on the commit chain (keeps order)
+// when: "quiet" = only once the pause reached the full hang and no result is
+// pending; "stale" = only once the oldest held line waited LIVE_HOLD_MAX_MS.
+// Checked when the chain gets there — the hold list itself is only up to date
+// inside the chain (commits are queued on it).
+function liveFlushHold(when = null) {   // queue on the commit chain (keeps order)
   liveCommitChain = liveCommitChain.then(() => {
     if (!liveTrHold.length) return;
-    if (onlyIfQuiet && (!liveQuiet || liveRecogBusy || liveRecogQueue.length)) return;
+    if (when === "quiet" && (!liveQuiet || liveRecogBusy || liveRecogQueue.length)) return;
+    if (when === "stale" && performance.now() - liveTrHoldT0 < LIVE_HOLD_MAX_MS) return;
     const text = _joinHeld(liveTrHold); liveTrHold = [];
     return _translateLiveLine(liveTimeStamp(), text);
   });
@@ -3056,12 +3066,17 @@ function liveFlushHold(onlyIfQuiet = false) {   // queue on the commit chain (ke
 // a "。": the STT punctuates the end of ITS audio although the speaker goes on
 // (2/3 of the "。" at segment cuts in a real meeting). Twin of Qt _DANGLING.
 const LIVE_DANGLING = /(?:[てでにがはをのともへや]|という|っていう|というか|まあ|例えば|なんか|また|だから|こんな)[。.]$/;
+// ...but a trailing filler ("…ですけど、えっと。") is a fast speaker running on,
+// not an unfinished line: judge the words before it (twin of Qt _FILLER_END).
+const LIVE_FILLER_END = /[、,\s]*(?:えっと|えーと|えーっと|えー|あのー|あの|まあ|なんか|その|ちょっと)[。.]$/;
 async function _doCommitSentence(source) {
   const ts = liveTimeStamp();
   appendLive("live-input", `[${ts}] ${source}\n`);
-  const complete = /[。！？!?.…]$/.test(source) && !LIVE_DANGLING.test(source);
+  const judged = source.replace(LIVE_FILLER_END, "。");
+  const complete = /[。！？!?.…]$/.test(judged) && !LIVE_DANGLING.test(judged);
   const held = liveTrHold.reduce((n, s) => n + s.length, 0);
   if (!complete && held + source.length < LIVE_HOLD_MAX) {
+    if (!liveTrHold.length) liveTrHoldT0 = performance.now();
     liveTrHold.push(source);
     return;
   }

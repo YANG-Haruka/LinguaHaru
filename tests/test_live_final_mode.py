@@ -77,7 +77,8 @@ def test_translation_waits_for_a_complete_sentence():
     import types
     P = LivePage
     page = types.SimpleNamespace(_SENT_END=P._SENT_END, _HOLD_MAX_CHARS=P._HOLD_MAX_CHARS,
-                                 _DANGLING=P._DANGLING, _tr_hold=[], rows={}, sent=[])
+                                 _DANGLING=P._DANGLING, _FILLER_END=P._FILLER_END,
+                                 _tr_hold=[], rows={}, sent=[])
     page._set_out_row = lambda k, t: page.rows.__setitem__(k, t)
     page._start_line_translation = lambda k, s: page.sent.append((k, s))
     for name in ("_queue_translation", "_flush_tr_hold"):
@@ -106,6 +107,12 @@ def test_translation_waits_for_a_complete_sentence():
                  ("k12", "これは決まっていない。"), ("k13", "那我们明天再聊吧。")):
         page._queue_translation(k, s)              # real sentence ends translate alone
         assert page.sent[-1] == (k, s), s
+    # A trailing filler is a fast speaker running on, not an unfinished line
+    # (the top cause of 20 s+ holds in a real meeting): judge what precedes it.
+    page._queue_translation("k14", "要件はもう決まっていますけど、えっと。")
+    assert page.sent[-1] == ("k14", "要件はもう決まっていますけど、えっと。")
+    page._queue_translation("k15", "三菱自動車からのえっと。")   # "からの" still dangles
+    assert page.sent[-1][0] == "k14" and page.rows["k15"] == "…"
 
 
 def test_live_default_model_follows_hardware_without_surprise_downloads(monkeypatch):
