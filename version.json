@@ -1,19 +1,19 @@
 {
-    "version": "7.1",
+    "version": "7.2",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.1: real-time voice shows text and a provisional translation while you speak; translations read like an interpreter's and no longer come out in the wrong language; new meeting vocabulary for names and terms; accented speech is no longer detected as another language and dropped. / 7.1：实时语音边说边出字和暂定译文；译文更像口译、不再翻成别的语言；新增会议词汇（人名和术语）；带口音的发言不再被判成别的语言而丢失。",
+    "notes": "7.2: real-time voice gives the translator a second opinion from the preview recognizer, and the live page can use a glossary (names heard as sound-alikes are restored). / 7.2：实时语音把预览模型对同一段话的识别结果作为第二意见一并交给翻译；实时页可以选词汇表（被听成同音词的人名术语也能还原）。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.1/LinguaHaru-7.1-web-portable.zip",
-            "sha256": "7d2a69f38c44efb050845ca78396570036cde64565d6f714e6e4129a967a953e"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2/LinguaHaru-7.2-web-portable.zip",
+            "sha256": "a825a9bda7e262de73d63f71d67a9a8c70a277fdeb87eaabdf371524b469dc2b"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.1/LinguaHaru-7.1-desktop-portable.zip",
-            "sha256": "2a9407fdc6b25201abc510891391b9940e94baf5d7d0889f18e3e0e104897c55"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2/LinguaHaru-7.2-desktop-portable.zip",
+            "sha256": "07f8a8ec24aef00658b168f5d08cdcac3ef33f16fb9b77a0cc0b21d7372f14a3"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.1/LinguaHaru-7.1-desktop-mac.zip",
-            "sha256": "77c4f89aec35a25284276225bdb4c5a731de45080e087221cabcad4c03174c95"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2/LinguaHaru-7.2-desktop-mac.zip",
+            "sha256": "25c6b5573a6af21b12f64d1691cdedadebf7bf836af90093ac7f4a8a7a55aed2"
         }
     }
 }
