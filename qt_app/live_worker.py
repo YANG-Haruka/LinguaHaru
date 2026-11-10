@@ -143,7 +143,7 @@ class LiveTranslateWorker(QThread):
     done = Signal(str, str, int)   # (timestamp, translated, total_tokens)
 
     def __init__(self, ts, source, src_code, dst_code, model, use_online,
-                 api_key, parent=None, context=""):
+                 api_key, parent=None, context="", alt=""):
         super().__init__(parent)
         self._ts = ts
         self._source = source
@@ -153,14 +153,16 @@ class LiveTranslateWorker(QThread):
         self._online = use_online
         self._key = api_key
         self._context = context
+        self._alt = alt               # the same speech as the preview recognizer heard it
 
     def run(self):
         try:
             from core import backend
             translated, tokens = backend.live_translate_line(
                 self._source, self._src, self._dst, self._model, self._online, self._key,
-                context=self._context, vocabulary=backend.live_vocabulary(),
-                provisional=not self._ts)
+                context=self._context,
+                vocabulary=backend.live_terms(self._src, self._dst),
+                provisional=not self._ts, alt=self._alt)
             self.done.emit(self._ts, translated, tokens)
         except Exception:  # noqa: BLE001
             self.done.emit(self._ts, "", 0)
@@ -174,7 +176,7 @@ class LiveTranslateStreamWorker(QThread):
     done = Signal(str, int)    # (timestamp, total_tokens)
 
     def __init__(self, ts, source, src_code, dst_code, model, use_online,
-                 api_key, parent=None, context=""):
+                 api_key, parent=None, context="", alt=""):
         super().__init__(parent)
         self._ts = ts
         self._source = source
@@ -184,6 +186,7 @@ class LiveTranslateStreamWorker(QThread):
         self._online = use_online
         self._key = api_key
         self._context = context
+        self._alt = alt
 
     def run(self):
         sink = {}
@@ -195,7 +198,7 @@ class LiveTranslateStreamWorker(QThread):
             for partial in translate_text_simple_stream(
                     self._source, self._src or "auto", self._dst, self._model,
                     self._online, self._key, usage_sink=sink, context=ctx, speech=True,
-                    vocabulary=backend.live_vocabulary()):
+                    vocabulary=backend.live_terms(self._src, self._dst), alt=self._alt):
                 self.chunk.emit(self._ts, partial or "")
         except Exception:  # noqa: BLE001
             pass

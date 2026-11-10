@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20261110C" />
+  <link rel="stylesheet" href="/static/style.css?v=20261110D" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -444,6 +444,10 @@
           <label class="live-target-pill" id="live-stt-pill">
             <span class="mono" data-i18n="Speech-to-Text Model">语音转文字模型</span>
             <button type="button" id="live-stt" class="model-select pill"></button>
+          </label>
+          <label class="live-target-pill" data-i18n-title="Live Glossary Tip">
+            <span class="mono" data-i18n="Glossary">词汇表</span>
+            <select id="live-glossary"></select>
           </label>
           <label class="live-target-pill live-vocab-pill" data-i18n-title="Meeting Vocabulary Tip">
             <span class="mono" data-i18n="Meeting Vocabulary">会议词汇</span>
@@ -890,6 +894,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20261110C"></script>
+  <script src="/static/app.js?v=20261110F"></script>
 </body>
 </html>

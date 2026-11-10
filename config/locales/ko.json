@@ -410,5 +410,6 @@
   "Raw Error": "원본 오류",
   "Meeting Vocabulary": "회의 용어",
   "Meeting Vocabulary Tip": "회의에 나오는 이름, 회사명, 용어를 쉼표로 구분해 입력하세요. 음성 인식이 자주 잘못 듣는 말도 번역문에는 여기에 적은 표기로 나옵니다.",
-  "Meeting Vocabulary Placeholder": "예: 사토, Acme, CAN 버스"
+  "Meeting Vocabulary Placeholder": "예: 사토, Acme, CAN 버스",
+  "Live Glossary Tip": "실시간 음성에서 사용하는 용어집입니다. 용어가 들어 있는 문장은 용어집대로 번역합니다. 작은 용어집(40개 이하)은 잘못 들은 비슷한 발음도 바로잡습니다."
 }

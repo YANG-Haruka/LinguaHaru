@@ -2176,7 +2176,15 @@ _strip_sensevoice_marks = _clean_asr_text
 def _recognize_whisper(audio, src_lang, size="small"):
     """Recognize a pre-VAD'd utterance (16 kHz float32) with faster-whisper.
     The client already segmented speech, so vad_filter is off (it can drop short
-    clips); beam_size=1 keeps it responsive for real time."""
+    clips); beam_size=1 keeps it responsive for real time.
+
+    No prompt of any kind — both were measured on a 62-minute Japanese/English
+    meeting. The previous segment's text (initial_prompt) made the next Japanese
+    segment come out translated into English. The meeting's names as hotwords
+    put the names right in the source text, but three stretches of plain speech
+    came back as 「ブーブー」, names got written where nobody said them (26
+    "Jizhou" for 14 spoken), and the translations scored no better: the names
+    reach the translator anyway (backend.live_terms)."""
     model = _get_whisper_model(size)
     language = src_lang.split("-")[0] if (src_lang and src_lang != "auto") else None
     segments, info = model.transcribe(

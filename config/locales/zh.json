@@ -705,6 +705,7 @@
   "Meeting Vocabulary": "会议词汇",
   "Meeting Vocabulary Tip": "会议里会出现的人名、公司名、术语，用逗号分隔。语音识别常把它们听成同音词，填在这里后，译文会按这里的写法输出。",
   "Meeting Vocabulary Placeholder": "例如：佐藤, Acme, CAN 总线",
+  "Live Glossary Tip": "实时语音使用的词汇表。句子里出现词条时按词汇表翻译；词条不多（40 条以内）时，被听错的同音词也会按词汇表还原。",
   "Summary Saved": "总结已保存，可在历史记录中查看",
   "Summary Failed": "总结失败（请检查模型 / API 密钥）",
   "Open Transcript": "打开文字记录",

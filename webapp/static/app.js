@@ -2153,6 +2153,7 @@ function refreshGlossarySelects(list, pick) {
     const t = BOOT.glossaries.includes(transSel.value) ? transSel.value : BOOT.glossaries[0];
     fillSelect(transSel, BOOT.glossaries, t);
   }
+  fillLiveGlossary();
 }
 
 $("glossary-new").onclick = async () => {
@@ -2670,6 +2671,7 @@ async function startLocal() {
   // Previews take their own lane from the first one — only with a separate fast
   // preview model (else they'd queue on the same model as the finals).
   livePreviewLane = finalMode && !!(pre && pre.preview);
+  liveGen++;
   liveSegSeq = 0; livePreviewText = ""; livePendingPreview = []; livePreviewBusy = false; livePreviewNext = null;
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
   try {
@@ -2797,7 +2799,28 @@ function liveVocabulary() {
   const el = $("live-vocab");
   return el ? el.value.trim() : "";
 }
+// The glossary real-time voice uses (twin of Qt glossary_combo): kept in this
+// browser; the app's default one until the user picks another.
+function liveGlossary() {
+  const el = $("live-glossary");
+  return el ? el.value : "";
+}
+function fillLiveGlossary() {
+  const el = $("live-glossary");
+  if (!el) return;
+  let saved = "";
+  try { saved = localStorage.getItem("lh-live-glossary") || ""; } catch (e) {}
+  const names = BOOT.glossaries || [];
+  fillSelect(el, names, names.includes(saved) ? saved : (BOOT.config.default_glossary || names[0]));
+  if (!el.dataset.ready) {
+    el.dataset.ready = "1";
+    el.addEventListener("change", () => {
+      try { localStorage.setItem("lh-live-glossary", el.value); } catch (e) {}
+    });
+  }
+}
 function initLiveVocabulary() {
+  fillLiveGlossary();
   const el = $("live-vocab");
   if (!el || el.dataset.ready) return;
   el.dataset.ready = "1";
@@ -2968,10 +2991,9 @@ function uncommittedTail(text, committed) {
 // SenseVoice emits bare "。"/"?" for noise.
 const WORDLIKE = /[\p{L}\p{N}]/u;
 async function recognizeInt16(int16, final) {
-  const body = { audio_b64: int16ToB64(int16), final: !!final };
   return await api("/api/live-recognize", {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body) });
+    body: JSON.stringify({ audio_b64: int16ToB64(int16), final: !!final }) });
 }
 // ONE recognition in flight, results processed strictly in dispatch order. The
 // final used to bypass this and race the partials: its result could land after
@@ -2999,13 +3021,22 @@ function dispatchRecognize(int16, final) {
 // took. A cut segment's preview stays on screen until its final replaces it.
 // Twin of Qt _dispatch_preview / _on_preview.
 let liveSegSeq = 0, livePreviewText = "", livePendingPreview = [];
+// A recognition still in flight when a session is stopped and started again
+// belongs to the old one: in the new session it would pair every line with the
+// wrong second opinion (twin of Qt _live_gen).
+let liveGen = 0;
 let livePreviewBusy = false, livePreviewNext = null;
 function streamPartial(int16) {
   if (livePreviewLane) dispatchPreview(int16, liveSegSeq);
   else dispatchRecognize(int16, false);
 }
 function finalizeUtterance(int16) {
-  if (livePreviewLane) { livePendingPreview.push(livePreviewText); livePreviewText = ""; liveSegSeq++; }
+  if (livePreviewLane) {
+    livePendingPreview.push(livePreviewText); livePreviewText = ""; liveSegSeq++;
+    // The preview model hears the cut segment once more, whole: that text rides
+    // along with the final one as a second opinion for the translator (twin of Qt).
+    dispatchPreview(int16, liveSegSeq - 1);
+  }
   dispatchRecognize(int16, true);
 }
 function dispatchPreview(int16, seg) {
@@ -3014,17 +3045,25 @@ function dispatchPreview(int16, seg) {
   runPreview(int16, seg).finally(() => {
     livePreviewBusy = false;
     const n = livePreviewNext; livePreviewNext = null;
-    if (n && n.seg === liveSegSeq) dispatchPreview(n.int16, n.seg);
+    if (n && n.seg >= liveSegSeq - livePendingPreview.length) dispatchPreview(n.int16, n.seg);
   });
 }
 async function runPreview(int16, seg) {
+  const gen = liveGen;
   try {
     const r = await recognizeInt16(int16, false);
     // (a cut segment's late preview: its final is coming)
-    if (!liveRunning || r.busy || seg !== liveSegSeq || !r.source) return;
-    livePreviewText = r.source;
-    showLiveInterim();
-    liveRequestProvisional();
+    if (gen !== liveGen || !liveRunning || r.busy || !r.source) return;
+    const waiting = livePendingPreview.length;      // cut segments whose final is still out
+    if (seg === liveSegSeq) {
+      livePreviewText = r.source;
+      showLiveInterim();
+      liveRequestProvisional();
+    } else if (seg >= liveSegSeq - waiting && seg < liveSegSeq) {
+      // A cut segment heard whole (or its last partial coming in late).
+      livePendingPreview[waiting - (liveSegSeq - seg)] = r.source;
+      showLiveInterim();
+    }
   } catch (e) { /* transient; the next preview retries */ }
 }
 // What is being said and not recognized for good yet.
@@ -3071,8 +3110,10 @@ async function runPartial(int16) {
   } catch (e) { /* transient; next partial retries */ }
 }
 async function runFinal(int16) {
+  const gen = liveGen;
   try {
     const r = await recognizeInt16(int16, true);
+    if (gen !== liveGen) return;          // the session it belonged to is over
     noteDetected(r.detected);
     const text = r.source || "";
     liveFinalMode = r.commit_mode === "final";
@@ -3085,9 +3126,12 @@ async function runFinal(int16) {
     // Ended at a pause OR the length cap — neither means the sentence did: an
     // unfinished last line stays held until the next segment (see liveAgeHold)
     // or the pause reaches the full hang (see liveQuiet).
-    units.forEach((u) => commitLiveSentence(u));
+    // What the preview model heard in this segment goes with its lines.
+    const alt = livePreviewLane ? (livePendingPreview[0] || "") : "";
+    units.forEach((u) => commitLiveSentence(u, alt));
     if (r.commit_mode === "final" && units.length) liveAgeHold();   // a segment with words (not noise)
   } catch (e) { /* drop */ }
+  if (gen !== liveGen) return;
   // The utterance is closed: reset its stream state HERE, in result order.
   liveCommittedText = ""; liveLastText = ""; liveDetHist = [];
   if (livePreviewLane) {
@@ -3105,11 +3149,11 @@ async function runFinal(int16) {
 // grow the last output line without races between overlapping sentences.
 let liveCommitChain = Promise.resolve();
 let liveCommitPending = 0;   // commits queued on the chain that have not started yet
-function commitLiveSentence(source) {
+function commitLiveSentence(source, alt = "") {
   source = (source || "").trim();
   if (!source || !WORDLIKE.test(source)) return;   // drop bare-punct noise units
   liveCommitPending++;
-  liveCommitChain = liveCommitChain.then(() => { liveCommitPending--; return _doCommitSentence(source); });
+  liveCommitChain = liveCommitChain.then(() => { liveCommitPending--; return _doCommitSentence(source, alt); });
   return liveCommitChain;
 }
 // Translate whole sentences — or whole clauses, as an interpreter does with a
@@ -3142,7 +3186,10 @@ function _sendHeld(ts, extra = null) {
   liveProvFlush = { fid, seq: liveProvSeq };
   liveProvSeq++; liveProvText = ""; liveProvBusy = false; liveProvDirty = false;
   liveTrHold = []; liveTrHoldSeen = 0;
-  return _translateLiveLine(ts, _joinHeld(parts), parts[parts.length - 1].entry, fid);
+  // the second opinions of every segment these lines came from, once each
+  const heard = [...new Set(parts.map((p) => p.alt).filter(Boolean))];
+  return _translateLiveLine(ts, _joinHeld(parts), parts[parts.length - 1].entry, fid,
+                            _joinHeld(heard.map((src) => ({ src }))).slice(-400));
 }
 // Held lines' whole translation is on screen: the provisional one that covered
 // them goes — unless a newer one (for what is still being said) replaced it.
@@ -3210,7 +3257,7 @@ async function _provisionalTranslate(seq, source) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, src_lang: liveLastDetected || "auto",
                              dst_lang: $("live-target").value, context: liveContext(),
-                             vocabulary: liveVocabulary(), provisional: true }) });
+                             vocabulary: liveVocabulary(), glossary: liveGlossary(), provisional: true }) });
   } catch (e) { /* the whole sentence's translation will come */ }
   if (t) liveSessionTokens += (t.tokens || 0);
   if (seq !== liveProvSeq) return;            // stale: superseded, or its lines were sent whole
@@ -3289,9 +3336,9 @@ function splitClauseTail(units) {
   }
   return cut ? [...units.slice(0, -1), last.slice(0, cut), last.slice(cut).trimStart()] : units;
 }
-async function _doCommitSentence(source) {
+async function _doCommitSentence(source, alt = "") {
   const ts = liveTimeStamp();
-  const line = { src: source, entry: appendLive("live-input", `[${ts}] ${source}\n`) };
+  const line = { src: source, entry: appendLive("live-input", `[${ts}] ${source}\n`), alt };
   const held = liveTrHold.reduce((n, h) => n + h.src.length, 0);
   if (!["S", "C", "F"].includes(lineEnd(source)) && held + source.length < LIVE_HOLD_MAX) {
     if (!liveTrHold.length) liveTrHoldSeen = 0;
@@ -3306,7 +3353,7 @@ async function _doCommitSentence(source) {
 // entry: the floating-caption pair this translation belongs to (a held
 // sentence's: its last line). fid: set when held lines were sent whole — their
 // provisional translation goes once this is shown (_finalShown).
-async function _translateLiveLine(ts, source, entry = null, fid = 0) {
+async function _translateLiveLine(ts, source, entry = null, fid = 0, alt = "") {
   const ctx = liveContext();
   liveCtxHistory.push(source);                 // after building ctx (don't include self)
   if (liveCtxHistory.length > 6) liveCtxHistory.splice(0, liveCtxHistory.length - 6);
@@ -3317,7 +3364,7 @@ async function _translateLiveLine(ts, source, entry = null, fid = 0) {
       const t = await api("/api/live-translate-text", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx,
-                               vocabulary: liveVocabulary() }) });
+                               vocabulary: liveVocabulary(), glossary: liveGlossary(), alt }) });
       liveSessionTokens += (t.tokens || 0);
       if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`, entry);
     } catch (e) { /* leave source line; translation failed */ }
@@ -3344,7 +3391,7 @@ async function _translateLiveLine(ts, source, entry = null, fid = 0) {
     const resp = await fetch("/api/live-translate-stream", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx,
-                             vocabulary: liveVocabulary() }) });
+                             vocabulary: liveVocabulary(), glossary: liveGlossary(), alt }) });
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "";

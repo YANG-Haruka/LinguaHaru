@@ -694,6 +694,7 @@
   "Meeting Vocabulary": "Meeting vocabulary",
   "Meeting Vocabulary Tip": "Names and terms that come up in your meetings, separated by commas. Speech recognition often mishears them; the translation writes them as listed here.",
   "Meeting Vocabulary Placeholder": "e.g. Sato, Acme, CAN bus",
+  "Live Glossary Tip": "The glossary real-time voice uses. A line that contains one of its terms is translated as the glossary says. A small glossary (up to 40 terms) also restores sound-alikes.",
   "Summary Saved": "Summary saved — see History",
   "Summary Failed": "Couldn't summarize (check the model / API key)",
   "Open Transcript": "Open transcript",

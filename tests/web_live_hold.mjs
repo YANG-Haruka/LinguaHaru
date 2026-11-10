@@ -16,6 +16,7 @@ if (start < 0 || end < 0) throw new Error("region markers not found");
 const sent = [], entries = [], apiCalls = [];
 let lastEntry = null, lastFid = 0, interim = "";
 let gate = null;   // an array: final translations wait until their resolver in it is called
+let lastAlt = "";  // the second opinion (the preview model's text) sent with the last final translation
 const provEl = { textContent: "" };
 const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00:00",
               // a source line opens its floating-caption pair
@@ -24,14 +25,15 @@ const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00
                 const e = { src: text.replace(/^\[[^\]]*\]\s*/, "").trim(), dst: "" };
                 entries.push(e); return e;
               },
-              _translateLiveLine: async (_ts, s, entry, fid) => {
-                sent.push(s); lastEntry = entry; lastFid = fid;
+              _translateLiveLine: async (_ts, s, entry, fid, alt) => {
+                sent.push(s); lastEntry = entry; lastFid = fid; lastAlt = alt;
                 if (gate) await new Promise((res) => gate.push(res));
               },
               api: (_url, opts) => new Promise((res) => apiCalls.push({ ...JSON.parse(opts.body), res })),
               $: (id) => (id === "live-output-prov" ? provEl : { value: "zh" }),
               liveInterimText: () => interim,   // what is still being said (the preview lane)
               liveVocabulary: () => "Corpy, Rahul",   // sent with every live translation request
+              liveGlossary: () => "meeting",          // ... with the glossary picked on the page
               updatePipCaption: () => {}, liveContext: () => "", liveLastDetected: "ja", liveSessionTokens: 0,
               liveRunning: true, liveQuiet: false, liveRecogBusy: false, liveRecogQueue: [] };
 vm.createContext(ctx);
@@ -158,6 +160,7 @@ await settle();
 same("cleared once the whole translation is shown", [provEl.textContent, ctx.pipInterimDst], ["", ""]);
 same("provisional calls are counted", ctx.liveSessionTokens, 12);
 same("the meeting vocabulary rides on the request", apiCalls[0].vocabulary, "Corpy, Rahul");
+same("... and the glossary choice", apiCalls[0].glossary, "meeting");
 
 // A sentence that goes straight to translation (nothing held) drops the
 // provisional request still out for its preview: the late reply used to be
@@ -202,6 +205,23 @@ interim = "";
 liveFlushHold();
 await settle();
 sent.length = 0;
+
+// What the preview model heard goes with the lines of its segment; a sentence
+// put together from two segments gets both, once each. Twin of Qt
+// test_the_preview_models_text_goes_with_the_lines_of_its_segment.
+commitLiveSentence("それで大丈夫です。", "それで大丈夫です 資料は昨日送りました");
+await settle();
+expect("a whole sentence goes at once", ["それで大丈夫です。"]);
+same("with its segment's second opinion", lastAlt, "それで大丈夫です 資料は昨日送りました");
+commitLiveSentence("その秘密ほじのレベルと", "その秘密保持のレベルと");
+commitLiveSentence("ネクストムーブとの機密保持を巻き直しています。", "ネクストムーブとの機密保持を巻き直しています");
+await settle();
+expect("a sentence from two segments", ["その秘密ほじのレベルとネクストムーブとの機密保持を巻き直しています。"]);
+same("gets both second opinions", lastAlt, "その秘密保持のレベルとネクストムーブとの機密保持を巻き直しています");
+commitLiveSentence("はい、わかりました。");
+await settle();
+expect("no preview model", ["はい、わかりました。"]);
+same("no second opinion", lastAlt, "");
 setFinal(false);
 
 // A segment cut after a clause end: the clause goes now, only the tail waits.

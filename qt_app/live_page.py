@@ -904,6 +904,16 @@ class LivePage(ScrollArea):
         # sound-alikes, the translation restores them (live_translate_line).
         vocab_row = QHBoxLayout()
         vocab_row.setSpacing(10)
+        # ... and the glossary to use: its terms where a line contains them; a
+        # small one whole (sound-alikes too).
+        self.glossary_label = BodyLabel(tr("Glossary", lang))
+        vocab_row.addWidget(self.glossary_label)
+        self.glossary_combo = ComboBox()
+        self.glossary_combo.setToolTip(tr("Live Glossary Tip", lang))
+        self._refresh_glossaries()
+        self.glossary_combo.currentTextChanged.connect(
+            lambda name: name and backend.set_config("live_glossary", name))
+        vocab_row.addWidget(self.glossary_combo)
         self.vocab_label = BodyLabel(tr("Meeting Vocabulary", lang))
         vocab_row.addWidget(self.vocab_label)
         self.vocab_edit = LineEdit()
@@ -1009,6 +1019,8 @@ class LivePage(ScrollArea):
         self.vocab_label.setText(tr("Meeting Vocabulary", lang))
         self.vocab_edit.setPlaceholderText(tr("Meeting Vocabulary Placeholder", lang))
         self.vocab_edit.setToolTip(tr("Meeting Vocabulary Tip", lang))
+        self.glossary_label.setText(tr("Glossary", lang))
+        self.glossary_combo.setToolTip(tr("Live Glossary Tip", lang))
         self._populate_mics()
         self.input_header.setText(tr("Recognized Speech", lang))
         self.input_sub.setText(tr("Auto Detect", lang))
@@ -1126,11 +1138,20 @@ class LivePage(ScrollArea):
             return self._mic_devices[i - 1]
         return None
 
+    def _refresh_glossaries(self):
+        """Glossaries may have been created or deleted on the Glossary page."""
+        self.glossary_combo.blockSignals(True)
+        self.glossary_combo.clear()
+        self.glossary_combo.addItems(backend.get_glossary_files())
+        self._set_combo(self.glossary_combo, backend.live_glossary_name())
+        self.glossary_combo.blockSignals(False)
+
     def showEvent(self, event):
         # Refresh the mic list + active model each time the page is shown.
         if self._source is None:
             self._populate_mics()
         self._refresh_model_sub()
+        self._refresh_glossaries()
         # Warm the local STT model in the background as soon as the page is
         # opened, so pressing Start doesn't sit through the library import +
         # model load (~10 s on a cold start).
@@ -1543,10 +1564,15 @@ class LivePage(ScrollArea):
         self._held = ""                   # backchannels waiting to ride with the next line
         self._tr_hold = []                # mid-sentence lines waiting to translate as one
         self._tr_hold_seen = 0            # final mode: results since the oldest held line
+        # A recognition can outlive its session (stop waits 3 s for it, a slow
+        # model takes longer): its result must not land in the next session,
+        # where it would pair every line with the wrong second opinion.
+        self._live_gen = getattr(self, "_live_gen", 0) + 1
         # Final mode, live preview lane (see _dispatch_recognize).
         self._seg_seq = 0                 # segments cut so far
         self._preview_text = ""           # preview of the segment being spoken
         self._pending_preview = []        # previews of cut segments whose final is out
+        self._seg_alt, self._line_alt = "", {}  # the preview model's text per line (second opinion)
         self._preview_busy, self._preview_next = False, None
         # Provisional translation of what is pending (see _request_provisional).
         # The sequence only ever grows: a late result from an older request or
@@ -1723,10 +1749,13 @@ class LivePage(ScrollArea):
                 self._dispatch_preview(pcm, self._seg_seq)
                 return
             # This segment is done: its preview stays on screen until its final
-            # recognition replaces it (_on_recognized_stream).
+            # recognition replaces it (_on_recognized_stream). The preview model
+            # hears it once more, whole: that text rides along with the final
+            # one as a second opinion for the translator (_line_alt).
             self._pending_preview.append(self._preview_text)
             self._preview_text = ""
             self._seg_seq += 1
+            self._dispatch_preview(pcm, self._seg_seq - 1)
         if self._recog_busy:
             # Results must come back in dispatch order and a FINAL must never be
             # dropped: it covers its whole utterance, and processing it is what
@@ -1745,7 +1774,9 @@ class LivePage(ScrollArea):
         w = LiveRecognizeWorker(pcm, _IN_RATE, is_final,
                                 model_id=None if is_final else getattr(self, "_preview_model", None),
                                 lang_memory=getattr(self, "_lang_memory", None) if guard else None)
-        w.done.connect(self._on_recognized_stream)
+        gen = getattr(self, "_live_gen", 0)
+        w.done.connect(lambda t, d, f: gen == getattr(self, "_live_gen", 0)
+                       and self._on_recognized_stream(t, d, f))
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
         w.start()
@@ -1760,7 +1791,9 @@ class LivePage(ScrollArea):
             return
         self._preview_busy = True
         w = LiveRecognizeWorker(pcm, _IN_RATE, False, model_id=self._preview_model)
-        w.done.connect(lambda t, _d, _f, s=seg: self._on_preview(s, t))
+        gen = getattr(self, "_live_gen", 0)
+        w.done.connect(lambda t, _d, _f, s=seg: gen == getattr(self, "_live_gen", 0)
+                       and self._on_preview(s, t))
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
         w.start()
@@ -1769,12 +1802,17 @@ class LivePage(ScrollArea):
         self._preview_busy = False
         if not self._is_listening():
             return
-        if seg == self._seg_seq and text:   # (a cut segment's late preview: its final is coming)
+        waiting = len(self._pending_preview)       # cut segments whose final is still out
+        if text and seg == self._seg_seq:
             self._preview_text = text
             self._set_caption_interim(self._interim_text())
             self._request_provisional()
+        elif text and self._seg_seq - waiting <= seg < self._seg_seq:
+            # A cut segment heard whole (or its last partial coming in late).
+            self._pending_preview[waiting - (self._seg_seq - seg)] = text
+            self._set_caption_interim(self._interim_text())
         nxt, self._preview_next = self._preview_next, None
-        if nxt and nxt[1] == self._seg_seq:
+        if nxt and nxt[1] >= self._seg_seq - len(self._pending_preview):
             self._dispatch_preview(*nxt)
 
     def _interim_text(self):
@@ -2041,11 +2079,15 @@ class LivePage(ScrollArea):
             # broken only at real sentence ends (no forced mid-word cuts).
             units = (self._split_clause_tail(self._split_sentences(text)) if final_mode
                      else self._split_scored(self._uncommitted_tail(text), True)[0])
+            # What the preview model heard in this segment goes with its lines.
+            self._seg_alt = (self._pending_preview[0] if self._live_preview()
+                             and self._pending_preview else "")
             # The segment ended at a pause OR at the length cap — neither means
             # the sentence did: an unfinished last line stays held until the
             # next segment, or the silence reaches the full hang (see _vad_step).
             for s in units:
                 self._commit_stream_sentence(s)
+            self._seg_alt = ""
             if final_mode and units:          # a segment with words (not noise)
                 self._age_tr_hold()
             # The utterance is closed: reset its stream state HERE, in result
@@ -2232,6 +2274,8 @@ class LivePage(ScrollArea):
         return units[:-1] + [last[:cut], last[cut:].lstrip()] if cut else units
 
     def _queue_translation(self, key, source):
+        if getattr(self, "_seg_alt", ""):
+            self.__dict__.setdefault("_line_alt", {})[key] = self._seg_alt
         hold = self.__dict__.setdefault("_tr_hold", [])
         if (self._line_end(source) not in ("S", "C", "F")
                 and sum(len(s) for _, s in hold) + len(source) < self._HOLD_MAX_CHARS):
@@ -2269,6 +2313,11 @@ class LivePage(ScrollArea):
         if not parts:
             return
         self._prov_superseded(parts[-1][0])
+        # the second opinions of every segment these lines came from, once each
+        alts = self.__dict__.setdefault("_line_alt", {})
+        heard = list(dict.fromkeys(a for a in (alts.pop(k, "") for k, _ in parts) if a))
+        if heard:
+            alts[parts[-1][0]] = self._join_held([(None, a) for a in heard])
         for k, _ in parts[:-1]:
             self._set_out_row(k, "↓")
         self._start_line_translation(parts[-1][0], self._join_held(parts))
@@ -2385,11 +2434,12 @@ class LivePage(ScrollArea):
         # reset: fall back to the latest recognized language, never "auto".
         src = self._stream_detected if self._stream_detected != "auto" else \
             getattr(self, "_last_lang", "auto")
+        alt = self.__dict__.setdefault("_line_alt", {}).pop(key, "")[-400:]
         if online and backend.get_config("live_stream_translation", False):
             # Stream mode: grow the reserved row token-by-token.
             self._stream_text[key] = ""
             w = LiveTranslateStreamWorker(key, source, src, dst,
-                                          model, online, api_key, context=ctx)
+                                          model, online, api_key, context=ctx, alt=alt)
             w.chunk.connect(self._on_stream_chunk)
             w.done.connect(self._on_stream_done)
             w.finished.connect(lambda w=w: self._retire_local(w))
@@ -2397,7 +2447,7 @@ class LivePage(ScrollArea):
             w.start()
             return
         w = LiveTranslateWorker(key, source, src, dst, model,
-                                online, api_key, context=ctx)
+                                online, api_key, context=ctx, alt=alt)
         w.done.connect(self._on_translated_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)

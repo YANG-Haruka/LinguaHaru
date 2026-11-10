@@ -2417,15 +2417,19 @@ async def live_translate_text(payload: dict):
     model = backend.get_active_model(use_online=use_online)
     api_key = (load_api_key_for_model(model)
                or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
-    # The meeting vocabulary is the browser's own (sent with each line), so LAN
-    # users don't share one list.
-    vocabulary = backend.clean_live_vocabulary(payload.get("vocabulary"))
+    # The meeting vocabulary and the glossary choice are the browser's own (sent
+    # with each line), so LAN users don't share one list.
+    glossary = payload.get("glossary")
     loop = asyncio.get_event_loop()
 
     def _translate():   # same call as the desktop app: speech prompt, glossary, retry
+        # (the glossary is read here, off the event loop)
+        vocabulary = backend.live_terms(src_code, dst_lang, typed=str(payload.get("vocabulary") or ""),
+                                        glossary=glossary)
         return backend.live_translate_line(source, src_code, dst_lang, model, use_online,
                                            api_key, context=context, vocabulary=vocabulary,
-                                           provisional=bool(payload.get("provisional")))
+                                           provisional=bool(payload.get("provisional")),
+                                           alt=_capped_text(payload, "alt"), glossary=glossary)
     try:
         translated, tokens = await loop.run_in_executor(None, _translate)
     except Exception as e:  # noqa: BLE001
@@ -2501,10 +2505,12 @@ def live_translate_stream(payload: dict):
     dst_lang = payload.get("dst_lang", "en")
     src_code = payload.get("src_lang") or "auto"
     context = _capped_text(payload, "context")
-    hint = backend.live_glossary_hint(source, src_code, dst_lang)
+    hint = backend.live_glossary_hint(source, src_code, dst_lang, glossary=payload.get("glossary"))
     if hint:
         context = f"{context} {hint}".strip()
-    vocabulary = backend.clean_live_vocabulary(payload.get("vocabulary"))
+    vocabulary = backend.live_terms(src_code, dst_lang, typed=str(payload.get("vocabulary") or ""),
+                                    glossary=payload.get("glossary"))
+    alt = _capped_text(payload, "alt")
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)
@@ -2519,7 +2525,7 @@ def live_translate_stream(payload: dict):
                 for partial in translate_text_simple_stream(
                         source, src_code, dst_lang, model, use_online, api_key,
                         usage_sink=sink, context=context, speech=True,
-                        vocabulary=vocabulary):
+                        vocabulary=vocabulary, alt=alt):
                     yield f"data: {_json.dumps(partial)}\n\n"
             except Exception:  # noqa: BLE001
                 yield f"data: {_json.dumps('')}\n\n"

@@ -273,13 +273,14 @@ def test_live_preview_keeps_moving_and_stays_until_its_final():
     p._dispatch_recognize(b"seg1-partial", False)
     p._on_preview(0, "えっと今日の議題は")
     assert shown[-1] == "えっと今日の議題は"
-    p._dispatch_recognize(b"seg1", True)              # segment 1 cut -> its final is out
-    assert started[-1] == (b"seg1", True, None) and p._recog_busy
-    p._dispatch_recognize(b"seg2-partial", False)     # a preview still runs beside it
-    assert started[-1] == (b"seg2-partial", False, "sensevoice-small")
-    p._on_preview(0, "えっと今日の議題は三つ")          # seg 1's late preview: not the new one
+    p._dispatch_recognize(b"seg1", True)              # segment 1 cut -> its final is out,
+    # and the preview model hears it once more, whole (the translator's second opinion)
+    assert started[-2:] == [(b"seg1", False, "sensevoice-small"), (b"seg1", True, None)] and p._recog_busy
+    p._dispatch_recognize(b"seg2-partial", False)     # the next preview is next in its own lane ...
+    p._on_preview(0, "えっと今日の議題は三つ")          # seg 1 heard whole: replaces its last partial
+    assert started[-1] == (b"seg2-partial", False, "sensevoice-small")   # ... beside the final
     p._on_preview(1, "まず")
-    assert shown[-1] == "えっと今日の議題はまず"          # seg 1's preview stays until its final
+    assert shown[-1] == "えっと今日の議題は三つまず"      # seg 1's preview stays until its final
     p._dispatch_recognize(b"seg2", True)              # cut while seg 1's final is out: queued
     p._on_preview(2, "それから")
     p._on_recognized_stream("えっと今日の議題は三つあります。", "ja", True)
@@ -459,3 +460,56 @@ def test_the_page_shows_the_live_lines_without_the_caption_bar():
     assert p._prov_shown_seq == 3
     P._show_provisional(p, "")
     assert texts["prov_label"] == "" and p._prov_shown_seq == 0
+
+
+def test_the_preview_models_text_goes_with_the_lines_of_its_segment():
+    """Final mode with a preview model: what the preview model heard in a segment
+    is the second opinion for every line of that segment; a sentence put together
+    from two segments gets both, once each; nothing in stream mode."""
+    p = _translating_page()
+    p._preview_model = "sensevoice-small"
+    sent = []
+    p._start_line_translation = lambda k, s: sent.append((s, p._line_alt.pop(k, "")))
+    p._seg_seq, p._pending_preview = 1, ["それで大丈夫です 資料は昨日送りました"]
+    p._on_recognized_stream("それで大丈夫です。資料は昨日送りました。", "ja", True)
+    assert sent == [("それで大丈夫です。", "それで大丈夫です 資料は昨日送りました"),
+                    ("資料は昨日送りました。", "それで大丈夫です 資料は昨日送りました")]
+    sent.clear()
+    p._seg_seq, p._pending_preview = 2, ["その秘密保持のレベルと"]
+    p._on_recognized_stream("その秘密ほじのレベルと", "ja", True)                 # held
+    p._seg_seq, p._pending_preview = 3, ["ネクストムーブとの機密保持を巻き直しています"]
+    p._on_recognized_stream("ネクストムーブとの機密保持を巻き直しています。", "ja", True)
+    assert sent == [("その秘密ほじのレベルとネクストムーブとの機密保持を巻き直しています。",
+                     "その秘密保持のレベルとネクストムーブとの機密保持を巻き直しています")]
+    assert p._line_alt == {} and p._seg_alt == ""
+    # stream mode / no preview model: the line is all there is
+    p = _translating_page()
+    sent = []
+    p._start_line_translation = lambda k, s: sent.append((s, p.__dict__.get("_line_alt", {}).pop(k, "")))
+    p._pending_preview = ["x"]
+    p._on_recognized_stream("それで大丈夫です。", "ja", True)
+    assert sent == [("それで大丈夫です。", "")]
+
+
+def test_a_cut_segment_is_heard_once_more_whole():
+    """At the cut the preview model gets the whole segment: its text replaces the
+    segment's last partial preview (on screen, and as the second opinion) even
+    though the next segment has started; a result for a segment whose final has
+    already been processed is dropped."""
+    p, lp = _page()
+    p._final_mode, p._preview_model = True, "sensevoice-small"
+    shown = []
+    p._set_caption_interim = lambda t: shown.append(t)
+    p._request_provisional = lambda: None
+    previews = []
+    p._dispatch_preview = lambda pcm, seg: previews.append((len(pcm), seg))
+    p._preview_text = "資料は昨日"
+    LivePage._dispatch_recognize(p, bytes(64000), True)            # the VAD cut segment 0
+    assert previews == [(64000, 0)] and p._pending_preview == ["資料は昨日"] and p._seg_seq == 1
+    p._preview_text = "来週"
+    LivePage._on_preview(p, 0, "資料は昨日送りました")                # segment 0, heard whole
+    assert p._pending_preview == ["資料は昨日送りました"] and p._preview_text == "来週"
+    assert shown[-1] == "資料は昨日送りました来週"
+    p._pending_preview.pop(0)                                      # its final was processed
+    LivePage._on_preview(p, 0, "late")
+    assert p._pending_preview == [] and p._preview_text == "来週"

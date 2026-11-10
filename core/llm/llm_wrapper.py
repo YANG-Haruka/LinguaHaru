@@ -398,12 +398,32 @@ def _speech_system(dst_lang, vocabulary=""):
     return prompt
 
 
-def _simple_messages(text, src_lang, dst_lang, context="", speech=False, vocabulary=""):
+# Live captions: what a second speech recognizer heard in the same stretch of
+# speech. The two make different mistakes (accented Japanese that one writes as
+# 「ヤクワリ…セクニのオウか」 the other gets as 「役割…責任を負うか」), and the
+# translator can tell which reading fits. Blind-rated against proofread subtitles
+# of three meetings: fidelity +0.2 to +0.3 (0-10), better in 16 two-minute
+# windows and worse in 1 — whichever recognizer was the main one.
+_ALT_NOTE = (" <alt> holds the same stretch of speech as heard by another speech recognizer (it may"
+             " cover a little more or less than <translate>, and it makes mistakes of its own). Where"
+             " the two disagree on a word, go by the reading that makes sense in this meeting; never"
+             " translate <alt> itself or add what only it contains beyond the line.")
+
+
+def _simple_messages(text, src_lang, dst_lang, context="", speech=False, vocabulary="", alt=""):
     """Chat messages for a one-line translation. Context goes in its own
     <context> tag next to the <translate> tag: in the system prompt, models
     (DeepSeek in real sessions) often translated the CONTEXT instead of the
-    line — 3 of 4 live-caption lines came out as the previous sentences."""
+    line — 3 of 4 live-caption lines came out as the previous sentences.
+    alt (speech only): see _ALT_NOTE."""
     ctx = str(context or "").strip()
+    alt = " ".join(str(alt or "").split()) if speech else ""
+    if alt == " ".join(str(text or "").split()):
+        alt = ""                       # the same words twice tell the model nothing
+    # The second recognizer is the preview model (SenseVoice), which knows these
+    # languages only: of German or Thai speech its text is noise, not an opinion.
+    if (src_lang or "auto") != "auto" and src_lang.split("-")[0] not in ("zh", "en", "ja", "ko", "yue"):
+        alt = ""
     if speech:
         system_prompt = _speech_system(dst_lang, vocabulary)
     else:
@@ -416,18 +436,26 @@ def _simple_messages(text, src_lang, dst_lang, context="", speech=False, vocabul
             direction = f"into {_lang_name(dst_lang)} ({dst_lang}), whatever language it is in"
         system_prompt = (f"You are a professional translator. Translate the following text "
                          f"{direction}. Output only the translation, nothing else.")
-    if not ctx:
+    if not ctx and not alt:
         return [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}]
-    system_prompt += (" The text to translate is inside <translate>. <context> holds"
-                      " surrounding information ONLY to resolve meaning — never translate,"
-                      " repeat or include it. Output only the translation of <translate>.")
-    return [{"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"<context>{ctx}</context>\n<translate>{text}</translate>"}]
+    user = f"<translate>{text}</translate>"
+    if alt:
+        user = f"<alt>{alt}</alt>\n{user}"
+    if ctx:
+        system_prompt += (" The text to translate is inside <translate>. <context> holds"
+                          " surrounding information ONLY to resolve meaning — never translate,"
+                          " repeat or include it. Output only the translation of <translate>.")
+        user = f"<context>{ctx}</context>\n{user}"
+    else:
+        system_prompt += " The text to translate is inside <translate>. Output only its translation."
+    if alt:
+        system_prompt += _ALT_NOTE
+    return [{"role": "system", "content": system_prompt}, {"role": "user", "content": user}]
 
 
 def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, context="",
-                          speech=False, vocabulary=""):
+                          speech=False, vocabulary="", alt=""):
     """
     Simple text translation without complex prompt templates.
     Used by BabelDOC integration for direct text translation.
@@ -449,7 +477,7 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, 
     if not text or not text.strip():
         return text, True, None
 
-    messages = _simple_messages(text, src_lang, dst_lang, context, speech, vocabulary)
+    messages = _simple_messages(text, src_lang, dst_lang, context, speech, vocabulary, alt)
 
     try:
         if not use_online:
@@ -494,7 +522,7 @@ def summarize_transcript(transcript, out_lang, model, use_online, api_key):
 
 
 def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key,
-                                 usage_sink=None, context="", speech=False, vocabulary=""):
+                                 usage_sink=None, context="", speech=False, vocabulary="", alt=""):
     """Like translate_text_simple but a GENERATOR yielding the translation
     progressively (cumulative string), for live captions' optional stream mode.
 
@@ -514,11 +542,11 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
     if not use_online:
         result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
                                                    context=context, speech=speech,
-                                                   vocabulary=vocabulary)
+                                                   vocabulary=vocabulary, alt=alt)
         _sink(u)
         yield result
         return
-    messages = _simple_messages(text, src_lang, dst_lang, context, speech, vocabulary)
+    messages = _simple_messages(text, src_lang, dst_lang, context, speech, vocabulary, alt)
     try:
         from core.llm.online_translation import load_model_config
         from openai import OpenAI
@@ -527,7 +555,7 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         if not (base_url and api_model and api_key):
             result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
                                                    context=context, speech=speech,
-                                                   vocabulary=vocabulary)
+                                                   vocabulary=vocabulary, alt=alt)
             _sink(u)
             yield result
             return
@@ -567,14 +595,14 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         if not acc:        # nothing streamed -> fall back to a normal call
             result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
                                                    context=context, speech=speech,
-                                                   vocabulary=vocabulary)
+                                                   vocabulary=vocabulary, alt=alt)
             _sink(u)
             yield result
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"Stream translate failed ({e}); falling back.")
         result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
                                                    context=context, speech=speech,
-                                                   vocabulary=vocabulary)
+                                                   vocabulary=vocabulary, alt=alt)
         _sink(u)
         yield result
 

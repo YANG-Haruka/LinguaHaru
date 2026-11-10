@@ -54,9 +54,9 @@ def test_vocabulary_is_cleaned_and_capped():
 def _fake_translator(monkeypatch, replies):
     calls = []
 
-    def fake(text, src, dst, model, online, key, context="", speech=False, vocabulary=""):
+    def fake(text, src, dst, model, online, key, context="", speech=False, vocabulary="", alt=""):
         calls.append({"text": text, "src": src, "context": context, "speech": speech,
-                      "vocabulary": vocabulary})
+                      "vocabulary": vocabulary, "alt": alt})
         return replies[min(len(calls), len(replies)) - 1]
     monkeypatch.setattr(llm_wrapper, "translate_text_simple", fake)
     monkeypatch.setattr("time.sleep", lambda s: None)
@@ -65,16 +65,16 @@ def _fake_translator(monkeypatch, replies):
 
 def test_live_line_uses_the_speech_prompt_and_vocabulary(monkeypatch):
     calls = _fake_translator(monkeypatch, [("不是Corpy的责任", True, {"total_tokens": 40})])
-    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a: "Fixed terminology: A => B")
+    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a, **k: "Fixed terminology: A => B")
     out = backend.live_translate_line("コピーの責任ではなくて", "ja", "zh", "m", True, "k",
                                       context="前の行", vocabulary="Corpy")
     assert out == ("不是Corpy的责任", 40)
-    assert calls == [{"text": "コピーの責任ではなくて", "src": "ja", "speech": True,
+    assert calls == [{"text": "コピーの責任ではなくて", "src": "ja", "speech": True, "alt": "",
                       "context": "前の行 Fixed terminology: A => B", "vocabulary": "Corpy"}]
 
 
 def test_live_line_retries_once_then_gives_up(monkeypatch):
-    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a: "")
+    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a, **k: "")
     calls = _fake_translator(monkeypatch, [("rate limited", False, None), ("好的", True, {"total_tokens": 9})])
     assert backend.live_translate_line("はい", None, "zh", "m", True, "k") == ("好的", 9)
     assert len(calls) == 2 and calls[0]["src"] == "auto"
@@ -84,7 +84,7 @@ def test_live_line_retries_once_then_gives_up(monkeypatch):
 
 
 def test_live_line_redoes_a_reply_that_translated_the_context(monkeypatch):
-    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a: "")
+    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a, **k: "")
     calls = _fake_translator(monkeypatch, [("前面几句话也被翻进来了。" * 8, True, {"total_tokens": 90}),
                                            ("是的。", True, {"total_tokens": 20})])
     assert backend.live_translate_line("そうですね。", "ja", "zh", "m", True, "k",
@@ -98,32 +98,33 @@ def test_web_endpoints_translate_like_the_desktop(monkeypatch):
     from webapp import server
     seen = {}
 
-    def fake_line(source, src, dst, model, online, key, context="", vocabulary="", provisional=False):
-        seen.update(source=source, context=context, vocabulary=vocabulary, provisional=provisional)
+    def fake_line(source, src, dst, model, online, key, context="", vocabulary="", provisional=False,
+                  alt="", glossary=None):
+        seen.update(source=source, context=context, vocabulary=vocabulary, provisional=provisional, alt=alt)
         return "不是Corpy的责任", 33
     monkeypatch.setattr(backend, "live_translate_line", fake_line)
     monkeypatch.setattr(server, "_feature_hidden", lambda name: False)
     client = TestClient(server.app)
     r = client.post("/api/live-translate-text", json={
         "source": "コピーの責任ではなくて", "src_lang": "ja", "dst_lang": "zh",
-        "context": "前の行", "vocabulary": "Corpy,\nRahul"})
+        "context": "前の行", "vocabulary": "Corpy,\nRahul", "alt": "コーピーの責任ではなくて"})
     assert r.status_code == 200 and r.json() == {"translated": "不是Corpy的责任", "tokens": 33}
     assert seen == {"source": "コピーの責任ではなくて", "context": "前の行", "vocabulary": "Corpy, Rahul",
-                    "provisional": False}
+                    "provisional": False, "alt": "コーピーの責任ではなくて"}
     client.post("/api/live-translate-text", json={"source": "コピーの", "dst_lang": "zh", "provisional": True})
     assert seen["provisional"] is True
 
     stream = {}
 
     def fake_stream(text, src, dst, model, online, key, usage_sink=None, context="",
-                    speech=False, vocabulary=""):
-        stream.update(speech=speech, vocabulary=vocabulary)
+                    speech=False, vocabulary="", alt=""):
+        stream.update(speech=speech, vocabulary=vocabulary, alt=alt)
         yield "好"
     monkeypatch.setattr(llm_wrapper, "translate_text_simple_stream", fake_stream)
     r = client.post("/api/live-translate-stream", json={
-        "source": "はい", "dst_lang": "zh", "vocabulary": "Corpy"})
+        "source": "はい", "dst_lang": "zh", "vocabulary": "Corpy", "alt": "ハイ"})
     assert r.status_code == 200 and '"\\u597d"' in r.text
-    assert stream == {"speech": True, "vocabulary": "Corpy"}
+    assert stream == {"speech": True, "vocabulary": "Corpy", "alt": "ハイ"}
 
 
 # --- language guard -----------------------------------------------------------
@@ -324,7 +325,7 @@ def test_offline_subtitles_use_the_same_guard(monkeypatch, tmp_path):
 
 
 def test_live_line_redoes_a_reply_that_stayed_japanese(monkeypatch):
-    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a: "")
+    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a, **k: "")
     line = "ただし急ブレーキや急ハンドルで避けなければ。"
     calls = _fake_translator(monkeypatch, [(line[:-1] + "なりません。", True, {"total_tokens": 50}),
                                            ("不过，必须靠急刹车或急打方向来避让。", True, {"total_tokens": 48})])
@@ -445,7 +446,7 @@ def test_provisional_translations_leave_room_for_the_final_ones(monkeypatch):
     limiter.limit = 60
     monkeypatch.setattr(ot, "_rpm_limiter", limiter)
     monkeypatch.setattr(ot, "load_model_config", lambda model: {"rpm": 50} if model == "claude" else {})
-    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a: "")
+    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a, **k: "")
     calls = _fake_translator(monkeypatch, [("好的", True, {"total_tokens": 5})])
     for _ in range(29):
         limiter.wait(key="claude", limit_override=50)
@@ -472,3 +473,161 @@ def test_glossary_hint_survives_a_language_without_a_column(tmp_path, monkeypatc
     backend._live_gloss_cache["key"] = None
     assert "Acme => 艾克美" in backend.live_glossary_hint("Hola, soy de Acme.", "es", "zh")
     backend._live_gloss_cache["key"] = None
+
+
+# --- a second opinion ------------------------------------------------------------
+GARBLED = "これぞれのですねヤクワリ、と、どなたがどう言うセクニのオウか"
+HEARD = "それぞれの役割とどなたがどういう責任を負うかを"
+
+
+def test_second_opinion_rides_in_its_own_tag():
+    """What the preview recognizer heard in the same speech goes to the translator
+    next to the line: the two make different mistakes. Blind-rated on three
+    meetings: +0.2 to +0.3 of 10, better in 16 windows and worse in 1."""
+    system, user = [m["content"] for m in llm_wrapper._simple_messages(
+        GARBLED, "ja", "zh", "前の行", speech=True, alt=HEARD)]
+    assert user == f"<context>前の行</context>\n<alt>{HEARD}</alt>\n<translate>{GARBLED}</translate>"
+    assert "<alt> holds the same stretch of speech" in system and "never translate <alt> itself" in system
+    # no context: the line still has to be told apart from the second opinion
+    system, user = [m["content"] for m in llm_wrapper._simple_messages(GARBLED, "ja", "zh", speech=True, alt=HEARD)]
+    assert user == f"<alt>{HEARD}</alt>\n<translate>{GARBLED}</translate>"
+    assert "inside <translate>" in system
+    # the same words twice say nothing; documents never get one
+    assert llm_wrapper._simple_messages("はい。", "ja", "zh", speech=True, alt=" はい。 ")[1]["content"] == "はい。"
+    assert "<alt>" not in llm_wrapper._simple_messages("文書", "ja", "zh", "ctx", alt="x")[1]["content"]
+
+
+def test_second_opinion_goes_with_the_context_when_a_reply_is_redone(monkeypatch):
+    monkeypatch.setattr(backend, "live_glossary_hint", lambda *a, **k: "")
+    calls = _fake_translator(monkeypatch, [("把参考识别也翻进来了。" * 20, True, {"total_tokens": 80}),
+                                           ("各自的职责。", True, {"total_tokens": 20})])
+    assert backend.live_translate_line(GARBLED, "ja", "zh", "m", True, "k", alt=HEARD) == ("各自的职责。", 100)
+    assert [(c["context"], c["alt"]) for c in calls] == [("", HEARD), ("", "")]
+
+
+# --- the live glossary -----------------------------------------------------------
+def _glossary(tmp_path, monkeypatch, rows, name="meeting"):
+    header = "ja,zh,en"
+    (tmp_path / f"{name}.csv").write_text(chr(10).join([header] + rows) + chr(10), encoding="utf-8")
+    monkeypatch.setattr(backend, "GLOSSARY_DIR", str(tmp_path))
+    cfg = {"live_glossary": name, "default_glossary": name, "live_vocabulary": "Corpy,  Jizhou"}
+    monkeypatch.setattr(backend, "get_config", lambda key, default=None: cfg.get(key, default))
+    backend._live_gloss_cache["key"] = None
+    return cfg
+
+
+def test_a_small_glossary_is_the_meeting_vocabulary(tmp_path, monkeypatch):
+    """Its rows go to the translator as "said ⇒ written" pairs (81% of a meeting's
+    74 name mentions right, against 72% for a list of spellings and 24% for
+    nothing), with the words typed on the page."""
+    _glossary(tmp_path, monkeypatch, ["ラウル,Rahul,Rahul", "マーセル,Marsel,Marsel", "MMC,MMC,MMC",
+                                      "アリス,爱丽丝,Alice", "a,b,c"])
+    # (the sample row the app ships is nobody's vocabulary)
+    assert backend.live_terms("ja", "zh") == "Corpy, Jizhou, ラウル ⇒ Rahul, マーセル ⇒ Marsel, MMC, a ⇒ b"
+    # the web page sends its own typed words (never the desktop's saved ones) and glossary choice
+    assert backend.live_terms("ja", "zh", typed="") == "ラウル ⇒ Rahul, マーセル ⇒ Marsel, MMC, a ⇒ b"
+    (tmp_path / "other.csv").write_text("ja,zh" + chr(10) + "くす,楠" + chr(10), encoding="utf-8")
+    backend._live_gloss_cache["key"] = None
+    assert backend.live_terms("ja", "zh", typed="x", glossary="other") == "x, くす ⇒ 楠"
+    assert backend.live_glossary_name("../../secret") == "meeting"   # a name that does not resolve
+    # ... and a name the browser made up never reaches the file system (a UNC
+    # name made Windows contact that host before the path was refused)
+    real = backend.glossary_path
+    monkeypatch.setattr(backend, "glossary_path", lambda n: real(n) if n in ("meeting", "other") else 1 / 0)
+    assert backend.live_glossary_name(chr(92) * 2 + "host" + chr(92) + "share" + chr(92) + "x") == "meeting"
+    assert backend.live_glossary_name(["other"]) == "meeting"
+    # English speech in the same meeting: no en->zh row was asked for a column that is missing
+    backend._live_gloss_cache["key"] = None
+    assert backend.live_terms("en", "zh", typed="").startswith("Rahul, Marsel, MMC")
+
+
+def test_a_document_glossary_only_applies_where_a_line_has_its_term(tmp_path, monkeypatch):
+    rows = [f"用語{i},术语{i},term{i}" for i in range(60)] + ["ラウル,Rahul,Rahul"]
+    _glossary(tmp_path, monkeypatch, rows)
+    assert backend.live_terms("ja", "zh") == "Corpy, Jizhou"
+    assert backend.live_glossary_hint("ラウルさんと用語7の話", "ja", "zh") == \
+        "Fixed terminology (use EXACTLY these translations): 用語7 => 术语7; ラウル => Rahul"
+
+
+def test_whisper_is_given_no_prompt(monkeypatch):
+    """Neither the previous text nor the meeting's names: both were measured and
+    both cost more than they gave (see _recognize_whisper)."""
+    seen = {}
+
+    class Model:
+        def transcribe(self, audio, **kw):
+            seen.update(kw)
+            return iter(()), type("Info", (), {"language": "ja"})()
+    monkeypatch.setattr(vp, "_get_whisper_model", lambda size: Model())
+    monkeypatch.setattr(vp, "get_stt_model", lambda model_id: {"id": model_id, "size": "large-v3-turbo"})
+    monkeypatch.setattr(vp, "_resolve_stt_engine", lambda model_def: ("whisper", "large-v3-turbo"))
+    vp.recognize_utterance(bytes([16, 0]) * 16000 * 3, model_id="whisper-large-v3-turbo")
+    assert "hotwords" not in seen and "initial_prompt" not in seen
+
+
+def test_web_requests_carry_the_browsers_vocabulary_and_glossary(tmp_path, monkeypatch):
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+    from webapp import server
+    _glossary(tmp_path, monkeypatch, ["ラウル,Rahul,Rahul"])
+    (tmp_path / "other.csv").write_text("ja,zh" + chr(10) + "くす,楠" + chr(10), encoding="utf-8")
+    seen = {}
+
+    def fake_line(source, src, dst, model, online, key, context="", vocabulary="", provisional=False,
+                  alt="", glossary=None):
+        seen.update(vocabulary=vocabulary, glossary=glossary)
+        return "好", 1
+
+    monkeypatch.setattr(backend, "live_translate_line", fake_line)
+    monkeypatch.setattr(server, "realtime_voice_available", lambda: True)
+    monkeypatch.setattr(server, "_feature_hidden", lambda name: False)
+    client = TestClient(server.app)
+    client.post("/api/live-translate-text", json={"source": "くすさん", "src_lang": "ja", "dst_lang": "zh",
+                                                  "vocabulary": "Bosch", "glossary": "other"})
+    assert seen == {"vocabulary": "Bosch, くす ⇒ 楠", "glossary": "other"}     # not the desktop's "Corpy, Jizhou"
+
+
+# --- pre-release review ----------------------------------------------------------
+def test_no_second_opinion_in_a_language_the_preview_model_does_not_know():
+    """SenseVoice knows zh / en / ja / ko / yue: its text of German speech is noise."""
+    from core.llm.llm_wrapper import _simple_messages
+    said = lambda lang: _simple_messages("Guten Morgen zusammen", lang, "zh", speech=True, alt="グーテンモルゲン")
+    assert "<alt>" not in said("de")[1]["content"] and "<alt>" not in said("th")[1]["content"]
+    assert "<alt>グーテンモルゲン</alt>" in said("ja")[1]["content"]
+    assert "<alt>" in said("auto")[1]["content"] and "<alt>" in said("zh-Hant")[1]["content"]
+
+
+def test_a_recognition_of_the_previous_session_is_dropped(monkeypatch):
+    """Stop, then start again while a slow final is still decoding: its result
+    used to land in the new session and pair every line with the next segment's
+    second opinion."""
+    import qt_app.live_page as lp
+    fired = []
+
+    class Worker:
+        def __init__(self, *a, **k):
+            self.done = type("S", (), {"connect": lambda self, f: fired.append(f)})()
+            self.finished = type("S", (), {"connect": lambda self, f: None})()
+
+        def start(self):
+            pass
+    monkeypatch.setattr(lp, "LiveRecognizeWorker", Worker)
+    page = type("P", (), {})()
+    page._recog_busy, page._recog_pending, page._local_workers = False, [], []
+    page._preview_busy, page._preview_model, page._final_mode, page._live_gen = False, "sensevoice-small", True, 1
+    got = []
+    page._on_recognized_stream = lambda *a: got.append(("final",) + a)
+    page._on_preview = lambda *a: got.append(("preview",) + a)
+    page._retire_local = lambda *a: None
+    page._is_listening, page._live_preview, page._lang_memory = (lambda: True), (lambda: False), {}
+    lp.LivePage._dispatch_recognize(page, bytes(320), True)
+    lp.LivePage._dispatch_preview(page, bytes(320), 0)
+    page._live_gen = 2                                    # stopped and started again
+    fired[0]("古い", "ja", True); fired[1]("古い", "ja", False)
+    assert got == []
+    page._recog_busy = page._preview_busy = False
+    lp.LivePage._dispatch_recognize(page, bytes(320), True)
+    lp.LivePage._dispatch_preview(page, bytes(320), 0)
+    fired[2]("新しい", "ja", True); fired[3]("新しい", "ja", False)
+    assert got == [("final", "新しい", "ja", True), ("preview", 0, "新しい")]
+

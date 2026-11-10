@@ -906,30 +906,52 @@ def delete_glossary(glossary_name):
 _live_gloss_cache = {"key": None, "entries": []}
 
 
-def live_glossary_hint(source, src_lang, dst_lang, max_terms=8):
-    """Terminology directive for LIVE translation: entries of the user's default
-    glossary whose source term occurs in ``source``, rendered as a short hint for
+def live_glossary_name(glossary=None):
+    """The glossary real-time voice uses: the one picked on the live page (passed
+    in by the web page, config "live_glossary" on the desktop), else the app's
+    default glossary. Only a name from the glossary list counts (the web page
+    sends it: nothing else may reach the file system), else the default."""
+    names = get_glossary_files()
+    for name in (glossary, get_config("live_glossary", ""), get_config("default_glossary", "Default")):
+        if isinstance(name, str) and name in names:
+            return name
+    return "Default"
+
+
+def _live_glossary_entries(src_lang, dst_lang, glossary=None):
+    """(source term, target term) rows of the live glossary for this language
+    pair, cached per (file mtime, pair)."""
+    path = glossary_path(live_glossary_name(glossary))
+    if not path or not os.path.exists(path):
+        return []
+    global _live_gloss_cache
+    key = (path, os.path.getmtime(path), src_lang or "auto", dst_lang)
+    cache = _live_gloss_cache
+    if cache["key"] != key:
+        from core.engine.text_separator import load_glossary as _load
+        # No column for the detected language: the first non-target column, as
+        # for "auto" (every language used to be "auto" here but zh/en/ja/ko).
+        entries = _load(path, src_lang or "auto", dst_lang) or _load(path, "auto", dst_lang) or []
+        # Key and rows are swapped in together: lines are translated on several
+        # threads (two languages in one meeting, several LAN users), and a key
+        # written before its rows left one user's lines with another's glossary.
+        cache = _live_gloss_cache = {"key": key, "entries": entries}
+    return cache["entries"]
+
+
+def live_glossary_hint(source, src_lang, dst_lang, max_terms=8, glossary=None):
+    """Terminology directive for LIVE translation: entries of the live glossary
+    whose source term occurs in ``source``, rendered as a short hint for
     translate_text_simple's ``context`` parameter — so proper nouns stay as
     consistent in live captions as they are in document translation. Returns ""
     when nothing matches (the common case; costs one cached lookup + substring
-    scan). Entries are cached per (glossary mtime, language pair)."""
+    scan)."""
     if not source:
         return ""
     try:
-        path = glossary_path(get_config("default_glossary", "Default"))
-        if not path or not os.path.exists(path):
-            return ""
-        key = (path, os.path.getmtime(path), src_lang or "auto", dst_lang)
-        if _live_gloss_cache["key"] != key:
-            from core.engine.text_separator import load_glossary as _load
-            _live_gloss_cache["key"] = key
-            # No column for the detected language: the first non-target column, as
-            # for "auto" (every language used to be "auto" here but zh/en/ja/ko).
-            _live_gloss_cache["entries"] = (_load(path, src_lang or "auto", dst_lang)
-                                            or _load(path, "auto", dst_lang) or [])
         low = source.lower()
         hits = []
-        for s, t in _live_gloss_cache["entries"]:
+        for s, t in _live_glossary_entries(src_lang, dst_lang, glossary):
             if not s or not t:
                 continue
             # ASCII terms match case-insensitively ("alice" spoken -> "Alice").
@@ -965,13 +987,46 @@ def clean_live_vocabulary(text):
     return out
 
 
-def live_vocabulary():
-    """Desktop: the vocabulary saved with the real-time voice page."""
-    return clean_live_vocabulary(get_config("live_vocabulary", ""))
+# A glossary of at most this many rows (for the language pair) is a meeting
+# glossary: it goes to the translator whole.
+# A bigger one (a document glossary) still applies where a line contains its
+# term (live_glossary_hint).
+# ponytail: by row count; phonetic retrieval of the few relevant rows of a big
+# glossary (RASST-style) would lift the limit.
+_LIVE_GLOSSARY_ROWS = 40
+# The two sample rows the app ships in Default.csv are nobody's meeting vocabulary.
+_GLOSSARY_SAMPLES = frozenset(("LinguaHaru", "Alice", "爱丽丝", "愛麗絲", "アリス", "Alicia", "Алиса", "앨리스", "อลิซ"))
+
+
+def live_terms(src_lang, dst_lang, typed=None, glossary=None):
+    """The names and terms of the user's meetings, as the vocabulary the
+    translator gets with a live line.
+
+    From the words typed on the live page (``typed``; None = the desktop's saved
+    ones) and the live glossary when it is small. The recognizer writes names as
+    sound-alikes, so exact glossary matching alone misses them. Measured on a
+    62-minute meeting with 74 reference mentions of 10 names and terms: glossary
+    rows given as "said ⇒ written" pairs, 81% came out right (87% of what was
+    written was backed by the reference); the plain list of correct spellings,
+    72% (83%); nothing, 24%.
+    (The translator only: the same words as recognizer hotwords were tried and
+    taken out again, see _recognize_whisper.)"""
+    words = [w for w in clean_live_vocabulary(
+        get_config("live_vocabulary", "") if typed is None else typed).split(", ") if w]
+    try:
+        rows = [(s.strip(), t.strip()) for s, t in _live_glossary_entries(src_lang, dst_lang, glossary)
+                if s and t and s.strip() and t.strip() and s.strip() not in _GLOSSARY_SAMPLES]
+    except Exception:  # noqa: BLE001 — a glossary problem must never stop live captions
+        rows = []
+    if len(rows) > _LIVE_GLOSSARY_ROWS:
+        rows = []
+    clean = lambda x: " ".join(x.replace(",", " ").replace("，", " ").split())[:40]
+    pairs = [clean(s) if s == t else f"{clean(s)} ⇒ {clean(t)}" for s, t in rows]
+    return ", ".join(dict.fromkeys(words + pairs))[:900]
 
 
 def live_translate_line(source, src_lang, dst_lang, model, use_online, api_key,
-                        context="", vocabulary="", provisional=False):
+                        context="", vocabulary="", provisional=False, alt="", glossary=None):
     """Translate one live-caption line the way BOTH frontends do (the web
     endpoint used to call the plain translator: no speech prompt, no retry).
     Glossary terms that occur in the line ride along as context; one retry on a
@@ -987,7 +1042,10 @@ def live_translate_line(source, src_lang, dst_lang, model, use_online, api_key,
     minute window: about 38 of them go out a minute beside about 10 final
     translations, which fills a 50-60 rpm window (Claude, Gemini, any model
     without an "rpm" — the default is 60) and left the finals waiting behind
-    them. No effect on DeepSeek (2500)."""
+    them. No effect on DeepSeek (2500).
+
+    alt: the same speech as a second recognizer heard it (llm_wrapper._ALT_NOTE);
+    dropped together with the context when a reply has to be redone."""
     import re
     import time
     from core.llm.llm_wrapper import translate_text_simple
@@ -995,20 +1053,20 @@ def live_translate_line(source, src_lang, dst_lang, model, use_online, api_key,
         from core.llm.online_translation import rpm_room
         if not rpm_room(model, 0.6):
             return "", 0
-    hint = live_glossary_hint(source, src_lang, dst_lang)
+    hint = live_glossary_hint(source, src_lang, dst_lang, glossary=glossary)
     ctx = f"{context} {hint}".strip() if hint else (context or "")
     translated, ok, tokens = "", False, 0
     for attempt in range(2):
         translated, ok, usage = translate_text_simple(
             source, src_lang or "auto", dst_lang, model, use_online, api_key,
-            context=ctx, speech=True, vocabulary=vocabulary)
+            context=ctx, speech=True, vocabulary=vocabulary, alt=alt)
         tokens += int((usage or {}).get("total_tokens", 0) or 0)
         reply = re.sub(r"\s", "", translated or "")
         still_japanese = (dst_lang != "ja"
                           and len(re.findall(r"[ぁ-ゖァ-ヺ]", reply)) > 0.3 * len(reply))
         if ok and not attempt and (still_japanese or (
-                ctx and len(translated or "") > max(60, 5 * len(source)))):
-            ctx = ""
+                (ctx or alt) and len(translated or "") > max(60, 5 * len(source)))):
+            ctx = alt = ""
             continue
         if ok or attempt:
             break
