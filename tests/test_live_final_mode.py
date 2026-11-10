@@ -165,16 +165,16 @@ def test_translation_waits_for_a_complete_sentence():
     # (the top cause of 20 s+ holds in a real meeting): judge what precedes it.
     page._queue_translation("k14", "要件はもう決まっていますけど、えっと。")
     assert page.sent[-1] == ("k14", "要件はもう決まっていますけど、えっと。")
-    page._queue_translation("k15", "三菱自動車からのえっと。")   # "からの" still dangles
+    page._queue_translation("k15", "山川自動車からのえっと。")   # "からの" still dangles
     assert page.sent[-1][0] == "k14" and page.rows["k15"] == "…"
     # Stream mode has no segments: a held line waits for at most two more lines.
     page._queue_translation("k16", "その秘密保持のレベルと")
     assert page.sent[-1][0] == "k14"
-    page._queue_translation("k17", "ネクストムーブとの")
-    assert page.sent[-1] == ("k17", "三菱自動車からのえっと。その秘密保持のレベルとネクストムーブとの")
+    page._queue_translation("k17", "ノースリンクスとの")
+    assert page.sent[-1] == ("k17", "山川自動車からのえっと。その秘密保持のレベルとノースリンクスとの")
     # Final mode waits for the next SEGMENT instead (_age_tr_hold), not a line count.
     page._final_mode = True
-    for k, s in (("k18", "その秘密保持のレベルと"), ("k19", "ネクストムーブとの"), ("k20", "三菱自動車からの")):
+    for k, s in (("k18", "その秘密保持のレベルと"), ("k19", "ノースリンクスとの"), ("k20", "山川自動車からの")):
         page._queue_translation(k, s)
     assert page.sent[-1][0] == "k17" and len(page._tr_hold) == 3
 
@@ -197,7 +197,7 @@ def test_line_end_reads_the_last_words_not_the_stt_full_stop():
         "そちらで対応していただいて。": "C",                 # te-form: a whole clause
         "今日追加でいきなり来たんですが。": "C",
         "前にいただいた資料の中で。": "M",                   # particle: mid-phrase
-        "三菱自動車からのえっと。": "M",
+        "山川自動車からのえっと。": "M",
         "ちなみにそこって。": "M",                          # topic って, not te-form
         "今後のビックピクチャーをあのちゃんとこう。": "M",     # こう = "like this", the verb is next
         "じゃあそれをどう。": "M",
@@ -213,10 +213,10 @@ def test_line_end_reads_the_last_words_not_the_stt_full_stop():
 
 def test_split_clause_tail_translates_up_to_the_last_clause_end():
     s = LivePage._split_clause_tail
-    assert s(["はい。", "お知らせがあるかもしれないですけど、えっと三菱自動車からの。"]) == \
-        ["はい。", "お知らせがあるかもしれないですけど、", "えっと三菱自動車からの。"]
+    assert s(["はい。", "お知らせがあるかもしれないですけど、えっと山川自動車からの。"]) == \
+        ["はい。", "お知らせがあるかもしれないですけど、", "えっと山川自動車からの。"]
     assert s(["決まっています、はい。"]) == ["決まっています、はい。"]            # finished: as is
-    assert s(["三菱自動車からコピーに対しての、"]) == ["三菱自動車からコピーに対しての、"]  # no clause end
+    assert s(["山川自動車からコピーに対しての、"]) == ["山川自動車からコピーに対しての、"]  # no clause end
 
 
 def _translating_page():
@@ -298,27 +298,27 @@ def test_one_live_translation_of_everything_pending():
     comes back after that is stale. Never asked from "auto"."""
     p = _translating_page()
     p._preview_model = "sensevoice-small"
-    p._seg_seq, p._pending_preview, p._preview_text = 1, ["三菱自動車からコピーに対しての"], "機密保持"
-    p._on_recognized_stream("三菱自動車からコピーに対してのその秘密保持のレベルと、えっとネクストムーブとの", "ja", True)
+    p._seg_seq, p._pending_preview, p._preview_text = 1, ["山川自動車からコピーに対しての"], "機密保持"
+    p._on_recognized_stream("山川自動車からコピーに対してのその秘密保持のレベルと、えっとノースリンクスとの", "ja", True)
     assert p.sent == [] and p._last_lang == "ja"
     seq, text = p.prov_asked[-1]
-    assert text == "三菱自動車からコピーに対してのその秘密保持のレベルと、えっとネクストムーブとの機密保持"
+    assert text == "山川自動車からコピーに対してのその秘密保持のレベルと、えっとノースリンクスとの機密保持"
     p._preview_text = "機密保持NDA"                    # +3 chars, and one request is out anyway
     p._request_provisional()
     assert len(p.prov_asked) == 1
     p._preview_text = "機密保持NDAを巻き直しています"    # more speech while it's out -> asked again later
     p._request_provisional()
     assert len(p.prov_asked) == 1 and p._prov_dirty
-    p._on_provisional(seq, "来自三菱汽车……与NextMove的保密", 30)
-    assert p.live_dst[-1] == "来自三菱汽车……与NextMove的保密" and len(p.prov_asked) == 2
+    p._on_provisional(seq, "来自山川汽车……与NorthLinx的保密", 30)
+    assert p.live_dst[-1] == "来自山川汽车……与NorthLinx的保密" and len(p.prov_asked) == 2
     seq2 = p.prov_asked[-1][0]
     # The next segment completes the sentence: one whole translation; the request
     # still out covered those lines -> stale; the shown one stays until the final.
     p._pending_preview, p._preview_text = ["機密保持NDAを巻き直しています"], ""
     p._on_recognized_stream("機密保持NDAを巻き直しています。", "ja", True)
-    assert len(p.sent) == 1 and p.live_dst[-1] == "来自三菱汽车……与NextMove的保密"
+    assert len(p.sent) == 1 and p.live_dst[-1] == "来自山川汽车……与NorthLinx的保密"
     p._on_provisional(seq2, "late", 5)
-    assert p.live_dst[-1] == "来自三菱汽车……与NextMove的保密"
+    assert p.live_dst[-1] == "来自山川汽车……与NorthLinx的保密"
     key2 = p._out_rows[1][0]
     p._on_translated_stream(key2, "整句译文", 50)
     assert p.live_dst[-1] == ""                           # nothing else pending: line cleared
@@ -331,21 +331,21 @@ def test_held_line_waits_for_the_next_segment_not_a_clock():
     that takes. Two segments without any sentence/clause end -> sent anyway; a
     segment cut after a clause end sends the clause at once, only the tail waits."""
     p = _translating_page()
-    p._on_recognized_stream("三菱自動車からコピーに対してのその秘密保持のレベルと、えっとネクストムーブとの", "ja", True)
+    p._on_recognized_stream("山川自動車からコピーに対してのその秘密保持のレベルと、えっとノースリンクスとの", "ja", True)
     assert p.sent == []
     p._on_recognized_stream("機密保持NDAを巻き直しています。", "ja", True)
-    assert p.sent == ["三菱自動車からコピーに対してのその秘密保持のレベルと、えっとネクストムーブとの"
+    assert p.sent == ["山川自動車からコピーに対してのその秘密保持のレベルと、えっとノースリンクスとの"
                       "機密保持NDAを巻き直しています。"]
     p.sent.clear()
     p._on_recognized_stream("その秘密保持のレベルと", "ja", True)
     assert p.sent == []
-    p._on_recognized_stream("ネクストムーブとの", "ja", True)
-    assert p.sent == ["その秘密保持のレベルとネクストムーブとの"]
+    p._on_recognized_stream("ノースリンクスとの", "ja", True)
+    assert p.sent == ["その秘密保持のレベルとノースリンクスとの"]
     p.sent.clear()
-    p._on_recognized_stream("お知らせがあるかもしれないですけど、えっと三菱自動車からのえっと。", "ja", True)
+    p._on_recognized_stream("お知らせがあるかもしれないですけど、えっと山川自動車からのえっと。", "ja", True)
     assert p.sent == ["お知らせがあるかもしれないですけど、"]
     p._on_recognized_stream("案件である。", "ja", True)
-    assert p.sent[-1] == "えっと三菱自動車からのえっと。案件である。"
+    assert p.sent[-1] == "えっと山川自動車からのえっと。案件である。"
 
 
 def test_live_default_model_follows_hardware_without_surprise_downloads(monkeypatch):
@@ -416,7 +416,7 @@ def test_provisional_of_a_finished_sentence_does_not_outlive_an_older_flush():
     p = _translating_page()
     p._preview_model = "sensevoice-small"
     p._on_recognized_stream("その秘密保持のレベルと", "ja", True)                    # held
-    p._on_recognized_stream("ネクストムーブとの機密保持を巻き直しています。", "ja", True)   # completes it: flush
+    p._on_recognized_stream("ノースリンクスとの機密保持を巻き直しています。", "ja", True)   # completes it: flush
     key1 = p._out_rows[-1][0]
     p._preview_text = "来週の会議で決めましょう"                                  # goes on speaking
     p._request_provisional()
@@ -477,10 +477,10 @@ def test_the_preview_models_text_goes_with_the_lines_of_its_segment():
     sent.clear()
     p._seg_seq, p._pending_preview = 2, ["その秘密保持のレベルと"]
     p._on_recognized_stream("その秘密ほじのレベルと", "ja", True)                 # held
-    p._seg_seq, p._pending_preview = 3, ["ネクストムーブとの機密保持を巻き直しています"]
-    p._on_recognized_stream("ネクストムーブとの機密保持を巻き直しています。", "ja", True)
-    assert sent == [("その秘密ほじのレベルとネクストムーブとの機密保持を巻き直しています。",
-                     "その秘密保持のレベルとネクストムーブとの機密保持を巻き直しています")]
+    p._seg_seq, p._pending_preview = 3, ["ノースリンクスとの機密保持を巻き直しています"]
+    p._on_recognized_stream("ノースリンクスとの機密保持を巻き直しています。", "ja", True)
+    assert sent == [("その秘密ほじのレベルとノースリンクスとの機密保持を巻き直しています。",
+                     "その秘密保持のレベルとノースリンクスとの機密保持を巻き直しています")]
     assert p._line_alt == {} and p._seg_alt == ""
     # stream mode / no preview model: the line is all there is
     p = _translating_page()

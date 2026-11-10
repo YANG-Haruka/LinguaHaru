@@ -2259,7 +2259,7 @@ class LivePage(ScrollArea):
     @classmethod
     def _split_clause_tail(cls, units):
         """Final mode: a segment's last line is often cut mid-sentence (「…かも
-        しれないですけど、えっと三菱自動車からの。」). Translate it up to its last
+        しれないですけど、えっと山川自動車からの。」). Translate it up to its last
         sentence/clause end now; only the unfinished tail waits for the next
         segment."""
         if not units or cls._line_end(units[-1]) in ("S", "C", "F"):

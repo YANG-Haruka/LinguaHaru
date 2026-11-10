@@ -3323,7 +3323,7 @@ function lineEnd(text) {
   return LIVE_SENT_WORD.test(t) ? "S" : "N";
 }
 // Final mode: a segment's last line is often cut mid-sentence (「…かもしれないです
-// けど、えっと三菱自動車からの。」). Translate it up to its last sentence/clause
+// けど、えっと山川自動車からの。」). Translate it up to its last sentence/clause
 // end now; only the unfinished tail waits for the next segment. Twin of Qt.
 function splitClauseTail(units) {
   if (!units.length || ["S", "C", "F"].includes(lineEnd(units[units.length - 1]))) return units;

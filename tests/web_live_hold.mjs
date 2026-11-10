@@ -32,7 +32,7 @@ const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00
               api: (_url, opts) => new Promise((res) => apiCalls.push({ ...JSON.parse(opts.body), res })),
               $: (id) => (id === "live-output-prov" ? provEl : { value: "zh" }),
               liveInterimText: () => interim,   // what is still being said (the preview lane)
-              liveVocabulary: () => "Corpy, Rahul",   // sent with every live translation request
+              liveVocabulary: () => "Novex, Tomas",   // sent with every live translation request
               liveGlossary: () => "meeting",          // ... with the glossary picked on the page
               updatePipCaption: () => {}, liveContext: () => "", liveLastDetected: "ja", liveSessionTokens: 0,
               liveRunning: true, liveQuiet: false, liveRecogBusy: false, liveRecogQueue: [] };
@@ -88,18 +88,18 @@ expect("a clause end (te-form) translates at once", ["そちらで対応して�
 
 // Stream mode (SenseVoice) has no segments: a held line waits for at most two more lines.
 commitLiveSentence("その秘密保持のレベルと");
-commitLiveSentence("ネクストムーブとの");
+commitLiveSentence("ノースリンクスとの");
 await settle();
 expect("stream mode: two held lines still wait", []);
-commitLiveSentence("三菱自動車からの");
+commitLiveSentence("山川自動車からの");
 await settle();
 expect("stream mode: the third unfinished line sends them",
-       ["その秘密保持のレベルとネクストムーブとの三菱自動車からの"]);
+       ["その秘密保持のレベルとノースリンクスとの山川自動車からの"]);
 
 // Final mode (Qwen3-ASR): no clock — the continuation is in the next segment,
 // however long it takes.
 setFinal(true);
-commitLiveSentence("三菱自動車からコピーに対してのその秘密保持のレベルと、ネクストムーブとの");
+commitLiveSentence("山川自動車からコピーに対してのその秘密保持のレベルと、ノースリンクスとの");
 liveAgeHold();                           // end of its own segment
 await settle();
 expect("held through the end of its own segment", []);
@@ -107,24 +107,24 @@ commitLiveSentence("機密保持NDAを巻き直しています。");
 liveAgeHold();
 await settle();
 expect("the next segment completes it: one translation",
-       ["三菱自動車からコピーに対してのその秘密保持のレベルと、ネクストムーブとの機密保持NDAを巻き直しています。"]);
+       ["山川自動車からコピーに対してのその秘密保持のレベルと、ノースリンクスとの機密保持NDAを巻き直しています。"]);
 commitLiveSentence("その秘密保持のレベルと");
 liveAgeHold();
-commitLiveSentence("ネクストムーブとの");
+commitLiveSentence("ノースリンクスとの");
 await settle();
 expect("still held while the next segment's lines come in", []);
 liveAgeHold();
 await settle();
 expect("a run-on with no clause end in two segments goes after the second",
-       ["その秘密保持のレベルとネクストムーブとの"]);
+       ["その秘密保持のレベルとノースリンクスとの"]);
 commitLiveSentence("その秘密保持のレベルと");
-commitLiveSentence("ネクストムーブとの");
-commitLiveSentence("三菱自動車からの");          // three unfinished lines of ONE segment
+commitLiveSentence("ノースリンクスとの");
+commitLiveSentence("山川自動車からの");          // three unfinished lines of ONE segment
 await settle();
 expect("final mode: no line limit within a segment", []);
 liveFlushHold();
 await settle();
-expect("stop flushes the rest", ["その秘密保持のレベルとネクストムーブとの三菱自動車からの"]);
+expect("stop flushes the rest", ["その秘密保持のレベルとノースリンクスとの山川自動車からの"]);
 
 // One live translation of everything pending — held lines + what is still being
 // said — refreshed as speech goes on, one request at a time; the whole
@@ -132,34 +132,34 @@ expect("stop flushes the rest", ["その秘密保持のレベルとネクスト�
 // that comes back after the lines were sent whole is stale. Twin of Qt
 // test_one_live_translation_of_everything_pending.
 interim = "機密保持";
-commitLiveSentence("三菱自動車からコピーに対しての");
+commitLiveSentence("山川自動車からコピーに対しての");
 liveRequestProvisional();
 await settle();
-same("asked for held + what is being said", apiCalls.map((c) => c.source), ["三菱自動車からコピーに対しての機密保持"]);
+same("asked for held + what is being said", apiCalls.map((c) => c.source), ["山川自動車からコピーに対しての機密保持"]);
 interim = "機密保持NDA";                       // a few more chars, and one is out anyway
 liveRequestProvisional();
 interim = "機密保持NDAを巻き直しています";        // more speech while it's out
 liveRequestProvisional();
 await settle();
 same("one request at a time", apiCalls.length, 1);
-apiCalls[0].res({ translated: "来自三菱汽车……", tokens: 7 });
+apiCalls[0].res({ translated: "来自山川汽车……", tokens: 7 });
 await settle();
 same("shown on the live line, then asked again for the newer text",
      [provEl.textContent, ctx.pipInterimDst, apiCalls.length, apiCalls[1] && apiCalls[1].source],
-     ["来自三菱汽车……", "来自三菱汽车……", 2, "三菱自動車からコピーに対しての機密保持NDAを巻き直しています"]);
+     ["来自山川汽车……", "来自山川汽车……", 2, "山川自動車からコピーに対しての機密保持NDAを巻き直しています"]);
 interim = "";                                  // its final recognition came in:
 commitLiveSentence("機密保持NDAを巻き直しています。");
 await settle();
-expect("the whole sentence is translated once", ["三菱自動車からコピーに対しての機密保持NDAを巻き直しています。"]);
+expect("the whole sentence is translated once", ["山川自動車からコピーに対しての機密保持NDAを巻き直しています。"]);
 same("paired with its last line", lastEntry === entries[entries.length - 1], true);
 apiCalls[1].res({ translated: "late", tokens: 5 });
 await settle();
-same("a late provisional is dropped; the shown one stays until the final", provEl.textContent, "来自三菱汽车……");
+same("a late provisional is dropped; the shown one stays until the final", provEl.textContent, "来自山川汽车……");
 finalShown(lastFid);
 await settle();
 same("cleared once the whole translation is shown", [provEl.textContent, ctx.pipInterimDst], ["", ""]);
 same("provisional calls are counted", ctx.liveSessionTokens, 12);
-same("the meeting vocabulary rides on the request", apiCalls[0].vocabulary, "Corpy, Rahul");
+same("the meeting vocabulary rides on the request", apiCalls[0].vocabulary, "Novex, Tomas");
 same("... and the glossary choice", apiCalls[0].glossary, "meeting");
 
 // A sentence that goes straight to translation (nothing held) drops the
@@ -214,10 +214,10 @@ await settle();
 expect("a whole sentence goes at once", ["それで大丈夫です。"]);
 same("with its segment's second opinion", lastAlt, "それで大丈夫です 資料は昨日送りました");
 commitLiveSentence("その秘密ほじのレベルと", "その秘密保持のレベルと");
-commitLiveSentence("ネクストムーブとの機密保持を巻き直しています。", "ネクストムーブとの機密保持を巻き直しています");
+commitLiveSentence("ノースリンクスとの機密保持を巻き直しています。", "ノースリンクスとの機密保持を巻き直しています");
 await settle();
-expect("a sentence from two segments", ["その秘密ほじのレベルとネクストムーブとの機密保持を巻き直しています。"]);
-same("gets both second opinions", lastAlt, "その秘密保持のレベルとネクストムーブとの機密保持を巻き直しています");
+expect("a sentence from two segments", ["その秘密ほじのレベルとノースリンクスとの機密保持を巻き直しています。"]);
+same("gets both second opinions", lastAlt, "その秘密保持のレベルとノースリンクスとの機密保持を巻き直しています");
 commitLiveSentence("はい、わかりました。");
 await settle();
 expect("no preview model", ["はい、わかりました。"]);
@@ -225,11 +225,11 @@ same("no second opinion", lastAlt, "");
 setFinal(false);
 
 // A segment cut after a clause end: the clause goes now, only the tail waits.
-same("split at the last clause end", splitClauseTail(["はい。", "お知らせがあるかもしれないですけど、えっと三菱自動車からの。"]),
-     ["はい。", "お知らせがあるかもしれないですけど、", "えっと三菱自動車からの。"]);
+same("split at the last clause end", splitClauseTail(["はい。", "お知らせがあるかもしれないですけど、えっと山川自動車からの。"]),
+     ["はい。", "お知らせがあるかもしれないですけど、", "えっと山川自動車からの。"]);
 same("a finished line is not split", splitClauseTail(["決まっています、はい。"]), ["決まっています、はい。"]);
-same("no clause end inside: not split", splitClauseTail(["三菱自動車からコピーに対しての、"]),
-     ["三菱自動車からコピーに対しての、"]);
+same("no clause end inside: not split", splitClauseTail(["山川自動車からコピーに対しての、"]),
+     ["山川自動車からコピーに対しての、"]);
 same("line ends", ["それで大丈夫です。", "今日追加で来たんですが。", "資料の中で。", "一応ご留意。", "えっとあの。",
                    "the meeting starts at the.", "We can decide it later.", "我觉得这个方案", "那我们明天再聊吧。"].map(lineEnd),
      ["S", "C", "M", "N", "F", "M", "S", "M", "S"]);

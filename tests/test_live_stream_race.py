@@ -187,7 +187,7 @@ def test_long_sentence_is_not_cut_by_a_clock():
     page._hang_ms = 900.0
     flushed = []
     page._flush_tr_hold = lambda: (flushed.append(list(page._tr_hold)), page._tr_hold.clear())
-    page._tr_hold = [("k1", "三菱自動車からコピーに対してのその秘密保持のレベルと、ネクストムーブとの")]
+    page._tr_hold = [("k1", "山川自動車からコピーに対してのその秘密保持のレベルと、ノースリンクスとの")]
     _frames(page, lp, 12000 // 16, True, 100)      # 12 s of continuous speech, no pause
     check("still held while the speaker goes on", flushed == [] and page._tr_hold, str(flushed))
 

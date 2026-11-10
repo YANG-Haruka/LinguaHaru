@@ -365,7 +365,7 @@ def _speech_system(dst_lang, vocabulary=""):
     - Fillers and stutters were translated literally ("so so so ah so yeah ah so"
       -> 所以所以所以啊，所以是的啊); a blind judge rated readability 3.5 -> 4.3 /10.
     - `vocabulary` (names and terms the user typed, correct spellings only): the
-      recognizer writes names as sound-alikes (コピー for Corpy, 地蔵 for Jizhou);
+      recognizer writes names as sound-alikes (ノベル for Novex, 回答 for Kaito);
       with the list 72% of the reference's 74 mentions came out right, 20% without.
       The "clearly the same word" wording matters: a looser one stuffed the listed
       words into garbled lines."""

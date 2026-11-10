@@ -31,10 +31,10 @@ def test_live_prompt_names_the_target_language_only():
 
 
 def test_live_prompt_carries_the_meeting_vocabulary():
-    msgs = llm_wrapper._simple_messages("コピーの責任ではなくて", "ja", "zh", speech=True,
-                                        vocabulary="Corpy,  Rahul")
-    assert "Names and terms of this meeting, correctly spelled: Corpy, Rahul." in msgs[0]["content"]
-    assert msgs[1]["content"] == "コピーの責任ではなくて"       # no context -> the bare line
+    msgs = llm_wrapper._simple_messages("ノベルの責任ではなくて", "ja", "zh", speech=True,
+                                        vocabulary="Novex,  Tomas")
+    assert "Names and terms of this meeting, correctly spelled: Novex, Tomas." in msgs[0]["content"]
+    assert msgs[1]["content"] == "ノベルの責任ではなくて"       # no context -> the bare line
 
 
 def test_document_prompt_is_unchanged():
@@ -44,8 +44,8 @@ def test_document_prompt_is_unchanged():
 
 
 def test_vocabulary_is_cleaned_and_capped():
-    assert backend.clean_live_vocabulary("Corpy,  Rahul\nJizhou；楠、 CAN ,corpy,, ") == \
-        "Corpy, Rahul, Jizhou, 楠, CAN"
+    assert backend.clean_live_vocabulary("Novex,  Tomas\nKaito；森、 CAN ,novex,, ") == \
+        "Novex, Tomas, Kaito, 森, CAN"
     assert backend.clean_live_vocabulary(None) == ""
     assert len(backend.clean_live_vocabulary(",".join(f"term{i}" for i in range(500)))) <= 400
 
@@ -64,13 +64,13 @@ def _fake_translator(monkeypatch, replies):
 
 
 def test_live_line_uses_the_speech_prompt_and_vocabulary(monkeypatch):
-    calls = _fake_translator(monkeypatch, [("不是Corpy的责任", True, {"total_tokens": 40})])
+    calls = _fake_translator(monkeypatch, [("不是Novex的责任", True, {"total_tokens": 40})])
     monkeypatch.setattr(backend, "live_glossary_hint", lambda *a, **k: "Fixed terminology: A => B")
-    out = backend.live_translate_line("コピーの責任ではなくて", "ja", "zh", "m", True, "k",
-                                      context="前の行", vocabulary="Corpy")
-    assert out == ("不是Corpy的责任", 40)
-    assert calls == [{"text": "コピーの責任ではなくて", "src": "ja", "speech": True, "alt": "",
-                      "context": "前の行 Fixed terminology: A => B", "vocabulary": "Corpy"}]
+    out = backend.live_translate_line("ノベルの責任ではなくて", "ja", "zh", "m", True, "k",
+                                      context="前の行", vocabulary="Novex")
+    assert out == ("不是Novex的责任", 40)
+    assert calls == [{"text": "ノベルの責任ではなくて", "src": "ja", "speech": True, "alt": "",
+                      "context": "前の行 Fixed terminology: A => B", "vocabulary": "Novex"}]
 
 
 def test_live_line_retries_once_then_gives_up(monkeypatch):
@@ -101,16 +101,16 @@ def test_web_endpoints_translate_like_the_desktop(monkeypatch):
     def fake_line(source, src, dst, model, online, key, context="", vocabulary="", provisional=False,
                   alt="", glossary=None):
         seen.update(source=source, context=context, vocabulary=vocabulary, provisional=provisional, alt=alt)
-        return "不是Corpy的责任", 33
+        return "不是Novex的责任", 33
     monkeypatch.setattr(backend, "live_translate_line", fake_line)
     monkeypatch.setattr(server, "_feature_hidden", lambda name: False)
     client = TestClient(server.app)
     r = client.post("/api/live-translate-text", json={
-        "source": "コピーの責任ではなくて", "src_lang": "ja", "dst_lang": "zh",
-        "context": "前の行", "vocabulary": "Corpy,\nRahul", "alt": "コーピーの責任ではなくて"})
-    assert r.status_code == 200 and r.json() == {"translated": "不是Corpy的责任", "tokens": 33}
-    assert seen == {"source": "コピーの責任ではなくて", "context": "前の行", "vocabulary": "Corpy, Rahul",
-                    "provisional": False, "alt": "コーピーの責任ではなくて"}
+        "source": "ノベルの責任ではなくて", "src_lang": "ja", "dst_lang": "zh",
+        "context": "前の行", "vocabulary": "Novex,\nTomas", "alt": "ノベックスの責任ではなくて"})
+    assert r.status_code == 200 and r.json() == {"translated": "不是Novex的责任", "tokens": 33}
+    assert seen == {"source": "ノベルの責任ではなくて", "context": "前の行", "vocabulary": "Novex, Tomas",
+                    "provisional": False, "alt": "ノベックスの責任ではなくて"}
     client.post("/api/live-translate-text", json={"source": "コピーの", "dst_lang": "zh", "provisional": True})
     assert seen["provisional"] is True
 
@@ -122,9 +122,9 @@ def test_web_endpoints_translate_like_the_desktop(monkeypatch):
         yield "好"
     monkeypatch.setattr(llm_wrapper, "translate_text_simple_stream", fake_stream)
     r = client.post("/api/live-translate-stream", json={
-        "source": "はい", "dst_lang": "zh", "vocabulary": "Corpy", "alt": "ハイ"})
+        "source": "はい", "dst_lang": "zh", "vocabulary": "Novex", "alt": "ハイ"})
     assert r.status_code == 200 and '"\\u597d"' in r.text
-    assert stream == {"speech": True, "vocabulary": "Corpy", "alt": "ハイ"}
+    assert stream == {"speech": True, "vocabulary": "Novex", "alt": "ハイ"}
 
 
 # --- language guard -----------------------------------------------------------
@@ -510,7 +510,7 @@ def _glossary(tmp_path, monkeypatch, rows, name="meeting"):
     header = "ja,zh,en"
     (tmp_path / f"{name}.csv").write_text(chr(10).join([header] + rows) + chr(10), encoding="utf-8")
     monkeypatch.setattr(backend, "GLOSSARY_DIR", str(tmp_path))
-    cfg = {"live_glossary": name, "default_glossary": name, "live_vocabulary": "Corpy,  Jizhou"}
+    cfg = {"live_glossary": name, "default_glossary": name, "live_vocabulary": "Novex,  Kaito"}
     monkeypatch.setattr(backend, "get_config", lambda key, default=None: cfg.get(key, default))
     backend._live_gloss_cache["key"] = None
     return cfg
@@ -520,15 +520,15 @@ def test_a_small_glossary_is_the_meeting_vocabulary(tmp_path, monkeypatch):
     """Its rows go to the translator as "said ⇒ written" pairs (81% of a meeting's
     74 name mentions right, against 72% for a list of spellings and 24% for
     nothing), with the words typed on the page."""
-    _glossary(tmp_path, monkeypatch, ["ラウル,Rahul,Rahul", "マーセル,Marsel,Marsel", "MMC,MMC,MMC",
+    _glossary(tmp_path, monkeypatch, ["トマス,Tomas,Tomas", "エリン,Elin,Elin", "KDX,KDX,KDX",
                                       "アリス,爱丽丝,Alice", "a,b,c"])
     # (the sample row the app ships is nobody's vocabulary)
-    assert backend.live_terms("ja", "zh") == "Corpy, Jizhou, ラウル ⇒ Rahul, マーセル ⇒ Marsel, MMC, a ⇒ b"
+    assert backend.live_terms("ja", "zh") == "Novex, Kaito, トマス ⇒ Tomas, エリン ⇒ Elin, KDX, a ⇒ b"
     # the web page sends its own typed words (never the desktop's saved ones) and glossary choice
-    assert backend.live_terms("ja", "zh", typed="") == "ラウル ⇒ Rahul, マーセル ⇒ Marsel, MMC, a ⇒ b"
-    (tmp_path / "other.csv").write_text("ja,zh" + chr(10) + "くす,楠" + chr(10), encoding="utf-8")
+    assert backend.live_terms("ja", "zh", typed="") == "トマス ⇒ Tomas, エリン ⇒ Elin, KDX, a ⇒ b"
+    (tmp_path / "other.csv").write_text("ja,zh" + chr(10) + "もり,森" + chr(10), encoding="utf-8")
     backend._live_gloss_cache["key"] = None
-    assert backend.live_terms("ja", "zh", typed="x", glossary="other") == "x, くす ⇒ 楠"
+    assert backend.live_terms("ja", "zh", typed="x", glossary="other") == "x, もり ⇒ 森"
     assert backend.live_glossary_name("../../secret") == "meeting"   # a name that does not resolve
     # ... and a name the browser made up never reaches the file system (a UNC
     # name made Windows contact that host before the path was refused)
@@ -538,15 +538,15 @@ def test_a_small_glossary_is_the_meeting_vocabulary(tmp_path, monkeypatch):
     assert backend.live_glossary_name(["other"]) == "meeting"
     # English speech in the same meeting: no en->zh row was asked for a column that is missing
     backend._live_gloss_cache["key"] = None
-    assert backend.live_terms("en", "zh", typed="").startswith("Rahul, Marsel, MMC")
+    assert backend.live_terms("en", "zh", typed="").startswith("Tomas, Elin, KDX")
 
 
 def test_a_document_glossary_only_applies_where_a_line_has_its_term(tmp_path, monkeypatch):
-    rows = [f"用語{i},术语{i},term{i}" for i in range(60)] + ["ラウル,Rahul,Rahul"]
+    rows = [f"用語{i},术语{i},term{i}" for i in range(60)] + ["トマス,Tomas,Tomas"]
     _glossary(tmp_path, monkeypatch, rows)
-    assert backend.live_terms("ja", "zh") == "Corpy, Jizhou"
-    assert backend.live_glossary_hint("ラウルさんと用語7の話", "ja", "zh") == \
-        "Fixed terminology (use EXACTLY these translations): 用語7 => 术语7; ラウル => Rahul"
+    assert backend.live_terms("ja", "zh") == "Novex, Kaito"
+    assert backend.live_glossary_hint("トマスさんと用語7の話", "ja", "zh") == \
+        "Fixed terminology (use EXACTLY these translations): 用語7 => 术语7; トマス => Tomas"
 
 
 def test_whisper_is_given_no_prompt(monkeypatch):
@@ -569,8 +569,8 @@ def test_web_requests_carry_the_browsers_vocabulary_and_glossary(tmp_path, monke
     pytest.importorskip("httpx")
     from fastapi.testclient import TestClient
     from webapp import server
-    _glossary(tmp_path, monkeypatch, ["ラウル,Rahul,Rahul"])
-    (tmp_path / "other.csv").write_text("ja,zh" + chr(10) + "くす,楠" + chr(10), encoding="utf-8")
+    _glossary(tmp_path, monkeypatch, ["トマス,Tomas,Tomas"])
+    (tmp_path / "other.csv").write_text("ja,zh" + chr(10) + "もり,森" + chr(10), encoding="utf-8")
     seen = {}
 
     def fake_line(source, src, dst, model, online, key, context="", vocabulary="", provisional=False,
@@ -582,9 +582,9 @@ def test_web_requests_carry_the_browsers_vocabulary_and_glossary(tmp_path, monke
     monkeypatch.setattr(server, "realtime_voice_available", lambda: True)
     monkeypatch.setattr(server, "_feature_hidden", lambda name: False)
     client = TestClient(server.app)
-    client.post("/api/live-translate-text", json={"source": "くすさん", "src_lang": "ja", "dst_lang": "zh",
-                                                  "vocabulary": "Bosch", "glossary": "other"})
-    assert seen == {"vocabulary": "Bosch, くす ⇒ 楠", "glossary": "other"}     # not the desktop's "Corpy, Jizhou"
+    client.post("/api/live-translate-text", json={"source": "もりさん", "src_lang": "ja", "dst_lang": "zh",
+                                                  "vocabulary": "Acme", "glossary": "other"})
+    assert seen == {"vocabulary": "Acme, もり ⇒ 森", "glossary": "other"}     # not the desktop's "Novex, Kaito"
 
 
 # --- pre-release review ----------------------------------------------------------

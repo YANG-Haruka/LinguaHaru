@@ -2184,8 +2184,8 @@ def _recognize_whisper(audio, src_lang, size="small"):
     meeting. The previous segment's text (initial_prompt) made the next Japanese
     segment come out translated into English. The meeting's names as hotwords
     put the names right in the source text, but three stretches of plain speech
-    came back as 「ブーブー」, names got written where nobody said them (26
-    "Jizhou" for 14 spoken), and the translations scored no better: the names
+    came back as 「ブーブー」, names got written where nobody said them (one
+    name 26 times for 14 spoken), and the translations scored no better: the names
     reach the translator anyway (backend.live_terms)."""
     model = _get_whisper_model(size)
     language = src_lang.split("-")[0] if (src_lang and src_lang != "auto") else None
