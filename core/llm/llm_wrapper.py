@@ -353,24 +353,69 @@ def _plain_translation(result):
 
 
 # Real-time voice: the source is live ASR output, not written text.
-_SPEECH_NOTE = (" The text is automatic speech recognition of live speech (often a"
-                " meeting): it may contain mis-recognized words, missing punctuation or"
-                " be a sentence fragment. Translate what the speaker meant, silently"
-                " correcting obvious mis-recognitions (sound-alike words, mangled"
-                " technical terms or names) from context, but never add content that"
-                " isn't there. Keep English technical terms and product names as written.")
+def _speech_system(dst_lang, vocabulary=""):
+    """System prompt for LIVE captions: an interpreter, not a document translator.
+
+    Measured on two real 60-min Japanese/English meetings (650 lines each, same
+    recognition text, DeepSeek flash):
+    - "Translate from en to zh" turned English lines into JAPANESE when the
+      context was Japanese, and a Chinese line into English: 14 and 21 lines not
+      in the target language -> 7 and 5 with this prompt. So the source language
+      is not named at all; the target is, twice.
+    - Fillers and stutters were translated literally ("so so so ah so yeah ah so"
+      -> 所以所以所以啊，所以是的啊); a blind judge rated readability 3.5 -> 4.3 /10.
+    - `vocabulary` (names and terms the user typed, correct spellings only): the
+      recognizer writes names as sound-alikes (コピー for Corpy, 地蔵 for Jizhou);
+      with the list 72% of the reference's 74 mentions came out right, 20% without.
+      The "clearly the same word" wording matters: a looser one stuffed the listed
+      words into garbled lines."""
+    from core.load_prompt import _lang_name
+    name = f"{_lang_name(dst_lang)} ({dst_lang})"
+    prompt = (
+        f"You are a simultaneous interpreter in a live meeting. Render what the speaker says into {name}.\n"
+        "The input is automatic speech recognition of live speech: words may be mis-recognized, "
+        "punctuation is unreliable, there are stutters, and it may stop mid-sentence.\n"
+        f"1. Output only the {name} rendering: no explanations, no notes, no quotation marks around it.\n"
+        f"2. Always answer in {name}, whatever language the input or the context is in. Speakers switch "
+        "languages (for example Japanese and English), even inside one line: render all of it. "
+        f"A part that is already in {name} stays as it is.\n"
+        "3. Say what the speaker means, the way a good interpreter does: leave out fillers, stutters, "
+        "repeated words and false starts; quietly correct obvious mis-recognitions (sound-alike words, "
+        "mangled terms or names) from the context. Never add information that was not said. If the line "
+        "is an unfinished sentence, render just that part. If it is nothing but a filler or an "
+        "acknowledgement, give its shortest natural equivalent.\n"
+        "4. Keep product names, acronyms and English technical terms as written, and keep every person, "
+        "company and product name written the same way each time (follow the context). Do not leave "
+        "words in another script untranslated: a name you cannot translate is written in Latin letters.")
+    vocabulary = " ".join(str(vocabulary or "").split())
+    if vocabulary:
+        prompt += (
+            f"\nNames and terms of this meeting, correctly spelled: {vocabulary}. The speech recognizer "
+            "may have written one of them as a sound-alike (a katakana or misspelled form of the same "
+            "word). Use the listed spelling only where the text clearly contains that same word; a word "
+            "that is merely odd or garbled is not one of them — render it as it stands. Never add a "
+            "listed word that was not said.")
+    return prompt
 
 
-def _simple_messages(text, src_lang, dst_lang, context="", speech=False):
+def _simple_messages(text, src_lang, dst_lang, context="", speech=False, vocabulary=""):
     """Chat messages for a one-line translation. Context goes in its own
     <context> tag next to the <translate> tag: in the system prompt, models
     (DeepSeek in real sessions) often translated the CONTEXT instead of the
     line — 3 of 4 live-caption lines came out as the previous sentences."""
     ctx = str(context or "").strip()
-    system_prompt = (f"You are a professional translator. Translate the following text "
-                     f"from {src_lang} to {dst_lang}. Output only the translation, nothing else.")
     if speech:
-        system_prompt += _SPEECH_NOTE
+        system_prompt = _speech_system(dst_lang, vocabulary)
+    else:
+        # Never "from auto": DeepSeek read "from auto to zh" as a free choice and
+        # turned Japanese into ENGLISH. Unknown source -> only the target.
+        if src_lang and src_lang != "auto":
+            direction = f"from {src_lang} to {dst_lang}"
+        else:
+            from core.load_prompt import _lang_name
+            direction = f"into {_lang_name(dst_lang)} ({dst_lang}), whatever language it is in"
+        system_prompt = (f"You are a professional translator. Translate the following text "
+                         f"{direction}. Output only the translation, nothing else.")
     if not ctx:
         return [{"role": "system", "content": system_prompt},
                 {"role": "user", "content": text}]
@@ -382,7 +427,7 @@ def _simple_messages(text, src_lang, dst_lang, context="", speech=False):
 
 
 def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, context="",
-                          speech=False):
+                          speech=False, vocabulary=""):
     """
     Simple text translation without complex prompt templates.
     Used by BabelDOC integration for direct text translation.
@@ -404,7 +449,7 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, 
     if not text or not text.strip():
         return text, True, None
 
-    messages = _simple_messages(text, src_lang, dst_lang, context, speech)
+    messages = _simple_messages(text, src_lang, dst_lang, context, speech, vocabulary)
 
     try:
         if not use_online:
@@ -449,7 +494,7 @@ def summarize_transcript(transcript, out_lang, model, use_online, api_key):
 
 
 def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key,
-                                 usage_sink=None, context="", speech=False):
+                                 usage_sink=None, context="", speech=False, vocabulary=""):
     """Like translate_text_simple but a GENERATOR yielding the translation
     progressively (cumulative string), for live captions' optional stream mode.
 
@@ -468,11 +513,12 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         return
     if not use_online:
         result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
-                                                   context=context, speech=speech)
+                                                   context=context, speech=speech,
+                                                   vocabulary=vocabulary)
         _sink(u)
         yield result
         return
-    messages = _simple_messages(text, src_lang, dst_lang, context, speech)
+    messages = _simple_messages(text, src_lang, dst_lang, context, speech, vocabulary)
     try:
         from core.llm.online_translation import load_model_config
         from openai import OpenAI
@@ -480,7 +526,8 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         base_url, api_model = cfg.get("base_url"), cfg.get("model")
         if not (base_url and api_model and api_key):
             result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
-                                                   context=context, speech=speech)
+                                                   context=context, speech=speech,
+                                                   vocabulary=vocabulary)
             _sink(u)
             yield result
             return
@@ -519,13 +566,15 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
                 yield _plain_translation(acc)
         if not acc:        # nothing streamed -> fall back to a normal call
             result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
-                                                   context=context, speech=speech)
+                                                   context=context, speech=speech,
+                                                   vocabulary=vocabulary)
             _sink(u)
             yield result
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"Stream translate failed ({e}); falling back.")
         result, _ok, u = translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key,
-                                                   context=context, speech=speech)
+                                                   context=context, speech=speech,
+                                                   vocabulary=vocabulary)
         _sink(u)
         yield result
 

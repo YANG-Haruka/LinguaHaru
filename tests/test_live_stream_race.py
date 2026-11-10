@@ -33,8 +33,13 @@ def _page():
     page = types.SimpleNamespace()
     for name in ("_vad_step", "_dispatch_recognize", "_on_recognized_stream",
                  "_uncommitted_tail", "_note_detected", "_set_caption_interim",
-                 "_push_caption"):
+                 "_push_caption", "_live_preview", "_dispatch_preview", "_on_preview",
+                 "_interim_text"):
         setattr(page, name, types.MethodType(getattr(P, name), page))
+    page._join_held = P._join_held
+    page._preview_model = None          # the preview lane: see test_live_preview_*
+    page._seg_seq, page._preview_text, page._pending_preview = 0, "", []
+    page._preview_busy, page._preview_next = False, None
     page._split_scored, page._find_boundary = P._split_scored, P._find_boundary
     page._quiet_cut = P._quiet_cut
     page._norm_map, page._NORM_SKIP = P._norm_map, P._NORM_SKIP

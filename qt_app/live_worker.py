@@ -6,8 +6,16 @@ import threading
 
 from PySide6.QtCore import QObject, QThread, Signal
 
-# funasr/SenseVoice is not thread-safe — serialize recognition across utterances.
-_STT_LOCK = threading.Lock()
+# funasr/SenseVoice is not thread-safe — serialize recognition PER MODEL (twin of
+# webapp.server._stt_lock). One lock for all made the fast preview model wait
+# for every slow final decode: the live line froze exactly when it should move.
+_STT_LOCKS = {}                  # model id -> lock
+_STT_LOCKS_GUARD = threading.Lock()
+
+
+def stt_lock(model_id):
+    with _STT_LOCKS_GUARD:
+        return _STT_LOCKS.setdefault(model_id or "", threading.Lock())
 
 
 class PreloadWorker(QObject):
@@ -105,19 +113,23 @@ class LiveRecognizeWorker(QThread):
     utterance pass (flush the remainder)."""
     done = Signal(str, str, bool)   # (text, detected_lang, is_final)
 
-    def __init__(self, pcm_bytes, sample_rate, is_final, parent=None, model_id=None):
+    def __init__(self, pcm_bytes, sample_rate, is_final, parent=None, model_id=None,
+                 lang_memory=None):
         super().__init__(parent)
         self._pcm = pcm_bytes
         self._sr = sample_rate
         self._final = is_final
         self._model_id = model_id     # None = the live-voice model
+        self._lang_memory = lang_memory   # the session's languages (see recognize_utterance)
 
     def run(self):
         try:
-            from core.pipelines.video_translation_pipeline import recognize_utterance
-            with _STT_LOCK:   # serialize recognition (one worker at a time)
+            from core.pipelines.video_translation_pipeline import (
+                recognize_utterance, get_selected_live_stt_model)
+            with stt_lock(self._model_id or get_selected_live_stt_model()):
                 text, detected = recognize_utterance(self._pcm, sample_rate=self._sr,
-                                                     model_id=self._model_id)
+                                                     model_id=self._model_id,
+                                                     lang_memory=self._lang_memory)
             self.done.emit(text or "", detected or "auto", self._final)
         except Exception:  # noqa: BLE001 — transient; the next partial retries
             self.done.emit("", "auto", self._final)
@@ -125,7 +137,9 @@ class LiveRecognizeWorker(QThread):
 
 class LiveTranslateWorker(QThread):
     """Translate one finalized sentence (LLM). Emits done(timestamp, translated)
-    so the matching source/translation lines line up by timestamp."""
+    so the matching source/translation lines line up by timestamp. An empty
+    timestamp is a PROVISIONAL translation (no row of its own): skipped when the
+    model's rate limit is filling up (backend.live_translate_line)."""
     done = Signal(str, str, int)   # (timestamp, translated, total_tokens)
 
     def __init__(self, ts, source, src_code, dst_code, model, use_online,
@@ -143,28 +157,11 @@ class LiveTranslateWorker(QThread):
     def run(self):
         try:
             from core import backend
-            from core.llm.llm_wrapper import translate_text_simple
-            # Glossary terms present in this sentence ride along as context, so
-            # proper nouns stay consistent (same terms as document translation).
-            hint = backend.live_glossary_hint(self._source, self._src, self._dst)
-            ctx = f"{self._context} {hint}".strip() if hint else self._context
-            tokens = 0
-            # One retry: fast speech fires many requests at once and the odd one
-            # hits a rate limit / timeout — that sentence used to vanish silently.
-            for attempt in range(2):
-                translated, ok, usage = translate_text_simple(
-                    self._source, self._src or "auto", self._dst, self._model,
-                    self._online, self._key, context=ctx, speech=True)
-                tokens += int((usage or {}).get("total_tokens", 0) or 0)
-                # Much longer than its source -> the model translated the context
-                # too; redo this one without context.
-                if ok and ctx and len(translated or "") > max(60, 5 * len(self._source)):
-                    ctx = ""
-                    continue
-                if ok or attempt:
-                    break
-                self.msleep(1500)
-            self.done.emit(self._ts, translated if ok else "", tokens)
+            translated, tokens = backend.live_translate_line(
+                self._source, self._src, self._dst, self._model, self._online, self._key,
+                context=self._context, vocabulary=backend.live_vocabulary(),
+                provisional=not self._ts)
+            self.done.emit(self._ts, translated, tokens)
         except Exception:  # noqa: BLE001
             self.done.emit(self._ts, "", 0)
 
@@ -197,7 +194,8 @@ class LiveTranslateStreamWorker(QThread):
             ctx = f"{self._context} {hint}".strip() if hint else self._context
             for partial in translate_text_simple_stream(
                     self._source, self._src or "auto", self._dst, self._model,
-                    self._online, self._key, usage_sink=sink, context=ctx, speech=True):
+                    self._online, self._key, usage_sink=sink, context=ctx, speech=True,
+                    vocabulary=backend.live_vocabulary()):
                 self.chunk.emit(self._ts, partial or "")
         except Exception:  # noqa: BLE001
             pass

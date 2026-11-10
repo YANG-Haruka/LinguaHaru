@@ -2258,7 +2258,17 @@ async def module_action(action: str, payload: dict):
 # base64); we recognize it locally then translate with the active model.
 # Requires a speech-recognition plugin.
 # --------------------------------------------------------------------------- #
-_STT_LOCK = threading.Lock()  # funasr is not thread-safe — serialize recognition
+_STT_LOCKS = {}                  # model id -> lock
+_STT_LOCKS_GUARD = threading.Lock()
+
+
+def _stt_lock(model_id):
+    """One recognition at a time PER MODEL (funasr/SenseVoice is not thread-safe),
+    so the SenseVoice preview runs beside a slow Qwen3-ASR final decode — one
+    global lock dropped every preview for the ~3 s each final took."""
+    with _STT_LOCKS_GUARD:
+        return _STT_LOCKS.setdefault(model_id or "", threading.Lock())
+
 
 @app.post("/api/live-preload")
 async def live_preload(payload: dict = None):
@@ -2282,7 +2292,11 @@ async def live_preload(payload: dict = None):
         pm = live_preview_model()
         if pm and not recognizer_ready(lambda: pm):
             await asyncio.get_event_loop().run_in_executor(None, preload_live_preview)
-        return {"ready": True, "commit_mode": live_commit_mode()}
+        # preview: a separate fast preview model -> the page runs previews in
+        # their own lane (beside the finals); without one — or when it failed
+        # to load — they'd fight the finals for the same model.
+        return {"ready": True, "commit_mode": live_commit_mode(),
+                "preview": bool(pm) and recognizer_ready(lambda: pm)}
     from core.optional_modules import format_download_line, is_network_error
 
     def _cb(line):
@@ -2293,11 +2307,14 @@ async def live_preload(payload: dict = None):
     loop = asyncio.get_event_loop()
     ready = await loop.run_in_executor(None, lambda: preload_recognizer(model_id, progress_cb=_cb))
     _PRELOAD_PROGRESS["line"] = ""
+    preview = False
     if ready and scope == "live":   # final mode previews with a fast model: load it too
-        from core.pipelines.video_translation_pipeline import preload_live_preview
+        from core.pipelines.video_translation_pipeline import preload_live_preview, live_preview_model
         await loop.run_in_executor(None, preload_live_preview)
+        pm = live_preview_model()
+        preview = bool(pm) and recognizer_ready(lambda: pm)
     if ready:
-        return {"ready": True, "commit_mode": live_commit_mode()}
+        return {"ready": True, "commit_mode": live_commit_mode(), "preview": preview}
     from core.pipelines import video_translation_pipeline as vtp
     err = _public_error(vtp.last_preload_error)
     return {"ready": False, "error": err, "network": is_network_error(err)}
@@ -2320,6 +2337,11 @@ def live_preload_progress():
     return _PRELOAD_PROGRESS
 
 
+# browser session -> the languages it has been speaking (recognize_utterance's
+# guard against accented speech detected as some other language)
+_LIVE_LANGS = {}
+
+
 @app.post("/api/live-recognize")
 async def live_recognize(payload: dict, request: Request):
     """Step 1 of local live voice: recognize one utterance -> source text.
@@ -2340,23 +2362,33 @@ async def live_recognize(payload: dict, request: Request):
     if len(pcm) > _MAX_LIVE_AUDIO_BYTES:
         pcm = pcm[-_MAX_LIVE_AUDIO_BYTES:]
     is_final = bool(payload.get("final", False))
-    from core.pipelines.video_translation_pipeline import recognize_utterance, live_preview_model
+    from core.pipelines.video_translation_pipeline import (
+        recognize_utterance, live_preview_model, get_selected_live_stt_model)
     # Final mode: a partial only previews the dim line -> fast model, GPU free for finals.
     model_id = None if is_final else live_preview_model()
+    lock = _stt_lock(model_id or get_selected_live_stt_model())
+    if len(_LIVE_LANGS) > 2000:   # a public server over months: start over, it relearns in 3 segments
+        _LIVE_LANGS.clear()
+    # Final mode only (twin of Qt _dispatch_recognize): in stream mode lines are
+    # committed from partials, and a final recognized again would not line up.
+    from core.pipelines.video_translation_pipeline import live_commit_mode
+    memory = (_LIVE_LANGS.setdefault(request.state.session_id, {})
+              if is_final and live_commit_mode() == "final" else None)
     loop = asyncio.get_event_loop()
 
     def _recognize():
-        # _STT_LOCK serializes recognition (funasr isn't thread-safe). Under LAN
-        # contention, DROP partials (latest-wins — the next partial retries) but
-        # let finals wait, so concurrent speakers can't pile up an unbounded queue.
-        timeout = 8.0 if is_final else 0.25
-        if not _STT_LOCK.acquire(timeout=timeout):
+        # Under LAN contention, DROP partials (latest-wins — the next partial
+        # retries) but let finals wait, so concurrent speakers can't pile up an
+        # unbounded queue.
+        timeout = 20.0 if is_final else 0.25   # a guarded final may decode three times
+        if not lock.acquire(timeout=timeout):
             return None
         try:
-            text, det = recognize_utterance(pcm, sample_rate=16000, model_id=model_id)
+            text, det = recognize_utterance(pcm, sample_rate=16000, model_id=model_id,
+                                            lang_memory=memory)
             return text, det
         finally:
-            _STT_LOCK.release()
+            lock.release()
     res = await loop.run_in_executor(None, _recognize)
     if res is None:
         return {"source": "", "detected": "", "busy": True}
@@ -2385,23 +2417,20 @@ async def live_translate_text(payload: dict):
     model = backend.get_active_model(use_online=use_online)
     api_key = (load_api_key_for_model(model)
                or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
-    from core.llm.llm_wrapper import translate_text_simple
-    # Glossary terms present in this sentence ride along as context, so proper
-    # nouns stay consistent (same terms as document translation).
-    hint = backend.live_glossary_hint(source, src_code, dst_lang)
-    if hint:
-        context = f"{context} {hint}".strip()
+    # The meeting vocabulary is the browser's own (sent with each line), so LAN
+    # users don't share one list.
+    vocabulary = backend.clean_live_vocabulary(payload.get("vocabulary"))
     loop = asyncio.get_event_loop()
 
-    def _translate():
-        return translate_text_simple(source, src_code, dst_lang, model, use_online,
-                                     api_key, context=context)
+    def _translate():   # same call as the desktop app: speech prompt, glossary, retry
+        return backend.live_translate_line(source, src_code, dst_lang, model, use_online,
+                                           api_key, context=context, vocabulary=vocabulary,
+                                           provisional=bool(payload.get("provisional")))
     try:
-        translated, ok, usage = await loop.run_in_executor(None, _translate)
+        translated, tokens = await loop.run_in_executor(None, _translate)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"Translate failed: {e}")
-    tokens = int((usage or {}).get("total_tokens", 0) or 0)
-    return {"translated": translated if ok else "", "tokens": tokens}
+    return {"translated": translated, "tokens": tokens}
 
 
 @app.get("/api/cache/stats")
@@ -2475,6 +2504,7 @@ def live_translate_stream(payload: dict):
     hint = backend.live_glossary_hint(source, src_code, dst_lang)
     if hint:
         context = f"{context} {hint}".strip()
+    vocabulary = backend.clean_live_vocabulary(payload.get("vocabulary"))
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
     model = backend.get_active_model(use_online=use_online)
@@ -2488,7 +2518,8 @@ def live_translate_stream(payload: dict):
             try:
                 for partial in translate_text_simple_stream(
                         source, src_code, dst_lang, model, use_online, api_key,
-                        usage_sink=sink, context=context):
+                        usage_sink=sink, context=context, speech=True,
+                        vocabulary=vocabulary):
                     yield f"data: {_json.dumps(partial)}\n\n"
             except Exception:  # noqa: BLE001
                 yield f"data: {_json.dumps('')}\n\n"
@@ -2600,9 +2631,9 @@ async def quick_recognize_api(payload: dict):
     loop = asyncio.get_event_loop()
 
     def _recognize():
-        with _STT_LOCK:
-            return recognize_utterance(pcm, sample_rate=16000,
-                                       model_id=get_selected_quick_stt_model())
+        mid = get_selected_quick_stt_model()
+        with _stt_lock(mid):
+            return recognize_utterance(pcm, sample_rate=16000, model_id=mid)
     source, detected = await loop.run_in_executor(None, _recognize)
     return {"source": source or "", "detected": detected or ""}
 

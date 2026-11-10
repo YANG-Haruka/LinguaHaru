@@ -135,7 +135,7 @@ def test_translation_waits_for_a_complete_sentence():
                                  rows={}, sent=[])
     page._set_out_row = lambda k, t: page.rows.__setitem__(k, t)
     page._start_line_translation = lambda k, s: page.sent.append((k, s))
-    for name in ("_queue_translation", "_flush_tr_hold"):
+    for name in ("_queue_translation", "_flush_tr_hold", "_prov_superseded"):
         setattr(page, name, types.MethodType(getattr(P, name), page))
     page._queue_translation("k1", "今回作ったモデルをいろんなシーンに")
     assert page.sent == [] and page.rows["k1"] == "…"
@@ -179,6 +179,15 @@ def test_translation_waits_for_a_complete_sentence():
     assert page.sent[-1][0] == "k17" and len(page._tr_hold) == 3
 
 
+def test_translate_prompt_never_says_from_auto():
+    """A provisional caption went out as "from auto to zh" and DeepSeek turned
+    Japanese into ENGLISH: an unknown source names only the target."""
+    from core.llm.llm_wrapper import _simple_messages
+    auto = _simple_messages("確かにちょっと今ふわっとしてる", "auto", "zh")[0]["content"]
+    assert "from auto" not in auto and "into 中文 (zh)" in auto
+    assert "from ja to zh" in _simple_messages("こんにちは", "ja", "zh")[0]["content"]
+
+
 def test_line_end_reads_the_last_words_not_the_stt_full_stop():
     """The STT ends every segment with "。" — even mid-sentence — so how a line
     ends is read from its last words (twin of web lineEnd, tests/web_live_hold.mjs)."""
@@ -190,6 +199,9 @@ def test_line_end_reads_the_last_words_not_the_stt_full_stop():
         "前にいただいた資料の中で。": "M",                   # particle: mid-phrase
         "三菱自動車からのえっと。": "M",
         "ちなみにそこって。": "M",                          # topic って, not te-form
+        "今後のビックピクチャーをあのちゃんとこう。": "M",     # こう = "like this", the verb is next
+        "じゃあそれをどう。": "M",
+        "じゃあ行こう。": "S",                              # 行こう (let's go) is a sentence
         "一応ご留意。": "N",                                # bare noun: cut off
         "the meeting starts at the.": "M", "We can decide it later.": "S",
         "那我们明天再聊吧。": "S", "我觉得这个方案": "M",
@@ -215,60 +227,101 @@ def _translating_page():
     p = _final_page()
     for name in ("_commit_stream_sentence", "_queue_translation", "_age_tr_hold", "_flush_tr_hold",
                  "_request_provisional", "_on_provisional", "_final_replaces_provisional",
-                 "_on_translated_stream", "_clear_caption_prov"):
+                 "_on_translated_stream", "_pending_text", "_show_provisional", "_prov_superseded"):
         setattr(p, name, types.MethodType(getattr(P, name), p))
     for name in ("_split_clause_tail", "_line_end", "_join_held", "_HOLD_MAX_CHARS",
-                 "_TAIL_ENDINGS", "_BACKCHANNELS", "_SENT_END"):
+                 "_TAIL_ENDINGS", "_BACKCHANNELS", "_SENT_END", "_PROV_MIN_GROWTH"):
         setattr(p, name, getattr(P, name))
     p._ctx_history, p._held, p._out_rows, p._tr_hold, p._tr_hold_seen = [], "", [], [], 0
-    p._prov_seq, p._prov_text, p._prov_key, p._prov_clear = 0, "", None, {}
+    p._prov_seq, p._prov_text, p._prov_busy, p._prov_dirty = 0, "", False, False
+    p._prov_flush, p._prov_shown_seq, p._last_lang = None, 0, "auto"
     p._session_tokens = 0
     p.input_text = types.SimpleNamespace(insertPlainText=lambda s: None, ensureCursorVisible=lambda: None)
     p._render_output = lambda: None
-    p.rows, p.sent, p.prov_asked = {}, [], []
+    p.rows, p.sent, p.prov_asked, p.live_dst = {}, [], [], []
     p._set_out_row = lambda k, t: p.rows.__setitem__(k, t)
     p._start_line_translation = lambda k, s: (p.sent.append(s), p._ctx_history.append(s))
-    p._start_provisional = lambda seq, k, s: p.prov_asked.append((seq, k, s))
+    p._start_provisional = lambda seq, s: p.prov_asked.append((seq, s))
+    p._caption_bar = types.SimpleNamespace(
+        set_source=lambda s, k=None: None, set_translated=lambda t, k=None: None,
+        set_interim_translation=lambda t: p.live_dst.append(t))
     return p
 
 
-def test_held_text_gets_a_provisional_translation_replaced_by_the_whole_one():
-    """Two-layer captions: held text is translated provisionally at once (dim,
-    "…"); the whole sentence's translation replaces it; a provisional result
-    that comes back after that is stale and dropped."""
+def test_live_preview_keeps_moving_and_stays_until_its_final():
+    """Final mode: previews run in their own lane (one shared queue froze the dim
+    line for every final's ~3 s decode); a cut segment's preview stays on screen
+    until its final recognition replaces it; a late preview of a segment that was
+    already cut is not shown as the new one."""
+    p, lp = _page()
+    p._final_mode, p._preview_model = True, "sensevoice-small"
+    shown = []
+    p._set_caption_interim = lambda t: shown.append(t)
+    p._request_provisional = lambda: None
+    p._split_sentences = LivePage._split_sentences
+    p._split_clause_tail, p._line_end = LivePage._split_clause_tail, LivePage._line_end
+    p._age_tr_hold = lambda: None
+    started = []
+    class _W:                                         # records which lane each request took
+        def __init__(self, pcm, rate, is_final, **kw):
+            started.append((pcm, is_final, kw.get("model_id")))
+            self.done = types.SimpleNamespace(connect=lambda f: None)
+            self.finished = types.SimpleNamespace(connect=lambda f: None)
+        def start(self):
+            pass
+    lp.LiveRecognizeWorker = _W
+    p._dispatch_recognize(b"seg1-partial", False)
+    p._on_preview(0, "えっと今日の議題は")
+    assert shown[-1] == "えっと今日の議題は"
+    p._dispatch_recognize(b"seg1", True)              # segment 1 cut -> its final is out
+    assert started[-1] == (b"seg1", True, None) and p._recog_busy
+    p._dispatch_recognize(b"seg2-partial", False)     # a preview still runs beside it
+    assert started[-1] == (b"seg2-partial", False, "sensevoice-small")
+    p._on_preview(0, "えっと今日の議題は三つ")          # seg 1's late preview: not the new one
+    p._on_preview(1, "まず")
+    assert shown[-1] == "えっと今日の議題はまず"          # seg 1's preview stays until its final
+    p._dispatch_recognize(b"seg2", True)              # cut while seg 1's final is out: queued
+    p._on_preview(2, "それから")
+    p._on_recognized_stream("えっと今日の議題は三つあります。", "ja", True)
+    assert p.commits == ["えっと今日の議題は三つあります。"] and shown[-1] == "まずそれから"
+    # The queued final then starts — counted once, when the VAD cut it (counting
+    # it again piled stale previews into the live line).
+    assert started[-1] == (b"seg2", True, None)
+    assert p._seg_seq == 2 and p._pending_preview == ["まず"] and p._preview_text == "それから"
+
+
+def test_one_live_translation_of_everything_pending():
+    """Held lines + what is still being said get ONE provisional translation,
+    refreshed as speech goes on (one request at a time, after a few new chars);
+    the whole sentence's translation replaces it; a provisional result that
+    comes back after that is stale. Never asked from "auto"."""
     p = _translating_page()
-    caps = []
-    p._push_caption = lambda source=None, translated=None, key=None, provisional=False: (
-        caps.append((key, translated, provisional)) if translated else None)
-    p._caption_bar = types.SimpleNamespace(clear_provisional=lambda k: caps.append((k, None, "cleared")))
+    p._preview_model = "sensevoice-small"
+    p._seg_seq, p._pending_preview, p._preview_text = 1, ["三菱自動車からコピーに対しての"], "機密保持"
     p._on_recognized_stream("三菱自動車からコピーに対してのその秘密保持のレベルと、えっとネクストムーブとの", "ja", True)
-    assert p.sent == [] and len(p.prov_asked) == 1
-    seq, key1, text = p.prov_asked[0]
-    assert key1 == p._out_rows[0][0] and text.endswith("ネクストムーブとの")
-    p._on_recognized_stream("機密保持", "ja", False)          # a preview: nothing new held
+    assert p.sent == [] and p._last_lang == "ja"
+    seq, text = p.prov_asked[-1]
+    assert text == "三菱自動車からコピーに対してのその秘密保持のレベルと、えっとネクストムーブとの機密保持"
+    p._preview_text = "機密保持NDA"                    # +3 chars, and one request is out anyway
+    p._request_provisional()
     assert len(p.prov_asked) == 1
-    p._on_provisional(seq, key1, "来自三菱汽车的……与NextMove的", 30)
-    assert p.rows[key1] == "… 来自三菱汽车的……与NextMove的"
-    assert caps[-1] == (key1, "来自三菱汽车的……与NextMove的", True)
-    p._on_recognized_stream("機密保持NDAを巻き直しています。", "ja", True)   # the sentence ends
-    assert len(p.sent) == 1 and p.rows[key1] == "↓" and len(p.prov_asked) == 1
-    p._on_provisional(seq, key1, "late", 5)                # came back after the flush: stale
-    assert p.rows[key1] == "↓"
+    p._preview_text = "機密保持NDAを巻き直しています"    # more speech while it's out -> asked again later
+    p._request_provisional()
+    assert len(p.prov_asked) == 1 and p._prov_dirty
+    p._on_provisional(seq, "来自三菱汽车……与NextMove的保密", 30)
+    assert p.live_dst[-1] == "来自三菱汽车……与NextMove的保密" and len(p.prov_asked) == 2
+    seq2 = p.prov_asked[-1][0]
+    # The next segment completes the sentence: one whole translation; the request
+    # still out covered those lines -> stale; the shown one stays until the final.
+    p._pending_preview, p._preview_text = ["機密保持NDAを巻き直しています"], ""
+    p._on_recognized_stream("機密保持NDAを巻き直しています。", "ja", True)
+    assert len(p.sent) == 1 and p.live_dst[-1] == "来自三菱汽车……与NextMove的保密"
+    p._on_provisional(seq2, "late", 5)
+    assert p.live_dst[-1] == "来自三菱汽车……与NextMove的保密"
     key2 = p._out_rows[1][0]
     p._on_translated_stream(key2, "整句译文", 50)
-    assert caps[-2:] == [(key2, "整句译文", False), (key1, None, "cleared")]
-    assert p._session_tokens == 85                          # provisional calls cost too
-    # Stream mode: the hold grows -> the newest provisional replaces the older one.
-    p._final_mode = False
-    p._queue_translation("s1", "その秘密保持のレベルと")
-    p._request_provisional()
-    p._on_provisional(p.prov_asked[-1][0], "s1", "那个保密级别", 0)
-    p._queue_translation("s2", "ネクストムーブとの")
-    p._request_provisional()
-    assert p.prov_asked[-1][1:] == ("s2", "その秘密保持のレベルとネクストムーブとの")
-    p._on_provisional(p.prov_asked[-1][0], "s2", "那个保密级别与NextMove的", 0)
-    assert p.rows["s1"] == "…" and p.rows["s2"] == "… 那个保密级别与NextMove的"
-    assert ("s1", None, "cleared") in caps
+    assert p.live_dst[-1] == ""                           # nothing else pending: line cleared
+    assert p._session_tokens == 85                        # provisional calls cost too
 
 
 def test_held_line_waits_for_the_next_segment_not_a_clock():
@@ -323,3 +376,86 @@ def test_live_default_model_follows_hardware_without_surprise_downloads(monkeypa
     monkeypatch.setattr(importlib.metadata, "version", lambda _p: "2.7.0+cpu")
     assert not v._live_qwen_hw_ok()                                  # CPU torch build
     v._live_default.update(t=-1e9, id=None, hw=None)
+
+
+def test_a_sentence_sent_at_once_drops_the_provisional_request_still_out():
+    """The preview of a segment had a provisional request out; its final came as
+    a complete sentence (nothing held) and went straight to translation. The
+    late provisional reply used to be shown — a second, dim translation under
+    the final one for the whole pause."""
+    p = _translating_page()
+    p._preview_model = "sensevoice-small"
+    p._seg_seq, p._preview_text = 0, "それで大丈夫です"
+    p._request_provisional()
+    seq, _ = p.prov_asked[-1]
+    p._pending_preview, p._preview_text, p._seg_seq = ["それで大丈夫です"], "", 1      # the VAD cut it
+    p._on_recognized_stream("それで大丈夫です。", "ja", True)
+    assert p.sent == ["それで大丈夫です。"] and not p._pending_text()
+    p._on_provisional(seq, "这样就可以了", 9)                # comes back late
+    assert p.live_dst[-1:] != ["这样就可以了"] and not p._prov_busy
+    # ... and one that was already on screen goes when that translation lands
+    p = _translating_page()
+    p._preview_model = "sensevoice-small"
+    p._seg_seq, p._preview_text = 0, "それで大丈夫です"
+    p._request_provisional()
+    p._on_provisional(p.prov_asked[-1][0], "这样就可以了", 9)
+    assert p.live_dst[-1] == "这样就可以了"
+    p._pending_preview, p._preview_text, p._seg_seq = ["それで大丈夫です"], "", 1
+    p._on_recognized_stream("それで大丈夫です。", "ja", True)
+    assert p.live_dst[-1] == "这样就可以了"                   # no blank gap while the final is out
+    p._on_translated_stream(p._out_rows[-1][0], "这样没问题。", 20)
+    assert p.live_dst[-1] == ""
+
+
+def test_provisional_of_a_finished_sentence_does_not_outlive_an_older_flush():
+    """Held lines were sent whole (their translation still out); the speaker went
+    on, that preview got a provisional translation, and then came back as a
+    complete sentence. Its provisional translation stayed on screen until the
+    next speech: the older flush kept it alive and then would not clear it."""
+    p = _translating_page()
+    p._preview_model = "sensevoice-small"
+    p._on_recognized_stream("その秘密保持のレベルと", "ja", True)                    # held
+    p._on_recognized_stream("ネクストムーブとの機密保持を巻き直しています。", "ja", True)   # completes it: flush
+    key1 = p._out_rows[-1][0]
+    p._preview_text = "来週の会議で決めましょう"                                  # goes on speaking
+    p._request_provisional()
+    p._on_provisional(p.prov_asked[-1][0], "下周的会议上决定吧", 9)
+    assert p.live_dst[-1] == "下周的会议上决定吧"
+    p._pending_preview, p._preview_text, p._seg_seq = ["来週の会議で決めましょう"], "", p._seg_seq + 1
+    p._on_recognized_stream("来週の会議で決めましょう。", "ja", True)              # sent at once
+    key2 = p._out_rows[-1][0]
+    p._on_translated_stream(key1, "正在重新签订保密协议。", 30)
+    p._on_translated_stream(key2, "下周的会议上决定吧。", 20)
+    assert p.live_dst[-1] == "" and not p._pending_text()
+
+
+def test_an_empty_segment_takes_its_provisional_translation_with_it():
+    """A preview that led to nothing (noise, a dropped hallucination): the request
+    still out is for text that is gone, and so is what is on screen."""
+    p = _translating_page()
+    p._preview_model = "sensevoice-small"
+    p._seg_seq, p._preview_text = 0, "ご視聴ありがとうございました"
+    p._request_provisional()
+    seq, _ = p.prov_asked[-1]
+    p._pending_preview, p._preview_text, p._seg_seq = ["ご視聴ありがとうございました"], "", 1
+    p._on_recognized_stream("", "ja", True)
+    p._on_provisional(seq, "感谢收看", 9)
+    assert "感谢收看" not in p.live_dst and not p._prov_busy
+
+
+def test_the_page_shows_the_live_lines_without_the_caption_bar():
+    """The provisional translation (about 2300 requests an hour) was only drawn
+    in the floating caption bar: with the bar closed it was paid for and shown
+    nowhere. The page has its own two dim lines (twin of the web page)."""
+    import types
+    P = LivePage
+    p = types.SimpleNamespace(_caption_bar=None)
+    texts = {}
+    for name in ("interim_label", "prov_label"):
+        setattr(p, name, types.SimpleNamespace(setText=lambda t, n=name: texts.__setitem__(n, t)))
+    P._show_provisional(p, "下周的会议上决定吧", 3)
+    P._set_caption_interim(p, "来週の会議で決めましょう")
+    assert texts == {"prov_label": "下周的会议上决定吧", "interim_label": "来週の会議で決めましょう"}
+    assert p._prov_shown_seq == 3
+    P._show_provisional(p, "")
+    assert texts["prov_label"] == "" and p._prov_shown_seq == 0

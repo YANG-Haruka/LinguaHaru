@@ -56,6 +56,7 @@ const harness = `
   const liveFlushHold = () => Promise.resolve();   // translation side: not under test here
   const liveAgeHold = () => Promise.resolve();
   const liveRequestProvisional = () => Promise.resolve();
+  let liveFinalMode = false, livePreviewLane = false;   // stream mode (SenseVoice) — the race under test
   async function recognizeInt16(id, final) {
     return new Promise((res) => __at(__now() + (final ? __LAT.final : __LAT.partial),
       () => res({ source: __HYP[id], detected: "zh" })));

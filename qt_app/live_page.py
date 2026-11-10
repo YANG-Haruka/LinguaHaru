@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
     CardWidget, TextEdit, FluentIcon, InfoBar, PushButton, ToggleButton,
-    InfoBarPosition, IconWidget, SwitchButton, CheckBox,
+    InfoBarPosition, IconWidget, SwitchButton, CheckBox, LineEdit,
 )
 
 from core import backend
@@ -224,6 +224,7 @@ class _CaptionBar(QWidget):
         self._CAP_MAX = 12          # kept for FIFO translation pairing
         self._RENDER_LAST = 3       # pairs shown at once
         self._interim = ""          # live, not-yet-finalized source line
+        self._interim_dst = ""      # its provisional translation
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -461,22 +462,25 @@ class _CaptionBar(QWidget):
                 parts.append(
                     "<div style='%scolor:%s;font-size:%dpx;margin-top:8px;'>%s</div>"
                     % (fam, src_c, src_px, _html.escape(e["src"])))
-            if show_dst and e.get("dst") and e.get("prov"):
-                # Provisional (the sentence isn't finished yet): dim, italic, "…";
-                # the whole sentence's translation replaces it.
-                parts.append(
-                    "<div style='%sfont-style:italic;color:%s;font-size:%dpx;font-weight:400;'>%s …</div>"
-                    % (fam, old_c, self._font_size, _html.escape(e["dst"])))
-            elif show_dst and e.get("dst"):
+            if show_dst and e.get("dst"):
                 color, weight = ((new_c.name(), bold) if newest
                                  else (old_c, max(400, bold - 100)))
                 parts.append(
                     "<div style='%s%scolor:%s;font-size:%dpx;font-weight:%d;'>%s</div>"
                     % (fam, ital, color, self._font_size, weight, _html.escape(e["dst"])))
-        if self._interim and show_src:        # live, still-being-spoken text (dim)
+        # What is being said right now and its provisional translation, Google-
+        # style: plain text that grows and is corrected in place — the dimmer
+        # colour is the only mark (an "…" read as cut-off text, italics as a
+        # broken font).
+        if self._interim and show_src:
             parts.append(
-                "<div style='%scolor:%s;font-size:%dpx;margin-top:8px;'>%s …</div>"
+                "<div style='%scolor:%s;font-size:%dpx;margin-top:8px;'>%s</div>"
                 % (fam, src_c, src_px, _html.escape(self._interim)))
+        if self._interim_dst and show_dst:
+            parts.append(
+                "<div style='%s%scolor:%s;font-size:%dpx;font-weight:%d;'>%s</div>"
+                % (fam, ital, old_c, self._font_size, max(400, bold - 100),
+                   _html.escape(self._interim_dst)))
         self._cap.setHtml("".join(parts))
         from PySide6.QtGui import QTextCursor
         self._cap.moveCursor(QTextCursor.End)      # keep newest visible
@@ -490,7 +494,7 @@ class _CaptionBar(QWidget):
         self._trim()
         self._render()
 
-    def set_translated(self, text, key=None, provisional=False):
+    def set_translated(self, text, key=None):
         text = (text or "").strip()
         if not text:
             return
@@ -499,7 +503,7 @@ class _CaptionBar(QWidget):
             # caption by one line as soon as a single translation failed.)
             for e in self._entries:
                 if e.get("key") == key:
-                    e["dst"], e["prov"] = text, provisional
+                    e["dst"] = text
                     break
             else:
                 return              # its source already scrolled out of the buffer
@@ -514,14 +518,13 @@ class _CaptionBar(QWidget):
         self._trim()
         self._render()
 
-    def clear_provisional(self, key):
-        """Drop a line's provisional translation (its sentence's whole
-        translation is now shown on a later line)."""
-        for e in self._entries:
-            if e.get("key") == key and e.get("prov"):
-                e["dst"], e["prov"] = "", False
-                self._render()
-                return
+    def set_interim_translation(self, text):
+        """Provisional translation of what is still pending (dim line at the
+        bottom), replaced as it grows; '' clears it."""
+        new = (text or "").strip()
+        if new != self._interim_dst:
+            self._interim_dst = new
+            self._render()
 
     def set_interim(self, text):
         """Live, not-yet-finalized source text (shown dim under the committed
@@ -814,6 +817,10 @@ class LivePage(ScrollArea):
         self._recog_pending = []        # queued (pcm, is_final); finals never dropped
         self._stream_detected = "auto"
         self._det_hist = []             # recent detections (majority-vote lock)
+        # Languages spoken in the user's sessions (recognize_utterance's guard
+        # against accented speech detected as some other language). Kept across
+        # sessions and restarts, so the guard works from the first segment.
+        self._lang_memory = {str(code): 3 for code in (backend.get_config("live_langs", []) or [])}
         self._stream_text = {}          # ts -> cumulative streamed translation
         self._out_rows = []             # [[sentence key, translation]] in source order
         self._rec = None                # wave writer while "Save Recording" is on
@@ -893,6 +900,22 @@ class LivePage(ScrollArea):
         row2.addWidget(self.go_btn)
         ctrl.addLayout(row2)
 
+        # Names and terms of the user's meetings: the recognizer writes them as
+        # sound-alikes, the translation restores them (live_translate_line).
+        vocab_row = QHBoxLayout()
+        vocab_row.setSpacing(10)
+        self.vocab_label = BodyLabel(tr("Meeting Vocabulary", lang))
+        vocab_row.addWidget(self.vocab_label)
+        self.vocab_edit = LineEdit()
+        self.vocab_edit.setClearButtonEnabled(True)
+        self.vocab_edit.setPlaceholderText(tr("Meeting Vocabulary Placeholder", lang))
+        self.vocab_edit.setToolTip(tr("Meeting Vocabulary Tip", lang))
+        self.vocab_edit.setText(str(config.get("live_vocabulary", "") or ""))
+        self.vocab_edit.editingFinished.connect(
+            lambda: backend.set_config("live_vocabulary", self.vocab_edit.text().strip()))
+        vocab_row.addWidget(self.vocab_edit, 1)
+        ctrl.addLayout(vocab_row)
+
         # Floating-captions toggle: pops out an always-on-top subtitle window.
         cap_row = QHBoxLayout()
         cap_row.setSpacing(8)
@@ -940,6 +963,8 @@ class LivePage(ScrollArea):
         self.input_text.setMinimumHeight(140)
         self.input_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_col.addWidget(self.input_text, 1)
+        self.interim_label = self._live_line()      # what is being said right now
+        left_col.addWidget(self.interim_label)
         panels.addLayout(left_col, 1)
 
         right_col = QVBoxLayout()
@@ -954,6 +979,8 @@ class LivePage(ScrollArea):
         self.output_text.setMinimumHeight(140)
         self.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right_col.addWidget(self.output_text, 1)
+        self.prov_label = self._live_line()         # ... and its provisional translation
+        right_col.addWidget(self.prov_label)
         panels.addLayout(right_col, 1)
 
         # stretch=1 so the panels (and their text boxes) grow to fill the window
@@ -979,6 +1006,9 @@ class LivePage(ScrollArea):
         self.caption_btn.setText(tr("Floating Captions", lang))
         self.save_rec_cb.setText(tr("Save Recording", lang))
         self.save_rec_cb.setToolTip(tr("Save Recording Tip", lang))
+        self.vocab_label.setText(tr("Meeting Vocabulary", lang))
+        self.vocab_edit.setPlaceholderText(tr("Meeting Vocabulary Placeholder", lang))
+        self.vocab_edit.setToolTip(tr("Meeting Vocabulary Tip", lang))
         self._populate_mics()
         self.input_header.setText(tr("Recognized Speech", lang))
         self.input_sub.setText(tr("Auto Detect", lang))
@@ -1282,6 +1312,8 @@ class LivePage(ScrollArea):
             self._preloader.wait(2000)
             self._preloader = None
         self._flush_tr_hold()   # fragments still held for a sentence end
+        self._set_caption_interim("")          # nothing is being said any more
+        self._show_provisional("")
         # Best-effort wait for in-flight STT/translate workers, but NEVER drop a
         # reference to a thread that's still running (Qt would destroy it mid-run
         # and abort). Finished ones are removed; still-running ones retire
@@ -1293,6 +1325,9 @@ class LivePage(ScrollArea):
         audio = self._stop_recording()
         if was_live:
             self._save_live_history(audio)  # persist this session's transcript (+ audio)
+            from core.pipelines.video_translation_pipeline import _session_langs
+            # a copy: a recognition still running in its thread may be adding to it
+            backend.set_config("live_langs", _session_langs(dict(self._lang_memory))[:3])
         if self._source is not None:
             self._source.stop()
             self._source = None
@@ -1508,13 +1543,20 @@ class LivePage(ScrollArea):
         self._held = ""                   # backchannels waiting to ride with the next line
         self._tr_hold = []                # mid-sentence lines waiting to translate as one
         self._tr_hold_seen = 0            # final mode: results since the oldest held line
-        # Provisional translation of the held text (see _request_provisional).
-        # The sequence only ever grows: a late result from an older hold or an
-        # earlier session can never match it.
+        # Final mode, live preview lane (see _dispatch_recognize).
+        self._seg_seq = 0                 # segments cut so far
+        self._preview_text = ""           # preview of the segment being spoken
+        self._pending_preview = []        # previews of cut segments whose final is out
+        self._preview_busy, self._preview_next = False, None
+        # Provisional translation of what is pending (see _request_provisional).
+        # The sequence only ever grows: a late result from an older request or
+        # an earlier session can never match it.
         self._prov_seq = getattr(self, "_prov_seq", 0) + 1
-        self._prov_text = ""              # held text the current provisional is for
-        self._prov_key = None             # the row showing a provisional translation
-        self._prov_clear = {}             # final's key -> earlier row whose provisional it replaces
+        self._prov_text = ""              # the text the latest request was for
+        self._prov_busy = self._prov_dirty = False
+        self._prov_flush = None           # (key, seq): held lines sent whole, final still out
+        self._prov_shown_seq = 0          # request whose result is on screen
+        self._last_lang = "auto"          # language of the latest recognized speech
         self._recog_pending = []
         # Clear any in-flight STT marker too: if a worker from a previous session
         # outlived on_stop()'s wait, this stops the new session from queueing all
@@ -1666,12 +1708,25 @@ class LivePage(ScrollArea):
         depth = float(energy[k] / max(float(np.median(energy)), 1e-9))
         return (lo + k * win + win // 2) * 2, depth
 
-    def _dispatch_recognize(self, pcm, is_final):
+    def _dispatch_recognize(self, pcm, is_final, queued=False):
         """Run one STT pass (partial or final) on the utterance-so-far. Only one
         worker is in flight; while busy requests queue in order, stale partials
-        dropped, so we never lag behind fast speech."""
+        dropped, so we never lag behind fast speech. ``queued``: a final taken
+        off the queue — already counted when the VAD cut it."""
         if not self._is_listening():
             return   # session stopped — don't start new STT work
+        if self._live_preview() and not queued:
+            # Final mode with a fast preview model: previews run in their own
+            # lane, beside the slow final decodes — in one shared queue the dim
+            # line froze for the ~3 s every segment's final took.
+            if not is_final:
+                self._dispatch_preview(pcm, self._seg_seq)
+                return
+            # This segment is done: its preview stays on screen until its final
+            # recognition replaces it (_on_recognized_stream).
+            self._pending_preview.append(self._preview_text)
+            self._preview_text = ""
+            self._seg_seq += 1
         if self._recog_busy:
             # Results must come back in dispatch order and a FINAL must never be
             # dropped: it covers its whole utterance, and processing it is what
@@ -1682,12 +1737,50 @@ class LivePage(ScrollArea):
             self._recog_pending.append((pcm, is_final))
             return
         self._recog_busy = True
+        # The language guard may recognize a segment again in another language:
+        # only where the whole segment is the unit (final mode). In stream mode
+        # lines are committed from partials and a re-recognized final would not
+        # line up with them (and SenseVoice only names zh/en/ja/ko anyway).
+        guard = is_final and getattr(self, "_final_mode", False)
         w = LiveRecognizeWorker(pcm, _IN_RATE, is_final,
-                                model_id=None if is_final else getattr(self, "_preview_model", None))
+                                model_id=None if is_final else getattr(self, "_preview_model", None),
+                                lang_memory=getattr(self, "_lang_memory", None) if guard else None)
         w.done.connect(self._on_recognized_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
         w.start()
+
+    def _live_preview(self):
+        """Final mode with a separate fast preview model (SenseVoice)."""
+        return bool(getattr(self, "_final_mode", False) and getattr(self, "_preview_model", None))
+
+    def _dispatch_preview(self, pcm, seg):
+        if self._preview_busy:
+            self._preview_next = (pcm, seg)            # latest wins
+            return
+        self._preview_busy = True
+        w = LiveRecognizeWorker(pcm, _IN_RATE, False, model_id=self._preview_model)
+        w.done.connect(lambda t, _d, _f, s=seg: self._on_preview(s, t))
+        w.finished.connect(lambda w=w: self._retire_local(w))
+        self._local_workers.append(w)
+        w.start()
+
+    def _on_preview(self, seg, text):
+        self._preview_busy = False
+        if not self._is_listening():
+            return
+        if seg == self._seg_seq and text:   # (a cut segment's late preview: its final is coming)
+            self._preview_text = text
+            self._set_caption_interim(self._interim_text())
+            self._request_provisional()
+        nxt, self._preview_next = self._preview_next, None
+        if nxt and nxt[1] == self._seg_seq:
+            self._dispatch_preview(*nxt)
+
+    def _interim_text(self):
+        """What is being said and not recognized for good yet: the previews of
+        cut segments whose final is still out, then the segment being spoken."""
+        return self._join_held([(None, p) for p in self._pending_preview + [self._preview_text] if p])
 
     def _retire_local(self, w):
         if w in self._local_workers:
@@ -1962,7 +2055,14 @@ class LivePage(ScrollArea):
             self._stream_detected = "auto"
             self._det_hist = []   # vote within ONE utterance: a bilingual
             # conversation may switch language at every turn.
-            self._set_caption_interim("")
+            if self._live_preview():
+                # Its recognized lines replace its preview; what is still being
+                # said stays on screen.
+                if self._pending_preview:
+                    self._pending_preview.pop(0)
+                self._set_caption_interim(self._interim_text())
+            else:
+                self._set_caption_interim("")
             if self._is_listening():
                 self.status_label.setText(self._listening_text())
         elif final_mode:
@@ -1983,7 +2083,7 @@ class LivePage(ScrollArea):
         self._request_provisional()                # held text: show its gist now
         if self._recog_pending:                    # next queued request, in order
             pcm, fin = self._recog_pending.pop(0)
-            self._dispatch_recognize(pcm, fin)
+            self._dispatch_recognize(pcm, fin, queued=True)
 
     def _note_detected(self, detected):
         """Majority-vote the per-window language detections instead of trusting
@@ -1997,6 +2097,8 @@ class LivePage(ScrollArea):
                    key=lambda d: (self._det_hist.count(d),
                                   len(self._det_hist) - 1 - self._det_hist[::-1].index(d)))
         self._stream_detected = best
+        if best and best != "auto":
+            self._last_lang = best    # kept across utterances (provisional translations)
 
     def _live_context(self):
         """Recent committed source lines as disambiguation context for the live
@@ -2007,12 +2109,11 @@ class LivePage(ScrollArea):
         ctx = " ".join(self._ctx_history[-3:])
         return ctx[-200:]
 
-    # A committable unit must contain at least one WORD character (latin/digit,
-    # kana, CJK, hangul, cyrillic, thai). SenseVoice happily emits bare
-    # punctuation ("。", "?") for noise/short tails — showing and "translating"
-    # those is pure clutter.
-    _WORDLIKE = re.compile(r"[0-9A-Za-z぀-ヿ㐀-鿿"
-                           r"가-힯Ѐ-ӿ฀-๿]")
+    # A committable unit must contain at least one letter or digit, in any
+    # script (a list of scripts silently dropped every Hindi / Arabic / Greek
+    # line). SenseVoice happily emits bare punctuation ("。", "?") for noise/short
+    # tails — showing and "translating" those is pure clutter.
+    _WORDLIKE = re.compile(r"[^\W_]")
 
     def _commit_stream_sentence(self, source):
         source = (source or "").strip()
@@ -2077,7 +2178,7 @@ class LivePage(ScrollArea):
         r"|(?:[すただいるうくぬ]|ない)(?:が|から|し)|[んい]で|(?:[いきぎしちにびみりえけげせてねべめれ]|っ)て)$")
     _QUOTE_TE = re.compile(r"(?:[A-Za-zァ-ヶー0-9]|さん|これ|それ|あれ|どれ|ここ|そこ|どこ|何|なに)って$")
     _MID_END = re.compile(r"(?:[てでにがはをのともへや]|という|っていう|というか|例えば|また|だから|こんな"
-                          r"|って|とか|より|まで|から)$")
+                          r"|って|とか|より|まで|から|どう)$|(?:^|[^一-鿿])こう$")   # …ちゃんとこう| (not 行こう)
     _SENT_WORD = re.compile(r"(?:です|ます|でした|ました|ません|でしょう|[だたねよかなわぞさるうくすつむぶぐぬい])$")
     _EN_OPEN = frozenset((
         "the a an to of and or but so that with for in on at by from as is are was were be "
@@ -2146,6 +2247,7 @@ class LivePage(ScrollArea):
         if hold:
             self._flush_tr_hold(extra=(key, source))
         else:
+            self._prov_superseded(key)
             self._start_line_translation(key, source)
 
     def _age_tr_hold(self):
@@ -2164,19 +2266,23 @@ class LivePage(ScrollArea):
         hold = self.__dict__.get("_tr_hold") or []
         parts = hold + ([extra] if extra else [])
         self._tr_hold, self._tr_hold_seen = [], 0
-        # The whole sentence is being translated now: a provisional result still
-        # on its way is stale. One already shown stays until the final lands
-        # (no blank gap) — on an earlier row it is cleared then (_on_translated_stream).
-        prov = getattr(self, "_prov_key", None)
-        self._prov_seq = getattr(self, "_prov_seq", 0) + 1
-        self._prov_text, self._prov_key = "", None
         if not parts:
             return
-        if prov is not None and prov != parts[-1][0]:
-            self.__dict__.setdefault("_prov_clear", {})[parts[-1][0]] = prov
+        self._prov_superseded(parts[-1][0])
         for k, _ in parts[:-1]:
             self._set_out_row(k, "↓")
         self._start_line_translation(parts[-1][0], self._join_held(parts))
+
+    def _prov_superseded(self, key):
+        """Lines are going to their final translation (key = its row). The
+        provisional translation covered them — as held lines, or as the preview
+        of a segment whose sentences are complete: a request still out is stale
+        now (it used to come back and sit under the final translation through
+        the whole pause); the one on screen stays until that translation lands
+        (no blank gap) — unless a newer one replaced it by then."""
+        self._prov_flush = (key, getattr(self, "_prov_seq", 0))
+        self._prov_seq = getattr(self, "_prov_seq", 0) + 1
+        self._prov_text, self._prov_busy, self._prov_dirty = "", False, False
 
     @staticmethod
     def _join_held(parts):
@@ -2185,48 +2291,82 @@ class LivePage(ScrollArea):
             text += (" " if text and text[-1].isascii() and s[:1].isascii() else "") + s
         return text
 
-    # Two-layer captions (what Google / Azure / DeepL live translation do): held
-    # text gets a PROVISIONAL translation right away — shown dim with "…" — and
-    # the whole-sentence translation replaces it once the sentence is complete.
-    # The wait for the sentence end stays (no fragment is ever the final
-    # translation), but the gist is on screen without it. Replayed on a real
-    # 69-min meeting: first translation seen, P90 15.0 s -> 12.2 s.
-    def _request_provisional(self):
-        hold = getattr(self, "_tr_hold", None)
-        if not hold:
-            return
-        text = self._join_held(hold)
-        if text == getattr(self, "_prov_text", ""):
-            return                              # already asked for this exact text
-        self._prov_text = text
-        self._prov_seq = getattr(self, "_prov_seq", 0) + 1
-        self._start_provisional(self._prov_seq, hold[-1][0], text)
+    # Live captions the way Google / Azure / DeepL do them: everything said but
+    # not translated for good yet — held lines (final recognition) plus, in final
+    # mode, what is still being said (fast preview) — gets a PROVISIONAL
+    # translation at once, refreshed as it grows; the whole sentence's
+    # translation replaces it. No fragment is ever a final translation, but the
+    # gist is on screen while the speaker talks. One request at a time.
+    # Chars of new speech before asking again. Replay of a real 64-min meeting:
+    # 6 -> first translation seen P90 2.5 s, 2900 requests/h; 10 -> 3.2 s, 2300/h;
+    # 15 -> 3.8 s, 1750/h (finals alone: 580/h, 12 s before this live line).
+    _PROV_MIN_GROWTH = 10
 
-    def _start_provisional(self, seq, key, source):
+    def _pending_text(self):
+        parts = list(getattr(self, "_tr_hold", None) or [])
+        if self._live_preview() and self._interim_text():
+            parts.append((None, self._interim_text()))
+        return self._join_held(parts)
+
+    def _request_provisional(self):
+        text = self._pending_text()
+        if not text:
+            # Nothing pending (a segment that turned out empty, ...): a request
+            # still out is for text that is gone. What is on screen goes too,
+            # unless it covers lines whose final translation is still on its way.
+            self._prov_seq = getattr(self, "_prov_seq", 0) + 1
+            self._prov_text, self._prov_busy, self._prov_dirty = "", False, False
+            flush = getattr(self, "_prov_flush", None)
+            if not (flush and getattr(self, "_prov_shown_seq", 0) <= flush[1]):
+                self._show_provisional("")
+            return
+        last = getattr(self, "_prov_text", "")
+        if text == last:
+            return
+        if getattr(self, "_prov_busy", False):
+            self._prov_dirty = True                        # ask again when it returns
+            return
+        # A few more chars, or the preview re-decoding the same speech (it
+        # rewrites its words every pass): wait for more. Shrinking = a final came.
+        if last and len(last) <= len(text) < len(last) + self._PROV_MIN_GROWTH:
+            return
+        self._prov_text, self._prov_busy, self._prov_dirty = text, True, False
+        self._prov_seq = getattr(self, "_prov_seq", 0) + 1
+        self._start_provisional(self._prov_seq, text)
+
+    def _start_provisional(self, seq, source):
         ctx = self._live_context() if len(source) >= 12 else ""
         online, model, api_key, dst = self._llm_target()
-        w = LiveTranslateWorker(key, source, self._stream_detected, dst, model,
+        # The language of the latest recognized speech: per-utterance detection is
+        # reset once a final is processed, and "auto" got Japanese turned into English.
+        w = LiveTranslateWorker("", source, getattr(self, "_last_lang", "auto"), dst, model,
                                 online, api_key, context=ctx)
-        w.done.connect(lambda k, t, tok=0, s=seq: self._on_provisional(s, k, t, tok))
+        w.done.connect(lambda _k, t, tok=0, s=seq: self._on_provisional(s, t, tok))
         w.finished.connect(lambda w=w: self._retire_local(w))
         self._local_workers.append(w)
         w.start()
 
-    def _on_provisional(self, seq, key, translated, tokens=0):
+    def _on_provisional(self, seq, translated, tokens=0):
         self._session_tokens += int(tokens or 0)
-        if seq != getattr(self, "_prov_seq", 0) or not translated:
-            return          # stale (the hold moved on) or failed: the final will come
-        old = getattr(self, "_prov_key", None)
-        if old is not None and old != key:      # the hold grew: one provisional at a time
-            self._set_out_row(old, "…")
-            self._clear_caption_prov(old)
-        self._prov_key = key
-        self._set_out_row(key, "… " + translated)
-        self._push_caption(translated=translated, key=key, provisional=True)
+        if seq != getattr(self, "_prov_seq", 0):
+            return          # stale: superseded, or its lines were sent whole
+        self._prov_busy = False
+        if translated and self._is_listening():
+            self._show_provisional(translated, seq)
+        if getattr(self, "_prov_dirty", False):
+            self._prov_dirty = False
+            self._request_provisional()
 
-    def _clear_caption_prov(self, key):
+    def _show_provisional(self, text, seq=0):
+        """The live translation line ('' clears it): the dim line under the
+        translation pane (twin of the web page's #live-output-prov) and the
+        caption bar's bottom line. The pane itself stays the transcript."""
+        self._prov_shown_seq = seq if text else 0
+        label = getattr(self, "prov_label", None)
+        if label is not None:
+            label.setText(text or "")
         if self._caption_bar is not None:
-            self._caption_bar.clear_provisional(key)
+            self._caption_bar.set_interim_translation(text)
 
     def _llm_target(self):
         online = backend.get_config("default_online", True)
@@ -2241,10 +2381,14 @@ class LivePage(ScrollArea):
         self._ctx_history.append(source)   # after building ctx (don't include self)
         del self._ctx_history[:-6]         # keep only the last few lines
         online, model, api_key, dst = self._llm_target()
+        # Held lines sent at a pause go after their utterance's detection was
+        # reset: fall back to the latest recognized language, never "auto".
+        src = self._stream_detected if self._stream_detected != "auto" else \
+            getattr(self, "_last_lang", "auto")
         if online and backend.get_config("live_stream_translation", False):
             # Stream mode: grow the reserved row token-by-token.
             self._stream_text[key] = ""
-            w = LiveTranslateStreamWorker(key, source, self._stream_detected, dst,
+            w = LiveTranslateStreamWorker(key, source, src, dst,
                                           model, online, api_key, context=ctx)
             w.chunk.connect(self._on_stream_chunk)
             w.done.connect(self._on_stream_done)
@@ -2252,7 +2396,7 @@ class LivePage(ScrollArea):
             self._local_workers.append(w)
             w.start()
             return
-        w = LiveTranslateWorker(key, source, self._stream_detected, dst, model,
+        w = LiveTranslateWorker(key, source, src, dst, model,
                                 online, api_key, context=ctx)
         w.done.connect(self._on_translated_stream)
         w.finished.connect(lambda w=w: self._retire_local(w))
@@ -2268,11 +2412,15 @@ class LivePage(ScrollArea):
         self._final_replaces_provisional(key)
 
     def _final_replaces_provisional(self, key):
-        """The whole sentence's translation is on screen: the provisional one
-        shown on an earlier line of that sentence goes."""
-        old = self.__dict__.get("_prov_clear", {}).pop(key, None)
-        if old is not None:
-            self._clear_caption_prov(old)
+        """Held lines' whole translation is on screen: the provisional one that
+        covered them goes — unless a newer one (for what is still being said)
+        replaced it already."""
+        flush = getattr(self, "_prov_flush", None)
+        if flush and flush[0] == key:
+            self._prov_flush = None
+            if getattr(self, "_prov_shown_seq", 0) <= flush[1]:
+                self._show_provisional("")
+                self._request_provisional()     # what is still pending, if anything
 
     def _render_output(self):
         """Rebuild the translation pane from the ordered rows (one per committed
@@ -2293,7 +2441,7 @@ class LivePage(ScrollArea):
     def _on_stream_chunk(self, key, text):
         self._stream_text[key] = text
         self._set_out_row(key, text)
-        self._set_caption_interim(text)        # show the growing translation live
+        self._push_caption(translated=text, key=key)   # grows on its own line
 
     def _on_stream_done(self, key, tokens=0):
         self._session_tokens += int(tokens or 0)   # streamed line's token cost
@@ -2303,7 +2451,6 @@ class LivePage(ScrollArea):
             self._set_out_row(key, final)
         self._push_caption(translated=final, key=key)
         self._final_replaces_provisional(key)
-        self._set_caption_interim("")
 
     # --- floating captions ---
     def _on_caption_toggled(self, checked):
@@ -2326,7 +2473,7 @@ class LivePage(ScrollArea):
     def _on_caption_destroyed(self, *args):
         self._caption_bar = None
 
-    def _push_caption(self, source=None, translated=None, key=None, provisional=False):
+    def _push_caption(self, source=None, translated=None, key=None):
         """Update the floating caption bar (if open) with the latest lines.
         ``key`` pairs a translation with ITS source sentence (local mode)."""
         bar = self._caption_bar
@@ -2335,12 +2482,29 @@ class LivePage(ScrollArea):
         if source is not None:
             bar.set_source(source, key)
         if translated is not None:
-            bar.set_translated(translated, key, provisional=provisional)
+            bar.set_translated(translated, key)
 
     def _set_caption_interim(self, text):
-        """Show the live, not-yet-finalized source text in the caption bar."""
+        """Show the live, not-yet-finalized source text: the dim line under the
+        source pane and the caption bar."""
+        label = getattr(self, "interim_label", None)
+        if label is not None:
+            label.setText(text or "")
         if self._caption_bar is not None:
             self._caption_bar.set_interim(text)
+
+    @staticmethod
+    def _live_line():
+        """A dim two-line label under a transcript pane for text that is not
+        final yet. Fixed height (the panes must not jump as it grows); bottom-
+        aligned, so a long one shows its latest words."""
+        label = CaptionLabel("")
+        label.setWordWrap(True)
+        label.setFixedHeight(38)
+        label.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
+        # its text must not decide how wide its pane is (the two panes stay equal)
+        label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Fixed)
+        return label
 
     def _info(self, text, error=False, duration=4000):
         bar = InfoBar.error if error else InfoBar.success

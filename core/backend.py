@@ -923,7 +923,10 @@ def live_glossary_hint(source, src_lang, dst_lang, max_terms=8):
         if _live_gloss_cache["key"] != key:
             from core.engine.text_separator import load_glossary as _load
             _live_gloss_cache["key"] = key
-            _live_gloss_cache["entries"] = _load(path, src_lang or "auto", dst_lang) or []
+            # No column for the detected language: the first non-target column, as
+            # for "auto" (every language used to be "auto" here but zh/en/ja/ko).
+            _live_gloss_cache["entries"] = (_load(path, src_lang or "auto", dst_lang)
+                                            or _load(path, "auto", dst_lang) or [])
         low = source.lower()
         hits = []
         for s, t in _live_gloss_cache["entries"]:
@@ -940,6 +943,77 @@ def live_glossary_hint(source, src_lang, dst_lang, max_terms=8):
         return f"Fixed terminology (use EXACTLY these translations): {pairs}"
     except Exception:  # noqa: BLE001 — a hint must never break live translation
         return ""
+
+
+def clean_live_vocabulary(text):
+    """The meeting vocabulary the user typed (names and terms, any separator) as
+    one comma-separated line for the live translation prompt. Capped: it rides
+    on every live request, and a long list makes the model force its words onto
+    garbled text."""
+    import re
+    terms, seen = [], set()
+    for t in re.split(r"[,，、;；\n\r\t]+", str(text or "")):
+        t = " ".join(t.split())
+        if t and t.lower() not in seen:
+            seen.add(t.lower())
+            terms.append(t[:40])
+    out = ""
+    for t in terms[:40]:
+        if len(out) + len(t) > 400:
+            break
+        out += (", " if out else "") + t
+    return out
+
+
+def live_vocabulary():
+    """Desktop: the vocabulary saved with the real-time voice page."""
+    return clean_live_vocabulary(get_config("live_vocabulary", ""))
+
+
+def live_translate_line(source, src_lang, dst_lang, model, use_online, api_key,
+                        context="", vocabulary="", provisional=False):
+    """Translate one live-caption line the way BOTH frontends do (the web
+    endpoint used to call the plain translator: no speech prompt, no retry).
+    Glossary terms that occur in the line ride along as context; one retry on a
+    failed call (fast speech fires many requests at once and the odd one hits a
+    rate limit — that sentence used to vanish); a reply far longer than its
+    line means the model translated the context too, so that one is redone
+    without it — and so is a reply in Japanese when Japanese was not asked for
+    (1 line in 3816 of real meetings: an unfinished Japanese sentence came back
+    completed, not translated). Returns (translated or "", total_tokens).
+
+    provisional: the live gist of what is still being said. It is skipped (""),
+    not queued, once it would fill more than 60% of the model's requests-per-
+    minute window: about 38 of them go out a minute beside about 10 final
+    translations, which fills a 50-60 rpm window (Claude, Gemini, any model
+    without an "rpm" — the default is 60) and left the finals waiting behind
+    them. No effect on DeepSeek (2500)."""
+    import re
+    import time
+    from core.llm.llm_wrapper import translate_text_simple
+    if provisional and use_online:
+        from core.llm.online_translation import rpm_room
+        if not rpm_room(model, 0.6):
+            return "", 0
+    hint = live_glossary_hint(source, src_lang, dst_lang)
+    ctx = f"{context} {hint}".strip() if hint else (context or "")
+    translated, ok, tokens = "", False, 0
+    for attempt in range(2):
+        translated, ok, usage = translate_text_simple(
+            source, src_lang or "auto", dst_lang, model, use_online, api_key,
+            context=ctx, speech=True, vocabulary=vocabulary)
+        tokens += int((usage or {}).get("total_tokens", 0) or 0)
+        reply = re.sub(r"\s", "", translated or "")
+        still_japanese = (dst_lang != "ja"
+                          and len(re.findall(r"[ぁ-ゖァ-ヺ]", reply)) > 0.3 * len(reply))
+        if ok and not attempt and (still_japanese or (
+                ctx and len(translated or "") > max(60, 5 * len(source)))):
+            ctx = ""
+            continue
+        if ok or attempt:
+            break
+        time.sleep(1.5)
+    return (translated if ok else ""), tokens
 
 
 # --- Proofread (post-translation editing) -----------------------------------

@@ -407,5 +407,8 @@
   "Iface Err connection": "Không thể kết nối tới Base URL. Kiểm tra địa chỉ, mạng hoặc proxy; tường lửa hoặc phần mềm bảo mật cũng có thể chặn.",
   "Iface Err unknown": "Lỗi không xác định — xem lỗi gốc bên dưới.",
   "Iface Err empty": "Cần nhập Base URL và ID mô hình.",
-  "Raw Error": "Lỗi gốc"
+  "Raw Error": "Lỗi gốc",
+  "Meeting Vocabulary": "Từ vựng cuộc họp",
+  "Meeting Vocabulary Tip": "Tên riêng và thuật ngữ xuất hiện trong cuộc họp, cách nhau bằng dấu phẩy. Nhận dạng giọng nói thường nghe nhầm chúng; bản dịch sẽ viết đúng như ghi ở đây.",
+  "Meeting Vocabulary Placeholder": "ví dụ: Sato, Acme, CAN bus"
 }

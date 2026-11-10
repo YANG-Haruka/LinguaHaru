@@ -407,5 +407,8 @@
   "Iface Err connection": "No se puede conectar con la Base URL. Revisa la dirección, la red o el proxy; un firewall o software de seguridad también puede bloquearla.",
   "Iface Err unknown": "Error desconocido: consulta el error original abajo.",
   "Iface Err empty": "Se requieren la Base URL y el ID del modelo.",
-  "Raw Error": "Error original"
+  "Raw Error": "Error original",
+  "Meeting Vocabulary": "Vocabulario de la reunión",
+  "Meeting Vocabulary Tip": "Nombres y términos que aparecen en sus reuniones, separados por comas. El reconocimiento de voz suele confundirlos; la traducción los escribe tal como figuran aquí.",
+  "Meeting Vocabulary Placeholder": "p. ej. Sato, Acme, bus CAN"
 }

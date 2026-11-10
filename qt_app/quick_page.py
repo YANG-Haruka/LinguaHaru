@@ -620,7 +620,7 @@ from PySide6.QtCore import QThread, Signal
 
 class _RecognizeWorker(QThread):
     """Recognize one captured utterance off the UI thread (STT is blocking and
-    funasr is not thread-safe; serialized via live_worker._STT_LOCK). Uses the
+    funasr is not thread-safe; serialized via live_worker.stt_lock). Uses the
     QUICK STT model selection."""
     done = Signal(str)
 
@@ -633,8 +633,8 @@ class _RecognizeWorker(QThread):
         try:
             from core.pipelines.video_translation_pipeline import (
                 recognize_utterance, get_selected_quick_stt_model)
-            from qt_app.live_worker import _STT_LOCK
-            with _STT_LOCK:
+            from qt_app.live_worker import stt_lock
+            with stt_lock(get_selected_quick_stt_model()):
                 text, _detected = recognize_utterance(
                     self._pcm, sample_rate=self._sr,
                     model_id=get_selected_quick_stt_model())

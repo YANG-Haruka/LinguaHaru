@@ -2357,6 +2357,7 @@ let pipWin = null, pipMode = "both", pipFont = 24;
 let pipEntries = [];
 const PIP_MAX = 12;   // buffer for FIFO pairing; only the newest 3 are rendered
 let pipInterim = "";   // live, not-yet-finalized source text (streaming)
+let pipInterimDst = "";   // its provisional translation
 let liveAnalyser = null, liveLevelRAF = null;
 
 // Mic level feedback: drive the bar + icon from live mic volume so you can see
@@ -2428,6 +2429,7 @@ function fillLiveTarget() {
     o.value = code; o.textContent = name; sel.appendChild(o);
   }
   sel.value = BOOT.language_map[BOOT.config.default_dst_lang] || "zh";
+  initLiveVocabulary();
   refreshLiveInputDevices();
 }
 
@@ -2662,8 +2664,13 @@ async function startLocal() {
   if (liveCtx.state === "suspended") { try { await liveCtx.resume(); } catch (e) {} }
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   // Fresh per-utterance stream state (no longer reset at every speechstart).
-  liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = "";
+  liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; pipInterimDst = "";
   liveRecogBusy = false; liveRecogQueue = []; liveQuiet = false;
+  liveFinalMode = finalMode;
+  // Previews take their own lane from the first one — only with a separate fast
+  // preview model (else they'd queue on the same model as the finals).
+  livePreviewLane = finalMode && !!(pre && pre.preview);
+  liveSegSeq = 0; livePreviewText = ""; livePendingPreview = []; livePreviewBusy = false; livePreviewNext = null;
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
   try {
     if (useSilero) await startSileroVad();
@@ -2678,8 +2685,8 @@ async function startLocal() {
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
   liveCtxHistory = [];   // fresh coherence context per session
   liveTrHold = []; liveTrHoldSeen = 0;
-  liveProvSeq++; liveProvText = ""; liveProvEntry = null;   // a late provisional is stale
-  if ($("live-output-prov")) $("live-output-prov").textContent = "";
+  liveProvSeq++; liveProvText = ""; liveProvBusy = false; liveProvDirty = false;   // a late provisional is stale
+  liveProvFlush = null; _showProvisional("");
   startMicMeter();
 }
 // Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
@@ -2760,6 +2767,8 @@ async function startSileroVad() {
 function stopLocal() {
   // Held mid-sentence lines translate first, then the session is saved.
   liveFlushHold().then(saveLiveHistory);
+  livePendingPreview = []; livePreviewText = ""; pipInterim = "";   // nothing is being said any more
+  _showProvisional("");
   stopMicMeter();
   try {
     if (liveSilero) { liveSilero.pause(); liveSilero.destroy(); }
@@ -2780,6 +2789,23 @@ let liveCommittedText = "";  // raw text prefix already committed this utterance
 let liveLastText = "";       // previous partial (for LocalAgreement-2 stable prefix)
 let liveCtxHistory = [];     // recent committed source lines (translation coherence context)
 let liveSessionTokens = 0;   // accumulated tokens this live session (for the thanks card)
+
+// Meeting vocabulary: names and terms the recognizer mishears, which the
+// translation restores (twin of Qt vocab_edit). Kept in this browser and sent
+// with each line, so LAN users don't share one list.
+function liveVocabulary() {
+  const el = $("live-vocab");
+  return el ? el.value.trim() : "";
+}
+function initLiveVocabulary() {
+  const el = $("live-vocab");
+  if (!el || el.dataset.ready) return;
+  el.dataset.ready = "1";
+  try { el.value = localStorage.getItem("lh-live-vocab") || ""; } catch (e) {}
+  el.addEventListener("change", () => {
+    try { localStorage.setItem("lh-live-vocab", el.value.trim()); } catch (e) {}
+  });
+}
 
 // Recent committed source as disambiguation context (last 3 lines / ~200 chars).
 function liveContext() {
@@ -2938,9 +2964,9 @@ function uncommittedTail(text, committed) {
   }
   return tail.replace(SEAM_PUNCT, "");   // alignment seams leave stray punct
 }
-// A committable unit needs at least one WORD char (latin/digit, kana, CJK,
-// hangul, cyrillic, thai) — SenseVoice emits bare "。"/"?" for noise.
-const WORDLIKE = /[0-9A-Za-z぀-ヿ㐀-鿿가-힯Ѐ-ӿ฀-๿]/;
+// A committable unit needs at least one letter or digit, in any script —
+// SenseVoice emits bare "。"/"?" for noise.
+const WORDLIKE = /[\p{L}\p{N}]/u;
 async function recognizeInt16(int16, final) {
   const body = { audio_b64: int16ToB64(int16), final: !!final };
   return await api("/api/live-recognize", {
@@ -2968,8 +2994,47 @@ function dispatchRecognize(int16, final) {
     else if (liveQuiet) liveFlushHold("quiet");
   });
 }
-function streamPartial(int16) { dispatchRecognize(int16, false); }
-function finalizeUtterance(int16) { dispatchRecognize(int16, true); }
+// Final mode: previews run in their own lane, beside the slow final decodes —
+// in the one shared queue the dim line froze for the ~3 s every segment's final
+// took. A cut segment's preview stays on screen until its final replaces it.
+// Twin of Qt _dispatch_preview / _on_preview.
+let liveSegSeq = 0, livePreviewText = "", livePendingPreview = [];
+let livePreviewBusy = false, livePreviewNext = null;
+function streamPartial(int16) {
+  if (livePreviewLane) dispatchPreview(int16, liveSegSeq);
+  else dispatchRecognize(int16, false);
+}
+function finalizeUtterance(int16) {
+  if (livePreviewLane) { livePendingPreview.push(livePreviewText); livePreviewText = ""; liveSegSeq++; }
+  dispatchRecognize(int16, true);
+}
+function dispatchPreview(int16, seg) {
+  if (livePreviewBusy) { livePreviewNext = { int16, seg }; return; }   // latest wins
+  livePreviewBusy = true;
+  runPreview(int16, seg).finally(() => {
+    livePreviewBusy = false;
+    const n = livePreviewNext; livePreviewNext = null;
+    if (n && n.seg === liveSegSeq) dispatchPreview(n.int16, n.seg);
+  });
+}
+async function runPreview(int16, seg) {
+  try {
+    const r = await recognizeInt16(int16, false);
+    // (a cut segment's late preview: its final is coming)
+    if (!liveRunning || r.busy || seg !== liveSegSeq || !r.source) return;
+    livePreviewText = r.source;
+    showLiveInterim();
+    liveRequestProvisional();
+  } catch (e) { /* transient; the next preview retries */ }
+}
+// What is being said and not recognized for good yet.
+function liveInterimText() {
+  return _joinHeld([...livePendingPreview, livePreviewText].filter(Boolean).map((src) => ({ src })));
+}
+function showLiveInterim() {
+  pipInterim = liveInterimText(); updatePipCaption();
+  if (liveRunning) setLiveStatus(pipInterim ? _label("识别中…", "识别中…") + " " + pipInterim : liveListenMsg());
+}
 // A pause is not a sentence end by itself: segments end early (to start STT
 // sooner) and the speaker often goes on. Held unfinished lines translate once
 // the silence reached the full hang ('silence' / Silero speech end) AND every
@@ -3022,20 +3087,29 @@ async function runFinal(int16) {
     // or the pause reaches the full hang (see liveQuiet).
     units.forEach((u) => commitLiveSentence(u));
     if (r.commit_mode === "final" && units.length) liveAgeHold();   // a segment with words (not noise)
-    if (units.length) liveRequestProvisional();   // held text: show its gist now
   } catch (e) { /* drop */ }
   // The utterance is closed: reset its stream state HERE, in result order.
-  liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; updatePipCaption();
-  if (liveRunning) setLiveStatus(liveListenMsg());
+  liveCommittedText = ""; liveLastText = ""; liveDetHist = [];
+  if (livePreviewLane) {
+    // Its recognized lines replace its preview; what is still being said stays.
+    livePendingPreview.shift();
+    showLiveInterim();
+  } else {
+    pipInterim = ""; updatePipCaption();
+    if (liveRunning) setLiveStatus(liveListenMsg());
+  }
+  liveRequestProvisional();   // what is pending now: its gist on screen
 }
 // Finalize one sentence: show the source line now, then translate it. Commits
 // are serialized through a promise chain so the optional stream mode can safely
 // grow the last output line without races between overlapping sentences.
 let liveCommitChain = Promise.resolve();
+let liveCommitPending = 0;   // commits queued on the chain that have not started yet
 function commitLiveSentence(source) {
   source = (source || "").trim();
   if (!source || !WORDLIKE.test(source)) return;   // drop bare-punct noise units
-  liveCommitChain = liveCommitChain.then(() => _doCommitSentence(source));
+  liveCommitPending++;
+  liveCommitChain = liveCommitChain.then(() => { liveCommitPending--; return _doCommitSentence(source); });
   return liveCommitChain;
 }
 // Translate whole sentences — or whole clauses, as an interpreter does with a
@@ -3045,6 +3119,7 @@ function commitLiveSentence(source) {
 let liveTrHold = [];      // held lines: {src, entry} (entry = its floating-caption pair)
 let liveTrHoldSeen = 0;   // final mode: results since the oldest held line
 let liveFinalMode = false;   // the server's commit mode ("final": Qwen3-ASR / Whisper)
+let livePreviewLane = false; // final mode with a separate fast preview model (twin of Qt _live_preview)
 const LIVE_HOLD_MAX = 200;
 function _joinHeld(parts) {
   let t = "";
@@ -3052,14 +3127,29 @@ function _joinHeld(parts) {
   return t;
 }
 // Translate the held lines (+ the line completing them) as one sentence, paired
-// with the LAST line (twin of Qt _flush_tr_hold). A provisional result still on
-// its way is stale now; one already shown stays until the final lands.
+// with the LAST line (twin of Qt _flush_tr_hold). The provisional translation
+// covered the held lines: a request still out is stale now; one on screen stays
+// until their whole translation lands (_finalShown) — no blank gap.
+let liveFlushId = 0;
 function _sendHeld(ts, extra = null) {
   const parts = extra ? [...liveTrHold, extra] : liveTrHold;
+  // These lines go to their final translation. The provisional one covered them
+  // — as held lines, or as the preview of a segment whose sentences are complete:
+  // a request still out is stale now (it used to come back and sit under the
+  // final translation through the whole pause); the one on screen stays until
+  // that translation lands. Twin of Qt _prov_superseded.
+  const fid = ++liveFlushId;
+  liveProvFlush = { fid, seq: liveProvSeq };
+  liveProvSeq++; liveProvText = ""; liveProvBusy = false; liveProvDirty = false;
   liveTrHold = []; liveTrHoldSeen = 0;
-  liveProvSeq++; liveProvText = "";
-  const prov = liveProvEntry; liveProvEntry = null;
-  return _translateLiveLine(ts, _joinHeld(parts), parts[parts.length - 1].entry, prov);
+  return _translateLiveLine(ts, _joinHeld(parts), parts[parts.length - 1].entry, fid);
+}
+// Held lines' whole translation is on screen: the provisional one that covered
+// them goes — unless a newer one (for what is still being said) replaced it.
+function _finalShown(fid) {
+  if (!fid || !liveProvFlush || liveProvFlush.fid !== fid) return;
+  const seq = liveProvFlush.seq; liveProvFlush = null;
+  if (liveProvShownSeq <= seq) { _showProvisional(""); liveRequestProvisional(); }
 }
 // when "quiet": only once the pause reached the full hang and no result is
 // pending. Checked when the chain gets there — the hold list itself is only up
@@ -3072,40 +3162,69 @@ function liveFlushHold(when = null) {   // queue on the commit chain (keeps orde
   });
   return liveCommitChain;
 }
-// Two-layer captions (what Google / Azure / DeepL live translation do; twin of
-// Qt _request_provisional): held text gets a PROVISIONAL translation right away
-// — dim with "…" — and the whole sentence's translation replaces it once the
-// sentence is complete. No fragment is ever the final translation, but the gist
-// is on screen without waiting (real meeting replay: P90 15.0 s -> 12.2 s).
-let liveProvSeq = 0, liveProvText = "", liveProvEntry = null;
-function liveRequestProvisional() {   // on the chain: the hold is only current there
-  liveCommitChain = liveCommitChain.then(() => {
-    if (!liveTrHold.length) return;
-    const text = _joinHeld(liveTrHold);
-    if (text === liveProvText) return;      // already asked for this exact text
-    liveProvText = text;
-    _provisionalTranslate(++liveProvSeq, liveTrHold[liveTrHold.length - 1].entry, text);   // never blocks commits
-  });
+// Live captions the way Google / Azure / DeepL do them (twin of Qt
+// _request_provisional): everything said but not translated for good yet — held
+// lines plus, in final mode, what is still being said — gets a PROVISIONAL
+// translation at once, refreshed as it grows; the whole sentence's translation
+// replaces it. No fragment is ever a final translation, but the gist is on
+// screen while the speaker talks. One request at a time.
+let liveProvSeq = 0, liveProvText = "", liveProvBusy = false, liveProvDirty = false;
+let liveProvFlush = null, liveProvShownSeq = 0;
+const LIVE_PROV_MIN_GROWTH = 10;   // chars of new speech before asking again (twin of Qt _PROV_MIN_GROWTH)
+function _livePendingText() {
+  const parts = [...liveTrHold];
+  if (livePreviewLane) { const live = liveInterimText(); if (live) parts.push({ src: live }); }
+  return _joinHeld(parts);
+}
+function _requestProvisionalNow() {
+  const text = _livePendingText();
+  if (!text) {
+    // Nothing pending (a segment that turned out empty, ...): a request still
+    // out is for text that is gone. What is on screen goes too, unless it covers
+    // lines whose final translation is still on its way. Twin of Qt.
+    liveProvSeq++; liveProvText = ""; liveProvBusy = false; liveProvDirty = false;
+    if (!(liveProvFlush && liveProvShownSeq <= liveProvFlush.seq)) _showProvisional("");
+    return;
+  }
+  if (text === liveProvText) return;
+  if (liveProvBusy) { liveProvDirty = true; return; }               // ask again when it returns
+  // A few more chars, or the preview re-decoding the same speech (it rewrites
+  // its words every pass): wait for more. Shrinking = a final came.
+  if (liveProvText && liveProvText.length <= text.length
+      && text.length < liveProvText.length + LIVE_PROV_MIN_GROWTH) return;
+  liveProvText = text; liveProvBusy = true; liveProvDirty = false;
+  _provisionalTranslate(++liveProvSeq, text);   // never blocks the commits
+}
+// The hold is only current once every queued commit has STARTED, so behind
+// queued commits this waits on the chain — but not behind a final translation
+// the chain is merely awaiting (it did: no refresh for the ~1 s each one took).
+function liveRequestProvisional() {
+  if (!liveCommitPending) { _requestProvisionalNow(); return liveCommitChain; }
+  liveCommitChain = liveCommitChain.then(_requestProvisionalNow);
   return liveCommitChain;
 }
-async function _provisionalTranslate(seq, entry, source) {
-  let t;
+async function _provisionalTranslate(seq, source) {
+  let t = null;
   try {
     t = await api("/api/live-translate-text", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, src_lang: liveLastDetected || "auto",
-                             dst_lang: $("live-target").value, context: liveContext() }) });
-  } catch (e) { return; }                    // the whole sentence's translation will come
-  liveSessionTokens += (t.tokens || 0);
-  if (seq !== liveProvSeq || !t.translated) return;   // stale: the hold moved on
-  if (liveProvEntry && liveProvEntry !== entry && liveProvEntry.prov) {   // the hold grew
-    liveProvEntry.dst = ""; liveProvEntry.prov = false;
-  }
-  liveProvEntry = entry;
-  if (entry) { entry.dst = t.translated; entry.prov = true; }
+                             dst_lang: $("live-target").value, context: liveContext(),
+                             vocabulary: liveVocabulary(), provisional: true }) });
+  } catch (e) { /* the whole sentence's translation will come */ }
+  if (t) liveSessionTokens += (t.tokens || 0);
+  if (seq !== liveProvSeq) return;            // stale: superseded, or its lines were sent whole
+  liveProvBusy = false;
+  if (t && t.translated && liveRunning) _showProvisional(t.translated, seq);
+  if (liveProvDirty) { liveProvDirty = false; liveRequestProvisional(); }
+}
+// The live translation line: the floating caption's bottom line and the dim
+// line under the translation pane ('' clears it; never part of the transcript).
+function _showProvisional(text, seq = 0) {
+  liveProvShownSeq = text ? seq : 0;
+  pipInterimDst = text; updatePipCaption();
   const el = $("live-output-prov");
-  if (el) el.textContent = "… " + t.translated;
-  updatePipCaption();
+  if (el) el.textContent = text;
 }
 // Final mode, after each recognized segment: a held line waits for ONE more
 // segment — its continuation is there, however long the speaker talks (a clock
@@ -3131,7 +3250,7 @@ const LIVE_CLAUSE_END = new RegExp("(?:けど|けれど|けれども|けども|�
   + "|まして|でして|ちゃって|じゃって|たり|だり|てから|でから"
   + "|(?:[すただいるうくぬ]|ない)(?:が|から|し)|[んい]で|(?:[いきぎしちにびみりえけげせてねべめれ]|っ)て)$");
 const LIVE_QUOTE_TE = /(?:[A-Za-zァ-ヶー0-9]|さん|これ|それ|あれ|どれ|ここ|そこ|どこ|何|なに)って$/;
-const LIVE_MID_END = /(?:[てでにがはをのともへや]|という|っていう|というか|例えば|また|だから|こんな|って|とか|より|まで|から)$/;
+const LIVE_MID_END = /(?:[てでにがはをのともへや]|という|っていう|というか|例えば|また|だから|こんな|って|とか|より|まで|から|どう)$|(?:^|[^一-鿿])こう$/;   // …ちゃんとこう| (not 行こう)
 const LIVE_SENT_WORD = /(?:です|ます|でした|ました|ません|でしょう|[だたねよかなわぞさるうくすつむぶぐぬい])$/;
 const LIVE_EN_OPEN = new Set(("the a an to of and or but so that with for in on at by from as is are was were be "
   + "been i we you he she they it my our your their this these those if because about than "
@@ -3185,29 +3304,24 @@ async function _doCommitSentence(source) {
   return _sendHeld(ts, line);
 }
 // entry: the floating-caption pair this translation belongs to (a held
-// sentence's: its last line). prov: the pair showing this sentence's
-// provisional translation, which goes once the whole translation is shown.
-async function _translateLiveLine(ts, source, entry = null, prov = null) {
+// sentence's: its last line). fid: set when held lines were sent whole — their
+// provisional translation goes once this is shown (_finalShown).
+async function _translateLiveLine(ts, source, entry = null, fid = 0) {
   const ctx = liveContext();
   liveCtxHistory.push(source);                 // after building ctx (don't include self)
   if (liveCtxHistory.length > 6) liveCtxHistory.splice(0, liveCtxHistory.length - 6);
   const streaming = !!(BOOT.config && BOOT.config.live_stream_translation);
   const dst = $("live-target").value;
-  const dropProv = () => {
-    if (prov && prov !== entry && prov.prov) { prov.dst = ""; prov.prov = false; }
-    const el = $("live-output-prov");
-    if (el) el.textContent = "";
-    updatePipCaption();
-  };
   if (!streaming) {
     try {
       const t = await api("/api/live-translate-text", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx }) });
+        body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx,
+                               vocabulary: liveVocabulary() }) });
       liveSessionTokens += (t.tokens || 0);
       if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`, entry);
     } catch (e) { /* leave source line; translation failed */ }
-    dropProv();
+    _finalShown(fid);
     return;
   }
   // Stream mode: grow the last output line + its PiP pair token-by-token.
@@ -3223,13 +3337,14 @@ async function _translateLiveLine(ts, source, entry = null, prov = null) {
   const paint = (txt) => {
     out.textContent = out.textContent.slice(0, start) + `[${ts}] ${txt}\n`;
     out.scrollTop = out.scrollHeight;
-    ent.dst = txt; ent.prov = false;
-    if (!painted) { painted = true; dropProv(); } else updatePipCaption();
+    ent.dst = txt; updatePipCaption();
+    if (!painted) { painted = true; _finalShown(fid); }
   };
   try {
     const resp = await fetch("/api/live-translate-stream", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx }) });
+      body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx,
+                             vocabulary: liveVocabulary() }) });
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "";
@@ -3251,7 +3366,7 @@ async function _translateLiveLine(ts, source, entry = null, prov = null) {
       }
     }
   } catch (e) { /* leave whatever streamed */ }
-  if (!painted) dropProv();
+  if (!painted) _finalShown(fid);
 }
 
 function downsamplePCM16(input, srcRate) {
@@ -3296,7 +3411,7 @@ function appendLive(id, text, entry = null) {
     opened = { src: last, dst: "" };
     pipEntries.push(opened);
   } else if (id === "live-output") {
-    if (entry) { entry.dst = last; entry.prov = false; }
+    if (entry) entry.dst = last;
     else {
       const open = pipEntries.find((e) => e.src && !e.dst);
       if (open) open.dst = last;
@@ -3350,18 +3465,24 @@ function updatePipCaption() {
     if (pipMode !== "src" && e.dst) {
       const t = d.createElement("div"); t.className = "c-dst";
       t.style.fontSize = pipFont + "px";
-      if (e.prov) {          // provisional (the sentence isn't finished): dim, italic, "…"
-        t.style.opacity = "0.6"; t.style.fontStyle = "italic"; t.style.fontWeight = "400";
-      } else if (!newest) t.style.opacity = "0.72";
-      t.textContent = e.prov ? e.dst + " …" : e.dst; block.appendChild(t);
+      if (!newest) t.style.opacity = "0.72";
+      t.textContent = e.dst; block.appendChild(t);
     }
     if (block.childNodes.length) cap.appendChild(block);
   });
-  // Live interim (still being spoken) — dim, shown when source is visible.
+  // What is being said right now and its provisional translation, Google-style:
+  // plain text that grows and is corrected in place — dimmer is the only mark
+  // (an "…" read as cut-off text, italics as a broken font). Twin of Qt _render.
   if (pipInterim && pipMode !== "dst") {
     const it = d.createElement("div"); it.className = "c-src";
     it.style.fontSize = Math.round(pipFont * 0.7) + "px";
-    it.style.opacity = "0.6"; it.textContent = pipInterim + " …";
+    it.style.opacity = "0.6"; it.textContent = pipInterim;
+    cap.appendChild(it);
+  }
+  if (pipInterimDst && pipMode !== "src") {
+    const it = d.createElement("div"); it.className = "c-dst";
+    it.style.fontSize = pipFont + "px";
+    it.style.opacity = "0.6"; it.textContent = pipInterimDst;
     cap.appendChild(it);
   }
   // Empty state so the floating window isn't a blank, confusing box.

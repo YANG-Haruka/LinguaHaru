@@ -14,7 +14,8 @@ const start = src.indexOf("let liveCommitChain = Promise.resolve();");
 const end = src.indexOf("async function _translateLiveLine(");
 if (start < 0 || end < 0) throw new Error("region markers not found");
 const sent = [], entries = [], apiCalls = [];
-let lastEntry = null, lastProv = null;
+let lastEntry = null, lastFid = 0, interim = "";
+let gate = null;   // an array: final translations wait until their resolver in it is called
 const provEl = { textContent: "" };
 const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00:00",
               // a source line opens its floating-caption pair
@@ -23,17 +24,22 @@ const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00
                 const e = { src: text.replace(/^\[[^\]]*\]\s*/, "").trim(), dst: "" };
                 entries.push(e); return e;
               },
-              _translateLiveLine: async (_ts, s, entry, prov) => { sent.push(s); lastEntry = entry; lastProv = prov; },
-              api: (_url, opts) => new Promise((res) => apiCalls.push({ source: JSON.parse(opts.body).source, res })),
+              _translateLiveLine: async (_ts, s, entry, fid) => {
+                sent.push(s); lastEntry = entry; lastFid = fid;
+                if (gate) await new Promise((res) => gate.push(res));
+              },
+              api: (_url, opts) => new Promise((res) => apiCalls.push({ ...JSON.parse(opts.body), res })),
               $: (id) => (id === "live-output-prov" ? provEl : { value: "zh" }),
+              liveInterimText: () => interim,   // what is still being said (the preview lane)
+              liveVocabulary: () => "Corpy, Rahul",   // sent with every live translation request
               updatePipCaption: () => {}, liveContext: () => "", liveLastDetected: "ja", liveSessionTokens: 0,
-              liveQuiet: false, liveRecogBusy: false, liveRecogQueue: [] };
+              liveRunning: true, liveQuiet: false, liveRecogBusy: false, liveRecogQueue: [] };
 vm.createContext(ctx);
 vm.runInContext(src.slice(start, end) +
   "\nthis.__t = { commitLiveSentence, liveFlushHold, liveAgeHold, liveRequestProvisional, splitClauseTail," +
-  " lineEnd, setFinal: (v) => { liveFinalMode = v; } };", ctx);
+  " lineEnd, finalShown: _finalShown, setFinal: (v) => { liveFinalMode = livePreviewLane = v; } };", ctx);
 const { commitLiveSentence, liveFlushHold, liveAgeHold, liveRequestProvisional, splitClauseTail,
-        lineEnd, setFinal } = ctx.__t;
+        lineEnd, finalShown, setFinal } = ctx.__t;
 const settle = async () => { for (let i = 0; i < 50; i++) await Promise.resolve(); };
 const fails = [];
 const expect = (what, want) => {
@@ -118,37 +124,84 @@ liveFlushHold();
 await settle();
 expect("stop flushes the rest", ["その秘密保持のレベルとネクストムーブとの三菱自動車からの"]);
 
-// Two-layer captions: held text gets a provisional translation at once; the
-// whole sentence's translation pairs with the completing line and hands over
-// the provisional pair (to clear); a provisional that comes back late is stale.
-commitLiveSentence("三菱自動車からの");
+// One live translation of everything pending — held lines + what is still being
+// said — refreshed as speech goes on, one request at a time; the whole
+// sentence's translation (paired with its last line) replaces it; a provisional
+// that comes back after the lines were sent whole is stale. Twin of Qt
+// test_one_live_translation_of_everything_pending.
+interim = "機密保持";
+commitLiveSentence("三菱自動車からコピーに対しての");
 liveRequestProvisional();
 await settle();
-same("provisional asked for the held text", apiCalls.map((c) => c.source), ["三菱自動車からの"]);
+same("asked for held + what is being said", apiCalls.map((c) => c.source), ["三菱自動車からコピーに対しての機密保持"]);
+interim = "機密保持NDA";                       // a few more chars, and one is out anyway
+liveRequestProvisional();
+interim = "機密保持NDAを巻き直しています";        // more speech while it's out
 liveRequestProvisional();
 await settle();
-same("once per held text", apiCalls.length, 1);
-apiCalls[0].res({ translated: "来自三菱汽车的", tokens: 7 });
+same("one request at a time", apiCalls.length, 1);
+apiCalls[0].res({ translated: "来自三菱汽车……", tokens: 7 });
 await settle();
-const heldEntry = entries[entries.length - 1];
-same("shown dim on the held line's pair and under the output",
-     [heldEntry.dst, heldEntry.prov, provEl.textContent], ["来自三菱汽车的", true, "… 来自三菱汽车的"]);
+same("shown on the live line, then asked again for the newer text",
+     [provEl.textContent, ctx.pipInterimDst, apiCalls.length, apiCalls[1] && apiCalls[1].source],
+     ["来自三菱汽车……", "来自三菱汽车……", 2, "三菱自動車からコピーに対しての機密保持NDAを巻き直しています"]);
+interim = "";                                  // its final recognition came in:
 commitLiveSentence("機密保持NDAを巻き直しています。");
 await settle();
-expect("the whole sentence is translated once", ["三菱自動車からの機密保持NDAを巻き直しています。"]);
-same("paired with the completing line; the provisional pair handed over",
-     [lastEntry === entries[entries.length - 1], lastProv === heldEntry], [true, true]);
-provEl.textContent = "";
-commitLiveSentence("その秘密保持のレベルと");
+expect("the whole sentence is translated once", ["三菱自動車からコピーに対しての機密保持NDAを巻き直しています。"]);
+same("paired with its last line", lastEntry === entries[entries.length - 1], true);
+apiCalls[1].res({ translated: "late", tokens: 5 });
+await settle();
+same("a late provisional is dropped; the shown one stays until the final", provEl.textContent, "来自三菱汽车……");
+finalShown(lastFid);
+await settle();
+same("cleared once the whole translation is shown", [provEl.textContent, ctx.pipInterimDst], ["", ""]);
+same("provisional calls are counted", ctx.liveSessionTokens, 12);
+same("the meeting vocabulary rides on the request", apiCalls[0].vocabulary, "Corpy, Rahul");
+
+// A sentence that goes straight to translation (nothing held) drops the
+// provisional request still out for its preview: the late reply used to be
+// shown — a second, dim translation under the final one for the whole pause.
+// Twin of Qt test_a_sentence_sent_at_once_drops_the_provisional_request_still_out.
+apiCalls.length = 0; provEl.textContent = "";
+interim = "それで大丈夫です";
 liveRequestProvisional();
 await settle();
-commitLiveSentence("ということです。");
+same("asked for the preview", apiCalls.map((c) => c.source), ["それで大丈夫です"]);
+interim = "";                                   // the VAD cut it; its final is a whole sentence
+commitLiveSentence("それで大丈夫です。");
+liveRequestProvisional();
 await settle();
-expect("completed before its provisional came back", ["その秘密保持のレベルとということです。"]);
-apiCalls[1].res({ translated: "那个保密级别", tokens: 5 });
+expect("sent at once", ["それで大丈夫です。"]);
+apiCalls[0].res({ translated: "这样就可以了", tokens: 3 });
 await settle();
-same("a late provisional is dropped", [provEl.textContent, !!entries[entries.length - 2].prov], ["", false]);
-same("provisional calls are counted", ctx.liveSessionTokens, 12);
+same("the late provisional reply is not shown", [provEl.textContent, ctx.pipInterimDst], ["", ""]);
+
+// A final translation the chain is awaiting must not hold back the provisional
+// one for what is said meanwhile (it did: no refresh for ~1 s per final).
+apiCalls.length = 0; gate = [];
+commitLiveSentence("要件はもう決まっています。");
+await settle();
+expect("the final translation is out", ["要件はもう決まっています。"]);
+interim = "来週の会議で決めましょう";
+liveRequestProvisional();
+await settle();
+same("asked while the final translation is still out", apiCalls.map((c) => c.source), ["来週の会議で決めましょう"]);
+// ... but behind a commit that has not started yet it waits: only then is the hold current
+commitLiveSentence("その秘密保持のレベルと");          // queued behind the awaited translation
+interim = "来週の会議で決めましょう。それから";
+liveRequestProvisional();
+await settle();
+same("not before the queued commit ran", apiCalls.length, 1);
+apiCalls[0].res({ translated: "下周的会议上决定吧", tokens: 3 });
+gate.shift()(); gate = null;
+await settle();
+same("then with the line it holds", apiCalls[apiCalls.length - 1].source,
+     "その秘密保持のレベルと来週の会議で決めましょう。それから");
+interim = "";
+liveFlushHold();
+await settle();
+sent.length = 0;
 setFinal(false);
 
 // A segment cut after a clause end: the clause goes now, only the tail waits.

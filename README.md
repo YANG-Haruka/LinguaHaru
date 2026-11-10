@@ -55,7 +55,7 @@
 | Image OCR | Image translation with text re-rendering; PP-OCRv6 | Auto (~60× faster than CPU) |
 | Manga mode | Bubble detection, text erasing and re-lettering for scanned comics/PDFs, with proofread-and-re-export | Auto |
 | Video / Audio | Speech transcription (SenseVoice, Whisper, Qwen3-ASR) and subtitle translation; ffmpeg bundled | Auto |
-| Real-Time Voice | Streaming captions with sentence correction, hallucination guards and glossary enforcement | Auto |
+| Real-Time Voice | Streaming captions with sentence correction, interpreter-style translation, hallucination guards, glossary enforcement and a meeting vocabulary for names and terms | Auto |
 | Voice input | Microphone input and read-aloud on the quick-translate page | Auto |
 
 **Daily-driver conveniences.** Google-style quick translation with voice input and read-aloud; a full glossary manager (create / import / delete) applied across document, quick and live translation; per-project history with one-click resume; live token counts; an in-app proofreading editor with re-export; a first-run interactive tour; UI in English, 简体中文, 繁體中文 and 日本語; 13 built-in translation languages, plus custom ones.

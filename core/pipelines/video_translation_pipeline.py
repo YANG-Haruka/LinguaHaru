@@ -1059,6 +1059,18 @@ _QWEN_LANG_NAME = {"zh": "Chinese", "zh-Hant": "Chinese", "en": "English",
                    "nl": "Dutch", "pl": "Polish"}
 
 
+# Every language Qwen names is told apart (it used to be "auto" for all but
+# zh/en/ja/ko, so a Spanish session never knew what it was hearing): its UI code
+# when the app has one, else Qwen's own name in lower case ("swedish").
+_QWEN_LANG_CODE.update({name: code for code, name in _QWEN_LANG_NAME.items()
+                        if name not in _QWEN_LANG_CODE})
+
+
+def _qwen_lang_code(name, default="auto"):
+    name = str(name or "").strip()
+    return _QWEN_LANG_CODE.get(name) or name.lower() or default
+
+
 def _qwen_language(src_lang):
     """Map a UI src_lang code to qwen-asr's language name, or None for auto."""
     if not src_lang or src_lang == "auto":
@@ -1255,7 +1267,7 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
     if not results:
         return "", (src_lang or "auto")
     r = results[0]
-    detected = _QWEN_LANG_CODE.get(getattr(r, "language", None), src_lang or "auto")
+    detected = _qwen_lang_code(getattr(r, "language", None), src_lang or "auto")
     return _clean_asr_text(_qwen_text(r)), detected
 
 
@@ -1324,6 +1336,7 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
     # budget small so Stop still lands quickly.
     BUDGET = 60.0 if _stt_device() == "cuda" else 12.0   # seconds of audio per batch
     ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
+    lang_memory = {}   # auto-detect only: the file's languages (see _guard_language)
     try:
         p, first = 0, True
         while p < len(todo):
@@ -1359,6 +1372,10 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
                                 f"({acc:.0f}s audio) in {time.time() - _bt:.1f}s")
             for k, r in zip(grp, results):
                 txt = _clean_asr_text(_qwen_text(r))
+                if not _qlang:   # accented speech detected as some other language
+                    txt, _ = _guard_language(
+                        lang_memory, txt, _qwen_lang_code(getattr(r, "language", None)),
+                        lambda lang, c=chunks[k]: _recognize_qwen(c[0], lang, model_name, c[1]))
                 texts[k] = txt
                 if ckpt_f:
                     ckpt_f.write(json.dumps([keys[k][0], keys[k][1], txt]) + "\n")
@@ -1407,10 +1424,9 @@ _ANIME_GEN_KW = {"language": "Japanese", "max_new_tokens": 256}
 _ANIME_BATCH = 8   # VAD segments per pipeline batch (GPU throughput vs resume granularity)
 
 
-# A cue must carry at least one WORD character (latin/digit, kana, CJK, hangul,
-# cyrillic, thai) to be worth a subtitle line. Twin of live_page._WORDLIKE.
-_WORDLIKE = re.compile(r"[0-9A-Za-z\u3040-\u30ff\u3400-\u9fff"
-                       r"\uac00-\ud7af\u0400-\u04ff\u0e00-\u0e7f]")
+# A cue must carry at least one letter or digit (any script) to be worth a
+# subtitle line. Twin of live_page._WORDLIKE.
+_WORDLIKE = re.compile(r"[^\W_]")
 
 
 def _anime_infer_oom_safe(pipe, clips):
@@ -1733,12 +1749,110 @@ def _preload_recognizer(model_id):
     return True
 
 
-def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=None):
+# --- live language guard ----------------------------------------------------
+# Auto-detect mis-identifies accented speech. In a real Japanese/English meeting
+# Qwen3-ASR wrote 63 of 567 segments — a Japanese speaker with an Indian accent —
+# as Hindi, Malay, Tagalog or Spanish: Devanagari gibberish, or nothing at all on
+# screen. Recognizing those segments again as Japanese gave Japanese in 57 and
+# (then as English) English in the other 6. So a caller that keeps a per-session
+# `lang_memory` gets this: a segment detected as a language this session has not
+# been speaking is recognized again in the session's own languages, and the result
+# is taken when it is really written in that language.
+_TRUSTED_LANGS = {"zh", "en", "ja", "ko"}   # detections of these stand as they are:
+#   forcing another language on real English lost content in 8 of 30 segments.
+#   They are also the languages _written_in can check a second recognition for.
+_LANG_SEEN_MIN = 3                         # segments before a language counts as spoken here
+_EN_COMMON = frozenset(
+    "the a an to of and or but so that with for in on at by from as is are was were be been i we "
+    "you he she they it my our your their this these those if because about than then like which "
+    "who what when where how not no can could would should will do does did have has had there "
+    "here also just very more most yes yeah okay ok please thank thanks think know need want right "
+    "me us them one two first next all any some".split())
+
+
+def _speech_body(text):
+    return re.sub(r"[\W_]+", "", text or "")
+
+
+def _written_in(text, lang):
+    """Is `text` really written in `lang`? (ja / ko / zh / en only — the languages
+    a forced recognition can be checked for.) Forcing Japanese on English speech
+    gives Latin letters or katakana, forcing English on Japanese gives romaji:
+    hiragana share was 0.68 on real Japanese and 0.06 on English forced to
+    Japanese; common-word share 0.57 on real English, 0.00 on Japanese forced."""
+    body = _speech_body(text)
+    if not body:
+        return False
+    if lang == "ja":
+        return len(re.findall(r"[ぁ-ゖ]", body)) >= 0.2 * len(body)
+    if lang == "ko":
+        return len(re.findall(r"[가-힯]", body)) >= 0.5 * len(body)
+    if lang == "zh":
+        return (len(re.findall(r"[一-鿿]", body)) >= 0.5 * len(body)
+                and not re.search(r"[ぁ-ヿ]", body))
+    if lang == "en":
+        words = re.findall(r"[a-z']+", text.lower())
+        return (len(re.findall(r"[A-Za-z]", body)) >= 0.7 * len(body) and bool(words)
+                and sum(w in _EN_COMMON for w in words) >= 0.3 * len(words))
+    return False
+
+
+def _session_langs(memory):
+    """Languages this session has really been speaking, most used first: kept in
+    at least 3 segments, and kept more often than corrected. (An unexpected
+    language is only counted as kept when a second recognition was tried and
+    did not fit — see _guard_language.)"""
+    seen = [(n, lang) for lang, n in memory.items()
+            if lang != "auto" and not lang.startswith("~")
+            and n >= _LANG_SEEN_MIN and n >= memory.get("~" + lang, 0)]
+    return [lang for _, lang in sorted(seen, key=lambda x: -x[0])]
+
+
+def _guard_language(memory, text, detected, redo):
+    """See the note above. `redo(lang)` recognizes the same audio as `lang`.
+    Counts every segment in `memory` (lang -> kept, "~lang" -> corrected)."""
+    lang = detected or "auto"
+    if not text:
+        return text, detected
+    known = _session_langs(memory)
+    if lang in _TRUSTED_LANGS or lang in known:
+        memory[lang] = memory.get(lang, 0) + 1
+        return text, detected
+    # Unexpected. Try the session's (up to two) main languages that a result can
+    # be checked for; a script of its own (hiragana, hangul) is stronger evidence
+    # than Latin letters, so English goes last.
+    cands = sorted((c for c in known[:2] if c in _TRUSTED_LANGS), key=lambda c: c == "en")
+    for cand in cands:
+        try:
+            again, _ = redo(cand)
+        except Exception as e:  # noqa: BLE001 — the first result still stands
+            app_logger.debug(f"Live STT language guard: {cand} failed ({e})")
+            continue
+        if (_written_in(again, cand)
+                and len(_speech_body(again)) >= 0.2 * len(_speech_body(text))):
+            app_logger.info(f"Live STT: detected {lang}, recognized again as {cand}")
+            memory["~" + lang] = memory.get("~" + lang, 0) + 1
+            memory[cand] = memory.get(cand, 0) + 1
+            return again, cand
+    # It stood up to a second look: three of those and it is a language of this
+    # session. With nothing to check it against (a session's first segments) it
+    # is not counted — an accented speaker opening the meeting must not make
+    # "Hindi" a session language, which the desktop would then remember for good.
+    if cands:
+        memory[lang] = memory.get(lang, 0) + 1
+    return text, detected
+
+
+def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=None,
+                        lang_memory=None):
     """Recognize one short utterance (raw mono PCM16) for real-time voice.
 
     Routes to the engine of the selected live model (model_id defaults to the
     live-voice selection), degrading gracefully if that engine's dep is missing.
     Returns (text, detected_lang) — text is '' if no speech.
+
+    lang_memory: a dict the caller keeps for its session (see the language guard
+    above); only used when the language is auto-detected.
 
     The client does VAD and sends a complete utterance, so no server-side
     segmentation is needed here."""
@@ -1769,18 +1883,18 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=
     model_def = get_stt_model(model_id or get_selected_live_stt_model())
     engine, size = _resolve_stt_engine(model_def)
 
-    def _dispatch():
+    def _dispatch(lang=src_lang):
         if engine == "sensevoice":
-            r = _recognize_sensevoice(audio, src_lang, sample_rate, model_def["size"])
+            r = _recognize_sensevoice(audio, lang, sample_rate, model_def["size"])
             app_logger.info(f"STT(SenseVoice) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
         elif engine == "qwen3asr":
-            r = _recognize_qwen(audio, src_lang, size, sample_rate)
+            r = _recognize_qwen(audio, lang, size, sample_rate)
             app_logger.info(f"STT(Qwen3-ASR:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
         elif engine == "animewhisper":
-            r = _recognize_animewhisper(audio, src_lang, size, sample_rate)
+            r = _recognize_animewhisper(audio, lang, size, sample_rate)
             app_logger.info(f"STT(anime-whisper) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
         else:
-            r = _recognize_whisper(audio, src_lang, size)
+            r = _recognize_whisper(audio, lang, size)
             app_logger.info(f"STT(whisper:{size}) {dur:.1f}s audio -> {time.time() - t0:.2f}s")
         return r
 
@@ -1792,6 +1906,8 @@ def recognize_utterance(pcm16_bytes, src_lang=None, sample_rate=16000, model_id=
             text, detected = _dispatch()   # models rebuild on CPU
         else:
             raise
+    if lang_memory is not None and (not src_lang or src_lang == "auto"):
+        text, detected = _guard_language(lang_memory, text, detected, _dispatch)
     # Same whole-segment hallucination guard the offline subtitle pipeline runs:
     # background music / noise that slips past the client VAD makes every ASR
     # emit its training-data outro ("谢谢观看" / "ご視聴ありがとうございました" /

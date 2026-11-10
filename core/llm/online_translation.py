@@ -134,8 +134,34 @@ class _RpmLimiter:
                 sleep_for = 60 - (now - window[0]) + 0.05
             time.sleep(min(sleep_for, 5))
 
+    def room(self, key="_global", limit_override=None, share=1.0):
+        """True while this scope's window holds fewer than `share` of its limit."""
+        if limit_override:
+            limit = limit_override
+        else:
+            if self.limit is self._UNSET:
+                self.limit = self._load_limit()
+            limit, key = self.limit, "_global"
+        if not limit:
+            return True
+        with self.lock:
+            window = self.windows.get(key) or ()
+            now = time.time()
+            return sum(1 for t in window if now - t <= 60) < share * limit
+
 
 _rpm_limiter = _RpmLimiter()
+
+
+def rpm_room(model, share=1.0):
+    """Is `model`'s requests-per-minute window less than `share` full? Asked
+    before a request that may simply be skipped, so that it never makes one that
+    must not be skipped wait in the limiter."""
+    try:
+        rpm = (load_model_config(model) or {}).get("rpm")
+        return _rpm_limiter.room(key=model, limit_override=int(rpm) if rpm else None, share=share)
+    except Exception:  # noqa: BLE001 — never block a request over bookkeeping
+        return True
 
 
 def reset_rpm_limit_cache():

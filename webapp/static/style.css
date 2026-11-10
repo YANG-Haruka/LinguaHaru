@@ -952,10 +952,11 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
   white-space: pre-wrap; word-break: break-word;
 }
 .live-text:empty::before { content: "等待语音…"; color: var(--faint); font-size: 0.88rem; font-family: var(--font-mono); }
-/* Provisional translation of a sentence still being spoken (replaced by the whole one). */
+/* Provisional translation of what is still being said (replaced by the whole
+   sentence's). Dimmer is the only mark: italics read as a broken font. */
 .live-prov {
   margin-top: 6px; font-size: 0.98rem; line-height: 1.7; color: var(--muted);
-  font-style: italic; white-space: pre-wrap; word-break: break-word;
+  white-space: pre-wrap; word-break: break-word;
 }
 .live-prov:empty { display: none; }
 .live-meter {
@@ -980,6 +981,11 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
   color: var(--text); font-size: 0.9rem; box-shadow: none;
 }
 .live-target-pill select:focus { box-shadow: none; background: transparent; }
+.live-vocab-pill { flex: 1 1 260px; min-width: 200px; }
+.live-vocab-pill input {
+  flex: 1; min-width: 0; height: 28px; border: none; background: transparent; padding: 0 4px;
+  color: var(--text); font-size: 0.9rem; box-shadow: none; outline: none;
+}
 .mic-wave { width: 220px; height: 34px; display: block; }
 .live-go {
   width: 52px; height: 52px; border-radius: 50%; flex: none; cursor: pointer;
