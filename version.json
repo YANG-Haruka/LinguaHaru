@@ -1,19 +1,19 @@
 {
-    "version": "7.2",
+    "version": "7.2.1",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.2: real-time voice gives the translator a second opinion from the preview recognizer, and the live page can use a glossary (names heard as sound-alikes are restored). / 7.2：实时语音把预览模型对同一段话的识别结果作为第二意见一并交给翻译；实时页可以选词汇表（被听成同音词的人名术语也能还原）。",
+    "notes": "7.2.1: an installed model loading is no longer shown as a download; no example names in the meeting vocabulary field; Whisper Tiny / Base and Qwen3-ASR 0.6B are off the model list. / 7.2.1：已下载的模型加载时不再显示成「正在下载」；会议词汇框不再显示示例人名；模型列表去掉 Whisper Tiny / Base 和 Qwen3-ASR 0.6B。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2/LinguaHaru-7.2-web-portable.zip",
-            "sha256": "a825a9bda7e262de73d63f71d67a9a8c70a277fdeb87eaabdf371524b469dc2b"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.1/LinguaHaru-7.2.1-web-portable.zip",
+            "sha256": "37ebff66daae745b4088b3c9724a4bee7c297495b039c151effeff24010472e2"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2/LinguaHaru-7.2-desktop-portable.zip",
-            "sha256": "07f8a8ec24aef00658b168f5d08cdcac3ef33f16fb9b77a0cc0b21d7372f14a3"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.1/LinguaHaru-7.2.1-desktop-portable.zip",
+            "sha256": "3bbd6980f30b4d39469025a3be105a1522e4a098a3391e1b99f11b522d593d6e"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2/LinguaHaru-7.2-desktop-mac.zip",
-            "sha256": "25c6b5573a6af21b12f64d1691cdedadebf7bf836af90093ac7f4a8a7a55aed2"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.1/LinguaHaru-7.2.1-desktop-mac.zip",
+            "sha256": "5ca86bea15a0d4233940da7727d4a2515ac669289063b7f0444c2ca09a9d94e4"
         }
     }
 }
