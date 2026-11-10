@@ -26,21 +26,17 @@ $RAPID_CLS = "rapidocr/ch_ppocr_mobile_v2.0_cls_mobile.onnx"
 $MANIFEST = [ordered]@{
   # --- STT (video subtitles / real-time voice) ---
   "stt-sensevoice-small"   = @{ paths = @("models--FunAudioLLM--SenseVoiceSmall", $VAD); note = "SenseVoice Small (+fsmn-vad). zh/en/ja/ko/yue, fast." }
-  "stt-whisper-tiny"       = @{ paths = @("whisper/models--Systran--faster-whisper-tiny"); note = "faster-whisper tiny (~75MB)" }
-  "stt-whisper-base"       = @{ paths = @("whisper/models--Systran--faster-whisper-base"); note = "faster-whisper base (~145MB)" }
   "stt-whisper-small"      = @{ paths = @("whisper/models--Systran--faster-whisper-small"); note = "faster-whisper small (~490MB)" }
   "stt-whisper-large-v3-turbo" = @{ paths = @("whisper/models--mobiuslabsgmbh--faster-whisper-large-v3-turbo"); note = "faster-whisper large-v3-turbo (~1.6GB)" }
   "stt-whisper-large-v2"   = @{ paths = @("whisper/models--Systran--faster-whisper-large-v2"); note = "faster-whisper large-v2 (~3GB)" }
   "stt-anime-whisper"      = @{ paths = @("hub/models--litagin--anime-whisper"); note = "Anime-Whisper, expressive Japanese (~3GB)" }
   # Qwen3-ASR exists twice: PyTorch weights (Windows / NVIDIA or CPU) and MLX
   # 8-bit weights (Apple Silicon GPU, the *-mac packs). Not interchangeable.
-  "stt-qwen3-asr-0.6b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-0.6B"); note = "Qwen3-ASR 0.6B (~1.9GB)" }
   "stt-qwen3-asr-1.7b"     = @{ paths = @("hub/models--Qwen--Qwen3-ASR-1.7B"); note = "Qwen3-ASR 1.7B, most accurate (~4.7GB)" }
   # Built fine on Windows (no symlinks there: real files). Built on a Mac, the HF
   # cache snapshot files are symlinks into ../../blobs, so `zip -y` would ship
   # dangling links — copy the snapshot dereferenced (cp -RL) first.
   "stt-qwen3-asr-1.7b-mac" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-1.7B-8bit"); note = "Qwen3-ASR 1.7B for Mac (Apple Silicon, MLX 8-bit, ~2.4GB) - Mac default" }
-  "stt-qwen3-asr-0.6b-mac" = @{ paths = @("hub/models--mlx-community--Qwen3-ASR-0.6B-8bit"); note = "Qwen3-ASR 0.6B for Mac (Apple Silicon, MLX 8-bit, ~1GB)" }
   # --- OCR (image translation); each size = det + rec + shared textline model ---
   "ocr-tiny"   = @{ paths = @("paddlex/official_models/PP-OCRv6_tiny_det",   "paddlex/official_models/PP-OCRv6_tiny_rec", "rapidocr/PP-OCRv6_det_tiny.onnx", "rapidocr/PP-OCRv6_rec_tiny.onnx", $RAPID_CLS,   $TEXTLINE); note = "PP-OCRv6 tiny (fastest)" }
   "ocr-small"  = @{ paths = @("paddlex/official_models/PP-OCRv6_small_det",  "paddlex/official_models/PP-OCRv6_small_rec", "rapidocr/PP-OCRv6_det_small.onnx", "rapidocr/PP-OCRv6_rec_small.onnx", $RAPID_CLS,  $TEXTLINE); note = "PP-OCRv6 small (default)" }

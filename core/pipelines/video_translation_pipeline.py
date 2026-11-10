@@ -37,14 +37,14 @@ def _tr(key, lang):
 # Curated "friendly subset" of speech-to-text models. `disk` = approximate
 # download size, `vram` = approximate GPU peak (CPU mode uses RAM, not VRAM).
 # Real-time voice favors the smaller/faster ones (lower latency).
+# Taken off the list (2026-11): Whisper Tiny / Base (too inaccurate to be worth
+# offering; Whisper Small stays as the light CPU choice) and Qwen3-ASR 0.6B
+# (clearly behind 1.7B on Japanese; SenseVoice covers the light end). A saved
+# choice of one of them falls back to the default (_selected_model_for).
 STT_MODELS = [
     {"id": "sensevoice-small",       "engine": "sensevoice", "size": "iic/SenseVoiceSmall",
      "label": "SenseVoice Small — general zh/en/ja/ko, fast & light",
      "disk": "~900MB", "vram": "~1–2GB"},
-    {"id": "whisper-tiny",           "engine": "whisper",    "size": "tiny",
-     "label": "Whisper Tiny — multilingual, fastest (low accuracy)", "disk": "~75MB", "vram": "~1GB"},
-    {"id": "whisper-base",           "engine": "whisper",    "size": "base",
-     "label": "Whisper Base — multilingual, fast", "disk": "~145MB", "vram": "~1GB"},
     {"id": "whisper-small",          "engine": "whisper",    "size": "small",
      "label": "Whisper Small — multilingual, balanced", "disk": "~490MB", "vram": "~2GB"},
     {"id": "whisper-large-v3-turbo", "engine": "whisper",    "size": "large-v3-turbo",
@@ -55,8 +55,6 @@ STT_MODELS = [
     {"id": "anime-whisper",          "engine": "animewhisper", "size": "litagin/anime-whisper",
      "label": "Anime-Whisper — tuned for Japanese expressive / NSFW audio (JA only)",
      "disk": "~3GB", "vram": "~2GB"},
-    {"id": "qwen3-asr-0.6b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-0.6B",
-     "label": "Qwen3-ASR 0.6B — multilingual (30+ langs), accurate", "disk": "~2GB", "vram": "~3GB"},
     {"id": "qwen3-asr-1.7b",         "engine": "qwen3asr",   "size": "Qwen/Qwen3-ASR-1.7B",
      "label": "Qwen3-ASR 1.7B — multilingual, most accurate (best general pick)",
      "disk": "~4.7GB", "vram": "~6GB"},
@@ -100,7 +98,6 @@ STT_PARAM_SPECS = {
 _STT_PARAM_DEFAULTS = {
     "sensevoice-small": {"vad_threshold": 0.5, "vad_min_ms": 250},
     "anime-whisper":    {"vad_threshold": 0.35, "vad_min_ms": 160},
-    "qwen3-asr-0.6b":   {"vad_threshold": 0.35, "vad_min_ms": 160},
     "qwen3-asr-1.7b":   {"vad_threshold": 0.35, "vad_min_ms": 160},
 }
 
@@ -1103,8 +1100,7 @@ def _qwen_accel_kwargs():
 # torch-on-CPU. Measured on an M5: a 15 s window takes ~0.9 s (0.6B) / ~1.6 s
 # (1.7B); loading 0.6B takes 4 s instead of 57 s. 4-bit is avoided on purpose:
 # it degrades Japanese noticeably (FLEURS-ja CER 8.6 -> 16).
-_MLX_QWEN_REPO = {"Qwen/Qwen3-ASR-0.6B": "mlx-community/Qwen3-ASR-0.6B-8bit",
-                  "Qwen/Qwen3-ASR-1.7B": "mlx-community/Qwen3-ASR-1.7B-8bit"}
+_MLX_QWEN_REPO = {"Qwen/Qwen3-ASR-1.7B": "mlx-community/Qwen3-ASR-1.7B-8bit"}
 _mlx_executor = None   # MLX streams are per-thread: every MLX call runs on ONE thread
 
 
@@ -1682,6 +1678,12 @@ def preload_recognizer(model_id=None, progress_cb=None):
     global last_preload_error
     from core.optional_modules import _capture_progress
     last_preload_error = ""
+    if progress_cb is not None:
+        # Only download lines: both pages show them as "Downloading model …", and
+        # "Loading checkpoint shards 100%" (an installed model being read from
+        # disk) made users think a new model was being downloaded.
+        _cb = progress_cb
+        progress_cb = lambda line: None if str(line).lstrip().startswith("Loading") else _cb(line)  # noqa: E731
     try:
         # Whole preload under the load lock, warm-up included: the loaders lock
         # only the load itself, so a second model (picked while the live page was

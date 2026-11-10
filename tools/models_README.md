@@ -15,7 +15,7 @@
 ## Windows 和 Mac 怎么区分
 
 - 文件名以 **`-mac`** 结尾的，**只给 Mac**（Apple M 系列芯片）。
-- `stt-qwen3-asr-0.6b.zip` 和 `stt-qwen3-asr-1.7b.zip`（不带 `-mac`）**只给 Windows**。
+- `stt-qwen3-asr-1.7b.zip`（不带 `-mac`）**只给 Windows**。
 - 其余所有包 Windows 和 Mac 都能用。
 
 **为什么 Qwen3-ASR 有两套？** Windows 版是原始的 PyTorch 格式，跑在 NVIDIA 显卡上；Mac 版是苹果 MLX 框架的 8-bit 格式，跑在 M 系列芯片自带的 GPU 上，体积只有一半左右。两种格式不能互换。
@@ -38,15 +38,11 @@
 | 文件 | 适用系统 | 大小 | 用途 |
 |---|---|---|---|
 | `stt-sensevoice-small.zip` | Windows / Mac | 947 MB | 语音识别 SenseVoice（含断句模型）。中 / 英 / 日 / 韩 / 粤语，速度快。Windows 实时语音和字幕的默认模型 |
-| `stt-whisper-tiny.zip` | Windows / Mac | 76 MB | 语音识别 Whisper tiny：最小最快，准确率低 |
-| `stt-whisper-base.zip` | Windows / Mac | 146 MB | 语音识别 Whisper base：轻量 |
 | `stt-whisper-small.zip` | Windows / Mac | 486 MB | 语音识别 Whisper small：速度和准确率均衡 |
 | `stt-whisper-large-v3-turbo.zip` | Windows / Mac | 1.6 GB | 语音识别 Whisper large-v3-turbo：多语言，准确且快（推荐） |
 | `stt-whisper-large-v2.zip` | Windows / Mac | 3.0 GB | 语音识别 Whisper large-v2：高精度，体积大 |
 | `stt-anime-whisper.zip` | Windows / Mac | 3.0 GB | 语音识别 Anime-Whisper：只支持日语，擅长动画 / 游戏里情绪化的语音 |
-| `stt-qwen3-asr-0.6b.zip` | **Windows** | 1.9 GB | 语音识别 Qwen3-ASR 0.6B：支持 30 多种语言，准确 |
 | `stt-qwen3-asr-1.7b.zip` | **Windows** | 4.6 GB | 语音识别 Qwen3-ASR 1.7B：最准，建议有 6 GB 以上显存的 NVIDIA 显卡 |
-| `stt-qwen3-asr-0.6b-mac.zip` | **Mac** | 1.0 GB | 语音识别 Qwen3-ASR 0.6B（MLX 8-bit）：更轻更快 |
 | `stt-qwen3-asr-1.7b-mac.zip` | **Mac** | 2.4 GB | 语音识别 Qwen3-ASR 1.7B（MLX 8-bit）：Mac 实时语音的默认模型，最准 |
 | `ocr-tiny.zip` | Windows / Mac | 20 MB | 图片文字识别 PP-OCRv6 tiny：最快 |
 | `ocr-small.zip` | Windows / Mac | 65 MB | 图片文字识别 PP-OCRv6 small：图片翻译默认 |
@@ -64,7 +60,7 @@
 
 One zip per model — **download only the ones for the features you use**, unzip them **into the app's `models` folder** (inside the extracted `LinguaHaru-desktop` / `LinguaHaru-web` / `LinguaHaru-desktop-mac` folder, next to `Start-Desktop.bat` / `LinguaHaru.app`; create it if missing), and the app treats the model as installed — no download needed. The zips already contain the right sub-folders (`models/hub/…`, `models/whisper/…`, `models/rapidocr/…`); don't add an extra folder level. You can also skip the packs entirely and install models from the Plugins page.
 
-- Files ending in **`-mac`** are Mac-only (Apple Silicon). `stt-qwen3-asr-0.6b.zip` / `stt-qwen3-asr-1.7b.zip` (no `-mac`) are Windows-only. Everything else works on both.
+- Files ending in **`-mac`** are Mac-only (Apple Silicon). `stt-qwen3-asr-1.7b.zip` (no `-mac`) is Windows-only. Everything else works on both.
 - Qwen3-ASR comes twice because the formats aren't interchangeable: PyTorch weights for Windows, Apple MLX 8-bit weights (about half the size, running on the M-series GPU) for the Mac.
 - Quick picks: real-time voice — `stt-sensevoice-small.zip` on Windows, `stt-qwen3-asr-1.7b-mac.zip` on the Mac; subtitles — SenseVoice (default) or `stt-whisper-large-v3-turbo`; Japanese anime / game voices — `stt-anime-whisper`; image translation — `ocr-small` (manga: `ocr-medium`); PDF translation — `pdf.zip` (required); cleaner text removal in images — `image-inpaint-lama` (optional, enable "HQ image text erase (LaMa)" in Settings → Advanced Options).
 - `SHA256SUMS.txt` lists each zip's SHA-256 for checking large downloads.

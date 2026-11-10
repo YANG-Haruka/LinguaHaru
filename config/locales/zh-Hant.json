@@ -437,7 +437,7 @@
   "Save Recording Tip": "儲存本次的錄音（WAV），和文字紀錄放在一起。可在「歷史紀錄」中播放並產生摘要。",
   "Meeting Vocabulary": "會議詞彙",
   "Meeting Vocabulary Tip": "會議裡會出現的人名、公司名、術語，用逗號分隔。語音辨識常把它們聽成同音詞，填在這裡後，譯文會依這裡的寫法輸出。",
-  "Meeting Vocabulary Placeholder": "例如：佐藤, Acme, CAN 匯流排",
+  "Meeting Vocabulary Placeholder": "人名、公司名、術語，用逗號分隔",
   "Live Glossary Tip": "即時語音使用的詞彙表。句子裡出現詞條時依詞彙表翻譯；詞條不多（40 條以內）時，被聽錯的同音詞也會依詞彙表還原。",
   "Summary Saved": "摘要已儲存，可在歷史紀錄中查看",
   "Summary Failed": "摘要失敗（請檢查模型 / API 金鑰）",

@@ -397,7 +397,7 @@
   "Save Recording Tip": "このセッションの録音（WAV）を文字起こしと一緒に保存します。「履歴」で再生・要約できます。",
   "Meeting Vocabulary": "会議の用語",
   "Meeting Vocabulary Tip": "会議に出てくる人名・社名・用語をカンマ区切りで入力します。音声認識が聞き間違えやすい語も、訳文ではここに書いた表記になります。",
-  "Meeting Vocabulary Placeholder": "例：佐藤, Acme, CAN バス",
+  "Meeting Vocabulary Placeholder": "人名・会社名・用語をカンマ区切りで",
   "Live Glossary Tip": "リアルタイム音声で使う用語集です。用語が含まれる行は用語集どおりに訳します。小さな用語集（40 語まで）なら聞き間違えた同音語も復元します。",
   "Summary Saved": "要約を保存しました（履歴で確認できます）",
   "Summary Failed": "要約できませんでした（モデル / API キーを確認してください）",

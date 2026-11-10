@@ -410,6 +410,6 @@
   "Raw Error": "Error original",
   "Meeting Vocabulary": "Vocabulario de la reunión",
   "Meeting Vocabulary Tip": "Nombres y términos que aparecen en sus reuniones, separados por comas. El reconocimiento de voz suele confundirlos; la traducción los escribe tal como figuran aquí.",
-  "Meeting Vocabulary Placeholder": "p. ej. Sato, Acme, bus CAN",
+  "Meeting Vocabulary Placeholder": "Nombres, empresas y términos, separados por comas",
   "Live Glossary Tip": "El glosario que usa la voz en tiempo real. Una línea que contiene uno de sus términos se traduce como indica el glosario. Un glosario pequeño (hasta 40 términos) también corrige palabras que suenan parecido."
 }

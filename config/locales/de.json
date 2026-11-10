@@ -410,6 +410,6 @@
   "Raw Error": "Originalfehler",
   "Meeting Vocabulary": "Besprechungsvokabular",
   "Meeting Vocabulary Tip": "Namen und Begriffe, die in Ihren Besprechungen vorkommen, durch Kommas getrennt. Die Spracherkennung versteht sie oft falsch; die Übersetzung schreibt sie so, wie sie hier stehen.",
-  "Meeting Vocabulary Placeholder": "z. B. Sato, Acme, CAN-Bus",
+  "Meeting Vocabulary Placeholder": "Namen, Firmen, Fachbegriffe – durch Kommas getrennt",
   "Live Glossary Tip": "Das Glossar für Echtzeit-Sprache. Enthält eine Zeile einen seiner Begriffe, wird er wie im Glossar übersetzt. Ein kleines Glossar (bis 40 Begriffe) stellt auch ähnlich klingende Wörter richtig."
 }

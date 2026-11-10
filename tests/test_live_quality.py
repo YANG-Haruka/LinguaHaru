@@ -631,3 +631,24 @@ def test_a_recognition_of_the_previous_session_is_dropped(monkeypatch):
     fired[2]("新しい", "ja", True); fired[3]("新しい", "ja", False)
     assert got == [("final", "新しい", "ja", True), ("preview", 0, "新しい")]
 
+
+
+def test_loading_an_installed_model_is_not_reported_as_a_download(monkeypatch):
+    """Both pages show progress lines as "Downloading model …": the tqdm line of
+    an installed model being read from disk made users think a new one was coming."""
+    seen = []
+    monkeypatch.setattr(vp, "_preload_recognizer", lambda model_id: (print("Loading checkpoint shards 100% 2/2"),
+                                                                     print("↓ 1.2 GB · 35.0 MB/s"), True)[-1])
+    assert vp.preload_recognizer("qwen3-asr-1.7b", progress_cb=seen.append)
+    assert [s for s in seen if s.strip()] and all("Loading" not in s for s in seen)
+    assert any("1.2 GB" in s for s in seen)
+
+
+def test_a_model_taken_off_the_list_falls_back_to_the_default(tmp_path, monkeypatch):
+    cfg = tmp_path / "system_config.json"
+    cfg.write_text('{"live_stt_model": "qwen3-asr-0.6b", "stt_model": "whisper-tiny"}', encoding="utf-8")
+    monkeypatch.setattr(vp, "_SYSTEM_CONFIG", str(cfg))
+    monkeypatch.delenv("LINGUAHARU_WHISPER_MODEL", raising=False)
+    assert "qwen3-asr-0.6b" not in vp.stt_model_ids() and "whisper-tiny" not in vp.stt_model_ids()
+    assert vp.get_selected_stt_model() == vp.DEFAULT_STT_MODEL
+    assert vp.get_selected_live_stt_model() in vp.stt_model_ids()

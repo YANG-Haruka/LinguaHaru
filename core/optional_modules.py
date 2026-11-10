@@ -152,13 +152,10 @@ _OCR_MODELS = [
 # Per-model tags (i18n keys, resolved in the UI) for the speech-to-text catalog.
 _STT_TAGS = {
     "sensevoice-small":       ["Tag Recommended", "Tag CJKStrong"],
-    "whisper-tiny":           ["Tag Fastest"],
-    "whisper-base":           [],
     "whisper-small":          ["Tag Balanced"],
     "whisper-large-v3-turbo": ["Tag HighAccuracy"],
     "whisper-large-v2":       ["Tag HighAccuracy"],
     "anime-whisper":          ["Tag JapaneseOnly"],
-    "qwen3-asr-0.6b":         ["Tag Lightweight"],
     "qwen3-asr-1.7b":         ["Tag HighAccuracy"],
 }
 
@@ -170,13 +167,10 @@ _MODEL_PROBES = {
     "medium": ["PP-OCRv6_medium"],
     "tiny":   ["PP-OCRv6_tiny"],
     "sensevoice-small":       ["SenseVoiceSmall"],
-    "whisper-tiny":           ["faster-whisper-tiny"],
-    "whisper-base":           ["faster-whisper-base"],
     "whisper-small":          ["faster-whisper-small"],
     "whisper-large-v3-turbo": ["faster-whisper-large-v3-turbo"],
     "whisper-large-v2":       ["faster-whisper-large-v2"],
     "anime-whisper":          ["anime-whisper"],
-    "qwen3-asr-0.6b":         ["Qwen3-ASR-0.6B"],
     "qwen3-asr-1.7b":         ["Qwen3-ASR-1.7B"],
 }
 
@@ -192,7 +186,7 @@ def get_selected_ocr_model():
 
 
 # Apple Silicon runs Qwen3-ASR as MLX 8-bit weights: (disk, unified memory).
-_MLX_QWEN_SIZES = {"qwen3-asr-0.6b": ("~1GB", "~1.6GB"), "qwen3-asr-1.7b": ("~2.4GB", "~3.2GB")}
+_MLX_QWEN_SIZES = {"qwen3-asr-1.7b": ("~2.4GB", "~3.2GB")}
 
 
 def _stt_catalog():

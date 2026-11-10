@@ -410,6 +410,6 @@
   "Raw Error": "Errore originale",
   "Meeting Vocabulary": "Vocabolario della riunione",
   "Meeting Vocabulary Tip": "Nomi e termini che ricorrono nelle riunioni, separati da virgole. Il riconoscimento vocale spesso li fraintende; la traduzione li scrive come indicati qui.",
-  "Meeting Vocabulary Placeholder": "es. Sato, Acme, bus CAN",
+  "Meeting Vocabulary Placeholder": "Nomi, aziende e termini, separati da virgole",
   "Live Glossary Tip": "Il glossario usato dalla voce in tempo reale. Una riga che contiene uno dei suoi termini viene tradotta come indica il glossario. Un glossario piccolo (fino a 40 termini) corregge anche le parole dal suono simile."
 }

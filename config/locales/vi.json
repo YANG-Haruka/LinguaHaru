@@ -410,6 +410,6 @@
   "Raw Error": "Lỗi gốc",
   "Meeting Vocabulary": "Từ vựng cuộc họp",
   "Meeting Vocabulary Tip": "Tên riêng và thuật ngữ xuất hiện trong cuộc họp, cách nhau bằng dấu phẩy. Nhận dạng giọng nói thường nghe nhầm chúng; bản dịch sẽ viết đúng như ghi ở đây.",
-  "Meeting Vocabulary Placeholder": "ví dụ: Sato, Acme, CAN bus",
+  "Meeting Vocabulary Placeholder": "Tên người, công ty và thuật ngữ, cách nhau bằng dấu phẩy",
   "Live Glossary Tip": "Bảng thuật ngữ dùng cho giọng nói thời gian thực. Dòng nào chứa thuật ngữ sẽ được dịch theo bảng. Bảng nhỏ (tối đa 40 thuật ngữ) còn sửa các từ nghe nhầm do phát âm giống nhau."
 }
