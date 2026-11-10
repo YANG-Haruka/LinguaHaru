@@ -1,19 +1,19 @@
 {
-    "version": "7.0.15",
+    "version": "7.1",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.0.15: real-time translation shows a provisional translation at once and replaces it with the whole sentence's translation, instead of cutting a sentence in half on a timer; recordings left uncompressed when the app was closed are finished at the next start. / 7.0.15：实时翻译先显示暂定译文，整句说完再换成完整译文，不再到点就把一句话从中间切开；关程序时没压缩完的录音，下次启动会自动补完。",
+    "notes": "7.1: real-time voice shows text and a provisional translation while you speak; translations read like an interpreter's and no longer come out in the wrong language; new meeting vocabulary for names and terms; accented speech is no longer detected as another language and dropped. / 7.1：实时语音边说边出字和暂定译文；译文更像口译、不再翻成别的语言；新增会议词汇（人名和术语）；带口音的发言不再被判成别的语言而丢失。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.15/LinguaHaru-7.0.15-web-portable.zip",
-            "sha256": "7f57f0824700618a2a8aab70c6a7ab0635332fd4e1e30dfa23020bf88023ebc2"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.1/LinguaHaru-7.1-web-portable.zip",
+            "sha256": "7d2a69f38c44efb050845ca78396570036cde64565d6f714e6e4129a967a953e"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.15/LinguaHaru-7.0.15-desktop-portable.zip",
-            "sha256": "7f5885ce705042ed33a3f5e59a3262c61fd22daa4fdc14ee9cec3f55aaa5d5bb"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.1/LinguaHaru-7.1-desktop-portable.zip",
+            "sha256": "2a9407fdc6b25201abc510891391b9940e94baf5d7d0889f18e3e0e104897c55"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.0.15/LinguaHaru-7.0.15-desktop-mac.zip",
-            "sha256": "9d108affc7a36088573d9c03dd39b2af34974a7f23a128d3195a81200d78b7c7"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.1/LinguaHaru-7.1-desktop-mac.zip",
+            "sha256": "77c4f89aec35a25284276225bdb4c5a731de45080e087221cabcad4c03174c95"
         }
     }
 }
