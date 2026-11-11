@@ -32,6 +32,7 @@ class PreloadWorker(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._t = threading.Thread(target=self._run, daemon=True)
+        self.reported = False     # done was emitted (it may still be loading the preview model)
 
     def start(self):
         self._t.start()
@@ -56,15 +57,22 @@ class PreloadWorker(QObject):
                     except RuntimeError:  # page destroyed mid-download
                         pass
             ok = bool(preload_recognizer(progress_cb=_cb))
-            if ok:   # final mode previews with a fast model — load it up front too
-                from core.pipelines.video_translation_pipeline import preload_live_preview
-                preload_live_preview()
         except Exception:  # noqa: BLE001
             ok = False
+        # The live model is what the page waits for: say so NOW. The preview
+        # model used to be loaded first, and the "loading model" spinner stayed
+        # up through two or three recognized and translated sentences.
+        self.reported = True
         try:
             self.done.emit(ok)
         except RuntimeError:  # page already destroyed (app closing)
             pass
+        if ok:   # final mode previews with a fast model — load it up front too
+            try:
+                from core.pipelines.video_translation_pipeline import preload_live_preview
+                preload_live_preview()
+            except Exception:  # noqa: BLE001 — previews fall back to the live model
+                pass
 
 
 class SummaryWorker(QObject):

@@ -173,6 +173,117 @@ class _Waveform(QWidget):
         p.end()
 
 
+class _CaptionStylePanel(QWidget):
+    """The floating captions' look, in one small panel: how see-through the
+    background is (a slider), and its colour and the two text colours (a few
+    swatches each). It used to be the system colour dialog (RGB / HSV fields, an
+    "Alpha channel" box, English whatever the UI language) and the system font
+    dialog. Changes show at once; they are saved when the panel closes."""
+    _BG = ("#12141a", "#0f1b33", "#3a3d45", "#ffffff")
+    _TEXT = ("#f1f5f9", "#ffe066", "#8fd3ff", "#9be7a3", "#ffb3c7", "#9aa6b2", "#111418")
+
+    def __init__(self, bar):
+        from PySide6.QtWidgets import QGridLayout, QSlider, QCheckBox
+        super().__init__(bar, Qt.Popup | Qt.FramelessWindowHint)
+        self._bar = bar
+        L = bar._lang
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setObjectName("captionStyle")
+        self.setStyleSheet(
+            "#captionStyle{background:#1c2030;border:1px solid #3a4258;}"
+            "QLabel,QCheckBox{color:#e2e8f0;font-size:13px;}"
+            "QPushButton#reset{color:#cbd5e1;background:#2a3044;border:none;border-radius:6px;padding:5px 12px;}"
+            "QPushButton#reset:hover{background:#36405a;}")
+        grid = QGridLayout(self)
+        grid.setContentsMargins(16, 14, 16, 14)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(12)
+
+        grid.addWidget(QLabel(tr("Caption Opacity", L)), 0, 0)
+        self._slider = QSlider(Qt.Horizontal)
+        self._slider.setRange(0, 100)
+        self._slider.setFixedWidth(170)
+        self._slider.valueChanged.connect(self._on_opacity)
+        self._pct = QLabel()
+        self._pct.setFixedWidth(40)
+        row = QHBoxLayout()
+        row.addWidget(self._slider)
+        row.addWidget(self._pct)
+        grid.addLayout(row, 0, 1)
+
+        self._swatches = {}
+        for r, (key, label, colors) in enumerate((
+                ("bg", "Caption Bg Color", self._BG),
+                ("dst_color", "Translation Color", self._TEXT),
+                ("src_color", "Source Color", self._TEXT)), start=1):
+            grid.addWidget(QLabel(tr(label, L).rstrip(" .…")), r, 0)
+            row = QHBoxLayout()
+            row.setSpacing(8)
+            for c in colors:
+                b = QPushButton()
+                b.setFixedSize(24, 24)
+                b.setCursor(Qt.PointingHandCursor)
+                b.clicked.connect(lambda _=False, k=key, c=c: self._on_color(k, c))
+                self._swatches[(key, c)] = b
+                row.addWidget(b)
+            row.addStretch(1)
+            grid.addLayout(row, r, 1)
+
+        self._bold = QCheckBox(tr("Caption Bold", L))
+        self._bold.toggled.connect(self._on_bold)
+        grid.addWidget(self._bold, 4, 0)
+        reset = QPushButton(tr("Reset Style", L))
+        reset.setObjectName("reset")
+        reset.setCursor(Qt.PointingHandCursor)
+        reset.clicked.connect(self._on_reset)
+        grid.addWidget(reset, 4, 1, Qt.AlignRight)
+        self._sync()
+
+    def _sync(self):
+        """Show the bar's current style (also after a reset)."""
+        from PySide6.QtGui import QColor
+        st = self._bar._style
+        bg = QColor(st["bg"])
+        self._slider.blockSignals(True)
+        self._slider.setValue(round((1.0 - bg.alphaF()) * 100))
+        self._slider.blockSignals(False)
+        self._pct.setText(f"{self._slider.value()}%")
+        self._bold.blockSignals(True)
+        self._bold.setChecked(bool(st["bold"]))
+        self._bold.blockSignals(False)
+        for (key, c), b in self._swatches.items():
+            cur = bg.name() if key == "bg" else QColor(st[key]).name()
+            ring = "2px solid #3f9bff" if cur == QColor(c).name() else "1px solid #5b6478"
+            b.setStyleSheet(f"QPushButton{{background:{c};border:{ring};border-radius:12px;}}")
+
+    def _on_opacity(self, value):
+        from PySide6.QtGui import QColor
+        c = QColor(self._bar._style["bg"])
+        c.setAlphaF(1.0 - value / 100.0)
+        self._bar._set_style(bg=c.name(QColor.NameFormat.HexArgb))
+        self._pct.setText(f"{value}%")
+
+    def _on_color(self, key, color):
+        from PySide6.QtGui import QColor
+        c = QColor(color)
+        if key == "bg":                       # a new colour, as see-through as before
+            c.setAlphaF(QColor(self._bar._style["bg"]).alphaF())
+            color = c.name(QColor.NameFormat.HexArgb)
+        self._bar._set_style(**{key: color})
+        self._sync()
+
+    def _on_bold(self, on):
+        self._bar._set_style(bold=bool(on))
+
+    def _on_reset(self):
+        self._bar._reset_style()
+        self._sync()
+
+    def hideEvent(self, e):
+        super().hideEvent(e)
+        self._bar._save_style()
+
+
 class _CaptionBar(QWidget):
     """Always-on-top, frameless, draggable, RESIZABLE floating caption window
     (like Windows Live Captions). Shows the latest source line and translated
@@ -366,46 +477,17 @@ class _CaptionBar(QWidget):
             pass
 
     def _show_style_menu(self):
-        from PySide6.QtWidgets import QMenu
-        L = self._lang
-        m = QMenu(self)
-        m.addAction(tr("Caption Background", L), lambda: self._pick_color("bg", True))
-        m.addAction(tr("Translation Color", L), lambda: self._pick_color("dst_color"))
-        m.addAction(tr("Source Color", L), lambda: self._pick_color("src_color"))
-        m.addAction(tr("Caption Font", L), self._pick_font)
-        m.addSeparator()
-        m.addAction(tr("Reset Style", L), self._reset_style)
-        m.exec(self._gear_btn.mapToGlobal(self._gear_btn.rect().bottomLeft()))
+        panel = _CaptionStylePanel(self)
+        panel.adjustSize()
+        panel.move(self._gear_btn.mapToGlobal(self._gear_btn.rect().bottomLeft()))
+        panel.show()
+        self._style_panel = panel             # keep it alive while it is open
 
-    def _pick_color(self, key, alpha=False):
-        from PySide6.QtGui import QColor
-        from PySide6.QtWidgets import QColorDialog
-        args = (QColor(self._style[key]), self, tr("Caption Style", self._lang))
-        if alpha:   # alpha channel = background opacity
-            c = QColorDialog.getColor(*args, QColorDialog.ColorDialogOption.ShowAlphaChannel)
-        else:
-            c = QColorDialog.getColor(*args)
-        if c.isValid():
-            self._style[key] = c.name(QColor.NameFormat.HexArgb if alpha
-                                      else QColor.NameFormat.HexRgb)
-            self._apply_bg()
-            self._render()
-            self._save_style()
-
-    def _pick_font(self):
-        from PySide6.QtGui import QFont
-        from PySide6.QtWidgets import QFontDialog
-        f = QFont(self._style["family"] or self.font().family(), self._font_size)
-        f.setBold(bool(self._style["bold"]))
-        f.setItalic(bool(self._style["italic"]))
-        ok, f = QFontDialog.getFont(f, self)
-        if ok:
-            self._style.update(family=f.family(), bold=f.bold(), italic=f.italic())
-            if f.pointSize() > 0:
-                self._font_size = max(self._FONT_MIN, min(self._FONT_MAX, f.pointSize()))
-                self._style["size"] = self._font_size
-            self._render()
-            self._save_style()
+    def _set_style(self, **changes):
+        """Apply a style change now (the style panel saves when it closes)."""
+        self._style.update(changes)
+        self._apply_bg()
+        self._render()
 
     def _reset_style(self):
         self._style = dict(self._STYLE_DEFAULT, geometry=self._style.get("geometry"))
@@ -1162,7 +1244,11 @@ class LivePage(ScrollArea):
         super().showEvent(event)
 
     def _start_preload(self):
-        if self._preloader is not None and self._preloader.isRunning():
+        # One still loading the live model is joined; one that has reported and
+        # is only loading the preview model is not (the model picked since then
+        # would never be announced, and the spinner would never go away).
+        if (self._preloader is not None and self._preloader.isRunning()
+                and not getattr(self._preloader, "reported", False)):
             return
         self._preloader = PreloadWorker(self)
         self._preloader.progress.connect(self._on_preload_progress)
@@ -2069,6 +2155,11 @@ class LivePage(ScrollArea):
         self._recog_busy = False
         if not self._is_listening():
             return   # a late STT result after stop — ignore (don't re-dispatch/write)
+        if getattr(self, "_overlay", None) is not None and self._overlay.isVisible():
+            # A recognition came back, so the model IS loaded: never show text
+            # and a "loading model" spinner together.
+            self._hide_loading()
+            self.status_label.setText(self._listening_text())
         if detected:
             self._note_detected(detected)
         text = text or ""

@@ -652,3 +652,67 @@ def test_a_model_taken_off_the_list_falls_back_to_the_default(tmp_path, monkeypa
     assert "qwen3-asr-0.6b" not in vp.stt_model_ids() and "whisper-tiny" not in vp.stt_model_ids()
     assert vp.get_selected_stt_model() == vp.DEFAULT_STT_MODEL
     assert vp.get_selected_live_stt_model() in vp.stt_model_ids()
+
+
+def test_the_loading_spinner_goes_when_the_live_model_is_ready(monkeypatch):
+    """It used to wait for the preview model too: two or three sentences were
+    recognized and translated under a "loading model" spinner."""
+    import qt_app.live_worker as lw
+    order = []
+    monkeypatch.setattr(vp, "preload_recognizer", lambda *a, **k: (order.append("live model"), True)[1])
+    monkeypatch.setattr(vp, "preload_live_preview", lambda: order.append("preview model"))
+    w = lw.PreloadWorker()
+    w.done.connect(lambda ok: order.append(("done", ok, w.reported)))
+    w._run()
+    assert order == ["live model", ("done", True, True), "preview model"]
+
+
+def test_a_recognition_never_shows_under_the_loading_spinner(monkeypatch):
+    """... and a preload that has reported (it is only loading the preview model)
+    is not joined: the model picked since then would never be announced."""
+    import qt_app.live_page as lp
+    made = []
+
+    class Worker:
+        reported = False
+
+        def __init__(self, parent=None):
+            self.progress = self.done = type("S", (), {"connect": lambda self, f: None})()
+            made.append(self)
+
+        def isRunning(self):
+            return True
+
+        def start(self):
+            pass
+    monkeypatch.setattr(lp, "PreloadWorker", Worker)
+    page = type("P", (), {})()
+    page._preloader = None
+    page._on_preload_progress = page._on_preload_done = lambda *a: None
+    lp.LivePage._start_preload(page)
+    lp.LivePage._start_preload(page)
+    assert len(made) == 1                          # still loading the live model: joined
+    made[0].reported = True
+    lp.LivePage._start_preload(page)
+    assert len(made) == 2                          # only the preview model left: a new one
+
+    hidden = []
+    page._overlay = type("O", (), {"isVisible": lambda self: True})()
+    page._hide_loading = lambda: hidden.append(1)
+    page._listening_text = lambda: "listening"
+    page.status_label = type("L", (), {"setText": lambda self, t: hidden.append(t)})()
+    page._is_listening = lambda: True
+    page._note_detected = lambda d: None
+    page._final_mode = False
+    page._uncommitted_tail = lambda t: ""
+    page._split_scored = lambda t, f: ([], 0)
+    page._commit_stream_sentence = lambda s: None
+    page._live_preview = lambda: False
+    page._set_caption_interim = lambda t: None
+    page._recog_pending = []
+    page._request_provisional = lambda *a: None
+    try:
+        lp.LivePage._on_recognized_stream(page, "はい", "ja", True)
+    except AttributeError:
+        pass                                       # the rest of the page is not faked here
+    assert hidden[:2] == [1, "listening"]
