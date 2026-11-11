@@ -1,19 +1,19 @@
 {
-    "version": "7.2.1",
+    "version": "7.2.2",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.2.1: an installed model loading is no longer shown as a download; no example names in the meeting vocabulary field; Whisper Tiny / Base and Qwen3-ASR 0.6B are off the model list. / 7.2.1：已下载的模型加载时不再显示成「正在下载」；会议词汇框不再显示示例人名；模型列表去掉 Whisper Tiny / Base 和 Qwen3-ASR 0.6B。",
+    "notes": "7.2.2: desktop page switches are smoother (snapshot animation, frame rate follows the display); picking a glossary loads it, with a refresh button next to the dropdown. / 7.2.2：桌面版页面切换更顺（快照动画，帧率跟随显示器）；词汇表选中即加载，下拉框旁新增刷新按钮。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.1/LinguaHaru-7.2.1-web-portable.zip",
-            "sha256": "37ebff66daae745b4088b3c9724a4bee7c297495b039c151effeff24010472e2"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.2/LinguaHaru-7.2.2-web-portable.zip",
+            "sha256": "c0aef5849f9ba680c4b0d819e42efce1ad3653d628c72c07606ab83ade0f5587"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.1/LinguaHaru-7.2.1-desktop-portable.zip",
-            "sha256": "3bbd6980f30b4d39469025a3be105a1522e4a098a3391e1b99f11b522d593d6e"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.2/LinguaHaru-7.2.2-desktop-portable.zip",
+            "sha256": "e732d9a6ece67b4d897e9fbfcdccad52f3a40a9bc7e7328c0310f7c3a2490fd0"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.1/LinguaHaru-7.2.1-desktop-mac.zip",
-            "sha256": "5ca86bea15a0d4233940da7727d4a2515ac669289063b7f0444c2ca09a9d94e4"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.2/LinguaHaru-7.2.2-desktop-mac.zip",
+            "sha256": "935c68330ffdee40285221e78c62b1faf0e136d2baf68662b6c58ea952799857"
         }
     }
 }
