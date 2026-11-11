@@ -1,19 +1,19 @@
 {
-    "version": "7.2.2",
+    "version": "7.2.3",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.2.2: desktop page switches are smoother (snapshot animation, frame rate follows the display); picking a glossary loads it, with a refresh button next to the dropdown. / 7.2.2：桌面版页面切换更顺（快照动画，帧率跟随显示器）；词汇表选中即加载，下拉框旁新增刷新按钮。",
+    "notes": "7.2.3: a simple caption-style panel (transparency slider, colour presets) on the desktop; the loading-model spinner goes as soon as the live model is ready. / 7.2.3：桌面版悬浮字幕样式改成简单面板（透明度滑块、预设颜色）；「正在加载模型」的转圈在识别模型就绪后立即消失。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.2/LinguaHaru-7.2.2-web-portable.zip",
-            "sha256": "c0aef5849f9ba680c4b0d819e42efce1ad3653d628c72c07606ab83ade0f5587"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.3/LinguaHaru-7.2.3-web-portable.zip",
+            "sha256": "bcebdc197887ee3b1c851b144f04dec7db508f9692af13b35fb33712fae39447"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.2/LinguaHaru-7.2.2-desktop-portable.zip",
-            "sha256": "e732d9a6ece67b4d897e9fbfcdccad52f3a40a9bc7e7328c0310f7c3a2490fd0"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.3/LinguaHaru-7.2.3-desktop-portable.zip",
+            "sha256": "d5a3d18555d6b7929f61a7e68b2e508f1feb8092edb98c68ac2083a220e80aa7"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.2/LinguaHaru-7.2.2-desktop-mac.zip",
-            "sha256": "935c68330ffdee40285221e78c62b1faf0e136d2baf68662b6c58ea952799857"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.2.3/LinguaHaru-7.2.3-desktop-mac.zip",
+            "sha256": "ddaf7dce7e7f61f9cbb8cfe9038ee7010ae237e44f28dabdc88073c759725b08"
         }
     }
 }
