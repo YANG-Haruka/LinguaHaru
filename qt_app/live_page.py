@@ -178,7 +178,9 @@ class _CaptionStylePanel(QWidget):
     background is (a slider), and its colour and the two text colours (a few
     swatches each). It used to be the system colour dialog (RGB / HSV fields, an
     "Alpha channel" box, English whatever the UI language) and the system font
-    dialog. Changes show at once; they are saved when the panel closes."""
+    dialog; those are still there for whoever wants them, behind the "+" at the
+    end of a row and the font button. Changes show at once; they are saved when
+    the panel closes."""
     _BG = ("#12141a", "#0f1b33", "#3a3d45", "#ffffff")
     _TEXT = ("#f1f5f9", "#ffe066", "#8fd3ff", "#9be7a3", "#ffb3c7", "#9aa6b2", "#111418")
 
@@ -193,7 +195,10 @@ class _CaptionStylePanel(QWidget):
             "#captionStyle{background:#1c2030;border:1px solid #3a4258;}"
             "QLabel,QCheckBox{color:#e2e8f0;font-size:13px;}"
             "QPushButton#reset{color:#cbd5e1;background:#2a3044;border:none;border-radius:6px;padding:5px 12px;}"
-            "QPushButton#reset:hover{background:#36405a;}")
+            "QPushButton#reset:hover{background:#36405a;}"
+            "QPushButton#more{color:#cbd5e1;background:transparent;border:1px dashed #5b6478;"
+            "border-radius:12px;font-size:14px;}"
+            "QPushButton#more:hover{color:#ffffff;border-color:#3f9bff;}")
         grid = QGridLayout(self)
         grid.setContentsMargins(16, 14, 16, 14)
         grid.setHorizontalSpacing(14)
@@ -226,17 +231,29 @@ class _CaptionStylePanel(QWidget):
                 b.clicked.connect(lambda _=False, k=key, c=c: self._on_color(k, c))
                 self._swatches[(key, c)] = b
                 row.addWidget(b)
+            more = QPushButton("+")                     # any colour: the system dialog
+            more.setObjectName("more")
+            more.setFixedSize(24, 24)
+            more.setCursor(Qt.PointingHandCursor)
+            more.setToolTip(tr("Custom Color", L))
+            more.clicked.connect(lambda _=False, k=key: self._bar._pick_color(k))
+            row.addWidget(more)
             row.addStretch(1)
             grid.addLayout(row, r, 1)
 
         self._bold = QCheckBox(tr("Caption Bold", L))
         self._bold.toggled.connect(self._on_bold)
         grid.addWidget(self._bold, 4, 0)
-        reset = QPushButton(tr("Reset Style", L))
-        reset.setObjectName("reset")
-        reset.setCursor(Qt.PointingHandCursor)
-        reset.clicked.connect(self._on_reset)
-        grid.addWidget(reset, 4, 1, Qt.AlignRight)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addStretch(1)
+        for text, slot in ((tr("Caption Font", L), self._bar._pick_font), (tr("Reset Style", L), self._on_reset)):
+            b = QPushButton(text)
+            b.setObjectName("reset")
+            b.setCursor(Qt.PointingHandCursor)
+            b.clicked.connect(slot)
+            row.addWidget(b)
+        grid.addLayout(row, 4, 1)
         self._sync()
 
     def _sync(self):
@@ -488,6 +505,37 @@ class _CaptionBar(QWidget):
         self._style.update(changes)
         self._apply_bg()
         self._render()
+
+    # Detailed settings, for whoever wants more than the swatches: the system
+    # dialogs (in the UI language, see i18n.install_qt_translation).
+    def _pick_color(self, key):
+        from PySide6.QtGui import QColor
+        from PySide6.QtWidgets import QColorDialog
+        cur = QColor(self._style[key])
+        c = QColorDialog.getColor(QColor(cur.red(), cur.green(), cur.blue()), self,
+                                  tr("Caption Style", self._lang))
+        if c.isValid():
+            if key == "bg":                   # how see-through it is stays on the slider
+                c.setAlphaF(cur.alphaF())
+                self._set_style(bg=c.name(QColor.NameFormat.HexArgb))
+            else:
+                self._set_style(**{key: c.name()})
+            self._save_style()
+
+    def _pick_font(self):
+        from PySide6.QtGui import QFont
+        from PySide6.QtWidgets import QFontDialog
+        f = QFont(self._style["family"] or self.font().family(), self._font_size)
+        f.setBold(bool(self._style["bold"]))
+        f.setItalic(bool(self._style["italic"]))
+        ok, f = QFontDialog.getFont(f, self)
+        if ok:
+            self._style.update(family=f.family(), bold=f.bold(), italic=f.italic())
+            if f.pointSize() > 0:
+                self._font_size = max(self._FONT_MIN, min(self._FONT_MAX, f.pointSize()))
+                self._style["size"] = self._font_size
+            self._render()
+            self._save_style()
 
     def _reset_style(self):
         self._style = dict(self._STYLE_DEFAULT, geometry=self._style.get("geometry"))

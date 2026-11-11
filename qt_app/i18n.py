@@ -44,3 +44,26 @@ def lang_from_display_name(display):
         if name == display:
             return code
     return "en"
+
+# Qt's own dialogs (colour, font, the buttons of message boxes) come in English
+# unless Qt's translation for the UI language is installed.
+_QT_LOCALE = {"zh": "zh_CN", "zh-Hant": "zh_TW", "pt": "pt_BR"}
+_qt_translator = None
+
+
+def install_qt_translation(lang):
+    """Make Qt's built-in dialogs follow the UI language (English: Qt's default)."""
+    global _qt_translator
+    from PySide6.QtCore import QCoreApplication, QLibraryInfo, QTranslator
+    app = QCoreApplication.instance()
+    if app is None:
+        return
+    if _qt_translator is not None:
+        app.removeTranslator(_qt_translator)
+        _qt_translator = None
+    if lang == "en":
+        return
+    t = QTranslator(app)
+    if t.load("qtbase_" + _QT_LOCALE.get(lang, lang), QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)):
+        app.installTranslator(t)
+        _qt_translator = t

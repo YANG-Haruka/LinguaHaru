@@ -686,6 +686,8 @@
   "Caption Opacity": "Background transparency",
   "Caption Bg Color": "Background color",
   "Caption Bold": "Bold",
+  "Caption Font": "Font…",
+  "Custom Color": "Custom color",
   "Source Color": "Source text color…",
   "Reset Style": "Reset to default",
   "Default Output Device": "default output device",

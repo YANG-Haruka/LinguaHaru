@@ -59,7 +59,7 @@ class _SelfUpdateWorker(QThread):
             self.finished_ok.emit(False, str(e))
 
 from core import backend
-from qt_app.i18n import tr, UI_LANGS, lang_display_name
+from qt_app.i18n import tr, UI_LANGS, lang_display_name, install_qt_translation
 from qt_app.translate_page import TranslatePage
 from qt_app.quick_page import QuickPage
 from qt_app.live_page import LivePage
@@ -127,6 +127,7 @@ class MainWindow(FluentWindow):
         self._lang = backend.get_config("qt_ui_lang", "zh")
         if self._lang not in UI_LANGS:
             self._lang = "zh"
+        install_qt_translation(self._lang)      # Qt's own dialogs in the UI language
 
         self._update_state = None   # None = not checked yet | "latest" | "v<x.y>"
         self._set_title()
@@ -773,6 +774,7 @@ class MainWindow(FluentWindow):
             return
         self._lang = lang
         backend.set_config("qt_ui_lang", lang)
+        install_qt_translation(lang)
         self._set_title()
         # Re-localize each page.
         for page in (self.interface_page, self.translate_page, self.quick_page,
