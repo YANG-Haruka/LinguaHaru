@@ -26,6 +26,8 @@ os.makedirs(OUT_DIR, exist_ok=True)
 
 
 def _save(widget, name, app):
+    if getattr(widget, "_transition", None) is not None:
+        widget._transition.stop()        # the page itself, not the switch animation
     app.processEvents()
     app.processEvents()
     widget.grab().save(os.path.join(OUT_DIR, name))

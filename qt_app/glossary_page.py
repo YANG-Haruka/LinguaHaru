@@ -1,4 +1,4 @@
-"""Glossary editor page: pick a glossary, edit it in a table, Load / Save.
+"""Glossary editor page: pick a glossary (it loads at once), edit it in a table, Save.
 
 Save refuses to overwrite a non-empty file with an empty table (web guard,
 enforced in backend.save_glossary)."""
@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (
 
 from qfluentwidgets import (
     TitleLabel,
-    ComboBox, PushButton, PrimaryPushButton, TableWidget, BodyLabel,
+    ComboBox, PushButton, PrimaryPushButton, ToolButton, TableWidget, BodyLabel,
     StrongBodyLabel, InfoBar, InfoBarPosition, FluentIcon,
     MessageBoxBase, MessageBox, SubtitleLabel, LineEdit,
 )
@@ -59,7 +59,16 @@ class GlossaryPage(QWidget):
         self.combo = ComboBox()
         self.combo.setFixedWidth(160)
         self.refresh_combo()
+        # Picking a glossary shows it: there used to be a separate Load button,
+        # and the table kept showing the previous glossary until it was pressed.
+        self.combo.currentTextChanged.connect(lambda _name: self.on_load(quiet=True))
         top.addWidget(self.combo)
+        # Reads the glossary folder again (a file added or edited outside the
+        # app) and reloads the one shown.
+        self.refresh_btn = ToolButton(FluentIcon.SYNC)
+        self.refresh_btn.setToolTip(tr("Refresh", lang))
+        self.refresh_btn.clicked.connect(self.on_refresh)
+        top.addWidget(self.refresh_btn)
         self.new_btn = PushButton(FluentIcon.ADD, tr("New Glossary", lang))
         self.new_btn.clicked.connect(self.on_new)
         self.import_btn = PushButton(FluentIcon.FOLDER, tr("Import Glossary", lang))
@@ -70,11 +79,8 @@ class GlossaryPage(QWidget):
         top.addWidget(self.import_btn)
         top.addWidget(self.delete_btn)
         top.addStretch(1)
-        self.load_btn = PushButton(FluentIcon.SYNC, tr("Load Glossary", lang))
-        self.load_btn.clicked.connect(self.on_load)
         self.save_btn = PrimaryPushButton(FluentIcon.SAVE, tr("Save Glossary", lang))
         self.save_btn.clicked.connect(self.on_save)
-        top.addWidget(self.load_btn)
         top.addWidget(self.save_btn)
         layout.addLayout(top)
 
@@ -89,7 +95,7 @@ class GlossaryPage(QWidget):
 
         self._header = []
         if self.combo.count():
-            self.on_load()
+            self.on_load(quiet=True)
 
     def retranslate(self, lang):
         self._lang = lang
@@ -98,18 +104,25 @@ class GlossaryPage(QWidget):
         self.new_btn.setText(tr("New Glossary", lang))
         self.import_btn.setText(tr("Import Glossary", lang))
         self.delete_btn.setText(tr("Delete", lang))
-        self.load_btn.setText(tr("Load Glossary", lang))
+        self.refresh_btn.setToolTip(tr("Refresh", lang))
         self.save_btn.setText(tr("Save Glossary", lang))
 
     def refresh_combo(self):
         current = self.combo.currentText() if self.combo.count() else None
+        self.combo.blockSignals(True)          # filling it is not the user picking one
         self.combo.clear()
         names = backend.get_glossary_files()
         self.combo.addItems(names)
         if current and current in names:
             self.combo.setCurrentText(current)
+        self.combo.blockSignals(False)
 
-    def on_load(self):
+    def on_refresh(self):
+        self.refresh_combo()
+        self.on_load()
+        self._notify_translate()
+
+    def on_load(self, quiet=False):
         name = self.combo.currentText()
         if not name:
             return
@@ -132,7 +145,8 @@ class GlossaryPage(QWidget):
         header = self.table.horizontalHeader()
         header.setMinimumSectionSize(90)
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        self._info(f"{name}: " + tr("已加载 {n} 条", self._lang).format(n=len(rows)))
+        if not quiet:
+            self._info(f"{name}: " + tr("已加载 {n} 条", self._lang).format(n=len(rows)))
 
     def _table_rows(self):
         rows = []
@@ -214,7 +228,9 @@ class GlossaryPage(QWidget):
         """After create/import: refresh the picker, select the new glossary, load
         it, and keep the Translate page's glossary dropdown in sync."""
         self.refresh_combo()
+        self.combo.blockSignals(True)
         self.combo.setCurrentText(name)
+        self.combo.blockSignals(False)
         self.on_load()
         self._notify_translate()
 
@@ -222,9 +238,10 @@ class GlossaryPage(QWidget):
         """Refresh the Translate page's glossary dropdown so a newly created /
         deleted glossary shows up there immediately."""
         mw = self.window()
-        tp = getattr(mw, "translate_page", None)
-        if tp is not None and hasattr(tp, "refresh_glossaries"):
-            tp.refresh_glossaries()
+        for page, refresh in (("translate_page", "refresh_glossaries"), ("live_page", "_refresh_glossaries")):
+            p = getattr(mw, page, None)
+            if p is not None and hasattr(p, refresh):
+                getattr(p, refresh)()
 
     def _info(self, text, error=False):
         bar = InfoBar.error if error else InfoBar.success

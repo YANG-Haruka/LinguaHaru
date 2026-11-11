@@ -13,7 +13,7 @@ retranslate of every page + nav label."""
 import os
 import sys
 
-from PySide6.QtCore import QThread, Signal, QUrl
+from PySide6.QtCore import QThread, Signal, QUrl, QPoint, QRect
 from PySide6.QtGui import QIcon, QColor, QCursor, QDesktopServices
 
 from qfluentwidgets import (
@@ -70,6 +70,7 @@ from qt_app.history_page import HistoryPage
 from qt_app.interface_page import InterfacePage
 from qt_app.plugins_page import PluginsPage
 from qt_app.sky_background import SkyBackground
+from qt_app.page_transition import PageTransition, snapshot
 
 ICON_PATH = os.path.join(backend.REPO_ROOT, "assets", "img", "ico.png")
 # Accent matches the redesigned Web UI's sky-blue identity (theme-aware: a
@@ -236,16 +237,17 @@ class MainWindow(FluentWindow):
         # Default to the Translate page (quick translate) on launch.
         self.switchTo(self.quick_page)
 
-        # Reload data whenever a tab becomes current.
-        self.stackedWidget.currentChanged.connect(self._on_page_changed)
+        # Reload data whenever a tab becomes current (after its transition, see switchTo).
+        self.stackedWidget.currentChanged.connect(self._page_became_current)
 
-        # Freeze the animated sky while a page slides in: the page-switch
-        # animation then gets the full frame budget instead of competing with a
-        # 30fps full-window background repaint, so transitions feel smooth.
+        # Pages are exchanged by PageTransition (snapshots, see that module), not
+        # by the stock pop-up animation of the stacked widget.
+        self._switching = self._reload_pending = False
+        self._transition = None
         try:
-            view = self.stackedWidget.view  # the PopUpAniStackedWidget
-            view.aniStart.connect(self._sky.pause)
-            view.aniFinished.connect(self._sky.resume)
+            self.stackedWidget.setAnimationEnabled(False)
+            self._transition = PageTransition(self)
+            self._transition.finished.connect(self._after_transition)
         except Exception:
             pass
 
@@ -385,6 +387,8 @@ class MainWindow(FluentWindow):
         tears down — otherwise a running mic/STT/translate/update thread is
         destroyed mid-run and Qt aborts ('QThread: Destroyed while thread is
         still running')."""
+        if getattr(self, "_transition", None) is not None:
+            self._transition.stop()
         if self.live_page:
             self.live_page._shutting_down = True   # save the transcript but skip the modal
         for fn in (
@@ -419,6 +423,8 @@ class MainWindow(FluentWindow):
 
     def resizeEvent(self, e):
         super().resizeEvent(e)
+        if getattr(self, "_transition", None) is not None:
+            self._transition.stop()          # its snapshots are of the old size
         if sys.platform == "darwin":
             # Title right of the traffic lights (Windows has its buttons top-right).
             self.titleBar.move(_MAC_TITLE_X, 0)
@@ -693,7 +699,54 @@ class MainWindow(FluentWindow):
         self.navigationInterface.addItemHeader(tr(label_key, self._lang))
         self._header_keys[route_key] = label_key
 
-    def _on_page_changed(self, _index):
+    def switchTo(self, interface):
+        """Exchange the page with a short fade-and-slide done on snapshots.
+
+        Whatever the page reloads when it becomes current (model lists, history,
+        documents: 100-230 ms on the UI thread for some pages) waits until the
+        animation is over, so the switch starts at once."""
+        tr_ = getattr(self, "_transition", None)
+        old = self.stackedWidget.currentWidget()
+        if (tr_ is None or old is None or old is interface or not self.isVisible()
+                or self.isMinimized() or old.width() < 2):
+            return super().switchTo(interface)
+        tr_.stop()                               # a switch still on screen ends first
+        try:
+            before = snapshot(old)
+            view = self.stackedWidget.view
+            down = view.indexOf(interface) > view.indexOf(old)
+            self._switching = True
+            try:
+                super().switchTo(interface)
+            finally:
+                self._switching = False
+            if interface.size() != old.size():       # the stack lays the new page out lazily
+                interface.resize(old.size())
+            if interface.layout() is not None:
+                interface.layout().activate()
+            rect = QRect(interface.mapTo(self, QPoint(0, 0)), interface.size())
+            self._sky.pause()                        # a still backdrop for the snapshot
+            tr_.setGeometry(rect)
+            tr_.run(self._sky.grab(rect), before, snapshot(interface), 1 if down else -1)
+            self.titleBar.raise_()
+        except Exception:  # noqa: BLE001 — never let the animation cost a page switch
+            if self.stackedWidget.currentWidget() is not interface:
+                super().switchTo(interface)
+            self._after_transition()
+
+    def _page_became_current(self, _index=None):
+        if self._switching:
+            self._reload_pending = True          # after the animation (_after_transition)
+        else:
+            self._on_page_changed()
+
+    def _after_transition(self):
+        self._sky.resume()
+        if self._reload_pending:
+            self._reload_pending = False
+            self._on_page_changed()
+
+    def _on_page_changed(self, _index=None):
         current = self.stackedWidget.currentWidget()
         if current is self.history_page:
             self.history_page.reload()
@@ -711,6 +764,9 @@ class MainWindow(FluentWindow):
             self.quick_page.reload_history()
         elif current is self.live_page:
             self.live_page.refresh_models()
+        elif current is self.glossary_page:
+            # a glossary file added outside the app shows up without a restart
+            self.glossary_page.refresh_combo()
 
     def on_lang_changed(self, lang):
         if lang not in UI_LANGS or lang == self._lang:
