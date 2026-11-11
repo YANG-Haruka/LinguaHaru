@@ -967,26 +967,6 @@ def live_glossary_hint(source, src_lang, dst_lang, max_terms=8, glossary=None):
         return ""
 
 
-def clean_live_vocabulary(text):
-    """The meeting vocabulary the user typed (names and terms, any separator) as
-    one comma-separated line for the live translation prompt. Capped: it rides
-    on every live request, and a long list makes the model force its words onto
-    garbled text."""
-    import re
-    terms, seen = [], set()
-    for t in re.split(r"[,，、;；\n\r\t]+", str(text or "")):
-        t = " ".join(t.split())
-        if t and t.lower() not in seen:
-            seen.add(t.lower())
-            terms.append(t[:40])
-    out = ""
-    for t in terms[:40]:
-        if len(out) + len(t) > 400:
-            break
-        out += (", " if out else "") + t
-    return out
-
-
 # A glossary of at most this many rows (for the language pair) is a meeting
 # glossary: it goes to the translator whole.
 # A bigger one (a document glossary) still applies where a line contains its
@@ -998,12 +978,13 @@ _LIVE_GLOSSARY_ROWS = 40
 _GLOSSARY_SAMPLES = frozenset(("LinguaHaru", "Alice", "爱丽丝", "愛麗絲", "アリス", "Alicia", "Алиса", "앨리스", "อลิซ"))
 
 
-def live_terms(src_lang, dst_lang, typed=None, glossary=None):
+def live_terms(src_lang, dst_lang, glossary=None):
     """The names and terms of the user's meetings, as the vocabulary the
-    translator gets with a live line.
+    translator gets with a live line: the live glossary when it is small.
+    (There was a typed "meeting vocabulary" field beside it for one release;
+    its words belong in the glossary, which live_new_terms helps to fill.)
 
-    From the words typed on the live page (``typed``; None = the desktop's saved
-    ones) and the live glossary when it is small. The recognizer writes names as
+    The recognizer writes names as
     sound-alikes, so exact glossary matching alone misses them. Measured on a
     62-minute meeting with 74 reference mentions of 10 names and terms: glossary
     rows given as "said ⇒ written" pairs, 81% came out right (87% of what was
@@ -1011,8 +992,6 @@ def live_terms(src_lang, dst_lang, typed=None, glossary=None):
     72% (83%); nothing, 24%.
     (The translator only: the same words as recognizer hotwords were tried and
     taken out again, see _recognize_whisper.)"""
-    words = [w for w in clean_live_vocabulary(
-        get_config("live_vocabulary", "") if typed is None else typed).split(", ") if w]
     try:
         rows = [(s.strip(), t.strip()) for s, t in _live_glossary_entries(src_lang, dst_lang, glossary)
                 if s and t and s.strip() and t.strip() and s.strip() not in _GLOSSARY_SAMPLES]
@@ -1022,7 +1001,104 @@ def live_terms(src_lang, dst_lang, typed=None, glossary=None):
         rows = []
     clean = lambda x: " ".join(x.replace(",", " ").replace("，", " ").split())[:40]
     pairs = [clean(s) if s == t else f"{clean(s)} ⇒ {clean(t)}" for s, t in rows]
-    return ", ".join(dict.fromkeys(words + pairs))[:900]
+    return ", ".join(dict.fromkeys(pairs))[:900]
+
+
+def _glossary_col(header, code):
+    """Index of language `code`'s column in a glossary header, found the way the
+    translator finds it (text_separator.load_glossary: the code or the language's
+    name, in any case, the first match), or None. A stricter match here wrote
+    terms into a second "ja" column beside "JA", which the translator never read."""
+    from core.engine.text_separator import _lang_tokens
+    tokens = _lang_tokens(code)
+    return next((i for i, h in enumerate(header) if str(h).strip().lower() in tokens), None)
+
+
+def _line_lang(line, main_lang):
+    """The language a recognized line is in — the glossary column whose rows the
+    translator gets with that line, so where a term heard in it belongs. (By the
+    term's own script, a name in Latin letters heard in a Japanese sentence went to the
+    English column and was never used for Japanese lines.) Kana: Japanese;
+    hangul: Korean; else the meeting's main language, unless the script says
+    otherwise.
+    ponytail: by script; the recognizer's language of each line, if a meeting
+    mixes two languages of one script (French and English)."""
+    import re
+    if re.search("[\u3040-\u30ff]", line):
+        return "ja"
+    if re.search("[\uac00-\ud7af]", line):
+        return "ko"
+    if re.search("[\u4e00-\u9fff]", line):
+        return main_lang if main_lang in ("ja", "zh", "zh-Hant") else "zh"
+    return main_lang if main_lang not in (None, "", "auto", "ja", "ko", "zh", "zh-Hant") else "en"
+
+
+def live_new_terms(pairs, dst_lang, model, use_online, api_key, glossary=None, main_lang="auto"):
+    """After a live session: the names and terms of this meeting the glossary
+    does not have yet, for the user to look over and add (add_glossary_terms).
+    pairs: [(source line, its translation)]. Returns ([{"heard", "written",
+    "lang"}], total_tokens).
+
+    On a 24-minute Japanese meeting (222 lines, 5 s, 7400 tokens) this found
+    one product's name under five recognized spellings, the tools the team
+    uses and the people's names. What the model returns
+    is checked here: a "heard" form must really occur in the source lines, a
+    pair that changes nothing is dropped, and so is what the glossary has."""
+    from core.llm.llm_wrapper import extract_meeting_terms
+    pairs = [(str(s or "").strip(), str(t or "").strip()) for s, t in pairs or []]
+    pairs = [(s, t) for s, t in pairs if s]
+    if not pairs:
+        return [], 0
+    found, tokens = extract_meeting_terms(pairs, dst_lang, model, use_online, api_key)
+    said = [s.lower() for s, _ in pairs]
+    if main_lang in (None, "", "auto"):          # not told: what the whole session's script says
+        main_lang = _line_lang("".join(said), "auto")
+    header, have = [], set()
+    try:
+        header, rows = load_glossary(live_glossary_name(glossary))
+        have = {(i, cell.strip().lower()) for row in rows for i, cell in enumerate(row) if cell.strip()}
+    except Exception:  # noqa: BLE001 — no glossary yet: everything is new
+        pass
+    out, seen = [], set()
+    for heard, written in found:
+        heard, written = " ".join(heard.split())[:40], " ".join(written.split())[:40]
+        line = next((s for s in said if heard.lower() in s), None)
+        if len(heard) < 2 or not written or heard.lower() == written.lower() or line is None:
+            continue
+        lang = _line_lang(line, main_lang)
+        if lang == dst_lang or (_glossary_col(header, lang), heard.lower()) in have or heard.lower() in seen:
+            continue
+        seen.add(heard.lower())
+        out.append({"heard": heard, "written": written, "lang": lang})
+    return out, tokens
+
+
+def add_glossary_terms(glossary, terms, dst_lang):
+    """Append terms ([{"heard", "written", "lang"}]) to a glossary, adding the
+    language columns it lacks. Returns how many rows were added."""
+    name = live_glossary_name(glossary)
+    header, rows = load_glossary(name)
+    header, col = list(header), {}
+    for code in dict.fromkeys([t["lang"] for t in terms] + [dst_lang]):
+        col[code] = _glossary_col(header, code)
+        if col[code] is None:
+            header.append(code)
+            col[code] = len(header) - 1
+    rows = [list(r) + [""] * (len(header) - len(r)) for r in rows]
+    have = {(i, c.strip().lower()) for r in rows for i, c in enumerate(r) if c.strip()}
+    added = 0
+    for t in terms:
+        heard, written, src = str(t["heard"]).strip(), str(t["written"]).strip(), col[t["lang"]]
+        if not heard or not written or src == col[dst_lang] or (src, heard.lower()) in have:
+            continue
+        row = [""] * len(header)
+        row[src], row[col[dst_lang]] = heard, written
+        rows.append(row)
+        have.add((src, heard.lower()))
+        added += 1
+    if added:
+        save_glossary(name, header, rows)
+    return added
 
 
 def live_translate_line(source, src_lang, dst_lang, model, use_online, api_key,

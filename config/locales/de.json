@@ -407,8 +407,15 @@
   "Iface Err unknown": "Unbekannter Fehler – siehe Originalfehler unten.",
   "Iface Err empty": "Base URL und Modell-ID sind erforderlich.",
   "Raw Error": "Originalfehler",
-  "Meeting Vocabulary": "Besprechungsvokabular",
-  "Meeting Vocabulary Tip": "Namen und Begriffe, die in Ihren Besprechungen vorkommen, durch Kommas getrennt. Die Spracherkennung versteht sie oft falsch; die Übersetzung schreibt sie so, wie sie hier stehen.",
-  "Meeting Vocabulary Placeholder": "Namen, Firmen, Fachbegriffe – durch Kommas getrennt",
-  "Live Glossary Tip": "Das Glossar für Echtzeit-Sprache. Enthält eine Zeile einen seiner Begriffe, wird er wie im Glossar übersetzt. Ein kleines Glossar (bis 40 Begriffe) stellt auch ähnlich klingende Wörter richtig."
+  "Live Glossary Tip": "Das Glossar für Echtzeit-Sprache. Enthält eine Zeile einen seiner Begriffe, wird er wie im Glossar übersetzt. Ein kleines Glossar (bis 40 Begriffe) stellt auch ähnlich klingende Wörter richtig.",
+  "Extract New Terms": "Nach Ende neue Begriffe sammeln",
+  "Extract New Terms Tip": "Nach dem Stopp sucht das aktuelle Übersetzungsmodell in dieser Sitzung nach Namen und Begriffen, die im Glossar fehlen, und listet sie zum Ankreuzen auf.",
+  "Extracting Terms": "Neue Begriffe werden gesucht…",
+  "New Terms Found": "{n} neue Begriffe gefunden",
+  "New Terms Hint": "Ankreuzen, was ins Glossar „{name}“ soll (gehört → geschrieben):",
+  "Add To Glossary": "Zum Glossar hinzufügen",
+  "Do Not Add": "Nicht hinzufügen",
+  "No New Terms": "In dieser Sitzung wurden keine neuen Begriffe außerhalb des Glossars gefunden.",
+  "Terms Added": "{n} Begriffe zum Glossar „{name}“ hinzugefügt.",
+  "Extract Terms Failed": "Neue Begriffe konnten nicht ermittelt werden."
 }

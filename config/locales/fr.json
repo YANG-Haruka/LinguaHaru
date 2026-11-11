@@ -407,8 +407,15 @@
   "Iface Err unknown": "Erreur inconnue — voir l'erreur d'origine ci-dessous.",
   "Iface Err empty": "La Base URL et l'ID du modèle sont requis.",
   "Raw Error": "Erreur d'origine",
-  "Meeting Vocabulary": "Vocabulaire de réunion",
-  "Meeting Vocabulary Tip": "Noms et termes employés dans vos réunions, séparés par des virgules. La reconnaissance vocale les entend souvent mal ; la traduction les écrit tels qu'ils figurent ici.",
-  "Meeting Vocabulary Placeholder": "Noms, entreprises et termes, séparés par des virgules",
-  "Live Glossary Tip": "Le glossaire utilisé par la voix en temps réel. Une ligne qui contient l'un de ses termes est traduite selon le glossaire. Un petit glossaire (jusqu'à 40 termes) corrige aussi les mots de sonorité proche."
+  "Live Glossary Tip": "Le glossaire utilisé par la voix en temps réel. Une ligne qui contient l'un de ses termes est traduite selon le glossaire. Un petit glossaire (jusqu'à 40 termes) corrige aussi les mots de sonorité proche.",
+  "Extract New Terms": "Extraire les nouveaux termes à la fin",
+  "Extract New Terms Tip": "À l'arrêt, le modèle de traduction actuel cherche dans cette session les noms et termes absents du glossaire et les liste pour que vous les cochiez.",
+  "Extracting Terms": "Recherche de nouveaux termes…",
+  "New Terms Found": "{n} nouveaux termes",
+  "New Terms Hint": "Cochez ceux à ajouter au glossaire « {name} » (entendu → écrit) :",
+  "Add To Glossary": "Ajouter au glossaire",
+  "Do Not Add": "Ne pas ajouter",
+  "No New Terms": "Aucun terme nouveau hors du glossaire dans cette session.",
+  "Terms Added": "{n} termes ajoutés au glossaire « {name} ».",
+  "Extract Terms Failed": "Impossible d'extraire les nouveaux termes."
 }

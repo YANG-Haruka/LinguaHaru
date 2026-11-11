@@ -364,7 +364,7 @@ def _speech_system(dst_lang, vocabulary=""):
       is not named at all; the target is, twice.
     - Fillers and stutters were translated literally ("so so so ah so yeah ah so"
       -> 所以所以所以啊，所以是的啊); a blind judge rated readability 3.5 -> 4.3 /10.
-    - `vocabulary` (names and terms the user typed, correct spellings only): the
+    - `vocabulary` (names and terms of the live glossary, backend.live_terms): the
       recognizer writes names as sound-alikes (ノベル for Novex, 回答 for Kaito);
       with the list 72% of the reference's 74 mentions came out right, 20% without.
       The "clearly the same word" wording matters: a looser one stuffed the listed
@@ -519,6 +519,79 @@ def summarize_transcript(transcript, out_lang, model, use_online, api_key):
     except Exception as e:  # noqa: BLE001
         app_logger.error(f"Transcript summary error: {e}")
         return "", False, None
+
+
+def extract_meeting_terms(pairs, dst_lang, model, use_online, api_key):
+    """Names and terms worth a glossary, from a finished live session.
+    pairs: [(recognized source line, its translation)]. Returns
+    ([(heard, written)], total_tokens); nothing when the model's reply is no
+    list. Raises when no call got an answer (wrong key, rate limit, timeout):
+    that is not "no new terms". The caller checks the result against the text
+    (backend.live_new_terms)."""
+    import json
+    import re
+    from core.load_prompt import _lang_name
+    name = f"{_lang_name(dst_lang)} ({dst_lang})"
+    system = (
+        "You read the transcript of a meeting: each line is automatic speech recognition of what was "
+        f"said, then (on most lines) ⇒ and its translation into {name}. List what is worth keeping in a glossary for "
+        "this group's next meetings: the names of people, companies, products and projects, acronyms, "
+        "and technical terms particular to this group.\n"
+        "For each one give \"heard\": the form exactly as it is written BEFORE the ⇒ (copy it letter for "
+        "letter — speech recognition often writes a name as a sound-alike, and that spelling is what "
+        f"must be matched next time), and \"written\": how it should be written in {name} (a name in its "
+        "usual spelling, Latin letters for foreign names and brands; a term in its standard translation).\n"
+        "Leave out ordinary words, greetings, fillers, numbers and dates, and anything you are not "
+        "confident is a name or a term. If the same name was recognized in several spellings, list each "
+        "spelling with the same \"written\". At most 30 entries, the most important first.\n"
+        "Reply with a JSON array and nothing else: [{\"heard\": \"...\", \"written\": \"...\"}]")
+    # A line held for its sentence's end ("↓" on the desktop, nothing on the web
+    # page) was translated with the next one: it goes before that one's ⇒. (About
+    # a third of a Japanese meeting's lines; leaving them out lost their names.)
+    lines, held = [], []
+    for s, t in pairs:
+        held.append(s)
+        if t and t != "↓":
+            lines.append(f"{' '.join(held)} ⇒ {t}")
+            held = []
+    lines += held
+    # ponytail: the first 3 x 24k characters (about 3 hours of speech); more calls
+    # if longer meetings need their tail covered.
+    chunks, cur = [], ""
+    for ln in lines:
+        if len(cur) + len(ln) > 24000:
+            chunks.append(cur)
+            cur = ""
+        cur += ln + "\n"
+    chunks = (chunks + [cur])[:3]
+    found, tokens, answered, error = [], 0, 0, "no reply"
+    for text in chunks:
+        messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
+        try:
+            if use_online:
+                result, ok, usage = translate_online(api_key, messages, model)
+            else:
+                result, ok, usage = translate_offline(messages, model)
+        except Exception as e:  # noqa: BLE001
+            result, ok, usage = str(e), False, None
+        if not ok:
+            error = str(result)
+            app_logger.error(f"Meeting terms error: {error}")
+            continue
+        answered += 1
+        tokens += int((usage or {}).get("total_tokens", 0) or 0)
+        raw = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+        m = re.search(r"\[.*\]", raw or "", re.S)
+        try:
+            items = json.loads(m.group(0)) if m else []
+        except ValueError:
+            items = []
+        for it in items if isinstance(items, list) else []:
+            if isinstance(it, dict) and it.get("heard") and it.get("written"):
+                found.append((str(it["heard"]), str(it["written"])))
+    if not answered:
+        raise RuntimeError(error)
+    return found, tokens
 
 
 def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, api_key,

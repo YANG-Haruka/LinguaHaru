@@ -20,14 +20,15 @@ from PySide6.QtWidgets import (
 from qfluentwidgets import (
     ScrollArea, TitleLabel, CaptionLabel, BodyLabel, StrongBodyLabel, ComboBox,
     CardWidget, TextEdit, FluentIcon, InfoBar, PushButton, ToggleButton,
-    InfoBarPosition, IconWidget, SwitchButton, CheckBox, LineEdit,
+    InfoBarPosition, IconWidget, SwitchButton, CheckBox,
+    MessageBoxBase, SubtitleLabel,
 )
 
 from core import backend
 from qt_app.i18n import tr
 from qt_app.model_picker import ModelPicker
 from qt_app.live_worker import (
-    LiveRecognizeWorker, LiveTranslateWorker, LiveTranslateStreamWorker, PreloadWorker)
+    LiveRecognizeWorker, LiveTranslateWorker, LiveTranslateStreamWorker, PreloadWorker, TermsWorker)
 from core.api_keys import load_api_key_for_model
 from core.languages_config import LANGUAGE_MAP, get_language_code
 from core.optional_modules import realtime_voice_available
@@ -741,6 +742,43 @@ class _CaptionBar(QWidget):
         super().hideEvent(event)
 
 
+class _TermsDialog(MessageBoxBase):
+    """The report after a session: the names and terms the glossary lacks, each
+    with a tick. Nothing is written until the user says so — a glossary row is
+    applied to every later line, so a wrong one would quietly mistranslate."""
+
+    def __init__(self, parent, lang, terms, glossary):
+        super().__init__(parent)
+        self._terms = terms
+        self.viewLayout.addWidget(SubtitleLabel(tr("New Terms Found", lang).format(n=len(terms)), self))
+        self.viewLayout.addWidget(BodyLabel(tr("New Terms Hint", lang).format(name=glossary), self))
+        from PySide6.QtWidgets import QScrollArea
+        box = QWidget()
+        col = QVBoxLayout(box)
+        col.setContentsMargins(2, 2, 2, 2)
+        col.setSpacing(6)
+        self._boxes = []
+        for t in terms:
+            cb = CheckBox(f"{t['heard']}   →   {t['written']}", box)
+            cb.setChecked(True)
+            col.addWidget(cb)
+            self._boxes.append(cb)
+        col.addStretch(1)
+        area = QScrollArea(self)
+        area.setWidget(box)
+        area.setWidgetResizable(True)
+        area.setFrameShape(QScrollArea.NoFrame)
+        area.setStyleSheet("QScrollArea, QScrollArea > QWidget > QWidget { background: transparent; }")
+        area.setFixedHeight(min(320, 30 * len(terms) + 8))
+        self.viewLayout.addWidget(area)
+        self.yesButton.setText(tr("Add To Glossary", lang))
+        self.cancelButton.setText(tr("Do Not Add", lang))
+        self.widget.setMinimumWidth(440)
+
+    def chosen(self):
+        return [t for t, cb in zip(self._terms, self._boxes) if cb.isChecked()]
+
+
 class _LoopbackWorker(QThread):
     """Capture system audio (speaker loopback) via the optional ``soundcard``
     package and emit 16 kHz mono int16 PCM chunks. Each chunk is delivered on
@@ -974,19 +1012,23 @@ class LivePage(ScrollArea):
         self.subtitle.setWordWrap(True)
         layout.addWidget(self.subtitle)
 
-        # --- Controls (two rows, like the Web layout) ---
-        #   Row 1: input source
-        #   Row 2: target language + volume meter + round start/stop button
+        # --- Controls ---
         config = backend.read_config()
         ctrl_card = CardWidget()
         ctrl = QVBoxLayout(ctrl_card)
         ctrl.setContentsMargins(20, 14, 20, 14)
         ctrl.setSpacing(12)
 
-        row1 = QHBoxLayout()
-        row1.setSpacing(10)
+        # An aligned form (label column, field column), then the session's own
+        # row under a rule: what to show and keep on the left, the level meter
+        # and the start button on the right.
+        from PySide6.QtWidgets import QGridLayout, QFrame
+        form = QGridLayout()
+        form.setHorizontalSpacing(14)
+        form.setVerticalSpacing(10)
+        form.setColumnStretch(1, 1)
+
         self.mic_label = BodyLabel(tr("Input", lang))
-        row1.addWidget(self.mic_label)
         self.mic_combo = ComboBox()
         self._mic_devices = []
         # Per combo entry: None = real mic (QAudioDevice), else a loopback id
@@ -998,71 +1040,56 @@ class LivePage(ScrollArea):
         # signal is connected AFTER the initial populate; every repopulate blocks
         # signals (see _populate_mics), so this never fires on programmatic edits.
         self.mic_combo.currentIndexChanged.connect(self._on_mic_changed)
-        row1.addWidget(self.mic_combo, 1)
-        ctrl.addLayout(row1)
+        form.addWidget(self.mic_label, 0, 0)
+        form.addWidget(self.mic_combo, 0, 1)
 
-        stt_row = QHBoxLayout()
-        stt_row.setSpacing(10)
         self.stt_label = BodyLabel(tr("Speech-to-Text Model", lang))
-        stt_row.addWidget(self.stt_label)
         self.stt_picker = ModelPicker("Real-Time Voice", lang)
-        stt_row.addWidget(self.stt_picker, 1)
-        ctrl.addLayout(stt_row)
+        form.addWidget(self.stt_label, 1, 0)
+        form.addWidget(self.stt_picker, 1, 1)
 
-        row2 = QHBoxLayout()
-        row2.setSpacing(10)
         self.target_label = BodyLabel(tr("Target Language", lang))
-        row2.addWidget(self.target_label)
         self.target_combo = ComboBox()
         self.target_combo.addItems(backend.available_languages())
         self._set_combo(self.target_combo, config.get("default_dst_lang", "English"))
-        row2.addWidget(self.target_combo, 1)
-        self.mic_icon = IconWidget(FluentIcon.MICROPHONE, self)
-        self.mic_icon.setFixedSize(18, 18)
-        row2.addWidget(self.mic_icon)
-        self.waveform = _Waveform(self)
-        row2.addWidget(self.waveform, 1)
-        # Single round start/stop button (green play -> red stop).
-        self.go_btn = QPushButton("▶")
-        self.go_btn.setFixedSize(46, 46)
-        self.go_btn.clicked.connect(self._toggle_listen)
-        self._style_go(False)
-        row2.addWidget(self.go_btn)
-        ctrl.addLayout(row2)
+        form.addWidget(self.target_label, 2, 0)
+        form.addWidget(self.target_combo, 2, 1)
 
-        # Names and terms of the user's meetings: the recognizer writes them as
-        # sound-alikes, the translation restores them (live_translate_line).
-        vocab_row = QHBoxLayout()
-        vocab_row.setSpacing(10)
-        # ... and the glossary to use: its terms where a line contains them; a
-        # small one whole (sound-alikes too).
+        # The glossary to use (its terms where a line contains them; a small one
+        # whole, sound-alikes too), and on the right whether to look for the
+        # names and terms it lacks when the session is over (_extract_terms).
         self.glossary_label = BodyLabel(tr("Glossary", lang))
-        vocab_row.addWidget(self.glossary_label)
+        gl_row = QHBoxLayout()
+        gl_row.setSpacing(10)
         self.glossary_combo = ComboBox()
+        self.glossary_combo.setMinimumWidth(200)
         self.glossary_combo.setToolTip(tr("Live Glossary Tip", lang))
         self._refresh_glossaries()
         self.glossary_combo.currentTextChanged.connect(
             lambda name: name and backend.set_config("live_glossary", name))
-        vocab_row.addWidget(self.glossary_combo)
-        self.vocab_label = BodyLabel(tr("Meeting Vocabulary", lang))
-        vocab_row.addWidget(self.vocab_label)
-        self.vocab_edit = LineEdit()
-        self.vocab_edit.setClearButtonEnabled(True)
-        self.vocab_edit.setPlaceholderText(tr("Meeting Vocabulary Placeholder", lang))
-        self.vocab_edit.setToolTip(tr("Meeting Vocabulary Tip", lang))
-        self.vocab_edit.setText(str(config.get("live_vocabulary", "") or ""))
-        self.vocab_edit.editingFinished.connect(
-            lambda: backend.set_config("live_vocabulary", self.vocab_edit.text().strip()))
-        vocab_row.addWidget(self.vocab_edit, 1)
-        ctrl.addLayout(vocab_row)
+        gl_row.addWidget(self.glossary_combo)
+        gl_row.addStretch(1)
+        self.extract_cb = CheckBox(tr("Extract New Terms", lang))
+        self.extract_cb.setToolTip(tr("Extract New Terms Tip", lang))
+        self.extract_cb.setChecked(bool(config.get("live_extract_terms", False)))
+        self.extract_cb.toggled.connect(
+            lambda on: backend.set_config("live_extract_terms", bool(on)))
+        gl_row.addWidget(self.extract_cb)
+        form.addWidget(self.glossary_label, 3, 0)
+        form.addLayout(gl_row, 3, 1)
+        ctrl.addLayout(form)
 
+        rule = QFrame()
+        rule.setFixedHeight(1)
+        rule.setStyleSheet("background: rgba(128, 128, 128, 0.28);")
+        ctrl.addWidget(rule)
+
+        action = QHBoxLayout()
+        action.setSpacing(12)
         # Floating-captions toggle: pops out an always-on-top subtitle window.
-        cap_row = QHBoxLayout()
-        cap_row.setSpacing(8)
         self.caption_btn = ToggleButton(FluentIcon.VIEW, tr("Floating Captions", lang))
         self.caption_btn.toggled.connect(self._on_caption_toggled)
-        cap_row.addWidget(self.caption_btn)
-        cap_row.addStretch(1)
+        action.addWidget(self.caption_btn)
         # Keep this session's audio (WAV) next to its transcript; History plays
         # it and summarizes the session on demand.
         self.save_rec_cb = CheckBox(tr("Save Recording", lang))
@@ -1070,8 +1097,20 @@ class LivePage(ScrollArea):
         self.save_rec_cb.setChecked(bool(config.get("live_save_recording", False)))
         self.save_rec_cb.toggled.connect(
             lambda on: backend.set_config("live_save_recording", bool(on)))
-        cap_row.addWidget(self.save_rec_cb)
-        ctrl.addLayout(cap_row)
+        action.addWidget(self.save_rec_cb)
+        action.addSpacing(10)
+        self.mic_icon = IconWidget(FluentIcon.MICROPHONE, self)
+        self.mic_icon.setFixedSize(18, 18)
+        action.addWidget(self.mic_icon)
+        self.waveform = _Waveform(self)
+        action.addWidget(self.waveform, 1)
+        # Single round start/stop button (green play -> red stop).
+        self.go_btn = QPushButton("▶")
+        self.go_btn.setFixedSize(46, 46)
+        self.go_btn.clicked.connect(self._toggle_listen)
+        self._style_go(False)
+        action.addWidget(self.go_btn)
+        ctrl.addLayout(action)
         layout.addWidget(ctrl_card)
 
         # One row for the session status and the missing-plugin hint (two empty
@@ -1146,9 +1185,8 @@ class LivePage(ScrollArea):
         self.caption_btn.setText(tr("Floating Captions", lang))
         self.save_rec_cb.setText(tr("Save Recording", lang))
         self.save_rec_cb.setToolTip(tr("Save Recording Tip", lang))
-        self.vocab_label.setText(tr("Meeting Vocabulary", lang))
-        self.vocab_edit.setPlaceholderText(tr("Meeting Vocabulary Placeholder", lang))
-        self.vocab_edit.setToolTip(tr("Meeting Vocabulary Tip", lang))
+        self.extract_cb.setText(tr("Extract New Terms", lang))
+        self.extract_cb.setToolTip(tr("Extract New Terms Tip", lang))
         self.glossary_label.setText(tr("Glossary", lang))
         self.glossary_combo.setToolTip(tr("Live Glossary Tip", lang))
         self._populate_mics()
@@ -1491,11 +1529,12 @@ class LivePage(ScrollArea):
             self._loopback.stop()
             self._loopback.wait(2000)
             self._loopback = None
+        extracting = was_live and self._extract_terms()   # reads the panels: before anything clears them
         self._reset_vad()
         self.waveform.clear()
         self._style_go(False)
         self.target_combo.setEnabled(True)
-        self.status_label.setText(tr("Connection closed", self._lang))
+        self.status_label.setText(tr("Extracting Terms" if extracting else "Connection closed", self._lang))
         if getattr(self, "_power_held", False):   # balance begin_activity()
             self._power_held = False
             try:
@@ -1543,6 +1582,54 @@ class LivePage(ScrollArea):
         except Exception:  # noqa: BLE001
             pass
         return self._rec_path
+
+    # --- new terms for the glossary, when a session is over ---
+    def _session_pairs(self):
+        """[(source line, its translation)] of the session on screen."""
+        strip = lambda ln: re.sub("^[[][0-9:]+[]] *", "", ln).strip()
+        src = [strip(ln) for ln in self.input_text.toPlainText().splitlines() if ln.strip()]
+        dst = [strip(ln) for ln in self.output_text.toPlainText().splitlines() if ln.strip()]
+        return list(zip(src, dst)) if len(src) == len(dst) else [(s, "") for s in src]
+
+    def _extract_terms(self):
+        """Look for the names and terms the glossary lacks (ticked on the page).
+        True when the search was started."""
+        if not self.extract_cb.isChecked() or getattr(self, "_shutting_down", False):
+            return False
+        pairs = self._session_pairs()
+        if len(pairs) < 3:
+            return False
+        from core.pipelines.video_translation_pipeline import _session_langs
+        langs = _session_langs(dict(self._lang_memory))
+        self._terms_worker = TermsWorker(pairs, get_language_code(self.target_combo.currentText()),
+                                         self.glossary_combo.currentText(), langs[0] if langs else "auto", self)
+        self._terms_worker.done.connect(self._on_terms)
+        self._terms_worker.start()
+        return True
+
+    def _on_terms(self, terms, glossary, dst):
+        if self._is_listening():
+            return                      # the next session is already running
+        if self.status_label.text() == tr("Extracting Terms", self._lang):
+            self.status_label.setText(tr("Connection closed", self._lang))
+        if terms is None:
+            self._info(tr("Extract Terms Failed", self._lang), error=True)
+            return
+        if not terms:
+            self._info(tr("No New Terms", self._lang))
+            return
+        dlg = _TermsDialog(self.window(), self._lang, terms, glossary)
+        if not dlg.exec():
+            return
+        try:
+            n = backend.add_glossary_terms(glossary, dlg.chosen(), dst)
+        except Exception as e:  # noqa: BLE001
+            self._info(str(e), error=True)
+            return
+        self._info(tr("Terms Added", self._lang).format(n=n, name=glossary))
+        page = getattr(self.window(), "glossary_page", None)
+        if page is not None and page.combo.currentText() == glossary:
+            page.on_load(quiet=True)     # the glossary page shows the new rows
 
     def _save_live_history(self, audio_path=""):
         """Save the just-finished session (source + translation) to history."""

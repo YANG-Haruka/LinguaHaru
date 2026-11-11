@@ -981,11 +981,10 @@ td input:focus { background: var(--surface); border-color: var(--accent); box-sh
   color: var(--text); font-size: 0.9rem; box-shadow: none;
 }
 .live-target-pill select:focus { box-shadow: none; background: transparent; }
-.live-vocab-pill { flex: 1 1 260px; min-width: 200px; }
-.live-vocab-pill input {
-  flex: 1; min-width: 0; height: 28px; border: none; background: transparent; padding: 0 4px;
-  color: var(--text); font-size: 0.9rem; box-shadow: none; outline: none;
-}
+.live-check-pill { cursor: pointer; gap: 8px; }
+.live-check-pill span { font-size: 0.86rem; color: var(--text); letter-spacing: 0; text-transform: none; }
+.terms-list { max-height: 320px; overflow: auto; display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.terms-list label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
 .mic-wave { width: 220px; height: 34px; display: block; }
 .live-go {
   width: 52px; height: 52px; border-radius: 50%; flex: none; cursor: pointer;

@@ -9,6 +9,7 @@ pure-Python glue) and core.api_keys, so this layer is a thin HTTP wrapper:
 Run:  uvicorn webapp.server:app  (or python -m webapp.server)
 """
 import os
+import re
 import sys
 import json
 import hashlib
@@ -2331,6 +2332,57 @@ def _public_error(err):
                    "<path>", err or "")
 
 
+# A language code becomes a glossary column: the built-in ones and what a custom
+# language may be called ("cantonese", "es-419", "zh_cn"), nothing else.
+_LANG_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{1,23}$")
+
+
+@app.post("/api/live-terms")
+async def live_terms_extract(payload: dict):
+    """After a live session: the names and terms the glossary lacks, for the
+    report the page shows (twin of Qt _extract_terms). Admin only, like every
+    glossary change: what comes back is meant for the shared glossary."""
+    _block_in_server_mode()
+    dst_lang = str(payload.get("dst_lang") or "")
+    if not _LANG_CODE.match(dst_lang):
+        raise HTTPException(400, "dst_lang")
+    pairs = [(str(p[0])[:600], str(p[1])[:600]) for p in (payload.get("pairs") or [])[:3000]
+             if isinstance(p, (list, tuple)) and len(p) == 2]
+    cfg = backend.read_config()
+    use_online = bool(cfg.get("default_online", True))
+    model = backend.get_active_model(use_online=use_online)
+    api_key = (load_api_key_for_model(model)
+               or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
+    glossary = payload.get("glossary")
+    main_lang = str(payload.get("main_lang") or "")
+    main_lang = main_lang if _LANG_CODE.match(main_lang) else "auto"
+    loop = asyncio.get_event_loop()
+    try:
+        terms, tokens = await loop.run_in_executor(
+            None, lambda: backend.live_new_terms(pairs, dst_lang, model, use_online, api_key,
+                                                 glossary=glossary, main_lang=main_lang))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Terms failed: {_public_error(str(e))}")
+    return {"terms": terms, "tokens": tokens, "glossary": backend.live_glossary_name(glossary)}
+
+
+@app.post("/api/live-terms/add")
+async def live_terms_add(payload: dict):
+    """Write the ticked terms of the report into the glossary."""
+    _block_in_server_mode()
+    dst_lang = str(payload.get("dst_lang") or "")
+    terms = [{"heard": str(t.get("heard") or "")[:40], "written": str(t.get("written") or "")[:40],
+              "lang": str(t.get("lang") or "")}
+             for t in (payload.get("terms") or [])[:60] if isinstance(t, dict)]
+    if not _LANG_CODE.match(dst_lang) or any(not _LANG_CODE.match(t["lang"]) for t in terms):
+        raise HTTPException(400, "language code")
+    try:
+        added = backend.add_glossary_terms(payload.get("glossary"), terms, dst_lang)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Glossary: {_public_error(str(e))}")
+    return {"added": added, "glossaries": backend.get_glossary_files()}
+
+
 @app.get("/api/live-preload-progress")
 def live_preload_progress():
     """Polled by the page while /api/live-preload downloads a missing model."""
@@ -2417,15 +2469,14 @@ async def live_translate_text(payload: dict):
     model = backend.get_active_model(use_online=use_online)
     api_key = (load_api_key_for_model(model)
                or os.environ.get("LINGUAHARU_API_KEY", "")) if use_online else ""
-    # The meeting vocabulary and the glossary choice are the browser's own (sent
-    # with each line), so LAN users don't share one list.
+    # The glossary choice is the browser's own (sent with each line), so LAN
+    # users don't share one.
     glossary = payload.get("glossary")
     loop = asyncio.get_event_loop()
 
     def _translate():   # same call as the desktop app: speech prompt, glossary, retry
         # (the glossary is read here, off the event loop)
-        vocabulary = backend.live_terms(src_code, dst_lang, typed=str(payload.get("vocabulary") or ""),
-                                        glossary=glossary)
+        vocabulary = backend.live_terms(src_code, dst_lang, glossary=glossary)
         return backend.live_translate_line(source, src_code, dst_lang, model, use_online,
                                            api_key, context=context, vocabulary=vocabulary,
                                            provisional=bool(payload.get("provisional")),
@@ -2508,8 +2559,7 @@ def live_translate_stream(payload: dict):
     hint = backend.live_glossary_hint(source, src_code, dst_lang, glossary=payload.get("glossary"))
     if hint:
         context = f"{context} {hint}".strip()
-    vocabulary = backend.live_terms(src_code, dst_lang, typed=str(payload.get("vocabulary") or ""),
-                                    glossary=payload.get("glossary"))
+    vocabulary = backend.live_terms(src_code, dst_lang, glossary=payload.get("glossary"))
     alt = _capped_text(payload, "alt")
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))

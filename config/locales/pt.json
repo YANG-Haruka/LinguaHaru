@@ -407,8 +407,15 @@
   "Iface Err unknown": "Erro desconhecido — veja o erro original abaixo.",
   "Iface Err empty": "A Base URL e o ID do modelo são obrigatórios.",
   "Raw Error": "Erro original",
-  "Meeting Vocabulary": "Vocabulário da reunião",
-  "Meeting Vocabulary Tip": "Nomes e termos que aparecem nas suas reuniões, separados por vírgulas. O reconhecimento de voz costuma entendê-los mal; a tradução escreve-os como estão aqui.",
-  "Meeting Vocabulary Placeholder": "Nomes, empresas e termos, separados por vírgulas",
-  "Live Glossary Tip": "O glossário usado pela voz em tempo real. Uma linha que contém um dos seus termos é traduzida como o glossário indica. Um glossário pequeno (até 40 termos) também corrige palavras de som parecido."
+  "Live Glossary Tip": "O glossário usado pela voz em tempo real. Uma linha que contém um dos seus termos é traduzida como o glossário indica. Um glossário pequeno (até 40 termos) também corrige palavras de som parecido.",
+  "Extract New Terms": "Extrair termos novos ao terminar",
+  "Extract New Terms Tip": "Ao parar, o modelo de tradução atual procura nesta sessão nomes e termos que faltam no glossário e lista-os para marcar e adicionar.",
+  "Extracting Terms": "A procurar termos novos…",
+  "New Terms Found": "{n} termos novos",
+  "New Terms Hint": "Marque os que adicionar ao glossário «{name}» (ouvido → escrito):",
+  "Add To Glossary": "Adicionar ao glossário",
+  "Do Not Add": "Não adicionar",
+  "No New Terms": "Não foram encontrados termos novos fora do glossário nesta sessão.",
+  "Terms Added": "{n} termos adicionados ao glossário «{name}».",
+  "Extract Terms Failed": "Não foi possível extrair termos novos."
 }

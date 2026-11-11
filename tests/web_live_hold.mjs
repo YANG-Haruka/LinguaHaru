@@ -32,7 +32,6 @@ const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00
               api: (_url, opts) => new Promise((res) => apiCalls.push({ ...JSON.parse(opts.body), res })),
               $: (id) => (id === "live-output-prov" ? provEl : { value: "zh" }),
               liveInterimText: () => interim,   // what is still being said (the preview lane)
-              liveVocabulary: () => "Novex, Tomas",   // sent with every live translation request
               liveGlossary: () => "meeting",          // ... with the glossary picked on the page
               updatePipCaption: () => {}, liveContext: () => "", liveLastDetected: "ja", liveSessionTokens: 0,
               liveRunning: true, liveQuiet: false, liveRecogBusy: false, liveRecogQueue: [] };
@@ -159,8 +158,7 @@ finalShown(lastFid);
 await settle();
 same("cleared once the whole translation is shown", [provEl.textContent, ctx.pipInterimDst], ["", ""]);
 same("provisional calls are counted", ctx.liveSessionTokens, 12);
-same("the meeting vocabulary rides on the request", apiCalls[0].vocabulary, "Novex, Tomas");
-same("... and the glossary choice", apiCalls[0].glossary, "meeting");
+same("the glossary choice rides on the request", apiCalls[0].glossary, "meeting");
 
 // A sentence that goes straight to translation (nothing held) drops the
 // provisional request still out for its preview: the late reply used to be

@@ -407,8 +407,15 @@
   "Iface Err unknown": "Lỗi không xác định — xem lỗi gốc bên dưới.",
   "Iface Err empty": "Cần nhập Base URL và ID mô hình.",
   "Raw Error": "Lỗi gốc",
-  "Meeting Vocabulary": "Từ vựng cuộc họp",
-  "Meeting Vocabulary Tip": "Tên riêng và thuật ngữ xuất hiện trong cuộc họp, cách nhau bằng dấu phẩy. Nhận dạng giọng nói thường nghe nhầm chúng; bản dịch sẽ viết đúng như ghi ở đây.",
-  "Meeting Vocabulary Placeholder": "Tên người, công ty và thuật ngữ, cách nhau bằng dấu phẩy",
-  "Live Glossary Tip": "Bảng thuật ngữ dùng cho giọng nói thời gian thực. Dòng nào chứa thuật ngữ sẽ được dịch theo bảng. Bảng nhỏ (tối đa 40 thuật ngữ) còn sửa các từ nghe nhầm do phát âm giống nhau."
+  "Live Glossary Tip": "Bảng thuật ngữ dùng cho giọng nói thời gian thực. Dòng nào chứa thuật ngữ sẽ được dịch theo bảng. Bảng nhỏ (tối đa 40 thuật ngữ) còn sửa các từ nghe nhầm do phát âm giống nhau.",
+  "Extract New Terms": "Trích thuật ngữ mới khi kết thúc",
+  "Extract New Terms Tip": "Sau khi dừng, mô hình dịch hiện tại tìm trong phiên này các tên và thuật ngữ mà bảng thuật ngữ chưa có, rồi liệt kê để bạn chọn thêm.",
+  "Extracting Terms": "Đang trích thuật ngữ mới…",
+  "New Terms Found": "Tìm thấy {n} thuật ngữ mới",
+  "New Terms Hint": "Chọn mục thêm vào bảng thuật ngữ \"{name}\" (nghe được → viết đúng):",
+  "Add To Glossary": "Thêm vào bảng thuật ngữ",
+  "Do Not Add": "Không thêm",
+  "No New Terms": "Không tìm thấy thuật ngữ mới ngoài bảng thuật ngữ trong phiên này.",
+  "Terms Added": "Đã thêm {n} thuật ngữ vào bảng thuật ngữ \"{name}\".",
+  "Extract Terms Failed": "Không trích được thuật ngữ mới."
 }

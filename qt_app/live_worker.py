@@ -112,6 +112,41 @@ class SummaryWorker(QObject):
             pass
 
 
+class TermsWorker(QObject):
+    """After a session: the names and terms the glossary lacks
+    (backend.live_new_terms), found with the current translation model. Daemon
+    thread like SummaryWorker. done(list of terms or None when it failed, the
+    glossary and the target language it was asked for — a later session may
+    have picked others by the time this one answers)."""
+    done = Signal(object, str, str)
+
+    def __init__(self, pairs, dst_lang, glossary, main_lang, parent=None):
+        super().__init__(parent)
+        self._args = (pairs, dst_lang, glossary, main_lang)
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        pairs, dst_lang, glossary, main_lang = self._args
+        try:
+            from core import backend
+            from core.api_keys import load_api_key_for_model
+            online = backend.get_config("default_online", True)
+            model = backend.get_active_model(online)
+            key = load_api_key_for_model(model) if online else ""
+            terms, _tokens = backend.live_new_terms(pairs, dst_lang, model, online, key,
+                                                    glossary=glossary, main_lang=main_lang)
+        except Exception as e:  # noqa: BLE001
+            from core.log_config import app_logger
+            app_logger.warning(f"Live terms failed: {e}")
+            terms = None
+        try:
+            self.done.emit(terms, glossary, dst_lang)
+        except RuntimeError:  # receiver already destroyed (app closing)
+            pass
+
+
 class LiveRecognizeWorker(QThread):
     """Recognize a (possibly partial) PCM16 buffer locally — NO translation.
 

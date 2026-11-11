@@ -2430,7 +2430,7 @@ function fillLiveTarget() {
     o.value = code; o.textContent = name; sel.appendChild(o);
   }
   sel.value = BOOT.language_map[BOOT.config.default_dst_lang] || "zh";
-  initLiveVocabulary();
+  initLiveGlossary();
   refreshLiveInputDevices();
 }
 
@@ -2768,7 +2768,7 @@ async function startSileroVad() {
 }
 function stopLocal() {
   // Held mid-sentence lines translate first, then the session is saved.
-  liveFlushHold().then(saveLiveHistory);
+  liveFlushHold().then(saveLiveHistory).then(liveExtractTerms);
   livePendingPreview = []; livePreviewText = ""; pipInterim = "";   // nothing is being said any more
   _showProvisional("");
   stopMicMeter();
@@ -2792,13 +2792,6 @@ let liveLastText = "";       // previous partial (for LocalAgreement-2 stable pr
 let liveCtxHistory = [];     // recent committed source lines (translation coherence context)
 let liveSessionTokens = 0;   // accumulated tokens this live session (for the thanks card)
 
-// Meeting vocabulary: names and terms the recognizer mishears, which the
-// translation restores (twin of Qt vocab_edit). Kept in this browser and sent
-// with each line, so LAN users don't share one list.
-function liveVocabulary() {
-  const el = $("live-vocab");
-  return el ? el.value.trim() : "";
-}
 // The glossary real-time voice uses (twin of Qt glossary_combo): kept in this
 // browser; the app's default one until the user picks another.
 function liveGlossary() {
@@ -2819,15 +2812,73 @@ function fillLiveGlossary() {
     });
   }
 }
-function initLiveVocabulary() {
+// "Extract new terms when the session ends" (twin of Qt extract_cb): only for
+// whoever may change the glossary; remembered in this browser.
+function initLiveGlossary() {
   fillLiveGlossary();
-  const el = $("live-vocab");
-  if (!el || el.dataset.ready) return;
+  const el = $("live-extract"), pill = $("live-extract-pill");
+  if (!el || !pill) return;
+  pill.hidden = BOOT.is_admin === false || !!BOOT.server_mode;
+  if (el.dataset.ready) return;
   el.dataset.ready = "1";
-  try { el.value = localStorage.getItem("lh-live-vocab") || ""; } catch (e) {}
+  try { el.checked = localStorage.getItem("lh-live-extract") === "1"; } catch (e) {}
   el.addEventListener("change", () => {
-    try { localStorage.setItem("lh-live-vocab", el.value.trim()); } catch (e) {}
+    try { localStorage.setItem("lh-live-extract", el.checked ? "1" : "0"); } catch (e) {}
   });
+  $("live-terms-cancel").onclick = () => { $("live-terms-modal").hidden = true; };
+}
+// After a session: ask for the names and terms the glossary lacks and show them
+// with a tick each. Nothing is written until "Add to glossary" — a glossary row
+// is applied to every later line, so a wrong one would quietly mistranslate.
+async function liveExtractTerms() {
+  const el = $("live-extract"), pill = $("live-extract-pill");
+  if (!el || !el.checked || !pill || pill.hidden) return;
+  // [time stamp, text] of each line. A translation carries the stamp of the
+  // source line it was sent with (the last one, when lines were held for their
+  // sentence's end): that pairs them, the lines before it go with an empty
+  // translation and the server joins them to it (extract_meeting_terms).
+  const lines = (id) => (($(id) && $(id).textContent) || "").split("\n")
+    .map((s) => /^\[([0-9:]+)\]\s*(.*)$/.exec(s.trim())).filter((m) => m && m[2]).map((m) => [m[1], m[2]]);
+  const src = lines("live-input"), byStamp = {};
+  if (src.length < 3) return;
+  for (const [ts, t] of lines("live-output")) (byStamp[ts] = byStamp[ts] || []).push(t);
+  const last = {};
+  src.forEach(([ts], i) => { last[ts] = i; });
+  const pairs = src.map(([ts, s], i) => [s, (last[ts] === i && byStamp[ts] || []).join(" ")]);
+  const dst_lang = $("live-target").value;
+  setLiveStatus(_label("Extracting Terms", "正在提取新词汇…"));
+  let r = null;
+  try {
+    r = await api("/api/live-terms", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pairs, dst_lang, glossary: liveGlossary(), main_lang: liveLastDetected }) });
+  } catch (e) { /* reported below */ }
+  if (liveRunning) return;                       // the next session is already running
+  setLiveStatus("");
+  if (!r) { toast(_label("Extract Terms Failed", "提取新词汇失败。"), "error"); return; }
+  if (!r.terms.length) { toast(_label("No New Terms", "这场会议没有发现词汇表以外的新词汇。")); return; }
+  $("live-terms-title").textContent = _label("New Terms Found", "发现 {n} 个新词汇").replace("{n}", r.terms.length);
+  $("live-terms-hint").textContent = _label("New Terms Hint", "勾选要加入词汇表「{name}」的词条：").replace("{name}", r.glossary);
+  const list = $("live-terms-list");
+  list.textContent = "";
+  r.terms.forEach((t, i) => {
+    const row = document.createElement("label"), cb = document.createElement("input"), sp = document.createElement("span");
+    cb.type = "checkbox"; cb.checked = true; cb.dataset.i = i;
+    sp.textContent = `${t.heard}  →  ${t.written}`;
+    row.append(cb, sp); list.appendChild(row);
+  });
+  $("live-terms-add").onclick = async () => {
+    const terms = [...list.querySelectorAll("input:checked")].map((c) => r.terms[+c.dataset.i]);
+    $("live-terms-modal").hidden = true;
+    if (!terms.length) return;
+    try {
+      const a = await api("/api/live-terms/add", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ terms, dst_lang, glossary: r.glossary }) });
+      toast(_label("Terms Added", "已把 {n} 个词条加入词汇表「{name}」。").replace("{n}", a.added).replace("{name}", r.glossary));
+    } catch (e) { toast(String(e.message || e), "error"); }
+  };
+  $("live-terms-modal").hidden = false;
 }
 
 // Recent committed source as disambiguation context (last 3 lines / ~200 chars).
@@ -3257,7 +3308,7 @@ async function _provisionalTranslate(seq, source) {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, src_lang: liveLastDetected || "auto",
                              dst_lang: $("live-target").value, context: liveContext(),
-                             vocabulary: liveVocabulary(), glossary: liveGlossary(), provisional: true }) });
+                             glossary: liveGlossary(), provisional: true }) });
   } catch (e) { /* the whole sentence's translation will come */ }
   if (t) liveSessionTokens += (t.tokens || 0);
   if (seq !== liveProvSeq) return;            // stale: superseded, or its lines were sent whole
@@ -3364,7 +3415,7 @@ async function _translateLiveLine(ts, source, entry = null, fid = 0, alt = "") {
       const t = await api("/api/live-translate-text", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx,
-                               vocabulary: liveVocabulary(), glossary: liveGlossary(), alt }) });
+                               glossary: liveGlossary(), alt }) });
       liveSessionTokens += (t.tokens || 0);
       if (t.translated) appendLive("live-output", `[${ts}] ${t.translated}\n`, entry);
     } catch (e) { /* leave source line; translation failed */ }
@@ -3391,7 +3442,7 @@ async function _translateLiveLine(ts, source, entry = null, fid = 0, alt = "") {
     const resp = await fetch("/api/live-translate-stream", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ source, src_lang: liveLastDetected || "auto", dst_lang: dst, context: ctx,
-                             vocabulary: liveVocabulary(), glossary: liveGlossary(), alt }) });
+                             glossary: liveGlossary(), alt }) });
     const reader = resp.body.getReader();
     const dec = new TextDecoder();
     let buf = "";

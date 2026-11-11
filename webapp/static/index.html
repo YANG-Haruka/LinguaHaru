@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=20261110D" />
+  <link rel="stylesheet" href="/static/style.css?v=20261111A" />
 </head>
 <body>
  <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -195,6 +195,20 @@
           <button id="if-test" data-i18n="Test Interface">测试</button>
           <button id="if-cancel" data-i18n="Cancel">取消</button>
           <button id="if-save" class="primary" data-i18n="Save">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- After a live session: the names and terms the glossary lacks -->
+    <div id="live-terms-modal" class="modal-overlay" hidden>
+      <div class="modal">
+        <h3 id="live-terms-title"></h3>
+        <p id="live-terms-hint" class="muted"></p>
+        <div id="live-terms-list" class="terms-list"></div>
+        <div class="modal-actions">
+          <span style="flex:1"></span>
+          <button id="live-terms-cancel" data-i18n="Do Not Add">不添加</button>
+          <button id="live-terms-add" class="primary" data-i18n="Add To Glossary">加入词汇表</button>
         </div>
       </div>
     </div>
@@ -449,10 +463,9 @@
             <span class="mono" data-i18n="Glossary">词汇表</span>
             <select id="live-glossary"></select>
           </label>
-          <label class="live-target-pill live-vocab-pill" data-i18n-title="Meeting Vocabulary Tip">
-            <span class="mono" data-i18n="Meeting Vocabulary">会议词汇</span>
-            <input id="live-vocab" type="text" maxlength="400" autocomplete="off" spellcheck="false"
-                   data-i18n-ph="Meeting Vocabulary Placeholder">
+          <label class="live-target-pill live-check-pill" id="live-extract-pill" data-i18n-title="Extract New Terms Tip" hidden>
+            <input id="live-extract" type="checkbox">
+            <span data-i18n="Extract New Terms">会议结束后提取新词汇</span>
           </label>
           <div class="mic-pill">
             <svg class="mic-icon" id="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg>
@@ -894,6 +907,6 @@
    </div>
  </div>
   <script src="/static/background.js?v=20260617L"></script>
-  <script src="/static/app.js?v=20261110F"></script>
+  <script src="/static/app.js?v=20261111B"></script>
 </body>
 </html>
