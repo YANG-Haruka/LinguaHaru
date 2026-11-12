@@ -1,19 +1,19 @@
 {
-    "version": "7.3.3",
+    "version": "7.4",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.3.3: the desktop app's memory now stays level during long real-time voice sessions (the slow growth left after 7.3.1 is fixed); 7.3.2 saves the transcript every minute. / 7.3.3：桌面版长时间实时语音时内存保持平稳（修掉了 7.3.1 之后剩下的慢速增长）；7.3.2 起会议中每分钟自动保存记录。",
+    "notes": "7.4: long-running use — a meeting of a day or two, very long videos, very large documents: memory, GPU memory, disk and the interface no longer grow with the length; meeting transcripts and recordings are never deleted by the result-size limit. / 7.4：长时间运行专项——开一两天的会、处理很长的视频和很大的文档，内存、显存、磁盘和界面都不再随时长增长；会议记录和录音不会再被「结果目录上限」删除。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.3/LinguaHaru-7.3.3-web-portable.zip",
-            "sha256": "41f4a3ba6100aaf75c696b0c8810a1ff2a11d87645b58baa1c99f1208f8dcc0d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4/LinguaHaru-7.4-web-portable.zip",
+            "sha256": "d371fe0c4093b5312111c6a8ddb3aa5cde79e1842cb579dd075acb2c3c9cdef9"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.3/LinguaHaru-7.3.3-desktop-portable.zip",
-            "sha256": "6751aad268975026687366127242fb05aa0806b86d04202d0ae0379be8761a6d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4/LinguaHaru-7.4-desktop-portable.zip",
+            "sha256": "2d7bf5bf2d4ef6a528ac642a9b94c9e674b4cf4806945ad2180674443a9ad93c"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.3/LinguaHaru-7.3.3-desktop-mac.zip",
-            "sha256": "cac75768f603d52bd90dc65728a6fafcc77b0c4d7bf128ba30a9720d9d406bcc"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4/LinguaHaru-7.4-desktop-mac.zip",
+            "sha256": "34fa48bccf9c60dccf8bf11d4d443ab5ea1f82b4bc53e7ae19e9395b1a67808d"
         }
     }
 }
