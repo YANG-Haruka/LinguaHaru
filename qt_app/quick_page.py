@@ -648,3 +648,4 @@ class _RecognizeWorker(SttWorker):
             self.done.emit(text or "")
         except Exception:  # noqa: BLE001 - a failed recognition just yields nothing
             self.done.emit("")
+        self._pcm = b""     # the page owns this object for as long as it lives: not the audio too

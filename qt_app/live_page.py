@@ -2072,6 +2072,14 @@ class LivePage(ScrollArea):
     def _retire_local(self, w):
         if w in self._local_workers:
             self._local_workers.remove(w)
+        # Its own finished signal holds the lambda that holds it — through Qt,
+        # where Python's collector cannot follow. Left connected, no worker was
+        # ever freed, and each recognition kept its audio: 130 KB a recognition,
+        # 1 GB for an hour of meeting (measured on the page alone, no models).
+        try:
+            w.finished.disconnect()
+        except (RuntimeError, TypeError, AttributeError):
+            pass
 
     def _on_preload_progress(self, text):
         """A missing model is downloading: show file / % / size / speed live."""

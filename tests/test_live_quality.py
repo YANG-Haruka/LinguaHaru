@@ -465,6 +465,41 @@ def test_qt_recognitions_of_a_model_share_one_thread(monkeypatch):
     assert not idle.isRunning() and idle.wait(10)                # never started
 
 
+def test_qt_a_finished_worker_is_freed(monkeypatch):
+    """The page connects each worker's finished signal to a lambda that holds the
+    worker: a cycle through Qt that Python's collector cannot see. No worker was
+    ever freed, and each recognition kept its audio (1 GB an hour of meeting)."""
+    import gc
+    import os
+    import time
+    import types
+    import weakref
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    qapp = QApplication.instance() or QApplication([])
+    import qt_app.live_page as lp
+    from qt_app import live_worker
+    monkeypatch.setattr(vp, "recognize_utterance", lambda *a, **k: ("x", "ja"))
+    monkeypatch.setattr(vp, "get_selected_live_stt_model", lambda: "whisper-large-v3-turbo")
+    monkeypatch.setattr(backend, "live_translate_line", lambda *a, **k: ("好", 3))
+    monkeypatch.setattr(backend, "live_terms", lambda *a, **k: "")
+    page = types.SimpleNamespace(_local_workers=[])
+    refs = []
+    for i in range(6):
+        w = (live_worker.LiveRecognizeWorker(bytes(64000), 16000, True) if i % 2 else
+             live_worker.LiveTranslateWorker(f"k{i}", "はい", "ja", "zh", "m", True, "key"))
+        w.finished.connect(lambda w=w: lp.LivePage._retire_local(page, w))     # as the page does
+        page._local_workers.append(w)
+        refs.append(weakref.ref(w))
+        w.start()
+    del w
+    until = time.time() + 10
+    while page._local_workers and time.time() < until:
+        qapp.processEvents()
+    gc.collect()
+    assert not page._local_workers and [r() for r in refs] == [None] * 6
+
+
 def test_provisional_translations_leave_room_for_the_final_ones(monkeypatch):
     """About 38 provisional + 10 final requests a minute fill a 50-60 rpm window
     (Claude, Gemini, any model without an "rpm"); the finals then waited behind
