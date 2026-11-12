@@ -513,3 +513,135 @@ def test_a_cut_segment_is_heard_once_more_whole():
     p._pending_preview.pop(0)                                      # its final was processed
     LivePage._on_preview(p, 0, "late")
     assert p._pending_preview == [] and p._preview_text == "来週"
+
+
+# --- a session is saved while it runs, not only when it stops ---------------------------
+def _records(tmp_path):
+    from core.translation_history import TranslationHistoryManager
+    return TranslationHistoryManager(log_dir=str(tmp_path)).get_all_records(file_type="realtime")
+
+
+def test_a_running_session_is_saved_into_one_record_and_one_file(tmp_path, monkeypatch):
+    """Saved only at its stop, a three-hour meeting was gone with an app that
+    died. Every save of a session rewrites the same file and the same record."""
+    from datetime import datetime
+    from core.translation_history import save_live_session, TranslationHistoryManager
+    d, start = str(tmp_path), datetime(2026, 11, 12, 17, 31, 39)
+    save = lambda src, dst, sid="0123456789ab", **k: save_live_session(
+        src, dst, "Auto", "中文", "m", True, d, d, start_time=start, session_id=sid, **k)
+    r1 = save(["[17:32:00] こんにちは"], ["[17:32:00] 你好"])
+    r2 = save(["[17:32:00] こんにちは", "[17:33:00] 早瀬です"], ["[17:32:00] 你好", "[17:33:00] 我是早濑"], total_tokens=9)
+    assert r1["id"] == r2["id"] == "0123456789ab" and len(_records(tmp_path)) == 1
+    assert sorted(f for f in os.listdir(d) if f.endswith((".txt", ".tmp"))) == ["realtime_20261112_173139.txt"]
+    text = open(r2["output_file_path"], encoding="utf-8").read()
+    assert "早瀬です" in text and "我是早濑" in text and _records(tmp_path)[0]["total_tokens"] == 9
+    # the stop: the recording, named after the start too, joins the same record
+    wav = tmp_path / "realtime_20261112_173139.wav"
+    wav.write_bytes(b"RIFF")
+    r3 = save(["[17:32:00] こんにちは"], ["[17:32:00] 你好"], audio_path=str(wav))
+    assert r3["id"] == r1["id"] and r3["log_file_path"] == str(wav) and len(_records(tmp_path)) == 1
+    # an id that is not a live session's own is not taken: never another record overwritten
+    mgr = TranslationHistoryManager(log_dir=d)
+    other = dict(r1, id="aaaaaaaaaaaa", file_type="docx", input_file="a.docx")
+    mgr.add_record(other)
+    for bad in ("aaaaaaaaaaaa", "../../x", "XYZ"):
+        assert save(["[17:40:00] x"], [], sid=bad)["id"] != bad
+    # the start is the first save's, whatever a later one says (the web page gives none):
+    # still the one file
+    later = save_live_session(["[17:41:00] x"], [], "Auto", "中文", "m", True, d, d, session_id="0123456789ab")
+    assert later["id"] == "0123456789ab" and later["output_file_path"].endswith("realtime_20261112_173139.txt")
+    assert later["start_time"] == start.isoformat() and later["duration_seconds"] > 0
+    # a file another program holds open cannot be swapped on Windows: the record keeps the last good save
+    import core.translation_history as th
+    real = os.replace
+    monkeypatch.setattr(th.os, "replace", lambda a, b: (_ for _ in ()).throw(PermissionError(5, "in use")))
+    held = save(["[17:42:00] y"], [])
+    monkeypatch.setattr(th.os, "replace", real)
+    assert held["output_file_path"] == later["output_file_path"] and os.path.isfile(held["output_file_path"])
+    assert not [f for f in os.listdir(d) if f.endswith(".tmp")]
+    assert mgr.get_record_by_id("aaaaaaaaaaaa")["file_type"] == "docx"
+
+
+def test_a_recording_left_by_a_dead_session_joins_its_record(tmp_path, monkeypatch):
+    """The app died: the record is the last save made while the session ran
+    (no recording yet), the WAV lies beside the transcript."""
+    from datetime import datetime
+    import core.translation_history as th
+    d, start = str(tmp_path), datetime(2026, 11, 12, 17, 31, 39)
+    rec = th.save_live_session(["[17:32:00] こんにちは"], ["[17:32:00] 你好"], "Auto", "中文", "m", True, d, d,
+                               start_time=start, session_id="0123456789ab")
+    wav = tmp_path / "realtime_20261112_173139.wav"
+    wav.write_bytes(b"RIFF")
+    seen = []
+    monkeypatch.setattr(th, "compress_live_recording", lambda rid, log: seen.append(rid))
+    th.compress_leftover_recordings(d)                 # written just now: a session that is running
+    assert seen == [] and not _records(tmp_path)[0]["log_file_path"]
+    os.utime(wav, (0, 0))
+    th.compress_leftover_recordings(d)
+    assert seen == [rec["id"]] and _records(tmp_path)[0]["log_file_path"] == str(wav)
+
+
+def test_qt_saves_every_minute_and_once_more_at_the_stop(tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    import qt_app.live_page as lp
+    import qt_app.thanks as thanks
+    d = str(tmp_path)
+    monkeypatch.setattr(lp.backend, "get_custom_paths", lambda *a, **k: (d, d, d))
+    monkeypatch.setattr(lp.backend, "history_dir", lambda *a, **k: d)
+    shown = []
+    monkeypatch.setattr(thanks, "show_thanks", lambda *a, **k: shown.append(1))
+    page = lp.LivePage(lang="zh")
+    page.save_rec_cb.setChecked(False)
+    page._start_recording()                            # a session starts
+    assert page._autosave_timer.isActive() and page._autosave_timer.interval() == 60000
+    page._source = object()                            # listening
+    page._autosave()
+    assert _records(tmp_path) == []                    # nothing said yet
+    page.input_text.setPlainText("[17:32:00] こんにちは")
+    page.output_text.setPlainText("[17:32:00] 你好")
+    page._autosave()
+    rec = _records(tmp_path)[0]
+    assert "こんにちは" in open(rec["output_file_path"], encoding="utf-8").read() and shown == []
+    stamp = os.path.getmtime(rec["output_file_path"])
+    os.utime(rec["output_file_path"], (stamp - 100, stamp - 100))
+    page._autosave()                                   # nothing new: not written again
+    assert os.path.getmtime(rec["output_file_path"]) == stamp - 100
+    page.input_text.setPlainText("[17:32:00] こんにちは" + chr(10) + "[17:33:00] 早瀬です")
+    page._save_live_history("")                        # the stop
+    recs = _records(tmp_path)
+    assert len(recs) == 1 and recs[0]["id"] == rec["id"] and shown == [1]
+    assert "早瀬です" in open(recs[0]["output_file_path"], encoding="utf-8").read()
+    assert len([f for f in os.listdir(d) if f.endswith(".txt")]) == 1
+    page._source = None
+    first = page._session_id
+    page._start_recording()                            # the next session is another record
+    assert page._session_id != first
+    page._autosave_timer.stop()
+
+
+def test_web_saves_a_running_session_into_one_record(tmp_path, monkeypatch):
+    import time
+    import pytest
+    pytest.importorskip("httpx")
+    from fastapi.testclient import TestClient
+    from webapp import server
+    d = str(tmp_path)
+    monkeypatch.setattr(server.sessions, "session_paths", lambda sid: (d, d, d))
+    monkeypatch.setattr(server, "history_log_dir", lambda sid: d)
+    monkeypatch.setattr(server, "server_mode_on", lambda: False)
+    monkeypatch.setattr(server, "_feature_hidden", lambda name: False)
+    client = TestClient(server.app)
+    body = {"source_lines": ["[17:32:00] hello"], "translated_lines": ["[17:32:00] 你好"], "dst_display": "中文",
+            "session": "0123456789ab", "started": int(time.time() * 1000) + 3 * 86400000}   # its clock is not asked
+    assert client.post("/api/live-save-history", json=body).json()["saved"]
+    body["source_lines"].append("[17:33:00] this is Hayase")
+    assert client.post("/api/live-save-history", json=body).json()["saved"]
+    recs = _records(tmp_path)
+    assert len(recs) == 1 and recs[0]["id"] == "0123456789ab"
+    assert "Hayase" in open(recs[0]["output_file_path"], encoding="utf-8").read()
+    assert recs[0]["duration_seconds"] >= 0
+    # no id, or not a string: a record of its own, as before
+    for odd in (None, ["0123456789ab"], 7):
+        assert client.post("/api/live-save-history", json=dict(body, session=odd)).json()["saved"]
+    assert len(_records(tmp_path)) == 4

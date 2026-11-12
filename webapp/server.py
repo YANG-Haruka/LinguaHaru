@@ -2587,8 +2587,9 @@ def live_translate_stream(payload: dict):
 
 @app.post("/api/live-save-history")
 def live_save_history(payload: dict, request: Request):
-    """Save a finished real-time-voice session (source + translation) to the
-    per-session history. Called by the frontend when a live session stops."""
+    """Save a real-time-voice session (source + translation) to the per-session
+    history. Called by the frontend when a live session stops, and every minute
+    while it runs ("session": the same record and file each time)."""
     if server_mode_on():               # no history on public/shared deploys
         return {"saved": False}
     if _feature_hidden("live"):
@@ -2605,10 +2606,12 @@ def live_save_history(payload: dict, request: Request):
     tokens = int(payload.get("tokens", 0) or 0)
     cost_amount = cost_currency = cost_symbol = None
     from core.translation_history import save_live_session
+    session_id = payload.get("session")
     rec = save_live_session(
         src, dst, payload.get("src_display", "Auto"),
         payload.get("dst_display", ""), model, use_online, result_dir, log_dir,
-        total_tokens=tokens, cost_amount=cost_amount, cost_currency=cost_currency)
+        total_tokens=tokens, cost_amount=cost_amount, cost_currency=cost_currency,
+        session_id=session_id if isinstance(session_id, str) else None)
     return {"saved": bool(rec), "tokens": tokens,
             "cost": ({"amount": cost_amount, "symbol": cost_symbol, "currency": cost_currency}
                      if cost_amount is not None else None)}

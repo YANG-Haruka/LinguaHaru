@@ -458,6 +458,7 @@ def save_live_session(
     cost_amount: Optional[float] = None,
     cost_currency: Optional[str] = None,
     audio_path: str = "",
+    session_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """Persist a real-time-voice session: write a bilingual transcript file and
     add a history record (file_type 'realtime'). Source/translated lines are the
@@ -466,6 +467,13 @@ def save_live_session(
     ``audio_path`` (the session's recording, optional) is kept in the record's
     log_file_path slot — realtime records have no log, and deleting the record
     then deletes the recording too.
+
+    ``session_id``: the session is saved WHILE it runs, every minute, and once
+    more when it stops — each call rewrites the same transcript file (named
+    after the start, like the recording) and the same history record. A session
+    used to be saved only when it was stopped: an app that died in a three-hour
+    meeting took all of it along. The start is the first save's ``start_time``
+    (now, when none is given: the web page's clock is not ours).
     """
     import re
     import uuid
@@ -475,6 +483,16 @@ def save_live_session(
     if not src and not dst and not audio_path:
         return None   # nothing heard and nothing recorded
     end_time = end_time or datetime.now()
+    mgr, old = TranslationHistoryManager(log_dir=log_dir), None
+    if session_id:      # an id from the page: only ever a live session's own record
+        old = mgr.get_record_by_id(session_id)
+        if not re.fullmatch(r"[0-9a-f]{12}", session_id) or (old and old.get("file_type") != "realtime"):
+            session_id = old = None
+    if old:             # the start, and with it the file's name, is the first save's
+        try:
+            start_time = datetime.fromisoformat(old["start_time"])
+        except (TypeError, ValueError):
+            pass
     start_time = start_time or end_time
 
     def _ts(line: str) -> Optional[str]:
@@ -500,14 +518,23 @@ def save_live_session(
     body.extend(leftover)
 
     os.makedirs(result_dir, exist_ok=True)
-    name = f"realtime_{end_time.strftime('%Y%m%d_%H%M%S')}.txt"
+    name = f"realtime_{(start_time if session_id else end_time).strftime('%Y%m%d_%H%M%S')}.txt"
     out_path = os.path.join(result_dir, name)
+    tmp = f"{out_path}.{uuid.uuid4().hex[:8]}.tmp"     # of its own: two saves may overlap
     try:
-        with open(out_path, "w", encoding="utf-8") as f:
+        # Whole or not at all: this file is rewritten every minute of a meeting.
+        with open(tmp, "w", encoding="utf-8") as f:
             f.write("\n".join(body).rstrip() + "\n")
+        os.replace(tmp, out_path)
     except Exception as e:  # noqa: BLE001
         app_logger.warning(f"Could not write live transcript: {e}")
-        out_path = ""
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        # Another program holds the file open (Windows refuses the swap): the
+        # record keeps pointing at the last save that went through.
+        out_path = (old or {}).get("output_file_path") or ""
 
     # Give the recording the transcript's name so the pair sits together.
     if audio_path and out_path and os.path.isfile(audio_path):
@@ -519,7 +546,7 @@ def save_live_session(
             pass
 
     rec = create_translation_record(
-        translation_id=uuid.uuid4().hex[:12],
+        translation_id=session_id or uuid.uuid4().hex[:12],
         start_time=start_time, end_time=end_time, total_tokens=total_tokens,
         src_lang="", src_lang_display=src_display,
         dst_lang="", dst_lang_display=dst_display,
@@ -528,7 +555,7 @@ def save_live_session(
         status="success", cost_amount=cost_amount, cost_currency=cost_currency,
     )
     rec["file_type"] = "realtime"     # group under its own type in the browse UI
-    TranslationHistoryManager(log_dir=log_dir).add_record(rec)
+    mgr.add_record(rec)
     return rec
 
 
@@ -597,7 +624,25 @@ def compress_leftover_recordings(log_dir: str) -> None:
     Closing the app while ffmpeg compressed one kills the thread that would
     have renamed the output and repointed history (the WAV and a stale .part
     stay, and nothing retried). Sequential and slow: run it off the UI thread."""
-    for rec in TranslationHistoryManager(log_dir=log_dir).get_all_records(file_type="realtime"):
+    import time
+    mgr = TranslationHistoryManager(log_dir=log_dir)
+    for rec in mgr.get_all_records(file_type="realtime"):
+        if not rec.get("log_file_path"):
+            # A session that never got to its stop (the app died): its record is
+            # the last save made while it ran, and its recording still lies
+            # beside the transcript. One written to in the last minute belongs
+            # to a session that is running now (the desktop app's, when its LAN
+            # server starts): left alone.
+            wav = os.path.splitext(rec.get("output_file_path") or "")[0] + ".wav"
+            try:
+                if not rec.get("output_file_path") or time.time() - os.path.getmtime(wav) < 60:
+                    continue
+            except OSError:
+                continue
+            if not mgr.get_record_by_id(rec["id"]):
+                continue        # deleted while the recordings before it were compressed
+            rec["log_file_path"] = wav
+            mgr.add_record(rec)
         if (rec.get("log_file_path") or "").lower().endswith(".wav"):
             compress_live_recording(rec["id"], log_dir)
 

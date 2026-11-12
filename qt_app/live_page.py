@@ -1491,7 +1491,9 @@ class LivePage(ScrollArea):
         self._reset_vad()
         self.waveform.clear()
         if not self._open_input():
-            # _open_input already surfaced the error; stop cleanly.
+            # _open_input already surfaced the error; stop cleanly — and save:
+            # the session ran until a moment ago.
+            self._input_lost = True
             self.on_stop()
             return
         self.status_label.setText(self._listening_text())
@@ -1500,7 +1502,8 @@ class LivePage(ScrollArea):
         # on_stop also runs on app close / page leave; only a session that was
         # actually running gets saved (closing the app used to save the last,
         # already-saved session a second time).
-        was_live = self._is_listening()
+        was_live = self._is_listening() or getattr(self, "_input_lost", False)
+        self._input_lost = False
         if self._preloader is not None:
             self._preloader.wait(2000)
             self._preloader = None
@@ -1516,6 +1519,8 @@ class LivePage(ScrollArea):
                 w.wait(3000)
         self._local_workers = [w for w in self._local_workers if w.isRunning()]
         audio = self._stop_recording()
+        if getattr(self, "_autosave_timer", None) is not None:
+            self._autosave_timer.stop()
         if was_live:
             self._save_live_history(audio)  # persist this session's transcript (+ audio)
             from core.pipelines.video_translation_pipeline import _session_langs
@@ -1546,8 +1551,17 @@ class LivePage(ScrollArea):
     # --- recording (WAV of exactly what the recognizer heard: 16 kHz mono) ---
     def _start_recording(self):
         self._rec, self._rec_path = None, ""
+        import uuid
         from datetime import datetime
         self._rec_start = datetime.now()
+        # This session's history record, saved every minute from now on.
+        self._session_id, self._autosaved = uuid.uuid4().hex[:12], None
+        if getattr(self, "_autosave_timer", None) is None:
+            from PySide6.QtCore import QTimer
+            self._autosave_timer = QTimer(self)
+            self._autosave_timer.setInterval(60000)
+            self._autosave_timer.timeout.connect(self._autosave)
+        self._autosave_timer.start()
         if not self.save_rec_cb.isChecked():
             return
         import os
@@ -1631,8 +1645,19 @@ class LivePage(ScrollArea):
         if page is not None and page.combo.currentText() == glossary:
             page.on_load(quiet=True)     # the glossary page shows the new rows
 
-    def _save_live_history(self, audio_path=""):
-        """Save the just-finished session (source + translation) to history."""
+    def _autosave(self):
+        """Every minute of a running session: what is on screen goes to its
+        transcript file and history record (see save_live_session)."""
+        if not self._is_listening():
+            return
+        size = (len(self.input_text.toPlainText()), len(self.output_text.toPlainText()))
+        if size != getattr(self, "_autosaved", None):
+            self._autosaved = size
+            self._save_live_history(draft=True)
+
+    def _save_live_history(self, audio_path="", draft=False):
+        """Save the session (source + translation) to history: when it stops,
+        and while it runs (draft: no recording yet, no thanks)."""
         src = [ln for ln in self.input_text.toPlainText().splitlines() if ln.strip()]
         dst = [ln for ln in self.output_text.toPlainText().splitlines() if ln.strip()]
         if not src and not dst and not audio_path:
@@ -1649,7 +1674,10 @@ class LivePage(ScrollArea):
                                     self.target_combo.currentText(), model, online,
                                     result_dir, backend.history_dir(), total_tokens=tokens,
                                     cost_amount=None, cost_currency=None,
-                                    start_time=self._rec_start, audio_path=audio_path)
+                                    start_time=self._rec_start, audio_path=audio_path,
+                                    session_id=getattr(self, "_session_id", None))
+            if draft:
+                return
             if rec and audio_path:
                 # WAV -> Opus in the background (~17x smaller; 2 h ≈ 13 MB). The
                 # record keeps pointing at the WAV until the .ogg is complete.

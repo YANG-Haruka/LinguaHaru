@@ -2501,20 +2501,34 @@ async function acquireLiveStream() {
   refreshLiveInputDevices();
   return s;
 }
-// Save the just-finished session (source + translation) to history on stop.
-function saveLiveHistory() {
+// Save the session (source + translation) to history: on stop, and every
+// minute while it runs (draft) — the same record and file each time, so a
+// closed tab or a dead server costs at most the last minute. Twin of Qt _autosave.
+let liveSaveId = "", liveSaveTimer = null, liveSavedSize = "";
+function startLiveAutosave() {
+  liveSaveId = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  liveSavedSize = "";
+  clearInterval(liveSaveTimer);
+  liveSaveTimer = setInterval(() => { if (liveRunning) saveLiveHistory(true); }, 60000);
+}
+// session: the id of the session being saved (the stop passes its own: by the
+// time its held lines are translated, the next session may have started).
+function saveLiveHistory(draft = false, session = liveSaveId) {
   const lines = (id) => (($(id) && $(id).textContent) || "")
     .split("\n").map((s) => s.trim()).filter(Boolean);
   const src = lines("live-input"), dst = lines("live-output");
   if (!src.length && !dst.length) return;
+  const size = `${$("live-input").textContent.length}/${$("live-output").textContent.length}`;
+  if (draft && size === liveSavedSize) return;        // nothing new was said
+  liveSavedSize = size;
   const tsel = $("live-target");
   const dstDisplay = tsel ? (tsel.options[tsel.selectedIndex] || {}).text || "" : "";
   api("/api/live-save-history", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source_lines: src, translated_lines: dst,
       src_display: "Auto", dst_display: dstDisplay,
-      tokens: liveSessionTokens, ui_lang: _uiLang }) })
-    .then((r) => { if (r && r.saved) showThanks(r.tokens); })
+      tokens: liveSessionTokens, ui_lang: _uiLang, session }) })
+    .then((r) => { if (!draft && r && r.saved) showThanks(r.tokens); })
     .catch(() => {});
 }
 function setLiveStatus(t) { $("live-status").textContent = t; }
@@ -2685,6 +2699,7 @@ async function startLocal() {
     } else { setLiveStatus(_label("VAD 初始化失败：", "VAD 初始化失败：") + e.message); stopLocal(); return; }
   }
   liveRunning = true; setLiveBusy(true); setLiveStatus(liveListenMsg());
+  startLiveAutosave();
   liveCtxHistory = [];   // fresh coherence context per session
   liveTrHold = []; liveTrHoldSeen = 0;
   liveProvSeq++; liveProvText = ""; liveProvBusy = false; liveProvDirty = false;   // a late provisional is stale
@@ -2767,8 +2782,13 @@ async function startSileroVad() {
   liveSilero.start();
 }
 function stopLocal() {
-  // Held mid-sentence lines translate first, then the session is saved.
-  liveFlushHold().then(saveLiveHistory).then(liveExtractTerms);
+  // The session is saved as it stands, and once more when its held
+  // mid-sentence lines are translated — unless the next session has started by
+  // then (it cleared the panels; its own saves must not be this one's).
+  clearInterval(liveSaveTimer); liveSaveTimer = null;
+  const session = liveSaveId;
+  saveLiveHistory(true, session);
+  liveFlushHold().then(() => { if (liveSaveId === session) { saveLiveHistory(false, session); return liveExtractTerms(); } });
   livePendingPreview = []; livePreviewText = ""; pipInterim = "";   // nothing is being said any more
   _showProvisional("");
   stopMicMeter();
