@@ -404,7 +404,11 @@ def _extract_with_openpyxl(file_path, temp_dir):
             cell_data.append(sheet_info)
 
         sheet = workbook[sheet_name]
-        merged_cells_ranges = sheet.merged_cells.ranges
+        # (column, row) of the top-left cell of every merged range, once per
+        # sheet. Scanning all ranges for each cell cost 2.39 µs per check:
+        # 100,000 cells x 20,000 merged ranges = 80 minutes.
+        merged_top_lefts = {range_boundaries(str(merged_range))[:2]
+                            for merged_range in sheet.merged_cells.ranges}
 
         for row in sheet.iter_rows():
             for cell in row:
@@ -428,12 +432,7 @@ def _extract_with_openpyxl(file_path, temp_dir):
                 if isinstance(cell, MergedCell):
                     continue
 
-                is_merged_cell = False
-                for merged_range in merged_cells_ranges:
-                    min_col, min_row, max_col, max_row = range_boundaries(str(merged_range))
-                    if cell.row == min_row and cell.column == min_col:
-                        is_merged_cell = True
-                        break
+                is_merged_cell = (cell.column, cell.row) in merged_top_lefts
 
                 # Convert datetime values to string
                 cell_value = str(cell.value).replace("\n", "␊").replace("\r", "␍")
@@ -812,6 +811,7 @@ def _extract_with_xlwings(file_path, temp_dir):
     app = xw.App(visible=False)
     app.screen_updating = False
 
+    wb = None
     try:
         wb = app.books.open(file_path)
 
@@ -1170,11 +1170,18 @@ def _extract_with_xlwings(file_path, temp_dir):
         app_logger.info(f"Extracted {len(cell_data)} items using xlwings")
 
     finally:
+        # Close and quit separately: when books.open raised, wb.close() failed
+        # on the unbound name and app.quit() never ran, leaving one hidden
+        # EXCEL.EXE behind per failure.
         try:
-            wb.close()
-            app.quit()
+            if wb is not None:
+                wb.close()
         except Exception as e:
             app_logger.error(f"Error closing workbook: {str(e)}")
+        try:
+            app.quit()
+        except Exception as e:
+            app_logger.error(f"Error quitting Excel: {str(e)}")
 
     # Extract SmartArt content using ZIP operations
     try:
@@ -1804,6 +1811,7 @@ def _write_with_xlwings(file_path, original_json_path, translated_json_path, res
     app.screen_updating = False
     app.display_alerts = False
 
+    wb = None
     try:
         wb = app.books.open(file_path)
 
@@ -2119,11 +2127,17 @@ def _write_with_xlwings(file_path, original_json_path, translated_json_path, res
                 raise
 
     finally:
+        # Close and quit separately (see _extract_with_xlwings): quit must run
+        # even when the workbook never opened or fails to close.
         try:
-            wb.close()
+            if wb is not None:
+                wb.close()
+        except Exception as e:
+            app_logger.error(f"Error closing workbook: {str(e)}")
+        try:
             app.quit()
         except Exception as e:
-            app_logger.error(f"Error closing workbook or quitting app: {str(e)}")
+            app_logger.error(f"Error quitting Excel: {str(e)}")
 
     # Process SmartArt
     if smartart_items:

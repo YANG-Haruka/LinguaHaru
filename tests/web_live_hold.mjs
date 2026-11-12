@@ -4,6 +4,9 @@
 // cut — is held and translated with its continuation; a clause end translates
 // at once; a held line waits for ONE more segment (no clock), or goes once the
 // pause reached the full hang, checked inside the commit chain.
+// Further down, the parts of a long session around it: the stamps the two panes
+// are paired by, a chain link that throws, the recognition lane (timeout, bounded
+// queue), the panes as one node per line, the neural VAD's length cap.
 //
 // usage: node tests/web_live_hold.mjs webapp/static/app.js  (driven by tests/test_live_stream_race.py)
 import fs from "node:fs";
@@ -13,20 +16,24 @@ const src = fs.readFileSync(process.argv[2], "utf8");
 const start = src.indexOf("let liveCommitChain = Promise.resolve();");
 const end = src.indexOf("async function _translateLiveLine(");
 if (start < 0 || end < 0) throw new Error("region markers not found");
-const sent = [], entries = [], apiCalls = [];
+const sent = [], entries = [], apiCalls = [], chainErrors = [];
 let lastEntry = null, lastFid = 0, interim = "";
 let gate = null;   // an array: final translations wait until their resolver in it is called
 let lastAlt = "";  // the second opinion (the preview model's text) sent with the last final translation
+let clock = "00:00:00", lastTs = "";   // the wall clock; the stamp of the last final translation
+let boom = false;  // the next final translation throws
 const provEl = { textContent: "" };
-const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => "00:00:00",
+const ctx = { WORDLIKE: /[0-9A-Za-z぀-ヿ㐀-鿿]/, liveTimeStamp: () => clock, liveGen: 0,
+              console: { error: (...a) => chainErrors.push(a) },
               // a source line opens its floating-caption pair
               appendLive: (id, text) => {
                 if (id !== "live-input") return null;
-                const e = { src: text.replace(/^\[[^\]]*\]\s*/, "").trim(), dst: "" };
+                const e = { src: text.replace(/^\[[^\]]*\]\s*/, "").trim(), dst: "", ts: text.slice(1, 9) };
                 entries.push(e); return e;
               },
-              _translateLiveLine: async (_ts, s, entry, fid, alt) => {
-                sent.push(s); lastEntry = entry; lastFid = fid; lastAlt = alt;
+              _translateLiveLine: async (ts, s, entry, fid, alt) => {
+                if (boom) { boom = false; throw new Error("boom"); }
+                sent.push(s); lastEntry = entry; lastFid = fid; lastAlt = alt; lastTs = ts;
                 if (gate) await new Promise((res) => gate.push(res));
               },
               api: (_url, opts) => new Promise((res) => apiCalls.push({ ...JSON.parse(opts.body), res })),
@@ -231,4 +238,228 @@ same("no clause end inside: not split", splitClauseTail(["山川自動車から�
 same("line ends", ["それで大丈夫です。", "今日追加で来たんですが。", "資料の中で。", "一応ご留意。", "えっとあの。",
                    "the meeting starts at the.", "We can decide it later.", "我觉得这个方案", "那我们明天再聊吧。"].map(lineEnd),
      ["S", "C", "M", "N", "F", "M", "S", "M", "S"]);
+
+// A translation carries the stamp of the LAST source line it covers: the saved
+// transcript and the new-terms report pair the two panes by it. Sent at a pause
+// (or after the next segment) it was stamped with the time it was SENT — a
+// stamp no source line has. Twin of Qt _flush_tr_hold (the last line's row).
+clock = "10:00:01"; commitLiveSentence("では次の議題に");
+await settle();
+clock = "10:00:05"; ctx.liveQuiet = true;       // the pause reached the full hang, four seconds on
+liveFlushHold("quiet");
+await settle();
+expect("sent at the pause", ["では次の議題に"]);
+same("... with its source line's stamp", lastTs, "10:00:01");
+ctx.liveQuiet = false;
+setFinal(true);
+clock = "10:00:10"; commitLiveSentence("その秘密保持のレベルと"); liveAgeHold();
+await settle();
+clock = "10:00:12"; commitLiveSentence("ノースリンクスとの");
+await settle();
+clock = "10:00:20"; liveAgeHold();              // the second segment's result, eight seconds on
+await settle();
+expect("sent after the second segment", ["その秘密保持のレベルとノースリンクスとの"]);
+same("... with its last line's stamp", [lastTs, lastEntry.ts], ["10:00:12", "10:00:12"]);
+clock = "10:00:30"; commitLiveSentence("山川自動車からの");
+await settle();
+clock = "10:00:31"; commitLiveSentence("機密保持NDAを巻き直しています。");
+await settle();
+sent.length = 0;
+same("completed by a later line: that line's stamp", lastTs, "10:00:31");
+setFinal(false);
+
+// One link that throws must not end the chain: it stayed rejected for good, and
+// no line was shown or translated again until the page was reloaded.
+boom = true;
+commitLiveSentence("それで大丈夫です。");
+await settle();
+commitLiveSentence("はい、わかりました。");
+await settle();
+expect("the chain goes on after a link that threw", ["はい、わかりました。"]);
+same("... and the failure is logged", chainErrors.length, 1);
+// What a stopped session left queued is not run in the next one (startLocal
+// starts a new chain and a new liveGen).
+gate = [];
+commitLiveSentence("要件はもう決まっています。");
+await settle();
+const shownBefore = entries.length;
+commitLiveSentence("それで大丈夫です。");           // queued behind that translation
+ctx.liveGen++;                                        // stopped and started again
+gate.shift()(); gate = null;
+await settle();
+expect("only what was already out", ["要件はもう決まっています。"]);
+same("a line of the session before is not shown in this one", entries.length, shownBefore);
+
+// ---- the recognition lane (dispatchRecognize / recognizeInt16 / runFinal) ----
+// A request that never returns must not keep the one lane busy for good, and the
+// finals queued behind slow recognition must not hold their audio without limit.
+{
+  const a = src.indexOf('let liveCommittedText = "";');
+  const b = src.indexOf("// Finalize one sentence: show the source line now");
+  if (a < 0 || b < 0) throw new Error("region markers not found (recognition lane)");
+  const timers = [], calls = [], toasts = [], commits = [];
+  const lane = { pipInterim: "", liveRunning: true, BOOT: { config: {} }, _label: (k) => k,
+                 setLiveStatus() {}, updatePipCaption() {}, liveListenMsg: () => "",
+                 commitLiveSentence: (s) => commits.push(s), liveFlushHold: () => Promise.resolve(),
+                 liveAgeHold() {}, liveRequestProvisional() {}, liveFinalMode: false, livePreviewLane: false,
+                 int16ToB64: (pcm) => String(pcm[0]), AbortController,
+                 _joinHeld: (parts) => parts.map((p) => p.src).join(""),
+                 setTimeout: (fn, ms) => timers.push({ fn, ms }), clearTimeout() {},
+                 toast: (m) => toasts.push(m),
+                 api: (_url, opts) => new Promise((res, rej) => {
+                   calls.push({ ...JSON.parse(opts.body), res });
+                   if (opts.signal) opts.signal.addEventListener("abort", () => rej(new Error("aborted")));
+                 }) };
+  vm.createContext(lane);
+  vm.runInContext(src.slice(a, b) + "\nthis.__r = { dispatchRecognize, finalizeUtterance," +
+    " queue: () => liveRecogQueue, pending: () => livePendingPreview };", lane);
+  const { dispatchRecognize, finalizeUtterance, queue, pending } = lane.__r;
+  const pcm = (id) => { const p = new Int16Array(4); p[0] = id; return p; };
+  const finalsAsked = () => calls.filter((c) => c.final).map((c) => c.audio_b64);
+
+  dispatchRecognize(pcm(1), true);                  // this request never returns
+  dispatchRecognize(pcm(2), true);
+  await settle();
+  same("one recognition in flight, the next final queued", finalsAsked(), ["1"]);
+  same("the request has a 60 s timeout", timers.map((t) => t.ms), [60000]);
+  if (timers[0]) timers[0].fn();                    // 60 s later
+  await settle();
+  same("the lane is free again: the queued final goes out", finalsAsked(), ["1", "2"]);
+  calls[calls.length - 1].res({ source: "はい、わかりました。", detected: "ja" });
+  await settle();
+  same("... and is committed", commits, ["はい、わかりました。"]);
+
+  dispatchRecognize(pcm(3), true);                  // a slow one; 20 more segments end meanwhile
+  for (let id = 10; id < 30; id++) dispatchRecognize(pcm(id), true);
+  same("only the newest 12 queued finals keep their audio",
+       queue().map((q) => (q.int16.length ? q.int16[0] : 0)),
+       [0, 0, 0, 0, 0, 0, 0, 0, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29]);
+  same("the user is told once", toasts.length, 1);
+  calls[calls.length - 1].res({ source: "" });
+  await settle(); await settle();                   // eight emptied finals, one after the other
+  same("the emptied ones pass without a request", finalsAsked().slice(3), ["18"]);
+  while (calls.some((c) => !c.done)) {              // let the rest through
+    for (const c of calls) if (!c.done) { c.done = true; c.res({ source: "" }); }
+    await settle();
+  }
+
+  // With a preview lane every cut segment has a pending preview until its final
+  // is in: an emptied final must still take its own away, in order.
+  lane.livePreviewLane = true;
+  calls.length = 0;
+  for (let id = 40; id < 55; id++) finalizeUtterance(pcm(id));   // 1 in flight + 14 queued
+  same("a pending preview per segment", pending().length, 15);
+  while (calls.some((c) => !c.done)) {
+    for (const c of calls) if (!c.done) { c.done = true; c.res({ source: "" }); }
+    await settle();
+  }
+  same("the two oldest queued finals were not recognized", finalsAsked().length, 13);
+  same("no pending preview is left behind", pending().length, 0);
+  same("... and the user was not told again", toasts.length, 1);
+}
+
+// ---- the two panes (appendLive / stream mode) --------------------------------
+// One node per line: a pane was ONE text node rewritten whole for every line
+// and every streamed token — at 20,000 lines the whole transcript was laid out
+// again each time. What reads the panes (el.textContent) must see the same text.
+{
+  let a = src.indexOf("function liveAddLine(");
+  if (a < 0) a = src.indexOf("function appendLive(");
+  const b = src.indexOf("// --- Live input hot-switch");
+  const c = src.indexOf("async function _translateLiveLine("), d = src.indexOf("function downsamplePCM16(");
+  if (a < 0 || b < 0 || c < 0 || d < 0) throw new Error("region markers not found (panes)");
+  const pane = () => {
+    const rows = [];
+    return { rows, rewrites: 0, scrollTop: 0, scrollHeight: 0,
+             appendChild(n) { rows.push(n); return n; },
+             get textContent() { return rows.map((r) => r.textContent).join(""); },
+             set textContent(v) { this.rewrites++; rows.length = 0; if (v) rows.push({ textContent: v }); } };
+  };
+  const els = { "live-input": pane(), "live-output": pane(), "live-target": { value: "zh" } };
+  let chunks = [];
+  const page = { $: (id) => els[id], document: { createElement: () => ({ textContent: "" }) },
+                 pipEntries: [], PIP_MAX: 12, updatePipCaption() {}, _finalShown() {},
+                 BOOT: { config: {} }, liveContext: () => "", liveCtxHistory: [], liveLastDetected: "ja",
+                 liveGlossary: () => "", liveSessionTokens: 0, TextDecoder,
+                 api: async () => ({ translated: "好的。", tokens: 1 }),
+                 fetch: async () => ({ body: { getReader: () => ({
+                   read: async () => (chunks.length ? { done: false, value: chunks.shift() } : { done: true }) }) } }) };
+  vm.createContext(page);
+  vm.runInContext(src.slice(a, b) + src.slice(c, d) + "\nthis.__p = { appendLive, _translateLiveLine };", page);
+  const { appendLive, _translateLiveLine } = page.__p;
+  const inp = els["live-input"], out = els["live-output"];
+
+  const e1 = appendLive("live-input", "[10:00:01] はい。\n");
+  await _translateLiveLine("10:00:01", "はい。", e1);
+  same("the panes read as before", [inp.textContent, out.textContent],
+       ["[10:00:01] はい。\n", "[10:00:01] 好的。\n"]);
+  same("the floating-caption pair comes from the line itself", [e1.src, e1.dst], ["はい。", "好的。"]);
+  // stream mode: the tokens grow their own line only
+  page.BOOT.config.live_stream_translation = true;
+  const enc = new TextEncoder();
+  chunks = ['data: "明"\n\n', 'data: "明天见"\n\n', 'data: {"__usage__": 5}\n\ndata: [DONE]\n\n'].map((s) => enc.encode(s));
+  const first = out.rows[0];
+  const e2 = appendLive("live-input", "[10:00:02] また明日。\n");
+  await _translateLiveLine("10:00:02", "また明日。", e2);
+  same("stream mode: the same text", out.textContent, "[10:00:01] 好的。\n[10:00:02] 明天见\n");
+  same("... its pair, its tokens", [e2.dst, page.liveSessionTokens], ["明天见", 6]);
+  same("... and the line before it is not touched", [out.rows[0] === first, first.textContent, out.rows.length],
+       [true, "[10:00:01] 好的。\n", 2]);
+  for (let i = 0; i < 20000; i++) appendLive("live-input", `[10:00:03] line ${i}\n`);
+  same("20,000 lines: one node each", [inp.rows.length, inp.textContent.split("\n").filter(Boolean).length], [20002, 20002]);
+  same("a pane is never rewritten whole", [inp.rewrites, out.rewrites], [0, 0]);
+}
+
+// ---- the neural VAD's length cap (web_vad=silero) -----------------------------
+// Under continuous music the utterance never ended: the buffer only grew and
+// all of it was posted every 360 ms. Twin of the worklet's cap (web_vad_cap.mjs).
+{
+  const a = src.indexOf("function floatToInt16("), b = src.indexOf("function stopLocal()");
+  const m = src.indexOf("function liveMaxSegMs("), n = src.indexOf("async function startWorkletVad(");
+  if (a < 0 || b < 0) throw new Error("region markers not found (silero)");
+  let opts = null, now = 0;
+  const partials = [], finals = [], flushes = [];
+  const lib = { frameProcessor: { audioBuffer: [1, 2, 3] }, receive() {}, start() {} };
+  const page = { loadVadLibs: async () => {}, BOOT: { config: {} }, liveCtx: {}, liveSrc: {},
+                 window: { vad: { AudioNodeVAD: { new: async (_ctx, o) => { opts = o; return lib; } } } },
+                 performance: { now: () => now }, setLiveStatus() {}, _label: (k) => k,
+                 streamPartial: (pcm) => partials.push(pcm.length), finalizeUtterance: (pcm) => finals.push(pcm.length),
+                 liveFlushHold: (when) => flushes.push(when),
+                 liveSilero: null, liveSileroBuf: [], liveSileroLast: 0, liveSileroSpeaking: false,
+                 liveSileroCut: false, liveQuiet: false };
+  vm.createContext(page);
+  vm.runInContext((m < 0 ? "" : src.slice(m, n)) + src.slice(a, b) + "\nthis.__s = { startSileroVad };", page);
+  await page.__s.startSileroVad(true);                 // final mode: 10 s = 160,000 samples
+  const FRAME = 1536, CAP = 160000;
+  const feed = (frames, amp) => {
+    for (let i = 0; i < frames; i++) { now += 96; opts.onFrameProcessed({}, new Float32Array(FRAME).fill(amp)); }
+  };
+  const buffered = () => page.liveSileroBuf.reduce((s, c) => s + c.length, 0);
+  opts.onSpeechStart();
+  feed(400, 0.3);                                      // 38 s of steady sound, no pause in it
+  same("steady sound is cut at 1.5x the cap", [finals.length, finals.every((s) => s <= 1.5 * CAP + FRAME)], [2, true]);
+  same("no partial is longer than that", Math.max(...partials) <= 1.5 * CAP + FRAME, true);
+  same("nothing dropped, nothing heard twice", finals[0] + finals[1] + buffered(), 400 * FRAME);
+  same("the library's own copy of the utterance is let go", lib.frameProcessor.audioBuffer.length, 0);
+  const rest = buffered();
+  opts.onSpeechEnd(new Float32Array(999999));          // the library's audio: from the speech start
+  same("after a cut the end is what came since, not the library's audio", [finals.length, finals[2], buffered()],
+       [3, rest, 0]);
+
+  finals.length = 0;
+  opts.onSpeechStart();
+  feed(100, 0.3); feed(3, 0.001); feed(2, 0.3);       // a 0.3 s pause just before the cap is reached
+  same("past the cap: cut inside the pause", [finals.length, finals[0] > 100 * FRAME, finals[0] < 103 * FRAME],
+       [1, true, true]);
+  opts.onSpeechEnd(new Float32Array(999999));
+
+  // A blip the library drops (under 3 speech frames) ends without onSpeechEnd.
+  finals.length = 0; partials.length = 0;
+  opts.onSpeechStart();
+  feed(2, 0.3);
+  (opts.onVADMisfire || (() => {}))();
+  feed(200, 0.0001);                                   // 19 s of silence after it
+  same("a dropped blip: nothing recognized, the silence after it not buffered",
+       [finals.length, partials.length, buffered(), page.liveQuiet, flushes], [0, 0, 0, true, ["quiet"]]);
+}
 console.log(fails.length ? "RESULT: FAIL\n" + fails.join("\n") : "RESULT: OK");

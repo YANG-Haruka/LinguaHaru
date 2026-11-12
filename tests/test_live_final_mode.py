@@ -236,8 +236,9 @@ def _translating_page():
     p._prov_seq, p._prov_text, p._prov_busy, p._prov_dirty = 0, "", False, False
     p._prov_flush, p._prov_shown_seq, p._last_lang = None, 0, "auto"
     p._session_tokens = 0
-    p.input_text = types.SimpleNamespace(insertPlainText=lambda s: None, ensureCursorVisible=lambda: None)
-    p._render_output = lambda: None
+    p.input_text = None
+    p._append_line = lambda pane, line: None
+    p._draw_out_row = lambda i: None
     p.rows, p.sent, p.prov_asked, p.live_dst = {}, [], [], []
     p._set_out_row = lambda k, t: p.rows.__setitem__(k, t)
     p._start_line_translation = lambda k, s: (p.sent.append(s), p._ctx_history.append(s))
@@ -645,3 +646,57 @@ def test_web_saves_a_running_session_into_one_record(tmp_path, monkeypatch):
     for odd in (None, ["0123456789ab"], 7):
         assert client.post("/api/live-save-history", json=dict(body, session=odd)).json()["saved"]
     assert len(_records(tmp_path)) == 4
+
+
+def test_qt_the_stop_waits_for_the_last_translation(tmp_path, monkeypatch):
+    """A line held for its sentence's end is sent when the session stops; its
+    translation comes back as a queued call to the thread that is busy stopping,
+    so it used to arrive after the save: the transcript had the line without it."""
+    import time
+    from PySide6.QtCore import QThread, Signal
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance() or QApplication([])
+    import qt_app.live_page as lp
+    import qt_app.thanks as thanks
+    d = str(tmp_path)
+    monkeypatch.setattr(lp.backend, "get_custom_paths", lambda *a, **k: (d, d, d))
+    monkeypatch.setattr(lp.backend, "history_dir", lambda *a, **k: d)
+    monkeypatch.setattr(lp.backend, "set_config", lambda *a, **k: None)
+    real = lp.backend.get_config
+    monkeypatch.setattr(lp.backend, "get_config",
+                        lambda key, default=None: False if key == "live_stream_translation" else real(key, default))
+    monkeypatch.setattr(thanks, "show_thanks", lambda *a, **k: None)
+
+    class SlowTr(QThread):
+        done = Signal(str, str, int)
+
+        def __init__(self, key, source, *a, **k):
+            super().__init__()
+            self._key, self._source = key, source
+
+        def run(self):
+            time.sleep(0.4)
+            self.done.emit(self._key, "译：" + self._source, 5)
+    monkeypatch.setattr(lp, "LiveTranslateWorker", SlowTr)
+    page = lp.LivePage(lang="zh")
+    monkeypatch.setattr(page, "_llm_target", lambda: (True, "m", "key", "zh"))
+    page.save_rec_cb.setChecked(False)
+    page.extract_cb.setChecked(False)
+    page._session_tokens, page._stream_text, page._out_rows = 0, {}, []
+    page._reset_vad()
+    page._start_recording()
+    page._source = type("Mic", (), {"stop": lambda self: None})()       # listening
+    page._commit_stream_sentence("来週の水曜日までに資料を")   # mid-sentence: held
+    assert page._tr_hold and page._out_rows[-1][1] == "…"
+    fed = []
+    monkeypatch.setattr(page, "_vad_step", lambda *a: fed.append(1))
+    page._stopping = True
+    page._vad_feed(bytes(lp._VAD_FRAME * 2))            # audio that arrives during a stop is not taken
+    page._stopping = False
+    assert fed == []
+    page.on_stop()
+    rec = _records(tmp_path)[0]
+    text = open(rec["output_file_path"], encoding="utf-8").read()
+    assert "来週の水曜日までに資料を" in text and "译：来週の水曜日までに資料を" in text, text
+    assert rec["total_tokens"] == 5 and not page._stopping and not page._is_listening()
+    assert not [w for w in page._local_workers if w.isRunning()]

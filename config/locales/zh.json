@@ -778,5 +778,6 @@
   "Iface Err connection": "无法连接到接口地址。请检查地址、网络或代理；防火墙或安全软件也可能会拦截。",
   "Iface Err unknown": "未知错误，请查看下方的原始错误。",
   "Iface Err empty": "请填写接口地址和模型 ID。",
-  "Raw Error": "原始错误"
+  "Raw Error": "原始错误",
+  "Live Recognition Behind": "识别速度跟不上说话速度，已跳过最早的一段语音。可以换用更快的识别模型。"
 }

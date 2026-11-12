@@ -417,5 +417,6 @@
   "Do Not Add": "Không thêm",
   "No New Terms": "Không tìm thấy thuật ngữ mới ngoài bảng thuật ngữ trong phiên này.",
   "Terms Added": "Đã thêm {n} thuật ngữ vào bảng thuật ngữ \"{name}\".",
-  "Extract Terms Failed": "Không trích được thuật ngữ mới."
+  "Extract Terms Failed": "Không trích được thuật ngữ mới.",
+  "Live Recognition Behind": "Nhận dạng không theo kịp tốc độ nói nên đã bỏ qua đoạn âm thanh cũ nhất. Hãy thử mô hình nhận dạng nhanh hơn."
 }

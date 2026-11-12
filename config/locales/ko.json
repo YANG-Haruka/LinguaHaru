@@ -417,5 +417,6 @@
   "Do Not Add": "추가 안 함",
   "No New Terms": "이 세션에서 용어집에 없는 새 용어를 찾지 못했습니다.",
   "Terms Added": "{n}개 항목을 용어집 「{name}」에 추가했습니다.",
-  "Extract Terms Failed": "새 용어를 추출하지 못했습니다."
+  "Extract Terms Failed": "새 용어를 추출하지 못했습니다.",
+  "Live Recognition Behind": "인식 속도가 말하는 속도를 따라가지 못해 가장 오래된 음성을 건너뛰었습니다. 더 빠른 인식 모델을 사용해 보세요."
 }

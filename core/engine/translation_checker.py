@@ -27,12 +27,16 @@ def _safe_console_print(console, renderable):
 # mid-write can never corrupt the file. The append-only RESULT file is also kept
 # in memory and flushed at most every _FLUSH_INTERVAL s, which removes the
 # per-segment full-file read+write (the old O(n^2) bottleneck under high
-# concurrency). failed/src files are small and have mixed direct-disk access, so
-# they are written atomically but NOT cached.
+# concurrency). The FAILED list is buffered the same way, and translated_status
+# marks for the source file are collected in memory and written by
+# flush_results(): both were one read+rewrite of the whole file per batch, under
+# the task lock — 0.83 s each at 100k segments (27.5 MiB source file).
 _FLUSH_INTERVAL = 1.5
-_result_cache = {}      # path -> list (append-only buffer)
+_result_cache = {}      # path -> list (append-only buffer; result and failed files)
 _result_dirty = {}      # path -> bool
 _result_last = {}       # path -> last flush time
+_failed_seen = {}       # failed path -> count_splits already in its buffer
+_status_pending = {}    # result path -> (source path, count_splits translated since last flush)
 _result_lock = threading.RLock()
 
 
@@ -72,6 +76,9 @@ def flush_results(path=None):
                     # empty result so check_and_sort/restore can fall every segment
                     # back to source instead of hitting FileNotFoundError.
                     _atomic_write_json(p, _result_cache.get(p, []))
+                # After the results, so the source file never claims an item
+                # whose translation is not on disk.
+                _flush_status(p)
             except Exception as e:  # noqa: BLE001 — e.g. Windows os.replace lock
                 # Leave it dirty so the next flush retries; never let a transient
                 # write error mask the caller's stop/finish handling.
@@ -98,7 +105,67 @@ def invalidate_results(path):
         _result_cache.pop(path, None)
         _result_dirty.pop(path, None)
         _result_last.pop(path, None)
-    
+        _failed_seen.pop(path, None)
+        _status_pending.pop(path, None)
+
+
+def _mark_translated(src_path, done):
+    """Set translated_status on the source-file items whose count_split is in
+    `done`; rewrites the file only if something changed."""
+    with open(src_path, "r", encoding="utf-8") as f:
+        src_data = json.load(f)
+    updated_count = 0
+    for item in src_data:
+        try:
+            if int(item.get("count_split")) in done and not item.get("translated_status"):
+                item["translated_status"] = True
+                updated_count += 1
+        except (ValueError, TypeError, AttributeError):
+            pass
+    if updated_count:
+        _atomic_write_json(src_path, src_data)
+        app_logger.info(f"Updated translation status for {updated_count} items")
+
+
+def _flush_status(result_path):
+    """Write the translated_status marks collected since the last flush into the
+    source file. Never raises (a status error was never fatal): the marks stay
+    pending for the next flush, and restore_translated_status() re-derives them
+    on resume."""
+    pending = _status_pending.get(result_path)
+    if not pending or not pending[1]:
+        return
+    try:
+        _mark_translated(*pending)
+        pending[1].clear()
+    except Exception as e:  # noqa: BLE001
+        app_logger.error(f"Error updating translation status: {e}")
+
+
+def restore_translated_status(SRC_SPLIT_JSON_PATH, RESULT_SPLIT_JSON_PATH):
+    """Resume after a hard kill: translated_status only reaches the source file
+    on flush_results() (stop / failure / finish), while the result file is at
+    most _FLUSH_INTERVAL s behind — so mark every item that already has a result.
+    A result equal to its source is skipped: that is what
+    check_and_sort_translations writes for a FAILED item, which a resume must
+    still retry (re-translating a genuinely unchanged item only costs tokens)."""
+    if not os.path.exists(RESULT_SPLIT_JSON_PATH):
+        return
+    try:
+        with open(RESULT_SPLIT_JSON_PATH, "r", encoding="utf-8") as f:
+            results = json.load(f)
+        done = set()
+        for item in results:
+            if isinstance(item, dict) and item.get("translated") != item.get("original"):
+                try:
+                    done.add(int(item.get("count_split")))
+                except (ValueError, TypeError):
+                    pass
+        if done:
+            _mark_translated(SRC_SPLIT_JSON_PATH, done)
+    except Exception as e:  # noqa: BLE001 — worst case the items are re-translated
+        app_logger.warning(f"Could not restore translation status: {e}")
+
 
 def detect_language_characters(text, lang_code):
     """
@@ -412,21 +479,17 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
     if not last_try:
         if translated_json == original_json:
             # Check if first try
-            existing_fail = []
-            try:
-                with open(FAILED_JSON_PATH, 'r', encoding='utf-8') as f:
-                    for item in json.load(f):
-                        existing_fail.append(item.get('count_split'))
-            except Exception:
-                pass
-            
             orig_counts = []
             for k in original_json.keys():
                 try:
                     orig_counts.append(int(k))
                 except:
                     orig_counts.append(k)
-            is_first_try = not set(orig_counts).issubset(set(existing_fail))
+            try:
+                with _result_lock:
+                    is_first_try = not set(orig_counts).issubset(_failed_counts(FAILED_JSON_PATH))
+            except Exception:
+                is_first_try = True
             
             if is_first_try:
                 app_logger.info("First attempt - displaying results")
@@ -609,48 +672,14 @@ def process_translation_results(original_text, translated_text, SRC_SPLIT_JSON_P
         app_logger.warning(f"{len(needs_review)} item(s) accepted as best-effort "
                            f"(needs review)")
     
-    # Update translation status in source file
+    # Translation status for the source file: only recorded here, written by
+    # flush_results(). Reading + rewriting the whole source file for every batch
+    # cost 0.83 s each at 100k segments, with the task lock held.
     if successful_count_splits:
-        try:
-            with open(SRC_SPLIT_JSON_PATH, "r", encoding="utf-8") as f:
-                src_data = json.load(f)
-                
-            # Update status
-            updated_count = 0
-            for item in src_data:
-                # Use correct field name: count_split
-                count_split = item.get("count_split")
-                
-                # Ensure type matching
-                if count_split is not None:
-                    try:
-                        count_split_int = int(count_split)
-                        if count_split_int in successful_count_splits:
-                            item["translated_status"] = True
-                            updated_count += 1
-                    except (ValueError, TypeError):
-                        app_logger.warning(f"Invalid count_split: {count_split}")
-                
-            # Save updated file (atomic)
-            _atomic_write_json(SRC_SPLIT_JSON_PATH, src_data)
+        with _result_lock:
+            _status_pending.setdefault(
+                RESULT_SPLIT_JSON_PATH, (SRC_SPLIT_JSON_PATH, set()))[1].update(successful_count_splits)
 
-            app_logger.info(f"Updated translation status for {updated_count} items")
-                
-        except Exception as e:
-            # Error table
-            error_table = Table(
-                box=box.ASCII2,
-                title="Error Updating Status",
-                highlight=True,
-                border_style="red",
-                collapse_padding=True,
-            )
-            error_table.add_column("Error", style="bright_red")
-            error_table.add_row(markup.escape(str(e)))
-            
-            _safe_console_print(CONSOLE, error_table)
-            app_logger.error(f"Error updating translation status: {e}")
-    
     return result_dict
 
 def _mark_all_as_failed(original_text, FAILED_JSON_PATH):
@@ -679,72 +708,78 @@ def save_json(filepath, data):
     re-writing the whole (growing) file on every segment. flush_results() forces
     a write; it is called before any disk read of the result file."""
     with _result_lock:
-        if filepath not in _result_cache:
-            existing = []
-            if os.path.exists(filepath):
-                try:
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        existing = json.load(f)
-                    if not isinstance(existing, list):
-                        existing = []
-                except (json.JSONDecodeError, OSError):
-                    existing = []
-            _result_cache[filepath] = existing
-            _result_last[filepath] = 0.0
+        _buffer(filepath).extend(data)
+        _mark_dirty(filepath)
 
-        _result_cache[filepath].extend(data)
-        _result_dirty[filepath] = True
 
-        now = time.time()
-        if now - _result_last.get(filepath, 0.0) >= _FLUSH_INTERVAL:
+def _buffer(filepath):
+    """The in-memory list for an append-only JSON file, loaded from disk once.
+    Caller holds _result_lock."""
+    if filepath not in _result_cache:
+        existing = []
+        if os.path.exists(filepath):
             try:
-                _atomic_write_json(filepath, _result_cache[filepath])
-                _result_dirty[filepath] = False
-                _result_last[filepath] = now
-            except Exception as e:  # noqa: BLE001 — transient write lock (Windows)
-                # Stay dirty + retry on the next save/flush; do NOT let a flush
-                # error surface as a per-segment failure (would re-bill the batch).
-                app_logger.warning(f"Buffered result flush deferred: {e}")
+                with open(filepath, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+                if not isinstance(existing, list):
+                    existing = []
+            except (json.JSONDecodeError, OSError):
+                existing = []
+        _result_cache[filepath] = existing
+        _result_last[filepath] = 0.0
+    return _result_cache[filepath]
+
+
+def _mark_dirty(filepath):
+    """Flag a buffer as changed and write it out if _FLUSH_INTERVAL has passed.
+    Caller holds _result_lock."""
+    _result_dirty[filepath] = True
+
+    now = time.time()
+    if now - _result_last.get(filepath, 0.0) >= _FLUSH_INTERVAL:
+        try:
+            _atomic_write_json(filepath, _result_cache[filepath])
+            _result_dirty[filepath] = False
+            _result_last[filepath] = now
+        except Exception as e:  # noqa: BLE001 — transient write lock (Windows)
+            # Stay dirty + retry on the next save/flush; do NOT let a flush
+            # error surface as a per-segment failure (would re-bill the batch).
+            app_logger.warning(f"Buffered result flush deferred: {e}")
+
+
+def _count_key(item):
+    count_split = item.get("count_split")
+    try:
+        return int(count_split)
+    except (ValueError, TypeError):
+        return count_split
+
+
+def _failed_counts(filepath):
+    """count_splits already in the FAILED list. Caller holds _result_lock."""
+    if filepath not in _failed_seen:
+        _failed_seen[filepath] = {_count_key(item) for item in _buffer(filepath)} - {None}
+    return _failed_seen[filepath]
+
+
+def append_failed(filepath, data, dedupe=False):
+    """Add items to the FAILED list through the same timed in-memory buffer as
+    the result file (was: whole-file read + rewrite for every failed batch).
+    flush_results(filepath) forces a write; call it before reading the file."""
+    with _result_lock:
+        buffer = _buffer(filepath)
+        seen = _failed_counts(filepath)
+        for item in data:
+            key = _count_key(item)
+            if key is not None and not (dedupe and key in seen):
+                buffer.append(item)
+                seen.add(key)
+        _mark_dirty(filepath)
+
 
 def save_failed_json_without_duplicates(filepath, data):
     """Save failed JSON without duplicates"""
-    # Load existing
-    if os.path.exists(filepath):
-        with open(filepath, "r", encoding="utf-8") as f:
-            try:
-                existing_data = json.load(f)
-                if not isinstance(existing_data, list):
-                    existing_data = []
-            except json.JSONDecodeError:
-                existing_data = []
-    else:
-        existing_data = []
-
-    # Track existing count_splits
-    existing_count_splits = set()
-    for item in existing_data:
-        count_split = item.get("count_split")
-        if count_split is not None:
-            try:
-                existing_count_splits.add(int(count_split))
-            except (ValueError, TypeError):
-                existing_count_splits.add(count_split)
-
-    # Add new items
-    for item in data:
-        count_split = item.get("count_split")
-        if count_split is not None:
-            try:
-                count_split_int = int(count_split)
-            except (ValueError, TypeError):
-                count_split_int = count_split
-            
-            if count_split_int not in existing_count_splits:
-                existing_data.append(item)
-                existing_count_splits.add(count_split_int)
-
-    # Save (atomic)
-    _atomic_write_json(filepath, existing_data)
+    append_failed(filepath, data, dedupe=True)
 
 
 def _append_needs_review(filepath, items):

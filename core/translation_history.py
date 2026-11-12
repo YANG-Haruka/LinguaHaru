@@ -593,7 +593,10 @@ def compress_live_recording(record_id: str, log_dir: str) -> Optional[str]:
         subprocess.run([ff, "-y", "-loglevel", "error", "-i", wav, "-ac", "1",
                         "-c:a", "libopus", "-b:a", _REC_OPUS_BITRATE,
                         "-application", "voip", "-f", "ogg", tmp],
-                       check=True, capture_output=True, timeout=3600,
+                       check=True, capture_output=True,
+                       # an hour was not enough for a day-long recording on a slow
+                       # machine, and every start tried again in vain: by its length
+                       timeout=3600 + os.path.getsize(wav) / 32000 / 4,
                        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0))
         os.replace(tmp, ogg)
         rec["log_file_path"] = ogg

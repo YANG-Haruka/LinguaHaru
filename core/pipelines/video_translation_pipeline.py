@@ -183,6 +183,14 @@ _qwen_models = {}      # repo id -> Qwen3ASRModel
 # loads on CPU for the rest of the process — slower, but it works instead of
 # silently producing nothing.
 _STT_FORCE_CPU = False
+# Running out of GPU memory is another matter: the GPU works, it was full for a
+# moment (several models resident, another program). The other models are let
+# go and the GPU tried again; only if that fails too does STT go to the CPU, and
+# only for a while. (One such error used to pin every later video to the CPU
+# until the app was restarted, with a single log line to say so.)
+_STT_CPU_UNTIL = 0.0       # time.time() until which an out-of-memory keeps STT on the CPU
+_STT_OOM_AT = 0.0          # the last out-of-memory that was answered by making room
+_STT_CPU_PAUSE_S = 600.0
 
 
 def _is_cuda_runtime_error(exc):
@@ -193,20 +201,34 @@ def _is_cuda_runtime_error(exc):
     return any(k in s for k in (
         "no kernel image", "cuda error", "cuda runtime", "device-side assert",
         "cublas", "cudnn", "cuda out of memory", "no cuda gpus are available",
-        "torch not compiled with cuda"))
+        "torch not compiled with cuda",
+        "cuda failed with error"))      # ctranslate2 (faster-whisper): "CUDA failed with error out of memory"
 
 
 def _fall_back_to_cpu_stt(reason=""):
     """Pin STT to CPU for the rest of the process and drop any GPU-loaded models so
     the next load rebuilds them on CPU. Idempotent."""
-    global _STT_FORCE_CPU, _sensevoice, _whisper_models, _qwen_models, _animewhisper_models
-    if not _STT_FORCE_CPU:
-        app_logger.warning("STT: GPU unusable (%s) — using CPU for this session", reason)
-    _STT_FORCE_CPU = True
+    global _STT_FORCE_CPU, _STT_CPU_UNTIL, _STT_OOM_AT, _sensevoice, _whisper_models, _qwen_models, _animewhisper_models
+    if "out of memory" in str(reason).lower():
+        now = time.time()
+        if now - _STT_OOM_AT > 60:      # the first one: make room, the caller's retry is on the GPU again
+            _STT_OOM_AT = now
+            freed = _release_stt(lambda key: key in _stt_pinned)
+            app_logger.warning("STT: GPU out of memory (%s) — released %s, trying again",
+                               reason, ", ".join(freed) or "nothing")
+            return
+        app_logger.warning("STT: GPU still out of memory (%s) — using CPU for %d minutes",
+                           reason, _STT_CPU_PAUSE_S // 60)
+        _STT_CPU_UNTIL = now + _STT_CPU_PAUSE_S
+    else:
+        if not _STT_FORCE_CPU:
+            app_logger.warning("STT: GPU unusable (%s) — using CPU for this session", reason)
+        _STT_FORCE_CPU = True
     _sensevoice = None
     _whisper_models = {}
     _qwen_models = {}
     _animewhisper_models = {}
+    _empty_gpu_cache()
 
 
 def _stt_device():
@@ -214,8 +236,16 @@ def _stt_device():
     else 'cpu'. Auto-detected so a GPU machine uses it without config — but once a
     CUDA kernel actually fails at runtime (a too-new GPU for the installed torch),
     we pin to CPU (see _fall_back_to_cpu_stt) so the feature still works."""
+    global _STT_CPU_UNTIL, _sensevoice, _whisper_models, _qwen_models, _animewhisper_models
     if _STT_FORCE_CPU:
         return "cpu"
+    if _STT_CPU_UNTIL:
+        if time.time() < _STT_CPU_UNTIL:
+            return "cpu"
+        # The pause is over: models loaded on the CPU meanwhile are rebuilt on the
+        # GPU at their next use (a file being transcribed keeps its own).
+        _STT_CPU_UNTIL = 0.0
+        _sensevoice, _whisper_models, _qwen_models, _animewhisper_models = None, {}, {}, {}
     try:
         import torch
         if torch.cuda.is_available():
@@ -494,39 +524,94 @@ def release_stt_model(model_id):
         pass
 
 
+def _empty_gpu_cache():
+    """Give the memory of dropped models back (torch keeps it reserved otherwise)."""
+    try:
+        import gc
+        import torch
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _release_stt(keep):
+    """Drop every loaded STT model for which ``keep((engine, size))`` is false.
+    Returns the names of what was freed."""
+    global _sensevoice
+    freed = []
+    for size in list(_whisper_models):
+        if not keep(("whisper", size)):
+            del _whisper_models[size]
+            freed.append(f"whisper:{size}")
+    for repo in list(_qwen_models):
+        if not keep(("qwen3asr", repo)):
+            del _qwen_models[repo]
+            freed.append(f"qwen:{repo}")
+    for repo in list(_animewhisper_models):
+        if not keep(("animewhisper", repo)):
+            del _animewhisper_models[repo]
+            freed.append(f"anime-whisper:{repo}")
+    if _sensevoice is not None and not any(
+            key[0] == "sensevoice" and keep(key) for key in list(_stt_used) + [("sensevoice", "")]
+            if key[0] == "sensevoice"):
+        _sensevoice = None
+        freed.append("sensevoice")
+    if freed:
+        _empty_gpu_cache()
+    return freed
+
+
 def release_unused_stt_models():
     """Free any loaded STT model that NO feature selects anymore, so switching a
     model releases the previous one (RAM/VRAM). Features sharing the SAME model
     keep using the single cached instance — no double-load. Called on feature
     start (preload) and on model switches."""
-    global _sensevoice
     inuse = _inuse_stt_keys()
-    freed = []
-    for size in list(_whisper_models):
-        if ("whisper", size) not in inuse:
-            del _whisper_models[size]
-            freed.append(f"whisper:{size}")
-    for repo in list(_qwen_models):
-        if ("qwen3asr", repo) not in inuse:
-            del _qwen_models[repo]
-            freed.append(f"qwen:{repo}")
-    for repo in list(_animewhisper_models):
-        if ("animewhisper", repo) not in inuse:
-            del _animewhisper_models[repo]
-            freed.append(f"anime-whisper:{repo}")
-    if _sensevoice is not None and not any(e == "sensevoice" for e, _s in inuse):
-        _sensevoice = None
-        freed.append("sensevoice")
+    freed = _release_stt(lambda key: key in inuse or (key[0] == "sensevoice"
+                                                      and any(e == "sensevoice" for e, _s in inuse)))
     if freed:
         app_logger.info(f"Released unused STT model(s): {', '.join(freed)}")
+    return freed
+
+
+# Selected is not in use: the live-voice model, its preview model, the video
+# model and the quick-translate voice model are four selections, and each stayed
+# in memory from its first use until the app was closed — by their own figures
+# 13-15 GB of GPU memory once every feature had been used, on any card. Before
+# a model that is not in memory is loaded, the ones nothing has used for a while
+# are let go (a file being transcribed pins its model; a live session uses its
+# two every few seconds).
+_stt_used = {}             # (engine, size) -> time.time() of its last use
+_stt_pinned = {}           # (engine, size) -> files being transcribed with it right now
+_PIN_LOCK = threading.Lock()
+_STT_IDLE_S = 300.0
+
+
+def _stt_touch(engine, size):
+    _stt_used[(engine, size)] = time.time()
+
+
+def stt_touch_live():
+    """A live session is running: its two models are in use although, in a quiet
+    stretch, nothing is recognized (called once a minute by the page; without
+    it a five-minute silence let another feature's load drop them)."""
+    for getter in (get_selected_live_stt_model, live_preview_model):
         try:
-            import gc
-            import torch
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+            model_id = getter()
+            if model_id:
+                _stt_touch(*_resolve_stt_engine(get_stt_model(model_id)))
         except Exception:  # noqa: BLE001
             pass
+
+
+def _make_room_for(engine, size):
+    now = time.time()
+    freed = _release_stt(lambda key: key == (engine, size) or key in _stt_pinned
+                         or now - _stt_used.get(key, 0.0) < _STT_IDLE_S)
+    if freed:
+        app_logger.info(f"Released idle STT model(s) before loading {engine}:{size}: {', '.join(freed)}")
     return freed
 
 
@@ -651,8 +736,10 @@ def extract_audio_to_wav(media_path, output_dir):
 
 # --- whisper engine ---------------------------------------------------------
 def _get_whisper_model(size):
+    _stt_touch("whisper", size)
     if size in _whisper_models:
         return _whisper_models[size]
+    _make_room_for("whisper", size)
     with _LOAD_LOCK:
         if size not in _whisper_models:   # double-check inside the lock
             from faster_whisper import WhisperModel
@@ -678,7 +765,12 @@ def _get_whisper_model(size):
                 _fwu.disabled_tqdm = _hf_tqdm
                 _whisper_models[size] = WhisperModel(
                     size, device=dev, compute_type=ctype, download_root=whisper_dir())
-    return _whisper_models[size]
+        model = _whisper_models[size]
+    return model
+
+
+_WHISPER_WINDOW_S = 900.0      # 15 minutes: under 1 GB of features at a time
+_WHISPER_EDGE_S = 2.0          # a segment ending this close to a window's end is taken by the next
 
 
 def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en",
@@ -725,50 +817,74 @@ def _transcribe_whisper(wav_path, size, src_lang, progress_callback, ui_lang="en
                 no_speech_threshold=float(p.get("no_speech_threshold", 0.6)),
                 compression_ratio_threshold=2.4, word_timestamps=True,
                 hallucination_silence_threshold=float(p.get("hallucination_silence_threshold", 2.0)))
+    import wave
+    import numpy as np
     if offset > 0:
-        import wave
-        import numpy as np
-        with wave.open(wav_path, "rb") as wf:
-            sr = wf.getframerate()
-            raw = wf.readframes(wf.getnframes())
-        audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
-        clipped = audio[int(offset * sr):]   # wav is 16k mono; whisper assumes 16k
         app_logger.info(f"faster-whisper resume: {len(done)} segments done, "
                         f"continuing from {offset:.0f}s")
-        segments, info = model.transcribe(clipped, **_wkw)
-        duration = offset + (getattr(info, "duration", None) or 0)
-    else:
-        segments, info = model.transcribe(wav_path, **_wkw)
-        duration = getattr(info, "duration", None) or 0
-
     # 4-tuples (start, end, text, words). Resumed segments have no words (None).
     out = [(s, e, t, None) for s, e, t in done if t]
     ckpt_f = open(checkpoint_path, "a", encoding="utf-8") if checkpoint_path else None
+    # A window of the file at a time. Given the whole file, faster-whisper
+    # computes the features of ALL of it before the first segment comes out:
+    # 3.4 GB of memory for each hour of speech (measured), so a 16 GB machine
+    # failed on a video of about three hours. A window starts where the one
+    # before stopped — the same clip-and-shift a resume has always done.
     try:
-        for seg in segments:
-            # Pause/stop checkpoint between segments: pause blocks here in place
-            # (the whisper iterator + this process stay alive, so resume continues
-            # from this exact segment); stop raises out of the loop.
-            if check_stop:
-                check_stop()
-            text = _clean_asr_text(seg.text)
-            s, e = seg.start + offset, seg.end + offset   # shift past the clip
-            # Word-level timestamps (word_timestamps=True) -> (w_start, w_end, word),
-            # shifted past the resume clip; consumed by _resegment_cues.
-            words = [(w.start + offset, w.end + offset, w.word)
-                     for w in (getattr(seg, "words", None) or [])
-                     if w.start is not None and w.end is not None]
-            if text:
-                out.append((s, e, text, words or None))
-            if ckpt_f:   # record every segment (even empty) so offset advances
-                ckpt_f.write(json.dumps([s, e, text]) + "\n")
-                ckpt_f.flush()
-            if progress_callback and duration:
-                # Full 0..1 of this phase; caller maps it into the extraction range.
-                # Show elapsed/total seconds so a long file reads as progressing.
-                progress_callback(min(e / duration, 1.0),
-                                  desc=f"{_tr('Transcribing', ui_lang)} "
-                                       f"{int(e)}/{int(duration)}s")
+        with wave.open(wav_path, "rb") as wf:
+            sr = wf.getframerate() or 16000     # the extracted wav is 16k mono; whisper assumes 16k
+            duration = wf.getnframes() / float(sr)
+            while offset < duration - 0.05:
+                if check_stop:
+                    check_stop()
+                wf.setpos(int(offset * sr))
+                raw = wf.readframes(int(_WHISPER_WINDOW_S * sr))
+                if not raw:
+                    break
+                audio = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+                del raw
+                win = len(audio) / float(sr)
+                last = offset + win >= duration - 0.05
+                segments, info = model.transcribe(audio, **_wkw)
+                heard = False
+                nxt = offset + win
+                for seg in segments:
+                    # Pause/stop checkpoint between segments: pause blocks here in place
+                    # (the whisper iterator + this process stay alive, so resume continues
+                    # from this exact segment); stop raises out of the loop.
+                    if check_stop:
+                        check_stop()
+                    # A segment that reaches the window's edge may be cut there: it
+                    # is decoded again, whole, as the start of the next window.
+                    if not last and seg.end > win - _WHISPER_EDGE_S and seg.start > 1.0:
+                        nxt = offset + seg.start
+                        break
+                    text = _clean_asr_text(seg.text)
+                    s, e = seg.start + offset, seg.end + offset   # shift past the clip
+                    # Word-level timestamps (word_timestamps=True) -> (w_start, w_end, word),
+                    # shifted past the clip; consumed by _resegment_cues.
+                    words = [(w.start + offset, w.end + offset, w.word)
+                             for w in (getattr(seg, "words", None) or [])
+                             if w.start is not None and w.end is not None]
+                    if text:
+                        out.append((s, e, text, words or None))
+                        heard = True
+                    if ckpt_f:   # record every segment (even empty) so offset advances
+                        ckpt_f.write(json.dumps([s, e, text]) + "\n")
+                        ckpt_f.flush()
+                    if progress_callback and duration:
+                        # Full 0..1 of this phase; caller maps it into the extraction range.
+                        # Show elapsed/total seconds so a long file reads as progressing.
+                        progress_callback(min(e / duration, 1.0),
+                                          desc=f"{_tr('Transcribing', ui_lang)} "
+                                               f"{int(e)}/{int(duration)}s")
+                if heard and _wkw["language"] is None and getattr(info, "language", None):
+                    # One language for the file, as when it was decoded in one piece —
+                    # that of the first window in which something was said (the guess
+                    # for fifteen minutes of a waiting screen is not the file's).
+                    _wkw["language"] = info.language
+                del audio, segments
+                offset = nxt
     finally:
         if ckpt_f:
             ckpt_f.close()
@@ -853,8 +969,10 @@ def _sensevoice_local_dir():
 
 def _get_sensevoice(model_name):
     global _sensevoice
+    _stt_touch("sensevoice", model_name)
     if _sensevoice is not None:
         return _sensevoice
+    _make_room_for("sensevoice", model_name)
     with _LOAD_LOCK:
         if _sensevoice is None:   # double-check inside the lock
             from funasr import AutoModel
@@ -871,7 +989,8 @@ def _get_sensevoice(model_name):
             # loads its own via _get_vad), and loading it cost ~4 s + a
             # modelscope network check on EVERY real-time start.
             _sensevoice = (asr, None)
-    return _sensevoice
+        model = _sensevoice
+    return model
 
 
 _vad_only = None  # fsmn-vad loaded standalone (so Qwen needn't load SenseVoice)
@@ -1180,8 +1299,10 @@ def _load_mlx_qwen(model_name):
 
 
 def _get_qwen(model_name):
+    _stt_touch("qwen3asr", model_name)
     if model_name in _qwen_models:
         return _qwen_models[model_name]
+    _make_room_for("qwen3asr", model_name)
     with _LOAD_LOCK:
         if model_name not in _qwen_models and _mlx_qwen_ok() and model_name in _MLX_QWEN_REPO:
             _t0 = time.time()
@@ -1218,7 +1339,8 @@ def _get_qwen(model_name):
                 _qwen_models[model_name] = _load({})
             app_logger.info(f"{model_name} loaded in {time.time() - _t0:.1f}s")
             _tune_qwen_generation(_qwen_models[model_name])
-    return _qwen_models[model_name]
+        model = _qwen_models[model_name]
+    return model
 
 
 def _tune_qwen_generation(qmodel):
@@ -1267,6 +1389,22 @@ def _recognize_qwen(audio, src_lang, model_name, sample_rate=16000):
     return _clean_asr_text(_qwen_text(r)), detected
 
 
+class _FloatAudio:
+    """A file's int16 samples, handing out float32 PIECES. As one float32 array
+    the audio of a 10-hour video was 2.3 GB (and as much again while it was
+    divided by 32768), beside the 1.15 GB of int16 it was made from."""
+
+    def __init__(self, i16):
+        self._a = i16
+
+    def __len__(self):
+        return len(self._a)
+
+    def __getitem__(self, piece):
+        import numpy as np
+        return self._a[piece].astype(np.float32) / 32768.0
+
+
 def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang="en",
                      check_stop=None, checkpoint_path=None, params=None):
     """VAD-segment the audio (for SRT timing) then batch-recognize the segments
@@ -1287,19 +1425,20 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
         sr = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
     audio_i16 = np.frombuffer(raw, dtype=np.int16)
-    audio = audio_i16.astype(np.float32) / 32768.0
+    audio = _FloatAudio(audio_i16)
     segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params),
                                progress_cb=_vad_progress(progress_callback, ui_lang))
     if not segments:   # only reachable on empty audio
         segments = _window_segments(len(audio) / sr * 1000.0)
 
-    chunks, spans, keys = [], [], []
+    chunks, spans, keys = [], [], []     # chunks: (first sample, end sample) of each segment
     for s_ms, e_ms in segments:
-        c = audio[int(s_ms / 1000 * sr):int(e_ms / 1000 * sr)]
-        if c.size:
-            chunks.append((c, sr))
+        a, b = int(s_ms / 1000 * sr), min(int(e_ms / 1000 * sr), len(audio))
+        if b > a:
+            chunks.append((a, b))
             spans.append((s_ms / 1000.0, e_ms / 1000.0))
             keys.append((int(round(s_ms)), int(round(e_ms))))
+    clip = lambda k: (audio[chunks[k][0]:chunks[k][1]], sr)     # float32, made when it is needed
 
     # Resume: load segments a prior stopped run already recognized (keyed by their
     # ms boundaries). texts[k] is None until segment k is transcribed.
@@ -1349,7 +1488,7 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
                 acc += d
                 p += 1
             _bt = time.time()
-            _batch = [chunks[k] for k in grp]
+            _batch = [clip(k) for k in grp]
             if _qlang:
                 try:
                     results = model.transcribe(_batch, language=_qlang)
@@ -1371,7 +1510,7 @@ def _transcribe_qwen(wav_path, model_name, src_lang, progress_callback, ui_lang=
                 if not _qlang:   # accented speech detected as some other language
                     txt, _ = _guard_language(
                         lang_memory, txt, _qwen_lang_code(getattr(r, "language", None)),
-                        lambda lang, c=chunks[k]: _recognize_qwen(c[0], lang, model_name, c[1]))
+                        lambda lang, k=k: _recognize_qwen(clip(k)[0], lang, model_name, sr))
                 texts[k] = txt
                 if ckpt_f:
                     ckpt_f.write(json.dumps([keys[k][0], keys[k][1], txt]) + "\n")
@@ -1396,8 +1535,10 @@ _animewhisper_models = {}   # repo id -> transformers ASR pipeline
 
 
 def _get_animewhisper(model_name):
+    _stt_touch("animewhisper", model_name)
     if model_name in _animewhisper_models:
         return _animewhisper_models[model_name]
+    _make_room_for("animewhisper", model_name)
     with _LOAD_LOCK:
         if model_name not in _animewhisper_models:   # double-check inside the lock
             import torch
@@ -1408,7 +1549,8 @@ def _get_animewhisper(model_name):
             _animewhisper_models[model_name] = pipeline(
                 "automatic-speech-recognition", model=_hf_local(model_name),
                 device=dev, torch_dtype=dtype, chunk_length_s=30, batch_size=1)
-    return _animewhisper_models[model_name]
+        model = _animewhisper_models[model_name]
+    return model
 
 
 # Per the model card: NO initial prompt (causes hallucination); the card's
@@ -1474,7 +1616,7 @@ def _transcribe_animewhisper(wav_path, model_name, src_lang, progress_callback, 
         sr = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
     audio_i16 = np.frombuffer(raw, dtype=np.int16)
-    audio = audio_i16.astype(np.float32) / 32768.0
+    audio = _FloatAudio(audio_i16)
     # (VAD streams its own moving progress via _segment_speech / _vad_progress.)
     segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params),
                                progress_cb=_vad_progress(progress_callback, ui_lang))
@@ -1561,7 +1703,7 @@ def _transcribe_sensevoice(wav_path, model_name, src_lang, progress_callback, ui
         sr = wf.getframerate()
         raw = wf.readframes(wf.getnframes())
     audio_i16 = np.frombuffer(raw, dtype=np.int16)
-    audio = audio_i16.astype(np.float32) / 32768.0
+    audio = _FloatAudio(audio_i16)
 
     # TEN-VAD (noise-robust) first; fall back to fsmn-vad, then windows.
     segments = _segment_speech(wav_path, audio_i16, sr, check_stop, *_vad_args(params),
@@ -2240,16 +2382,31 @@ def _run_transcription(engine, size, wav_path, src_lang, progress_callback,
         return _transcribe_whisper(wav_path, size, src_lang, progress_callback, session_lang,
                                    check_stop, checkpoint_path, params)
 
+    key = (engine, size)
+    with _PIN_LOCK:
+        _stt_pinned[key] = _stt_pinned.get(key, 0) + 1    # this file's model is in use until it is done
     try:
         return _dispatch()
     except Exception as e:  # noqa: BLE001
         if _stt_device() == "cuda" and _is_cuda_runtime_error(e):
             _fall_back_to_cpu_stt(str(e).splitlines()[0] if str(e) else type(e).__name__)
-            return _dispatch()   # resumes from the checkpoint on CPU
+            try:
+                return _dispatch()   # resumes from the checkpoint (GPU with room made, or CPU)
+            except Exception as e2:  # noqa: BLE001 — room was made and it is still not enough
+                if _stt_device() != "cuda" or not _is_cuda_runtime_error(e2):
+                    raise
+                _fall_back_to_cpu_stt(str(e2).splitlines()[0] if str(e2) else type(e2).__name__)
+                return _dispatch()
         app_logger.error(
             f"STT transcription failed (engine={engine}, model={model_id}): "
             f"{type(e).__name__}: {e}")
         raise
+    finally:
+        _stt_touch(engine, size)
+        with _PIN_LOCK:
+            _stt_pinned[key] = _stt_pinned.get(key, 1) - 1
+            if _stt_pinned[key] <= 0:
+                del _stt_pinned[key]
 
 
 def transcribe_media_to_srt(media_path, temp_dir, src_lang=None, progress_callback=None,

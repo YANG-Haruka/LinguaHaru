@@ -994,6 +994,24 @@ def _merge_qa(acc, qa):
     return out
 
 
+def _drop_upload(file_path, doc_dir):
+    """Delete the upload of a file that was just translated: nothing deleted it,
+    so every upload stayed in data/uploads forever — with no size limit in local
+    mode, where a whole video is uploaded. Only after SUCCESS: an interrupted
+    task re-reads its upload on Continue (remove_upload re-checks history, and
+    refuses any path outside UPLOAD_DIR, e.g. a desktop record's own file).
+
+    Kept in one case: Proofread re-export reads the original from the copy in
+    the doc folder, but a file over the copy cap (256 MB) is only referenced in
+    place, so its upload must stay (retention bounds those) — a long video
+    too: export_proofread_doc wants the original to exist whatever its type."""
+    from core.retention import remove_upload
+    stem, ext = os.path.splitext(os.path.basename(file_path))
+    if (os.path.exists(os.path.join(doc_dir, stem + ext.lower()))
+            or not os.path.exists(os.path.join(doc_dir, "manifest.json"))):
+        remove_upload(file_path, UPLOAD_DIR)
+
+
 def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                    dst_lang, glossary_name, bilingual_flags, on_progress,
                    continue_mode=False, resume_dirs=None, resume_record_id=None,
@@ -1102,6 +1120,7 @@ def _translate_one(task_id, session_id, file_path, model, use_online, src_lang,
                 t["model"] = model
         on_progress(v, desc)
     output_path, _missing = translator.process(stem, ext, progress_callback=_progress)
+    _drop_upload(file_path, translator.file_dir)
 
     # Accumulate this file's token usage onto the task (summed across files) so
     # the 'done' event can show a thank-you with total tokens + cost.
@@ -1579,10 +1598,26 @@ def history_clear(request: Request, payload: dict = None):
     produced (never the user's original input files)."""
     from core.translation_history import TranslationHistoryManager
     h = TranslationHistoryManager(log_dir=history_log_dir(request.state.session_id))
+    inputs = [p for p in map(_record_input, (r for r in h.get_all_records() if not _still_running(r))) if p]
     if payload and payload.get("with_files"):
         info = h.clear_all_records_and_files()
-        return {"ok": True, "files_deleted": info.get("files_deleted", 0)}
-    return {"ok": bool(h.clear_all_records())}
+        out = {"ok": True, "files_deleted": info.get("files_deleted", 0)}
+    else:
+        out = {"ok": bool(h.clear_all_records())}
+    # The interrupted tasks among them can no longer be continued, so their
+    # uploads have no reader left (remove_upload only touches UPLOAD_DIR).
+    from core.retention import remove_upload
+    for p in inputs:
+        remove_upload(p, UPLOAD_DIR)
+    return out
+
+
+def _record_input(rec):
+    """The input file a history record would continue from ('' when none)."""
+    try:
+        return json.loads(rec.get("resume_info") or "{}").get("input_file_path") or ""
+    except (ValueError, TypeError, AttributeError):
+        return ""
 
 
 def _run_resume(task_id, session_id, rec, ui_lang="en"):
@@ -1825,7 +1860,21 @@ def history_delete(payload: dict, request: Request):
         file_dir = os.path.join(temp_dir, os.path.splitext(os.path.basename(src))[0])
         if os.path.isdir(file_dir):
             shutil.rmtree(file_dir, ignore_errors=True)
-    return {"ok": bool(h.delete_record(rid))}
+    ok = bool(h.delete_record(rid))
+    # An interrupted task kept its upload to be continued from; with the record
+    # gone nothing reads it again (remove_upload only touches UPLOAD_DIR, so a
+    # desktop record's own source file is never deleted).
+    from core.retention import remove_upload
+    if not _still_running(rec):
+        remove_upload(_record_input(rec), UPLOAD_DIR)
+    return {"ok": ok}
+
+
+def _still_running(rec):
+    """A record of a task that has not ended: its upload is still to be read
+    (deleting the record of a batch in progress took the files it had not
+    reached yet; the upload goes when the task ends, or by the cap)."""
+    return (rec.get("status") or "") in ("running", "queued", "starting", "paused")
 
 
 @app.get("/api/history/download")
@@ -1853,11 +1902,17 @@ def history_log(id: str, request: Request):
     rec = h.get_record_by_id(id) if id else None
     if not rec:
         raise HTTPException(404, "Record not found")
-    dest = os.path.join(tempfile.mkdtemp(prefix="lh_log_"), "log.zip")
+    # Every request made a folder in the system temp dir and nothing removed
+    # it: drop it once the response has been sent (or right away on a 404).
+    from starlette.background import BackgroundTask
+    tmp = tempfile.mkdtemp(prefix="lh_log_")
+    dest = os.path.join(tmp, "log.zip")
     if not backend.build_log_bundle(rec, dest, include_system=_is_admin()):
+        shutil.rmtree(tmp, ignore_errors=True)
         raise HTTPException(404, "No log available for this record")
     stem = os.path.splitext(os.path.basename(rec.get("input_file") or "translation"))[0]
-    return FileResponse(dest, filename=f"LinguaHaru-log-{stem}.zip")
+    return FileResponse(dest, filename=f"LinguaHaru-log-{stem}.zip",
+                        background=BackgroundTask(shutil.rmtree, tmp, ignore_errors=True))
 
 
 @app.post("/api/pick-folder")
@@ -2346,7 +2401,8 @@ async def live_terms_extract(payload: dict):
     dst_lang = str(payload.get("dst_lang") or "")
     if not _LANG_CODE.match(dst_lang):
         raise HTTPException(400, "dst_lang")
-    pairs = [(str(p[0])[:600], str(p[1])[:600]) for p in (payload.get("pairs") or [])[:3000]
+    # 30000 lines: a 48-hour session (3000 was its first 7.5 hours only)
+    pairs = [(str(p[0])[:600], str(p[1])[:600]) for p in (payload.get("pairs") or [])[:30000]
              if isinstance(p, (list, tuple)) and len(p) == 2]
     cfg = backend.read_config()
     use_online = bool(cfg.get("default_online", True))
@@ -2383,6 +2439,24 @@ async def live_terms_add(payload: dict):
     return {"added": added, "glossaries": backend.get_glossary_files()}
 
 
+@app.post("/api/live-keepalive")
+def live_keepalive():
+    """A running live session, once a minute. Silence sends no audio, so in a
+    quiet stretch neither the keep-awake lease (two minutes, see live_recognize)
+    nor the speech models' "in use" mark was renewed: the host could sleep over
+    a lunch break, and another feature loading a model dropped the session's."""
+    if _feature_hidden("live"):
+        raise HTTPException(403, "Real-time voice is not available on this server")
+    from core.power import touch_activity
+    touch_activity(120)
+    try:
+        from core.pipelines.video_translation_pipeline import stt_touch_live
+        stt_touch_live()
+    except Exception:  # noqa: BLE001 — the plugin may not be installed
+        pass
+    return {"ok": True}
+
+
 @app.get("/api/live-preload-progress")
 def live_preload_progress():
     """Polled by the page while /api/live-preload downloads a missing model."""
@@ -2402,6 +2476,11 @@ async def live_recognize(payload: dict, request: Request):
         raise HTTPException(400, "实时语音需要语音(STT)插件。")
     if _feature_hidden("live"):
         raise HTTPException(403, "Real-time voice is not available on this server")
+    # A browser's live session has no end this server is told about, and held
+    # nothing: the host (the desktop app serving LAN clients too) could go to
+    # sleep mid-meeting. Each call keeps it awake two more minutes.
+    from core.power import touch_activity
+    touch_activity(120)
     import base64
     try:
         pcm = base64.b64decode(payload.get("audio_b64", ""))

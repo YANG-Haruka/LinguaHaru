@@ -304,17 +304,52 @@ _DEFAULT_CONFIG = {
 
 
 def read_config():
-    try:
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return dict(_DEFAULT_CONFIG)
+    import time
+    for attempt in range(4):
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            break
+        except json.JSONDecodeError:
+            # Caught while it is being written (see write_config): a moment
+            # later it is whole. Only a file that stays unreadable is "no settings".
+            time.sleep(0.005 * (attempt + 1))
+        except PermissionError:
+            if attempt == 3:
+                raise           # held for good: an error, as it always was — not "the defaults"
+            time.sleep(0.005 * (attempt + 1))
+    return dict(_DEFAULT_CONFIG)
 
 
 def write_config(config):
+    """Whole or not at all. The file used to be written in place while live voice
+    reads it a dozen times a line: a reader that caught it half written got "no
+    settings" (read_config fell back to the defaults at once), and a set_config
+    at that moment wrote those defaults back — every setting gone."""
+    import time
+    import uuid
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
+    tmp = f"{CONFIG_PATH}.{uuid.uuid4().hex[:8]}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        for attempt in range(3):
+            try:
+                os.replace(tmp, CONFIG_PATH)
+                return
+            except PermissionError:     # Windows: a reader has the file open right now
+                time.sleep(0.005 * (attempt + 1))
+            except OSError:             # a file mounted into a container cannot be swapped (EBUSY)
+                break
+        # Still held, or not swappable: in place (a reader that catches it tries again).
+        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
 
 
 def get_config(key, default=None):

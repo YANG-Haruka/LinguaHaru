@@ -514,5 +514,6 @@
   "Iface Err connection": "無法連線到介面位址。請檢查位址、網路或代理；防火牆或安全軟體也可能會攔截。",
   "Iface Err unknown": "未知錯誤，請查看下方的原始錯誤。",
   "Iface Err empty": "請填寫介面位址和模型 ID。",
-  "Raw Error": "原始錯誤"
+  "Raw Error": "原始錯誤",
+  "Live Recognition Behind": "辨識速度跟不上說話速度，已略過最早的一段語音。可以改用更快的辨識模型。"
 }

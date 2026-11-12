@@ -15,6 +15,7 @@ from core.pipelines.image_translation_pipeline import (
 from core.log_config import app_logger
 
 _RENDER_DPI = 150   # page raster resolution for OCR + output (good legibility/size)
+_FLUSH_PAGES = 50   # output pages kept in memory before they are written to disk
 
 
 def _fitz():
@@ -113,6 +114,9 @@ def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
     out_suffix="_proofread" so it never clobbers the original translated PDF."""
     fitz = _fitz()
     out = fitz.open()
+    import uuid
+    # of its own: two exports of one document at once shared the name, and the second failed
+    part_path = os.path.join(file_dir, f"manga_out.{uuid.uuid4().hex[:8]}.part.pdf")
     n = max(len(pages_meta), 1)
     try:
         for idx, pm in enumerate(pages_meta):
@@ -150,6 +154,8 @@ def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
             page = out.new_page(width=rect.width, height=rect.height)
             page.insert_image(rect, stream=data)
             img_pdf.close()
+            if out.page_count % _FLUSH_PAGES == 0:
+                out = _flush_to_disk(fitz, out, part_path)
 
         os.makedirs(result_dir, exist_ok=True)
         suffix = f"{src_lang}2{dst_lang}" if src_lang and dst_lang else "translated"
@@ -157,4 +163,24 @@ def render_manga_pages_to_pdf(pages_meta, translations, file_dir, result_dir,
         out.save(result_path)
         return result_path
     finally:
-        out.close()
+        if not out.is_closed:
+            out.close()
+        try:
+            os.remove(part_path)
+        except OSError:  # never flushed, or briefly locked: must not fail a saved PDF
+            pass
+
+
+def _flush_to_disk(fitz, doc, path):
+    """Write the pages added so far to ``path`` and return the document REOPENED
+    from that file. PyMuPDF keeps every inserted JPEG in memory until the
+    document is closed — an incremental save alone frees nothing (measured, 300
+    pages x 0.88 MB: 276 MB held with one final save, 229 MB with saveIncr only,
+    51 MB when also closed + reopened). The final save() to the result path then
+    streams the earlier pages from this file instead of from memory."""
+    if doc.name == path:
+        doc.saveIncr()
+    else:
+        doc.save(path)
+    doc.close()
+    return fitz.open(path)

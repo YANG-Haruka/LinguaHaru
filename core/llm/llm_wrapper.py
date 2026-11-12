@@ -499,8 +499,13 @@ def translate_text_simple(text, src_lang, dst_lang, model, use_online, api_key, 
 def summarize_transcript(transcript, out_lang, model, use_online, api_key):
     """Summarize a real-time voice transcript in ``out_lang``.
     Returns (summary, success, token_usage)."""
-    # ponytail: head-only cut at 30k chars; chunked map-reduce if meetings run longer
-    text = (transcript or "").strip()[:30000]
+    # ponytail: 30k characters, as its start, middle and end; chunked map-reduce
+    # if more is needed. (The FIRST 30k are the first 40 minutes: the summary of
+    # a day's meeting said nothing of the rest.)
+    text = (transcript or "").strip()
+    if len(text) > 30000:
+        mid = (len(text) - 10000) // 2
+        text = "\n[...]\n".join((text[:10000], text[mid:mid + 10000], text[-10000:]))
     if not text:
         return "", False, None
     messages = [
@@ -555,15 +560,18 @@ def extract_meeting_terms(pairs, dst_lang, model, use_online, api_key):
             lines.append(f"{' '.join(held)} ⇒ {t}")
             held = []
     lines += held
-    # ponytail: the first 3 x 24k characters (about 3 hours of speech); more calls
-    # if longer meetings need their tail covered.
+    # ponytail: 4 x 24k characters (about an hour of speech each), spread over the
+    # whole session — the FIRST three were the first three hours, 6% of a two-day
+    # meeting. More calls if the stretches between them matter.
     chunks, cur = [], ""
     for ln in lines:
         if len(cur) + len(ln) > 24000:
             chunks.append(cur)
             cur = ""
         cur += ln + "\n"
-    chunks = (chunks + [cur])[:3]
+    chunks.append(cur)
+    if len(chunks) > 4:
+        chunks = [chunks[round(i * (len(chunks) - 1) / 3)] for i in range(4)]
     found, tokens, answered, error = [], 0, 0, "no reply"
     for text in chunks:
         messages = [{"role": "system", "content": system}, {"role": "user", "content": text}]
@@ -654,7 +662,8 @@ def translate_text_simple_stream(text, src_lang, dst_lang, model, use_online, ap
         params.update(p_upd)
         if eb:
             params["extra_body"] = eb
-        client = OpenAI(api_key=api_key, base_url=base_url)
+        from core.llm.online_translation import _shared_client
+        client = _shared_client(OpenAI, api_key, base_url)
         acc = ""
         for chunk in _create_completion(client, params):
             usage = getattr(chunk, "usage", None)

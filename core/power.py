@@ -10,13 +10,20 @@
 #   2. begin_activity()/end_activity() (ref-counted) or the keep_awake() context
 #      manager — while ANY task is in progress, tell Windows not to sleep. The
 #      last end_activity() releases it so the PC can still sleep when idle.
+#      touch_activity(seconds) is the same for work with no end to call it
+#      from (a browser's live session): awake until `seconds` after the last call.
 import contextlib
 import threading
+import time
 
 from core.log_config import app_logger
 
 _lock = threading.Lock()
 _busy = 0
+_lease_until = 0.0          # time.monotonic() up to which touch_activity() holds
+_wake = threading.Event()   # _busy or _lease_until changed
+_holder = None              # the one thread that makes the Windows call
+_held = False               # what it last asked Windows for
 
 # SetThreadExecutionState flags
 _ES_CONTINUOUS = 0x80000000
@@ -90,14 +97,41 @@ def _set_exec_state(flags):
             pass
 
 
+def _hold_loop():
+    """SetThreadExecutionState is PER THREAD and dies with its thread, while
+    _busy counts the whole process: the request used to be made by whichever
+    thread called begin_activity() first — a file-translation worker that then
+    finished took it along, and the PC could sleep under a live session still
+    counted in _busy. So this one thread, which never exits, makes every call."""
+    global _held
+    while True:
+        with _lock:
+            left = _lease_until - time.monotonic()
+            want = _busy > 0 or left > 0
+            # with only a lease holding, wake up when it runs out
+            timeout = left if want and not _busy else None
+        if want != _held:
+            _set_exec_state(_ES_CONTINUOUS | (_ES_SYSTEM_REQUIRED if want else 0))
+            _held = want
+        _wake.wait(timeout)
+        _wake.clear()
+
+
+def _changed():
+    global _holder
+    with _lock:
+        if _holder is None:
+            _holder = threading.Thread(target=_hold_loop, name="keep-awake", daemon=True)
+            _holder.start()
+    _wake.set()
+
+
 def begin_activity():
     """Mark a task as in progress: keep the system awake until end_activity()."""
     global _busy
     with _lock:
         _busy += 1
-        first = _busy == 1
-    if first:
-        _set_exec_state(_ES_CONTINUOUS | _ES_SYSTEM_REQUIRED)
+    _changed()
 
 
 def end_activity():
@@ -105,9 +139,15 @@ def end_activity():
     global _busy
     with _lock:
         _busy = max(0, _busy - 1)
-        last = _busy == 0
-    if last:
-        _set_exec_state(_ES_CONTINUOUS)
+    _changed()
+
+
+def touch_activity(seconds=120.0):
+    """Keep the system awake until `seconds` from now; every call extends it."""
+    global _lease_until
+    with _lock:
+        _lease_until = max(_lease_until, time.monotonic() + seconds)
+    _changed()
 
 
 @contextlib.contextmanager

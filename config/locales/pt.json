@@ -417,5 +417,6 @@
   "Do Not Add": "Não adicionar",
   "No New Terms": "Não foram encontrados termos novos fora do glossário nesta sessão.",
   "Terms Added": "{n} termos adicionados ao glossário «{name}».",
-  "Extract Terms Failed": "Não foi possível extrair termos novos."
+  "Extract Terms Failed": "Não foi possível extrair termos novos.",
+  "Live Recognition Behind": "O reconhecimento não acompanha a fala: o áudio mais antigo foi ignorado. Um modelo de reconhecimento mais rápido ajudaria."
 }

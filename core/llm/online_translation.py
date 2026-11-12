@@ -4,7 +4,38 @@ import os
 import threading
 import time
 from collections import deque
+import functools
+
 from openai import OpenAI
+
+
+def _shared_client(cls, api_key, base_url, timeout=None, max_retries=None):
+    """One client per interface and key, kept. A new one for every request built
+    a new TLS context each time (6-7 ms, and 0.7 MB that only the cycle
+    collector frees: 13,000-25,000 of them in a two-day live session) and could
+    never reuse a connection. The SDK's client is made to be shared between
+    threads. ``cls`` is OpenAI as the caller sees it (tests put their own in).
+
+    A client reads the system's proxy settings when it is built: they are part
+    of the key, so that a proxy switched on or off while the app is open (an
+    everyday thing) gets a new client instead of every request failing against
+    the old one until the app is restarted."""
+    import urllib.request
+    try:
+        proxies = tuple(sorted(urllib.request.getproxies().items()))
+    except Exception:  # noqa: BLE001
+        proxies = ()
+    return _client_for(cls, api_key, base_url, timeout, max_retries, proxies)
+
+
+@functools.lru_cache(maxsize=16)
+def _client_for(cls, api_key, base_url, timeout, max_retries, _proxies):
+    kw = {}
+    if timeout is not None:
+        kw["timeout"] = timeout
+    if max_retries is not None:
+        kw["max_retries"] = max_retries
+    return cls(api_key=api_key, base_url=base_url, **kw)
 from core.log_config import app_logger
 from core.paths import API_CONFIG_DIR as CONFIG_DIR, SYSTEM_CONFIG
 
@@ -720,7 +751,7 @@ def translate_online(api_key, messages, model, mode_params=None, json_mode=False
         # Initialize API client. An explicit timeout means a stalled request
         # (common under heavy concurrency, e.g. several videos at once) fails and
         # retries in ~90s instead of hanging a worker on the SDK's ~10min default.
-        client = OpenAI(api_key=used_key, base_url=base_url, timeout=90.0, max_retries=0)
+        client = _shared_client(OpenAI, used_key, base_url, 90.0, 0)
 
         # Prepare parameters for the API call
         params = {

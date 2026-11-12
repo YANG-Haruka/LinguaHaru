@@ -2509,7 +2509,13 @@ function startLiveAutosave() {
   liveSaveId = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, "0")).join("");
   liveSavedSize = "";
   clearInterval(liveSaveTimer);
-  liveSaveTimer = setInterval(() => { if (liveRunning) saveLiveHistory(true); }, 60000);
+  liveSaveTimer = setInterval(() => {
+    if (!liveRunning) return;
+    saveLiveHistory(true);
+    // Silence sends no audio: the host's keep-awake lease and the speech models'
+    // "in use" mark would both run out in a quiet stretch (/api/live-keepalive).
+    api("/api/live-keepalive", { method: "POST" }).catch(() => {});
+  }, 60000);
 }
 // session: the id of the session being saved (the stop passes its own: by the
 // time its held lines are translated, the next session may have started).
@@ -2668,6 +2674,11 @@ async function startLocal() {
     try { liveCtx.close(); } catch (e2) {} liveCtx = null; return;
   }
   $("live-input").textContent = ""; $("live-output").textContent = "";
+  // From here the panes are this session's: what the one before still has out
+  // (a translation, its final save) must not land in them or be saved from
+  // them — a stop followed at once by a start rewrote the last session's
+  // transcript as the one line that came in late.
+  liveGen++; liveSaveId = "";
   // Preload the local model so the first sentence isn't blocked on a slow load.
   setLiveStatus(_label("正在加载本地模型…（首次需下载/加载，请稍候）", "正在加载本地模型…（首次需下载/加载，请稍候）"));
   showModelLoading("正在加载语音模型…\n首次使用需下载并载入，请稍候");
@@ -2680,7 +2691,7 @@ async function startLocal() {
   liveSrc = liveCtx.createMediaStreamSource(liveStream);
   // Fresh per-utterance stream state (no longer reset at every speechstart).
   liveCommittedText = ""; liveLastText = ""; liveDetHist = []; pipInterim = ""; pipInterimDst = "";
-  liveRecogBusy = false; liveRecogQueue = []; liveQuiet = false;
+  liveRecogBusy = false; liveRecogQueue = []; liveQuiet = false; liveRecogDropTold = false;
   liveFinalMode = finalMode;
   // Previews take their own lane from the first one — only with a separate fast
   // preview model (else they'd queue on the same model as the finals).
@@ -2689,7 +2700,7 @@ async function startLocal() {
   liveSegSeq = 0; livePreviewText = ""; livePendingPreview = []; livePreviewBusy = false; livePreviewNext = null;
   const useSilero = !!(BOOT.config && BOOT.config.web_vad === "silero");
   try {
-    if (useSilero) await startSileroVad();
+    if (useSilero) await startSileroVad(finalMode);
     else await startWorkletVad(finalMode);
   } catch (e) {
     if (useSilero) {   // neural VAD failed (network/CDN?) -> fall back to energy
@@ -2702,6 +2713,9 @@ async function startLocal() {
   startLiveAutosave();
   liveCtxHistory = [];   // fresh coherence context per session
   liveTrHold = []; liveTrHoldSeen = 0;
+  // a new chain: one stuck behind a request of the last session that never
+  // returned would hold back every line of this one (see _liveChain)
+  liveCommitChain = Promise.resolve(); liveCommitPending = 0;
   liveProvSeq++; liveProvText = ""; liveProvBusy = false; liveProvDirty = false;   // a late provisional is stale
   liveProvFlush = null; _showProvisional("");
   startMicMeter();
@@ -2709,13 +2723,16 @@ async function startLocal() {
 // Mic sensitivity preset -> [onset, end-of-speech] energy thresholds. Lower =
 // more sensitive (picks up softer speech); higher = needs a louder voice.
 const VAD_SENS = { high: [0.004, 0.0026], standard: [0.006, 0.004], low: [0.010, 0.0066] };
+// Final mode translates a segment only once it ends: cap it at 10 s (twin of
+// Qt _FINAL_MAX_MS) and end it on shorter pauses as it grows (in the worklet).
+function liveMaxSegMs(finalMode) {
+  return Math.min((BOOT.config || {}).live_vad_max_seg_ms || 15000, finalMode ? 10000 : Infinity);
+}
 async function startWorkletVad(finalMode = false) {
   await liveCtx.audioWorklet.addModule("/static/vad-worklet.js?v=20261028D");
   const cfg = BOOT.config || {};
   const hangMs = cfg.live_vad_hang_ms || 900;
-  // Final mode translates a segment only once it ends: cap it at 10 s (twin of
-  // Qt _FINAL_MAX_MS) and end it on shorter pauses as it grows (in the worklet).
-  const maxSegMs = Math.min(cfg.live_vad_max_seg_ms || 15000, finalMode ? 10000 : Infinity);
+  const maxSegMs = liveMaxSegMs(finalMode);
   const [onAbs, offAbs] = VAD_SENS[cfg.live_vad_sensitivity] || VAD_SENS.standard;
   liveNode = new AudioWorkletNode(liveCtx, "vad-processor",
     { processorOptions: { prerollMs: 500, onMs: 90, hangMs, minSegMs: 280, maxSegMs,
@@ -2728,6 +2745,7 @@ async function startWorkletVad(finalMode = false) {
 // Uses AudioNodeVAD on our acquired stream so the input picker / system audio
 // still works; feeds growing partials via onFrameProcessed (stable-prefix).
 let liveSilero = null, liveSileroBuf = [], liveSileroLast = 0, liveSileroSpeaking = false;
+let liveSileroCut = false;   // the utterance being heard was cut at the length cap
 let _vadLibsP = null;
 function loadVadLibs() {
   if (_vadLibsP) return _vadLibsP;
@@ -2756,27 +2774,70 @@ function floatsToInt16(chunks) {
   for (const c of chunks) { all.set(c, o); o += c.length; }
   return floatToInt16(all);
 }
-async function startSileroVad() {
+// The length cap of the neural VAD (twin of the worklet's, on its 16 kHz
+// frames): past maxN samples, [audio to recognize now, the rest that stays] —
+// cut at the quietest ~80 ms of the last 2 s, so no word is split and nothing
+// is dropped or heard twice — or null to keep listening for a pause, up to
+// 1.5x the cap.
+function sileroCapCut(chunks, maxN) {
+  let n = 0; for (const c of chunks) n += c.length;
+  if (n <= maxN) return null;
+  const all = new Float32Array(n); let o = 0;
+  for (const c of chunks) { all.set(c, o); o += c.length; }
+  const win = 1280, hop = win >> 2, len = Math.min(n >> 1, 32000), base = n - len;
+  const cum = new Float64Array(len + 1);
+  for (let i = 0; i < len; i++) cum[i + 1] = cum[i] + all[base + i] * all[base + i];
+  const e = [];
+  for (let s = 0; s + win <= len; s += hop) e.push([cum[s + win] - cum[s], s]);
+  let best = e[0]; for (const x of e) if (x[0] < best[0]) best = x;
+  const med = e.map((x) => x[0]).sort((a, b) => a - b)[e.length >> 1];
+  if (best[0] / Math.max(med, 1e-12) > 0.15 && n < 1.5 * maxN) return null;
+  const cut = base + best[1] + (win >> 1);
+  return [all.slice(0, cut), all.slice(cut)];
+}
+async function startSileroVad(finalMode = false) {
   await loadVadLibs();
-  liveSileroBuf = []; liveSileroLast = 0; liveSileroSpeaking = false;
+  liveSileroBuf = []; liveSileroLast = 0; liveSileroSpeaking = false; liveSileroCut = false;
+  const maxN = liveMaxSegMs(finalMode) * 16;
+  // The end of an utterance. audio: the library's copy of it, null for a blip
+  // it drops (under 3 speech frames) — that one never got an onSpeechEnd, so
+  // the silence after it was buffered and posted as partials until someone spoke.
+  const end = (audio) => {
+    liveSileroSpeaking = false; liveQuiet = true;   // held lines go once this result is in
+    // after a cut the library's audio is not this utterance's rest: ours is
+    if (liveSileroCut) finalizeUtterance(floatsToInt16(liveSileroBuf));
+    else if (audio) finalizeUtterance(floatToInt16(audio));
+    else liveFlushHold("quiet");
+    liveSileroBuf = []; liveSileroCut = false;
+  };
   liveSilero = await window.vad.AudioNodeVAD.new(liveCtx, {
     baseAssetPath: "/static/vad/", onnxWASMBasePath: "/static/vad/", model: "legacy",
     onSpeechStart() {
       // Stream state is reset when the previous utterance's FINAL is processed,
       // not here — that final may still be in flight (see dispatchRecognize).
-      liveSileroSpeaking = true; liveQuiet = false;
+      liveSileroSpeaking = true; liveQuiet = false; liveSileroCut = false;
       liveSileroBuf = []; liveSileroLast = performance.now(); setLiveStatus(_label("识别中…", "识别中…"));
     },
     onFrameProcessed(_probs, frame) {
       if (!liveSileroSpeaking || !frame || !frame.length) return;
       liveSileroBuf.push(new Float32Array(frame));
+      // There was no length cap: under continuous music or noise the utterance
+      // never ended, the buffer only grew (64 KB a second) and all of it was
+      // posted every 360 ms, of which the server reads the last 32 s.
+      const cut = sileroCapCut(liveSileroBuf, maxN);
+      if (cut) {
+        liveSileroCut = true; liveSileroBuf = [cut[1]];
+        // the library (vad-web 0.0.22, self-hosted) keeps its own copy of the
+        // whole utterance for onSpeechEnd — no longer used after a cut
+        const fp = liveSilero && liveSilero.frameProcessor;
+        if (fp && fp.audioBuffer) fp.audioBuffer = [];
+        finalizeUtterance(floatToInt16(cut[0]));
+      }
       const now = performance.now();
       if (now - liveSileroLast > 360) { liveSileroLast = now; streamPartial(floatsToInt16(liveSileroBuf)); }
     },
-    onSpeechEnd(audio) {
-      liveSileroSpeaking = false; liveQuiet = true;   // held lines go once this result is in
-      finalizeUtterance(floatToInt16(audio)); liveSileroBuf = [];
-    },
+    onSpeechEnd(audio) { end(audio); },
+    onVADMisfire() { end(null); },
   });
   liveSilero.receive(liveSrc);
   liveSilero.start();
@@ -2788,7 +2849,16 @@ function stopLocal() {
   clearInterval(liveSaveTimer); liveSaveTimer = null;
   const session = liveSaveId;
   saveLiveHistory(true, session);
-  liveFlushHold().then(() => { if (liveSaveId === session) { saveLiveHistory(false, session); return liveExtractTerms(); } });
+  // A recognition still out when Stop is pressed commits its lines late: the
+  // final save waits for them (at most 8 s; twin of Qt _await_last_results).
+  const until = Date.now() + 8000;
+  const settled = (async () => {
+    while ((liveRecogBusy || liveRecogQueue.length || liveCommitPending > 0)
+           && Date.now() < until && liveSaveId === session) await new Promise((r) => setTimeout(r, 100));
+    await Promise.race([liveCommitChain, new Promise((r) => setTimeout(r, Math.max(0, until - Date.now())))]);
+  })();
+  settled.then(() => liveFlushHold())
+    .then(() => { if (liveSaveId === session) { saveLiveHistory(false, session); return liveExtractTerms(); } });
   livePendingPreview = []; livePreviewText = ""; pipInterim = "";   // nothing is being said any more
   _showProvisional("");
   stopMicMeter();
@@ -2907,6 +2977,8 @@ function liveContext() {
   return liveCtxHistory.slice(-3).join(" ").slice(-200);
 }
 let liveRecogBusy = false, liveRecogQueue = [];   // one STT in flight + ordered queue
+const LIVE_RECOG_QUEUE_MAX = 12;   // queued finals that keep their audio (see dispatchRecognize)
+let liveRecogDropTold = false;
 let liveLastDetected = "auto";
 // Majority-vote the per-window language detections WITHIN one utterance: a
 // single noisy ~360ms window mis-detecting (zh<->ja) must not flip the
@@ -3061,22 +3133,44 @@ function uncommittedTail(text, committed) {
 // A committable unit needs at least one letter or digit, in any script —
 // SenseVoice emits bare "。"/"?" for noise.
 const WORDLIKE = /[\p{L}\p{N}]/u;
+// A request that never returns (LAN hiccup, the laptop slept) used to leave the
+// one recognition lane busy for good: every later final only queued and the
+// captions stopped without a word. 60 s: a guarded final may decode three times
+// and the server waits up to 20 s for its model lock.
+const LIVE_RECOG_TIMEOUT_MS = 60000;
 async function recognizeInt16(int16, final) {
-  return await api("/api/live-recognize", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ audio_b64: int16ToB64(int16), final: !!final }) });
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), LIVE_RECOG_TIMEOUT_MS);
+  try {
+    return await api("/api/live-recognize", {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: ac.signal,
+      body: JSON.stringify({ audio_b64: int16ToB64(int16), final: !!final }) });
+  } finally { clearTimeout(timer); }
 }
 // ONE recognition in flight, results processed strictly in dispatch order. The
 // final used to bypass this and race the partials: its result could land after
 // the NEXT utterance's speechstart had reset the committed text, re-committing
 // (showing + translating) the whole previous utterance a second time, and its
 // own reset then wiped the new utterance's progress. A queued final is never
-// dropped; queued partials go stale once anything newer arrives.
+// dropped (the oldest lose their audio once too many wait, see below); queued
+// partials go stale once anything newer arrives.
 // Twin of Qt live_page._dispatch_recognize.
 function dispatchRecognize(int16, final) {
   if (liveRecogBusy) {
     liveRecogQueue = liveRecogQueue.filter((q) => q.final);
     liveRecogQueue.push({ int16, final });
+    // Recognition slower than speech: each queued final holds 320-480 KB of
+    // audio, 130-190 MB an hour with no limit. Only the newest ones keep theirs
+    // (about two minutes); an older one is emptied, not removed — its turn
+    // still closes its utterance, in order (see runFinal).
+    const kept = liveRecogQueue.filter((q) => q.final && q.int16.length);
+    if (kept.length > LIVE_RECOG_QUEUE_MAX) {
+      kept[0].int16 = new Int16Array(0);
+      if (!liveRecogDropTold) {   // once per session
+        liveRecogDropTold = true;
+        toast(_label("Live Recognition Behind", "识别速度跟不上说话速度，已跳过最早的一段语音。可以换用更快的识别模型。"), "bad");
+      }
+    }
     return;
   }
   liveRecogBusy = true;
@@ -3183,6 +3277,9 @@ async function runPartial(int16) {
 async function runFinal(int16) {
   const gen = liveGen;
   try {
+    // emptied in a full queue (see dispatchRecognize): nothing to recognize,
+    // only its utterance to close below
+    if (!int16.length) throw new Error("dropped");
     const r = await recognizeInt16(int16, true);
     if (gen !== liveGen) return;          // the session it belonged to is over
     noteDetected(r.detected);
@@ -3220,12 +3317,22 @@ async function runFinal(int16) {
 // grow the last output line without races between overlapping sentences.
 let liveCommitChain = Promise.resolve();
 let liveCommitPending = 0;   // commits queued on the chain that have not started yet
+// Queue fn on the chain. One link that threw used to leave the chain rejected
+// for good: no line was shown or translated again until the page was reloaded —
+// now it is logged and the next link runs. startLocal starts a new chain (a
+// link that never returns must not hold up the next session too); what the
+// session before it left queued is dropped then.
+function _liveChain(fn) {
+  const gen = liveGen;
+  liveCommitChain = liveCommitChain.then(() => { if (gen === liveGen) return fn(); })
+    .catch((e) => { console.error("live commit chain:", e); });
+  return liveCommitChain;
+}
 function commitLiveSentence(source, alt = "") {
   source = (source || "").trim();
   if (!source || !WORDLIKE.test(source)) return;   // drop bare-punct noise units
   liveCommitPending++;
-  liveCommitChain = liveCommitChain.then(() => { liveCommitPending--; return _doCommitSentence(source, alt); });
-  return liveCommitChain;
+  return _liveChain(() => { liveCommitPending--; return _doCommitSentence(source, alt); });
 }
 // Translate whole sentences — or whole clauses, as an interpreter does with a
 // long run-on — never a phrase cut in half (twin of Qt _queue_translation): a
@@ -3245,8 +3352,12 @@ function _joinHeld(parts) {
 // with the LAST line (twin of Qt _flush_tr_hold). The provisional translation
 // covered the held lines: a request still out is stale now; one on screen stays
 // until their whole translation lands (_finalShown) — no blank gap.
+// The translation carries the LAST line's own time stamp: the saved transcript
+// and the new-terms report pair the two panes by it. A pause-triggered flush
+// used to stamp it with the time it was sent — a stamp no source line has, so
+// those translations all ended up at the very end of the saved file.
 let liveFlushId = 0;
-function _sendHeld(ts, extra = null) {
+function _sendHeld(extra = null) {
   const parts = extra ? [...liveTrHold, extra] : liveTrHold;
   // These lines go to their final translation. The provisional one covered them
   // — as held lines, or as the preview of a segment whose sentences are complete:
@@ -3259,7 +3370,8 @@ function _sendHeld(ts, extra = null) {
   liveTrHold = []; liveTrHoldSeen = 0;
   // the second opinions of every segment these lines came from, once each
   const heard = [...new Set(parts.map((p) => p.alt).filter(Boolean))];
-  return _translateLiveLine(ts, _joinHeld(parts), parts[parts.length - 1].entry, fid,
+  const last = parts[parts.length - 1];
+  return _translateLiveLine(last.ts, _joinHeld(parts), last.entry, fid,
                             _joinHeld(heard.map((src) => ({ src }))).slice(-400));
 }
 // Held lines' whole translation is on screen: the provisional one that covered
@@ -3273,12 +3385,11 @@ function _finalShown(fid) {
 // pending. Checked when the chain gets there — the hold list itself is only up
 // to date inside the chain (commits are queued on it).
 function liveFlushHold(when = null) {   // queue on the commit chain (keeps order)
-  liveCommitChain = liveCommitChain.then(() => {
+  return _liveChain(() => {
     if (!liveTrHold.length) return;
     if (when === "quiet" && (!liveQuiet || liveRecogBusy || liveRecogQueue.length)) return;
-    return _sendHeld(liveTimeStamp());
+    return _sendHeld();
   });
-  return liveCommitChain;
 }
 // Live captions the way Google / Azure / DeepL do them (twin of Qt
 // _request_provisional): everything said but not translated for good yet — held
@@ -3318,8 +3429,7 @@ function _requestProvisionalNow() {
 // the chain is merely awaiting (it did: no refresh for the ~1 s each one took).
 function liveRequestProvisional() {
   if (!liveCommitPending) { _requestProvisionalNow(); return liveCommitChain; }
-  liveCommitChain = liveCommitChain.then(_requestProvisionalNow);
-  return liveCommitChain;
+  return _liveChain(_requestProvisionalNow);
 }
 async function _provisionalTranslate(seq, source) {
   let t = null;
@@ -3349,12 +3459,11 @@ function _showProvisional(text, seq = 0) {
 // would cut a long sentence wherever it fired). If that segment did not finish
 // it either, the speaker is in a long run-on: translate it now. Twin of Qt _age_tr_hold.
 function liveAgeHold() {
-  liveCommitChain = liveCommitChain.then(() => {
+  return _liveChain(() => {
     if (liveTrHold.length && ++liveTrHoldSeen > 1) {
-      return _sendHeld(liveTimeStamp());
+      return _sendHeld();
     }
   });
-  return liveCommitChain;
 }
 // How a line ends (twin of Qt _line_end). The STT puts "。" at the end of EVERY
 // segment, mid-sentence too (2/3 of the "。" at segment cuts in a real meeting),
@@ -3409,7 +3518,7 @@ function splitClauseTail(units) {
 }
 async function _doCommitSentence(source, alt = "") {
   const ts = liveTimeStamp();
-  const line = { src: source, entry: appendLive("live-input", `[${ts}] ${source}\n`), alt };
+  const line = { src: source, entry: appendLive("live-input", `[${ts}] ${source}\n`), alt, ts };
   const held = liveTrHold.reduce((n, h) => n + h.src.length, 0);
   if (!["S", "C", "F"].includes(lineEnd(source)) && held + source.length < LIVE_HOLD_MAX) {
     if (!liveTrHold.length) liveTrHoldSeen = 0;
@@ -3417,9 +3526,9 @@ async function _doCommitSentence(source, alt = "") {
     // Stream mode has no segments to wait for (see liveAgeHold): a held line
     // waits for at most two more lines — about one segment of speech. Twin of Qt.
     if (liveFinalMode || liveTrHold.length <= 2) return;
-    return _sendHeld(ts);
+    return _sendHeld();
   }
-  return _sendHeld(ts, line);
+  return _sendHeld(line);
 }
 // entry: the floating-caption pair this translation belongs to (a held
 // sentence's: its last line). fid: set when held lines were sent whole — their
@@ -3444,8 +3553,7 @@ async function _translateLiveLine(ts, source, entry = null, fid = 0, alt = "") {
   }
   // Stream mode: grow the last output line + its PiP pair token-by-token.
   const out = $("live-output");
-  const start = out.textContent.length;
-  out.textContent += `[${ts}] \n`;
+  const row = liveAddLine(out, `[${ts}] \n`);
   const ent = entry || { src: source, dst: "" };
   if (!entry) {
     pipEntries.push(ent);
@@ -3453,7 +3561,7 @@ async function _translateLiveLine(ts, source, entry = null, fid = 0, alt = "") {
   }
   let painted = false;
   const paint = (txt) => {
-    out.textContent = out.textContent.slice(0, start) + `[${ts}] ${txt}\n`;
+    row.textContent = `[${ts}] ${txt}\n`;   // its own line only (see liveAddLine)
     out.scrollTop = out.scrollHeight;
     ent.dst = txt; updatePipCaption();
     if (!painted) { painted = true; _finalShown(fid); }
@@ -3514,14 +3622,26 @@ function int16ToB64(int16) {
   let bin = ""; for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }
+// One element per transcript line. A pane used to be ONE text node rewritten
+// whole (el.textContent += …, and again for every streamed token): the browser
+// laid the whole transcript out again for every line — at 20,000 lines (~1 MB,
+// a 24-48 h session) a visible stall each time. The line keeps its "\n", so
+// el.textContent reads exactly as before (saveLiveHistory, liveExtractTerms)
+// and the pane, pre-wrapped, looks the same.
+function liveAddLine(el, text) {
+  const row = document.createElement("div");
+  row.textContent = text;
+  el.appendChild(row); el.scrollTop = el.scrollHeight;
+  return row;
+}
 // Returns the floating-caption pair a source line opened; a translation goes to
 // the pair it belongs to (`entry`). Pairing by order went wrong as soon as a
 // line was held: one translation covers several lines, and every later
 // translation landed under the wrong source.
 function appendLive(id, text, entry = null) {
-  const el = $(id); el.textContent += text; el.scrollTop = el.scrollHeight;
+  liveAddLine($(id), text);
   // Feed the floating-caption buffer with the latest line (timestamp stripped).
-  const last = (el.textContent.trim().split("\n").filter(Boolean).pop() || "")
+  const last = (text.trim().split("\n").filter(Boolean).pop() || "")
     .replace(/^\[\d{2}:\d{2}:\d{2}\]\s*/, "");
   if (!last) return null;
   let opened = null;

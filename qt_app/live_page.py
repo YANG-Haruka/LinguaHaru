@@ -954,6 +954,41 @@ def _mac_stream_output(SCK):
     return _MAC_OUTPUT_CLS.alloc().init()
 
 
+_RECOG_BACKLOG = 12        # final segments (about two minutes of speech) that may wait for recognition
+
+
+class _WavWriter:
+    """The session's recording: 16-bit mono PCM, written as it is heard.
+
+    Python's ``wave`` raises once the data passes 4 GB — 37 hours at 16 kHz —
+    and the recording of a two-day session stopped there without a word. Here
+    the sizes in the header are brought up to date after every write (a process
+    that dies leaves a valid file) and stay at 0xFFFFFFFF beyond 4 GB, which
+    readers (ffmpeg, when the session is compressed) take as "to the end of
+    the file"."""
+
+    def __init__(self, path, rate):
+        self._rate, self._n = rate, 0
+        self._f = open(path, "wb")
+        self._f.write(self._header())
+
+    def _header(self):
+        import struct
+        top = 0xFFFFFFFF
+        return struct.pack("<4sI4s4sIHHIIHH4sI", b"RIFF", min(36 + self._n, top), b"WAVE", b"fmt ", 16,
+                           1, 1, self._rate, self._rate * 2, 2, 16, b"data", min(self._n, top))
+
+    def writeframes(self, pcm):
+        self._f.write(pcm)
+        self._n += len(pcm)
+        self._f.seek(0)
+        self._f.write(self._header())
+        self._f.seek(0, 2)
+
+    def close(self):
+        self._f.close()
+
+
 class LivePage(ScrollArea):
     def __init__(self, parent=None, lang="en"):
         super().__init__(parent)
@@ -1139,6 +1174,7 @@ class LivePage(ScrollArea):
         left_col.addWidget(self.input_sub)
         self.input_text = TextEdit()
         self.input_text.setReadOnly(True)
+        self.input_text.setUndoRedoEnabled(False)   # a transcript, not an editor: no history of every line
         self.input_text.setMinimumHeight(140)
         self.input_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_col.addWidget(self.input_text, 1)
@@ -1155,6 +1191,7 @@ class LivePage(ScrollArea):
         self._refresh_model_sub()
         self.output_text = TextEdit()
         self.output_text.setReadOnly(True)
+        self.output_text.setUndoRedoEnabled(False)
         self.output_text.setMinimumHeight(140)
         self.output_text.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         right_col.addWidget(self.output_text, 1)
@@ -1502,21 +1539,25 @@ class LivePage(ScrollArea):
         # on_stop also runs on app close / page leave; only a session that was
         # actually running gets saved (closing the app used to save the last,
         # already-saved session a second time).
+        if getattr(self, "_stopping", False):
+            return      # reached again from a result delivered while it stops (a capture that just failed)
         was_live = self._is_listening() or getattr(self, "_input_lost", False)
         self._input_lost = False
         if self._preloader is not None:
             self._preloader.wait(2000)
             self._preloader = None
-        self._flush_tr_hold()   # fragments still held for a sentence end
+        self._stopping = True   # no new audio and no new provisional requests from here on
+        try:
+            self._flush_tr_hold()   # fragments still held for a sentence end
+            self._await_last_results(8.0 if was_live and not getattr(self, "_shutting_down", False) else 3.0,
+                                     deliver=was_live)
+        finally:
+            self._stopping = False
         self._set_caption_interim("")          # nothing is being said any more
         self._show_provisional("")
-        # Best-effort wait for in-flight STT/translate workers, but NEVER drop a
-        # reference to a thread that's still running (Qt would destroy it mid-run
-        # and abort). Finished ones are removed; still-running ones retire
-        # themselves via their finished -> _retire_local signal.
-        for w in list(self._local_workers):
-            if w.isRunning():
-                w.wait(3000)
+        # NEVER drop a reference to a thread that's still running (Qt would
+        # destroy it mid-run and abort). Finished ones are removed; still-running
+        # ones retire themselves via their finished -> _retire_local signal.
         self._local_workers = [w for w in self._local_workers if w.isRunning()]
         audio = self._stop_recording()
         if getattr(self, "_autosave_timer", None) is not None:
@@ -1548,6 +1589,34 @@ class LivePage(ScrollArea):
             except Exception:  # noqa: BLE001
                 pass
 
+    def _await_last_results(self, seconds, deliver=True):
+        """At a stop: wait (at most ``seconds``) for the recognitions and
+        translations still out, and take their results. Those come back as
+        queued calls to this thread — which is busy stopping, so they used to be
+        delivered after the session was saved: the last held line was in the
+        transcript without its translation. Delivered by hand here, and again
+        for what they start in turn (a last segment's lines, then their
+        translations)."""
+        import time
+        from PySide6.QtCore import QCoreApplication, QEvent
+        deadline = time.monotonic() + seconds
+        while True:
+            for w in list(self._local_workers):
+                left = deadline - time.monotonic()
+                if left > 0 and w.isRunning():
+                    w.wait(int(min(3.0, left) * 1000))
+            if not deliver:
+                return
+            QCoreApplication.sendPostedEvents(None, QEvent.MetaCall)
+            self._flush_tr_hold()           # lines a late recognition committed and held
+            if time.monotonic() >= deadline:
+                return
+            if not any(w.isRunning() for w in self._local_workers):
+                QCoreApplication.sendPostedEvents(None, QEvent.MetaCall)   # ended since the last look
+                self._flush_tr_hold()
+                if not any(w.isRunning() for w in self._local_workers):
+                    return
+
     # --- recording (WAV of exactly what the recognizer heard: 16 kHz mono) ---
     def _start_recording(self):
         self._rec, self._rec_path = None, ""
@@ -1565,16 +1634,12 @@ class LivePage(ScrollArea):
         if not self.save_rec_cb.isChecked():
             return
         import os
-        import wave
         try:
             _, result_dir, _ = backend.get_custom_paths()
             os.makedirs(result_dir, exist_ok=True)
             self._rec_path = os.path.join(
                 result_dir, f"realtime_{self._rec_start.strftime('%Y%m%d_%H%M%S')}.wav")
-            self._rec = wave.open(self._rec_path, "wb")
-            self._rec.setnchannels(1)
-            self._rec.setsampwidth(2)
-            self._rec.setframerate(_IN_RATE)
+            self._rec = _WavWriter(self._rec_path, _IN_RATE)
         except Exception as e:  # noqa: BLE001 — never block live voice on this
             self._rec, self._rec_path = None, ""
             self._info(f"{tr('Save Recording', self._lang)}: {e}", error=True)
@@ -1583,19 +1648,26 @@ class LivePage(ScrollArea):
         if self._rec is not None:
             try:
                 self._rec.writeframes(pcm)
-            except Exception:  # noqa: BLE001 — e.g. disk full: stop recording, keep going
-                self._stop_recording()
+            except Exception as e:  # noqa: BLE001 — e.g. disk full: stop recording, keep going
+                self._close_recording()
+                # said once: it used to stop without a word (what is on disk is kept)
+                self._info(f"{tr('Save Recording', self._lang)}: {e}", error=True, duration=-1)
+
+    def _close_recording(self):
+        rec, self._rec = self._rec, None
+        if rec is not None:
+            try:
+                rec.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     def _stop_recording(self):
-        """Close the WAV; returns its path ('' when nothing was recorded)."""
-        rec, self._rec = self._rec, None
-        if rec is None:
-            return ""
-        try:
-            rec.close()
-        except Exception:  # noqa: BLE001
-            pass
-        return self._rec_path
+        """Close the WAV; returns its path ('' when nothing was recorded) — also
+        of a recording that stopped early (a full disk): it belongs to the session."""
+        import os
+        self._close_recording()
+        path, self._rec_path = self._rec_path, ""
+        return path if path and os.path.isfile(path) else ""
 
     # --- new terms for the glossary, when a session is over ---
     def _session_pairs(self):
@@ -1650,6 +1722,11 @@ class LivePage(ScrollArea):
         transcript file and history record (see save_live_session)."""
         if not self._is_listening():
             return
+        try:        # a quiet stretch uses no model: they are in use all the same (_make_room_for)
+            from core.pipelines.video_translation_pipeline import stt_touch_live
+            stt_touch_live()
+        except Exception:  # noqa: BLE001
+            pass
         size = (len(self.input_text.toPlainText()), len(self.output_text.toPlainText()))
         if size != getattr(self, "_autosaved", None):
             self._autosaved = size
@@ -1765,6 +1842,7 @@ class LivePage(ScrollArea):
 
     # --- local mode: neural VAD (TEN-VAD) over 16k PCM16, per 16ms frame ---
     def _reset_vad(self):
+        self._behind_said = False
         # Commit mode for this session: "final" = only the complete utterance's
         # recognition is committed/translated (slow autoregressive STT), else
         # stream on partials. See video_translation_pipeline.live_commit_mode.
@@ -1865,6 +1943,8 @@ class LivePage(ScrollArea):
         return lvl > getattr(self, "_on_abs", _VAD_ON_ABS)
 
     def _vad_feed(self, pcm):
+        if getattr(self, "_stopping", False):
+            return              # the session is being stopped (on_stop)
         import numpy as np
         self._vad_carry += pcm
         fb = _VAD_FRAME * 2     # bytes per frame (int16)
@@ -2013,6 +2093,17 @@ class LivePage(ScrollArea):
             # as anything newer arrives, so drop those; finals stay in line.
             self._recog_pending = [q for q in self._recog_pending if q[1]]
             self._recog_pending.append((pcm, is_final))
+            # Recognition slower than the speech (a large model on the CPU): the
+            # finals waited here without end — 320-720 KB each, hours behind
+            # and hundreds of MB after a day. A final still may not be dropped
+            # (see above), so the oldest beyond the last two minutes keep their
+            # place and give up their audio: silence, when their turn comes.
+            heard = [i for i, q in enumerate(self._recog_pending) if q[0]]
+            for i in heard[:-_RECOG_BACKLOG]:
+                self._recog_pending[i] = (b"", True)
+                if not getattr(self, "_behind_said", False):
+                    self._behind_said = True                   # once a session (_reset_vad)
+                    self._info(tr("Live Recognition Behind", self._lang), error=True, duration=-1)
             return
         self._recog_busy = True
         # The language guard may recognize a segment again in another language:
@@ -2454,13 +2545,12 @@ class LivePage(ScrollArea):
         # other. The key's "#n" suffix is never displayed.
         self._seq = getattr(self, "_seq", 0) + 1
         key = f"{ts}#{self._seq}"
-        self.input_text.insertPlainText(f"[{ts}] {source}\n")
-        self.input_text.ensureCursorVisible()
+        self._append_line(self.input_text, f"[{ts}] {source}")
         self._push_caption(source=source, key=key)
         # Reserve this sentence's output row now, so translations line up with
         # their sources in order even when replies come back out of order.
         self._out_rows.append([key, ""])
-        self._render_output()
+        self._draw_out_row(len(self._out_rows) - 1)
         self._queue_translation(key, source)
 
     # Translate whole sentences — or whole clauses, as an interpreter does with a
@@ -2620,6 +2710,8 @@ class LivePage(ScrollArea):
         return self._join_held(parts)
 
     def _request_provisional(self):
+        if getattr(self, "_stopping", False):
+            return              # nothing provisional while the last lines are finished
         text = self._pending_text()
         if not text:
             # Nothing pending (a segment that turned out empty, ...): a request
@@ -2734,20 +2826,66 @@ class LivePage(ScrollArea):
                 self._show_provisional("")
                 self._request_provisional()     # what is still pending, if anything
 
+    @staticmethod
+    def _append_line(pane, line):
+        """Add a line at the END of a pane. (insertPlainText goes wherever the
+        user's cursor is: after one click in the pane every later line landed
+        there, and with text selected — to copy it — the next line REPLACED the
+        selection. The saved transcript is read from the panes: lines were lost
+        and out of order in it.) The view follows only while it is at the end,
+        so reading back is not pulled away."""
+        from PySide6.QtGui import QTextCursor
+        bar = pane.verticalScrollBar()
+        at_end = bar.value() >= bar.maximum() - 4
+        c = QTextCursor(pane.document())
+        c.movePosition(QTextCursor.End)
+        # one line, whatever it holds (\r, U+2028, U+2029 start a text block too)
+        c.insertText(" ".join(line.splitlines()) + "\n")
+        if at_end:
+            bar.setValue(bar.maximum())
+
+    @staticmethod
+    def _out_line(row):
+        # one line a row: a reply in two lines lost its second (no time stamp) in
+        # the saved file, and a second text block would shift every row after it
+        return " ".join(f"[{row[0].split('#')[0]}] {row[1]}".splitlines())
+
     def _render_output(self):
         """Rebuild the translation pane from the ordered rows (one per committed
         source sentence)."""
-        self.output_text.setPlainText("".join(
-            f"[{k.split('#')[0]}] {t}\n" for k, t in self._out_rows))
+        self.output_text.setPlainText("".join(self._out_line(r) + "\n" for r in self._out_rows))
+        bar = self.output_text.verticalScrollBar()
+        bar.setValue(bar.maximum())
+
+    def _draw_out_row(self, i):
+        """Show row ``i`` of the translation pane: its own line only. (Rebuilding
+        the whole pane for every line and every streamed token took 19 µs a
+        line: 380 ms each time at the 20,000 lines of a two-day session, on the
+        thread that also reads the microphone.) Row i is text block i; if the
+        pane and the rows ever disagree, it is rebuilt."""
         from PySide6.QtGui import QTextCursor
-        self.output_text.moveCursor(QTextCursor.End)
-        self.output_text.ensureCursorVisible()
+        doc = self.output_text.document()
+        n = len(self._out_rows)
+        if i == n - 1 and doc.blockCount() == n:           # a new last row
+            return self._append_line(self.output_text, self._out_line(self._out_rows[i]))
+        if doc.blockCount() != n + 1:
+            return self._render_output()
+        # Keep following: a translation that wraps makes its row taller, and a
+        # view that was at the end would be "not at the end" for the next line —
+        # the pane stopped following for good after the first long translation.
+        bar = self.output_text.verticalScrollBar()
+        at_end = bar.value() >= bar.maximum() - 4
+        c = QTextCursor(doc.findBlockByNumber(i))
+        c.movePosition(QTextCursor.EndOfBlock, QTextCursor.KeepAnchor)
+        c.insertText(self._out_line(self._out_rows[i]))
+        if at_end:
+            bar.setValue(bar.maximum())
 
     def _set_out_row(self, key, text):
-        for row in reversed(self._out_rows):
-            if row[0] == key:
-                row[1] = text
-                self._render_output()
+        for i in range(len(self._out_rows) - 1, -1, -1):
+            if self._out_rows[i][0] == key:
+                self._out_rows[i][1] = text
+                self._draw_out_row(i)
                 return
 
     def _on_stream_chunk(self, key, text):

@@ -799,6 +799,16 @@ class TranslatePage(QStackedWidget):
             self._workers.remove(worker)
         self._progress.pop(worker, None)
         worker.wait(2000)
+        if not worker.isRunning():
+            # Its signals hold lambdas that hold the worker: a cycle through Qt
+            # that Python's collector cannot see — no file's worker was ever
+            # freed (see live_page._retire_local). One still running is left
+            # as it is: a QThread must not be destroyed mid-run.
+            for sig in (worker.progress, worker.finished, worker.failed, worker.stopped):
+                try:
+                    sig.disconnect()
+                except (RuntimeError, TypeError):
+                    pass
         # Keep the pool full from whichever queue is active (fresh files or a
         # batch resume of pre-built workers).
         if self._running:

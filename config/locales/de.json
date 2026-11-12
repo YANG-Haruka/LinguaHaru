@@ -417,5 +417,6 @@
   "Do Not Add": "Nicht hinzufügen",
   "No New Terms": "In dieser Sitzung wurden keine neuen Begriffe außerhalb des Glossars gefunden.",
   "Terms Added": "{n} Begriffe zum Glossar „{name}“ hinzugefügt.",
-  "Extract Terms Failed": "Neue Begriffe konnten nicht ermittelt werden."
+  "Extract Terms Failed": "Neue Begriffe konnten nicht ermittelt werden.",
+  "Live Recognition Behind": "Die Erkennung kommt mit dem Sprechtempo nicht mit: Der älteste Abschnitt wurde übersprungen. Ein schnelleres Erkennungsmodell würde helfen."
 }

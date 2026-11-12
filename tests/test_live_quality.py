@@ -849,6 +849,30 @@ def test_the_models_reply_is_read_as_a_list_or_not_at_all(monkeypatch):
         llm_wrapper.extract_meeting_terms(pairs, "zh", "m", True, "k")
 
 
+def test_what_follows_a_session_reads_the_whole_of_it(monkeypatch):
+    """New terms came from the first three hours and the summary from the first
+    forty minutes, whatever the session's length — and nothing said so."""
+    asked = []
+
+    def fake(key, messages, model):
+        asked.append(messages[1]["content"])
+        return "[]", True, {"total_tokens": 1}
+    monkeypatch.setattr(llm_wrapper, "translate_online", fake)
+    pairs = [(f"line {i:05d} " + "あ" * 80, f"译文 {i:05d}") for i in range(3000)]      # ~12 chunks
+    llm_wrapper.extract_meeting_terms(pairs, "zh", "m", True, "k")
+    assert len(asked) == 4
+    first = [int(a.split()[1]) for a in asked]
+    assert first[0] == 0 and first == sorted(first) and first[-1] > 2600 and 800 < first[1] < 1300
+    asked.clear()
+    llm_wrapper.extract_meeting_terms(pairs[:300], "zh", "m", True, "k")                # a short one: all of it
+    assert "line 00000" in asked[0] and "line 00299" in asked[-1] and len(asked) <= 2
+    asked.clear()
+    text = "".join(f"[10:00:00] sentence {i:05d}\n" for i in range(5000))             # 130k characters
+    llm_wrapper.summarize_transcript(text, "zh", "m", True, "k")
+    sent = asked[0]
+    assert len(sent) < 31000 and "sentence 00000" in sent and "sentence 04999" in sent and "sentence 02500" in sent
+
+
 def test_web_new_terms_are_for_whoever_may_change_the_glossary(tmp_path, monkeypatch):
     pytest.importorskip("httpx")
     from fastapi.testclient import TestClient

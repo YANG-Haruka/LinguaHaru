@@ -48,9 +48,16 @@ def extract_word_content_to_json(file_path, save_temp_dir):
     """Extract translatable content from Word document to JSON"""
     temp_dir = None
     try:
-        # Create temporary directory for processing
-        temp_dir = tempfile.mkdtemp()
-        
+        # Create temporary directory for processing. Inside the task's own
+        # working folder, not the system %TEMP%: write-back removes it, but a
+        # task that fails or is stopped before that left it in %TEMP% forever
+        # (a re-run deletes temp_dir_path.txt, the only record of where it was).
+        # Here retention removes it with the run. Beside the doc folder rather
+        # than in it, so a long document name cannot push the unpacked parts
+        # past the 260-character Windows path limit.
+        os.makedirs(save_temp_dir, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(prefix="docx_", dir=save_temp_dir)
+
         # Extract entire docx archive
         with ZipFile(file_path, 'r') as docx:
             docx.extractall(temp_dir)
@@ -3079,8 +3086,9 @@ def write_translated_content_to_word(file_path, original_json_path, translated_j
             temp_dir = f.read().strip()
     
     if not temp_dir or not os.path.exists(temp_dir):
-        # Fallback: create new temp directory
-        temp_dir = tempfile.mkdtemp()
+        # Fallback: create new temp directory (in the working folder, as above)
+        os.makedirs(save_temp_dir, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(prefix="docx_", dir=save_temp_dir)
         with ZipFile(file_path, 'r') as docx:
             docx.extractall(temp_dir)
     

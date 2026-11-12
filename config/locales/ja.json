@@ -474,5 +474,6 @@
   "Iface Err connection": "Base URL に接続できません。アドレス・ネットワーク・プロキシを確認してください。ファイアウォールやセキュリティソフトがブロックしている場合もあります。",
   "Iface Err unknown": "不明なエラーです。下の元のエラーを確認してください。",
   "Iface Err empty": "Base URL とモデル ID を入力してください。",
-  "Raw Error": "元のエラー"
+  "Raw Error": "元のエラー",
+  "Live Recognition Behind": "認識が発話に追いついていないため、最も古い音声をスキップしました。より高速な認識モデルをお試しください。"
 }

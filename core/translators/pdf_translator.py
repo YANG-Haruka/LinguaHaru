@@ -14,12 +14,14 @@ extraction pass and a write pass), performing the expensive document layout
 analysis two times per translation.
 """
 
+import gc
 import json
 import os
 import re
 import shutil
 import asyncio
 import threading
+import traceback
 from collections import Counter
 from pathlib import Path
 
@@ -55,6 +57,16 @@ _BD_TAG = re.compile(r"\{\s*v\s*\d+\s*\}|<\s*/?\s*b?\s*\d+\s*>", re.IGNORECASE)
 # get the document's opening text as disambiguation context.
 _FRAGMENT_MAX_CHARS = 40
 
+# BabelDOC keeps the intermediate representation of every page it is working on
+# in memory. Measured with this translator (dense text pages, mocked LLM, peak
+# RSS): 100 pages 1.7 GB, 400 pages 2.6 GB — about 2.9 MB per page on top of
+# ~1.4 GB that any PDF costs — so a 2,000-page PDF needs ~7 GB, and up to 3
+# files translate at once. In parts of 100 pages the same 400 pages peak at
+# 2.0 GB. Every part saves its own PDF and is typeset on its own (100 pages in
+# 4 parts took 24% longer), so PDFs up to _SPLIT_ABOVE_PAGES stay one pass.
+_SPLIT_ABOVE_PAGES = 200
+_SPLIT_PAGES_PER_PART = 100
+
 # Redirect BabelDOC's hardcoded ~/.cache/babeldoc into the unified models dir
 # BEFORE init / first download, so the PDF layout model + fonts live alongside
 # the other engines' models (data/models, or the user-chosen location).
@@ -65,6 +77,17 @@ try:
     babeldoc_init()
 except Exception as e:
     app_logger.warning(f"BabelDOC initialization warning: {e}")
+
+
+def _split_pages_per_part(page_count):
+    """Pages per BabelDOC part for a PDF of ``page_count`` pages; None = one pass.
+
+    Parts are evened out (201 pages -> 3 x 67, not 100 + 100 + 1): BabelDOC
+    picks the text scale per part, and a 1-page tail would get its own."""
+    if page_count <= _SPLIT_ABOVE_PAGES:
+        return None
+    parts = -(-page_count // _SPLIT_PAGES_PER_PART)
+    return -(-page_count // parts)
 
 
 def _repair_placeholders(src, out):
@@ -196,8 +219,17 @@ class PdfTranslator(DocumentTranslator):
         )
 
         self.word_bilingual_mode = word_bilingual_mode
-        self.babeldoc_working_dir = os.path.join(self.temp_dir, "babeldoc_working")
+        # One working dir PER translator instance. temp_dir is shared by every
+        # file of a run (and by a proofread re-export), and cleanup() removes
+        # this directory: with the old shared "temp_dir/babeldoc_working" the
+        # first PDF to finish deleted the input/part files of the PDFs still
+        # translating. Nothing here is needed after a run (resume comes from
+        # BabelDOC's SQLite cache, not from this directory). 8 hex chars keep
+        # the path short: BabelDOC appends <pdf name>/part_N_output/<pdf name>…
+        self.babeldoc_working_dir = os.path.join(
+            self.temp_dir, "babeldoc_working", self.translation_id[:8])
         self.doc_layout_model = None
+        self._split = False   # this run goes through BabelDOC's multi-part path
 
         # Output paths
         self.mono_pdf_path = None
@@ -638,7 +670,53 @@ class PdfTranslator(DocumentTranslator):
             if opt["only_translated"]:
                 kwargs["only_include_translated_page"] = True
 
+        # Long PDF: translate it in parts so memory stops growing with the page
+        # count (see _SPLIT_ABOVE_PAGES); BabelDOC merges the parts back into one
+        # mono / one dual PDF. Never with a page range: BabelDOC 0.6.3 fails
+        # (assert total_pages > 0) on a part that holds no page of the range.
+        per_part = None if opt["pages"] else _split_pages_per_part(self._page_count())
+        self._split = per_part is not None
+        if per_part:
+            kwargs["split_strategy"] = (
+                TranslationConfig.create_max_pages_per_part_split_strategy(per_part))
+
         return TranslationConfig(**kwargs)
+
+    def _page_count(self):
+        try:
+            import pymupdf
+            with pymupdf.open(self.input_file_path) as doc:
+                return len(doc)
+        except Exception:  # noqa: BLE001 — unknown count = translate in one pass
+            return 0
+
+    def _restore_bookmarks(self):
+        """Put the source PDF's bookmarks back into a multi-part output.
+
+        BabelDOC builds a multi-part result as a NEW document (the parts are
+        inserted one after another), which drops the outline; a one-pass output
+        is an edited copy of the source and keeps it. BabelDOC re-adds it only to
+        the side-by-side bilingual file. Best-effort: bookmarks never fail a run."""
+        try:
+            import pymupdf
+            with pymupdf.open(self.input_file_path) as src:
+                toc, src_pages = src.get_toc(), len(src)
+            if not toc:
+                return
+            for path in (self.mono_pdf_path, self.dual_pdf_path):
+                if not path or not os.path.exists(path):
+                    continue
+                with pymupdf.open(path) as out:
+                    # 1 output page per source page, or 2 (alternating bilingual:
+                    # a bookmark then points at the first page of its pair)
+                    per_page = out.page_count / src_pages
+                    if out.get_toc() or per_page not in (1, 2):
+                        continue
+                    out.set_toc([[lvl, title, (page - 1) * int(per_page) + 1 if page > 0 else page]
+                                 for lvl, title, page in toc])
+                    out.saveIncr()
+        except Exception as e:  # noqa: BLE001
+            app_logger.warning(f"Could not restore PDF bookmarks: {e}")
 
     def _make_progress_callback(self, progress_callback):
         """Adapt BabelDOC ProgressMonitor events to the Gradio callback."""
@@ -746,6 +824,10 @@ class PdfTranslator(DocumentTranslator):
         # cancel_event is set (user stop OR our fatal-API abort). Uncaught, it
         # escaped the task runner and the task never reached a final state.
         except (Exception, asyncio.CancelledError) as e:
+            # The traceback's BabelDOC frames keep the aborted part's PDF open,
+            # and Windows cannot delete an open file: cleanup() left
+            # part_N/input.partN.pdf behind after an aborted multi-part run.
+            traceback.clear_frames(e.__traceback__)
             # A stop request may surface as a BabelDOC cancellation error
             self.check_for_stop()
             if self._fatal_error is not None:
@@ -807,6 +889,8 @@ class PdfTranslator(DocumentTranslator):
 
     def _finalize_output(self):
         """Rename BabelDOC output to the expected result locations."""
+        if self._split:
+            self._restore_bookmarks()
         input_name = os.path.splitext(os.path.basename(self.input_file_path))[0]
         lang_suffix = f"{self.src_lang}2{self.dst_lang}"
 
@@ -829,6 +913,14 @@ class PdfTranslator(DocumentTranslator):
 
     def cleanup(self):
         """Clean up temporary BabelDOC working directory."""
+        # A finished BabelDOC run is left as reference cycles: the layout model,
+        # fonts and page data stayed allocated until Python's cyclic GC happened
+        # to run (measured, six 6-page PDFs in one process: 1.8 / 2.9 / 3.8 GB
+        # resident after runs 1-3; 0.35 GB after every run with this collect),
+        # and the PDFs those objects hold open cannot be deleted on Windows
+        # (multi-part runs left every part's input copy behind).
+        self.doc_layout_model = None
+        gc.collect()
         try:
             if os.path.exists(self.babeldoc_working_dir):
                 shutil.rmtree(self.babeldoc_working_dir, ignore_errors=True)

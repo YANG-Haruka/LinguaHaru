@@ -22,7 +22,8 @@ from core.load_prompt import load_prompt
 from core.languages_config import LABEL_TRANSLATIONS
 from .translation_checker import (
     process_translation_results, clean_json, check_and_sort_translations,
-    flush_results, flush_results_blocking, invalidate_results)
+    flush_results, flush_results_blocking, invalidate_results,
+    append_failed, restore_translated_status)
 
 # File path constants
 SRC_JSON_PATH = "src.json"
@@ -263,16 +264,25 @@ class DocumentTranslator:
     def save_failed_summary(self, error_reason=None, error_category=None):
         """Save translation summary with failed status - called on error"""
         # Persist whatever was translated so far so the run is resumable.
-        flush_results(self.result_split_json_path)
+        self._flush_and_drop(self.result_split_json_path, self.failed_json_path)
         if self.translation_start_time:
             self._save_translation_summary(
                 status="failed", error_reason=error_reason, error_category=error_category)
 
     def save_stopped_summary(self):
         """Save translation summary with stopped status - called when user stops"""
-        flush_results(self.result_split_json_path)
+        self._flush_and_drop(self.result_split_json_path, self.failed_json_path)
         if self.translation_start_time:
             self._save_translation_summary(status="stopped")
+
+    def _flush_and_drop(self, *paths):
+        """Write a buffered result/failed list to disk, then free the buffer.
+        Nothing reads it again after a stop or a failure, and a desktop run uses
+        a new timestamped path every time, so it was never reused either: 45-60 MB
+        kept per stopped 100k-segment job. Kept only if the write was deferred."""
+        for path in paths:
+            if flush_results(path):
+                invalidate_results(path)
 
     def extract_content_to_json(self):
         """Extract document content to JSON - to be implemented by subclass"""
@@ -510,6 +520,9 @@ class DocumentTranslator:
         app_logger.info(f"Retrying failed translations...{retry_count}/{max_retries} "
                         f"(batch≈{batch_token} tok)")
         
+        # The failed list is buffered in memory; land it before it is read here
+        # and re-chunked from disk by stream_segment_json.
+        flush_results_blocking(self.failed_json_path)
         if not os.path.exists(self.failed_json_path):
             app_logger.info("No failed segments to retranslate")
             return False
@@ -606,6 +619,7 @@ class DocumentTranslator:
             with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump([], f, ensure_ascii=False, indent=4)
             os.replace(tmp, self.failed_json_path)
+            invalidate_results(self.failed_json_path)   # the buffer mirrors the file
         
         total = len(all_failed_segments)
         retry_desc = f"{self._get_status_message('Retry')}"
@@ -733,6 +747,7 @@ class DocumentTranslator:
         self.update_ui_safely(progress_callback, 1.0, f"{retry_desc} completed")
         
         # Check if any segments remain failed
+        flush_results_blocking(self.failed_json_path)
         try:
             if os.path.exists(self.failed_json_path):
                 with open(self.failed_json_path, 'r', encoding='utf-8') as f:
@@ -983,45 +998,20 @@ class DocumentTranslator:
             self._mark_segment_as_failed_locked(segment)
 
     def _mark_segment_as_failed_locked(self, segment):
-        # Ensure file exists
-        if not os.path.exists(self.failed_json_path):
-            try:
-                with open(self.failed_json_path, "w", encoding="utf-8") as f:
-                    json.dump([], f)
-                app_logger.debug("Created failed segments file")
-            except Exception as e:
-                app_logger.error(f"Error creating failed segments file: {e}")
-                return
-
-        # Read-modify-write ATOMICALLY (temp + os.replace) — the old in-place
-        # seek/truncate/dump could leave the file truncated on a crash/disk-full,
-        # silently dropping failed segments so they're never retried or output.
+        # Appended through translation_checker's buffered failed list (atomic
+        # temp + os.replace writes on a timer). This used to read and rewrite the
+        # whole file for every failed batch.
         try:
-            try:
-                with open(self.failed_json_path, "r", encoding="utf-8") as f:
-                    failed_segments = json.load(f)
-                if not isinstance(failed_segments, list):
-                    failed_segments = []
-            except (json.JSONDecodeError, OSError):
-                failed_segments = []
-                app_logger.warning("Failed segments file was corrupted/unreadable")
-
             try:
                 segment_dict = json.loads(clean_json(segment))
             except json.JSONDecodeError as e:
                 app_logger.error(f"Failed to decode JSON segment: {e}")
                 return
 
-            for count_split, value in segment_dict.items():
-                failed_segments.append({
-                    "count_split": int(count_split),
-                    "value": str(value).strip()    # value may be non-str on a malformed reply
-                })
-
-            tmp = self.failed_json_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(failed_segments, f, ensure_ascii=False, indent=4)
-            os.replace(tmp, self.failed_json_path)
+            append_failed(self.failed_json_path, [{
+                "count_split": int(count_split),
+                "value": str(value).strip()    # value may be non-str on a malformed reply
+            } for count_split, value in segment_dict.items()])
             app_logger.debug(f"Saved {len(segment_dict)} items to failed list")
 
         except Exception as e:
@@ -1039,9 +1029,10 @@ class DocumentTranslator:
         This is also where the per-project log is started: an isolated log file in
         the result folder, bound to THIS task's context so its (and its worker
         threads') logs route there even when several files translate at once."""
-        from core import log_config
+        from core import log_config, retention
         flog = log_config.file_logger
         base = os.path.basename(self.input_file_path)
+        retention.hold(self.temp_dir, self.input_file_path)     # this run's folder and input: in use
         self._task_log_path = flog.open_task_log(self.translation_id, self.result_dir, base)
         token = flog.bind_task(self.translation_id)
         # Replay any pre-upload client-side events (e.g. in-browser audio
@@ -1094,6 +1085,10 @@ class DocumentTranslator:
         finally:
             flog.unbind_task(token)
             flog.close_task_log(self.translation_id)
+            # The app stays open for days: bound temp/uploads when a task ends
+            # (background thread, never raises), not only at the next launch.
+            retention.release(self.temp_dir, self.input_file_path)
+            retention.sweep_after_task()
 
     def _process_impl(self, file_name, file_extension, progress_callback=None):
         """Main processing method"""
@@ -1112,6 +1107,7 @@ class DocumentTranslator:
         # A fresh run must not inherit a stale in-memory result buffer (same
         # process re-translating the same doc).
         invalidate_results(self.result_split_json_path)
+        invalidate_results(self.failed_json_path)
 
         # Phased progress: when a translator declares EXTRACTION_PROGRESS_SHARE
         # (e.g. video transcription / image OCR is a big up-front step), map the
@@ -1173,6 +1169,10 @@ class DocumentTranslator:
                 # replace_before rules + auto-glossary were otherwise skipped).
                 self._apply_text_rules(self.src_split_json_path, "replace_before")
                 self._maybe_extract_glossary(deduped_data, progress_callback)
+            else:
+                # translated_status is written on stop / failure / finish, not per
+                # batch: after a hard kill it has to come from the result file.
+                restore_translated_status(self.src_split_json_path, self.result_split_json_path)
 
             # Create result file if missing
             if not os.path.exists(self.result_split_json_path):
@@ -1263,6 +1263,8 @@ class DocumentTranslator:
                 max_token=shrink_token,
             )
             retry_count += 1
+        # Nothing reads the failed list after the last round.
+        self._flush_and_drop(self.failed_json_path)
 
         # Post-processing — flush the buffered results to disk first, since
         # check/sort and restore read the result file directly. This is the FINAL
