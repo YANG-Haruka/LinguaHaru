@@ -3,6 +3,7 @@ recognition, translation (plain + streamed) and session summaries. Each runs
 off the GUI thread and reports back via signals.
 """
 import threading
+from concurrent.futures import ThreadPoolExecutor, wait as _wait_futures
 
 from PySide6.QtCore import QObject, QThread, Signal
 
@@ -16,6 +17,50 @@ _STT_LOCKS_GUARD = threading.Lock()
 def stt_lock(model_id):
     with _STT_LOCKS_GUARD:
         return _STT_LOCKS.setdefault(model_id or "", threading.Lock())
+
+
+# One long-lived thread per model runs all its recognitions. A thread of its own
+# for each one (a QThread per call, until 7.3) leaked: torch's OpenMP gives every
+# NEW calling thread a team of worker threads that outlives it. Measured with
+# SenseVoice: 3 threads and 18 MB of committed memory per recognition, none on
+# a reused thread — 85 GB after two and a half hours of meetings, when Windows
+# ran out of virtual memory. (Recognitions of one model are one at a time
+# anyway, stt_lock; the web server's thread pool reuses its threads.)
+_STT_THREADS = {}                # model id -> single-thread executor
+
+
+def stt_thread(model_id):
+    with _STT_LOCKS_GUARD:
+        return _STT_THREADS.setdefault(
+            model_id or "", ThreadPoolExecutor(max_workers=1, thread_name_prefix="stt"))
+
+
+class SttWorker(QObject):
+    """A recognition job on its model's thread (stt_thread), with the part of
+    QThread's interface the pages use: start / isRunning / wait / finished.
+    Subclasses give stt_model() and run()."""
+    finished = Signal()
+    _future = None
+
+    def start(self):
+        self._future = stt_thread(self.stt_model()).submit(self._job)
+
+    def _job(self):
+        try:
+            self.run()
+        finally:
+            try:
+                self.finished.emit()
+            except RuntimeError:  # receiver already destroyed (app closing)
+                pass
+
+    def isRunning(self):
+        return self._future is not None and not self._future.done()
+
+    def wait(self, msecs=None):
+        if self._future is None:
+            return True
+        return not _wait_futures([self._future], None if msecs is None else msecs / 1000.0).not_done
 
 
 class PreloadWorker(QObject):
@@ -147,7 +192,7 @@ class TermsWorker(QObject):
             pass
 
 
-class LiveRecognizeWorker(QThread):
+class LiveRecognizeWorker(SttWorker):
     """Recognize a (possibly partial) PCM16 buffer locally — NO translation.
 
     Used for streaming captions: the page sends the growing audio of the current
@@ -164,6 +209,10 @@ class LiveRecognizeWorker(QThread):
         self._final = is_final
         self._model_id = model_id     # None = the live-voice model
         self._lang_memory = lang_memory   # the session's languages (see recognize_utterance)
+
+    def stt_model(self):
+        from core.pipelines.video_translation_pipeline import get_selected_live_stt_model
+        return self._model_id or get_selected_live_stt_model()
 
     def run(self):
         try:

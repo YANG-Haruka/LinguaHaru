@@ -431,6 +431,40 @@ def test_qt_preview_does_not_wait_for_a_final_of_another_model(monkeypatch):
     assert [what for _, what, _ in log] == ["start", "end", "start", "end"]
 
 
+def test_qt_recognitions_of_a_model_share_one_thread(monkeypatch):
+    """A thread of its own for every recognition leaked 3 OpenMP worker threads
+    and 18 MB each time (torch gives each new calling thread its own team):
+    85 GB after two and a half hours of meetings. One thread per model."""
+    import os
+    import threading
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+    qapp = QApplication.instance() or QApplication([])
+    from qt_app import live_worker
+    seen = []
+
+    def fake(pcm, sample_rate=16000, model_id=None, lang_memory=None):
+        seen.append((model_id or "final", threading.get_ident()))
+        return "x", "ja"
+    monkeypatch.setattr(vp, "recognize_utterance", fake)
+    monkeypatch.setattr(vp, "get_selected_live_stt_model", lambda: "whisper-large-v3-turbo")
+    before = threading.active_count()
+    done = []
+    workers = [live_worker.LiveRecognizeWorker(bytes(2), 16000, i % 3 == 0,
+                                               model_id="sensevoice-small" if i % 2 else None) for i in range(40)]
+    for w in workers:
+        w.finished.connect(lambda: done.append(1))
+        w.start()
+    assert all(w.wait(5000) for w in workers) and not any(w.isRunning() for w in workers)
+    qapp.processEvents()
+    assert len(seen) == 40 and len(done) == 40
+    assert len({t for m, t in seen if m == "final"}) == 1 and len({t for m, t in seen if m != "final"}) == 1
+    assert len({t for _, t in seen}) == 2                       # the two models side by side
+    assert threading.active_count() <= before + 2
+    idle = live_worker.LiveRecognizeWorker(bytes(2), 16000, True)
+    assert not idle.isRunning() and idle.wait(10)                # never started
+
+
 def test_provisional_translations_leave_room_for_the_final_ones(monkeypatch):
     """About 38 provisional + 10 final requests a minute fill a 50-60 rpm window
     (Claude, Gemini, any model without an "rpm"); the finals then waited behind

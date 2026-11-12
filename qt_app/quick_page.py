@@ -615,19 +615,26 @@ class QuickPage(ScrollArea):
             position=InfoBarPosition.TOP, duration=2500, parent=self)
 
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import Signal
+
+from qt_app.live_worker import SttWorker
 
 
-class _RecognizeWorker(QThread):
+class _RecognizeWorker(SttWorker):
     """Recognize one captured utterance off the UI thread (STT is blocking and
-    funasr is not thread-safe; serialized via live_worker.stt_lock). Uses the
-    QUICK STT model selection."""
+    funasr is not thread-safe; serialized via live_worker.stt_lock), on the
+    model's own thread (live_worker.stt_thread). Uses the QUICK STT model
+    selection."""
     done = Signal(str)
 
     def __init__(self, pcm_bytes, sample_rate, parent=None):
         super().__init__(parent)
         self._pcm = pcm_bytes
         self._sr = sample_rate
+
+    def stt_model(self):
+        from core.pipelines.video_translation_pipeline import get_selected_quick_stt_model
+        return get_selected_quick_stt_model()
 
     def run(self):
         try:
