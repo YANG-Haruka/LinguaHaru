@@ -1,19 +1,19 @@
 {
-    "version": "7.3.2",
+    "version": "7.3.3",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.3.2: a real-time voice session is saved every minute while it runs, so a crash no longer loses the transcript (7.3.1 fixed the desktop memory growth). / 7.3.2：实时语音会话进行中每分钟自动保存记录，程序中途崩溃不再丢失文字（7.3.1 已修复桌面版内存不断上涨）。",
+    "notes": "7.3.3: the desktop app's memory now stays level during long real-time voice sessions (the slow growth left after 7.3.1 is fixed); 7.3.2 saves the transcript every minute. / 7.3.3：桌面版长时间实时语音时内存保持平稳（修掉了 7.3.1 之后剩下的慢速增长）；7.3.2 起会议中每分钟自动保存记录。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.2/LinguaHaru-7.3.2-web-portable.zip",
-            "sha256": "65bacf8b33111ab5d097b9075cf86f66106208f08bdd8038226d07e1fdc08865"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.3/LinguaHaru-7.3.3-web-portable.zip",
+            "sha256": "41f4a3ba6100aaf75c696b0c8810a1ff2a11d87645b58baa1c99f1208f8dcc0d"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.2/LinguaHaru-7.3.2-desktop-portable.zip",
-            "sha256": "1242b88e32a8a3fef18d5c2fe7151b06f4f0848c1285758ac5831f7d1ac17404"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.3/LinguaHaru-7.3.3-desktop-portable.zip",
+            "sha256": "6751aad268975026687366127242fb05aa0806b86d04202d0ae0379be8761a6d"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.2/LinguaHaru-7.3.2-desktop-mac.zip",
-            "sha256": "91ff17f2a8cb008563ec7f01b931332eb40a010a7fa3c2cb87dac8d7fc87a84d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.3/LinguaHaru-7.3.3-desktop-mac.zip",
+            "sha256": "cac75768f603d52bd90dc65728a6fafcc77b0c4d7bf128ba30a9720d9d406bcc"
         }
     }
 }
