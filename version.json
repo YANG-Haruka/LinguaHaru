@@ -1,19 +1,19 @@
 {
-    "version": "7.3",
+    "version": "7.3.1",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.3: real-time voice finds the new names and terms of a session when it ends and adds the ones you confirm to the glossary; the typed meeting-vocabulary field is gone; the desktop live page has a tidier layout. / 7.3：实时语音在会议结束后找出新词汇，确认后一键加入词汇表；去掉「会议词汇」输入框；桌面版实时语音页重新排版。",
+    "notes": "7.3.1: fixes the desktop app's memory growing without end during real-time voice (over 80 GB after a two-hour meeting). / 7.3.1：修复桌面版实时语音长时间使用后内存不断上涨（两小时会议可涨到 80 GB 以上）的问题。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3/LinguaHaru-7.3-web-portable.zip",
-            "sha256": "2d7be20092d1b392366f5ce7f21b7ee8aa6e229be1fb01c021a91221fa9b4fc8"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.1/LinguaHaru-7.3.1-web-portable.zip",
+            "sha256": "0ce9cc86b21a88a94f7336b70e2b83f4713a74608108c72246f9bd77d815a0f4"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3/LinguaHaru-7.3-desktop-portable.zip",
-            "sha256": "4cde2198c108846dfb768844da1fb52c252b49cea31f374434dbdbdc7d981bf2"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.1/LinguaHaru-7.3.1-desktop-portable.zip",
+            "sha256": "ce21ca5007d1c8fc2aca30ec5e7b953d738924f4ecd8169a37421cf0b1964ffc"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3/LinguaHaru-7.3-desktop-mac.zip",
-            "sha256": "ad171fb6463817d4c830e888a771526ab16c6feea58586e7418dfd2ddf937a58"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.1/LinguaHaru-7.3.1-desktop-mac.zip",
+            "sha256": "12b5304c29e7e6829d3b8a12313fba98e369a48de9b11fa3587cd78fb37f61ca"
         }
     }
 }
