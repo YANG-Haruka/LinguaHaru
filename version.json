@@ -1,19 +1,19 @@
 {
-    "version": "7.3.1",
+    "version": "7.3.2",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.3.1: fixes the desktop app's memory growing without end during real-time voice (over 80 GB after a two-hour meeting). / 7.3.1：修复桌面版实时语音长时间使用后内存不断上涨（两小时会议可涨到 80 GB 以上）的问题。",
+    "notes": "7.3.2: a real-time voice session is saved every minute while it runs, so a crash no longer loses the transcript (7.3.1 fixed the desktop memory growth). / 7.3.2：实时语音会话进行中每分钟自动保存记录，程序中途崩溃不再丢失文字（7.3.1 已修复桌面版内存不断上涨）。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.1/LinguaHaru-7.3.1-web-portable.zip",
-            "sha256": "0ce9cc86b21a88a94f7336b70e2b83f4713a74608108c72246f9bd77d815a0f4"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.2/LinguaHaru-7.3.2-web-portable.zip",
+            "sha256": "65bacf8b33111ab5d097b9075cf86f66106208f08bdd8038226d07e1fdc08865"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.1/LinguaHaru-7.3.1-desktop-portable.zip",
-            "sha256": "ce21ca5007d1c8fc2aca30ec5e7b953d738924f4ecd8169a37421cf0b1964ffc"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.2/LinguaHaru-7.3.2-desktop-portable.zip",
+            "sha256": "1242b88e32a8a3fef18d5c2fe7151b06f4f0848c1285758ac5831f7d1ac17404"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.1/LinguaHaru-7.3.1-desktop-mac.zip",
-            "sha256": "12b5304c29e7e6829d3b8a12313fba98e369a48de9b11fa3587cd78fb37f61ca"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.3.2/LinguaHaru-7.3.2-desktop-mac.zip",
+            "sha256": "91ff17f2a8cb008563ec7f01b931332eb40a010a7fa3c2cb87dac8d7fc87a84d"
         }
     }
 }
