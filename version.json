@@ -1,19 +1,19 @@
 {
-    "version": "7.4",
+    "version": "7.4.1",
     "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/latest",
-    "notes": "7.4: long-running use — a meeting of a day or two, very long videos, very large documents: memory, GPU memory, disk and the interface no longer grow with the length; meeting transcripts and recordings are never deleted by the result-size limit. / 7.4：长时间运行专项——开一两天的会、处理很长的视频和很大的文档，内存、显存、磁盘和界面都不再随时长增长；会议记录和录音不会再被「结果目录上限」删除。",
+    "notes": "7.4.1: on the desktop a real-time voice session no longer stops when another page is opened. 7.4: long-running use — memory, GPU memory, disk and the interface no longer grow with the length of a meeting, a video or a document. / 7.4.1：桌面版实时语音进行中切换到其它页面不再停止会话。7.4：长时间运行专项——内存、显存、磁盘和界面不再随会议、视频、文档的长度增长。",
     "assets": {
         "web": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4/LinguaHaru-7.4-web-portable.zip",
-            "sha256": "d371fe0c4093b5312111c6a8ddb3aa5cde79e1842cb579dd075acb2c3c9cdef9"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4.1/LinguaHaru-7.4.1-web-portable.zip",
+            "sha256": "32e225bcd453d6e93ecd7ad308109227d146b93d2ca68e36e6f1aa72a1aef90f"
         },
         "desktop": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4/LinguaHaru-7.4-desktop-portable.zip",
-            "sha256": "2d7bf5bf2d4ef6a528ac642a9b94c9e674b4cf4806945ad2180674443a9ad93c"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4.1/LinguaHaru-7.4.1-desktop-portable.zip",
+            "sha256": "cfee17b1c3073dfb1296942f9a44c3eae8430c64b3995d7cfa8b76486b4c8199"
         },
         "desktop-mac": {
-            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4/LinguaHaru-7.4-desktop-mac.zip",
-            "sha256": "34fa48bccf9c60dccf8bf11d4d443ab5ea1f82b4bc53e7ae19e9395b1a67808d"
+            "url": "https://github.com/YANG-Haruka/LinguaHaru/releases/download/v7.4.1/LinguaHaru-7.4.1-desktop-mac.zip",
+            "sha256": "e68a4f71936224ca1ffc4ad57bc8ef8971595efd797d5acdf602dffc98bb5349"
         }
     }
 }
