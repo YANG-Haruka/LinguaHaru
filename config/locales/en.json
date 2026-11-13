@@ -768,5 +768,6 @@
   "Iface Err unknown": "Unknown error — see the raw error below.",
   "Iface Err empty": "Base URL and Model ID are required.",
   "Raw Error": "Raw error",
-  "Live Recognition Behind": "Recognition can't keep up with the speech: the oldest audio was skipped. A faster recognition model would help."
+  "Live Recognition Behind": "Recognition can't keep up with the speech: the oldest audio was skipped. A faster recognition model would help.",
+  "Live Still Running": "Real-time voice is still running (the microphone stays on). Go back to the Real-Time Voice page to stop it."
 }

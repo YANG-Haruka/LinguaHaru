@@ -239,5 +239,66 @@ def test_a_quiet_session_still_uses_its_models(monkeypatch):
     page = _page()
     monkeypatch.setattr(vp, "_stt_used", {})
     page._source = object()
+    page._live_model, page._preview_model = "whisper-large-v3-turbo", "sensevoice-small"   # as the session started
+    monkeypatch.setattr(vp, "get_selected_live_stt_model", lambda: "qwen3-asr-1.7b")       # picked in Settings since
     page._autosave()                                          # the minute's tick of a running session
-    assert {k[0] for k in vp._stt_used} == {"whisper", "sensevoice"}
+    assert {k[0] for k in vp._stt_used} == {"whisper", "sensevoice"}                       # the session's own
+
+
+def test_a_session_goes_on_when_another_page_is_opened(monkeypatch):
+    """Leaving the page stopped the session: one click on the navigation ended a
+    day-long meeting, and starting again cleared both panes. It goes on now (as
+    on the web page) and says that the microphone is still on."""
+    from PySide6.QtGui import QHideEvent, QShowEvent
+    page = _page()
+    stops, said, mics, preloads = [], [], [], []
+    monkeypatch.setattr(page, "on_stop", lambda: stops.append(1))
+    monkeypatch.setattr(page, "_info", lambda text, error=False, duration=4000: said.append(text))
+    monkeypatch.setattr(page, "_populate_mics", lambda: mics.append(1))
+    monkeypatch.setattr(page, "_start_preload", lambda: preloads.append(1))
+    monkeypatch.setattr(lp, "realtime_voice_available", lambda: True)
+    from core.pipelines import video_translation_pipeline as vp
+    monkeypatch.setattr(vp, "recognizer_ready", lambda *a, **k: False)   # e.g. another model picked in Settings
+    closed = []
+    page._caption_bar = type("Bar", (), {"close": lambda self: closed.append(1)})()
+    page._source = object()                                   # a session is running
+    page.hideEvent(QHideEvent())                              # another page is opened
+    assert stops == [] and closed == [] and page._caption_bar is not None
+    assert said == [lp.tr("Live Still Running", page._lang)]
+    page.showEvent(QShowEvent())                              # ... and the user comes back
+    assert mics == [] and preloads == []                      # nothing of the session is touched
+    # no session: as before, the caption bar goes with the page
+    page._source = None
+    page.hideEvent(QHideEvent())
+    assert closed == [1] and page._caption_bar is None and stops == [] and len(said) == 1
+    page.showEvent(QShowEvent())
+    assert mics == [1] and preloads == [1]
+
+
+def test_a_session_keeps_the_model_it_started_with(monkeypatch):
+    """Other pages can be opened while a session runs — Settings among them. A
+    model picked there is for the next session: this one's commit mode was
+    chosen for the model it started with."""
+    from core.pipelines import video_translation_pipeline as vp
+    made = []
+
+    class Worker:
+        def __init__(self, pcm, rate, is_final, model_id=None, lang_memory=None):
+            made.append((is_final, model_id))
+            self.done = self.finished = type("Sig", (), {"connect": lambda self, f: None})()
+
+        def start(self):
+            pass
+    monkeypatch.setattr(lp, "LiveRecognizeWorker", Worker)
+    monkeypatch.setattr(vp, "get_selected_live_stt_model", lambda: "whisper-large-v3-turbo")
+    monkeypatch.setattr(vp, "live_commit_mode", lambda: "final")
+    monkeypatch.setattr(vp, "live_preview_model", lambda: "sensevoice-small")
+    page = _page()
+    page._reset_vad()                                         # the session starts
+    page._source = object()
+    monkeypatch.setattr(vp, "get_selected_live_stt_model", lambda: "sensevoice-small")    # changed in Settings
+    page._dispatch_recognize(bytes(3200), False)              # a preview
+    page._preview_busy = False
+    page._dispatch_recognize(bytes(3200), True)               # the segment's final
+    assert (True, "whisper-large-v3-turbo") in made and all(m in ("whisper-large-v3-turbo", "sensevoice-small") for _, m in made)
+    assert [m for f, m in made if not f] and set(m for f, m in made if not f) == {"sensevoice-small"}

@@ -593,13 +593,21 @@ def _stt_touch(engine, size):
     _stt_used[(engine, size)] = time.time()
 
 
-def stt_touch_live():
+def stt_touch_live(model_ids=None):
     """A live session is running: its two models are in use although, in a quiet
     stretch, nothing is recognized (called once a minute by the page; without
-    it a five-minute silence let another feature's load drop them)."""
-    for getter in (get_selected_live_stt_model, live_preview_model):
+    it a five-minute silence let another feature's load drop them).
+    model_ids: the session's own (the desktop keeps the ones it started with);
+    by default the ones selected now."""
+    if model_ids is None:
+        model_ids = []
+        for getter in (get_selected_live_stt_model, live_preview_model):
+            try:
+                model_ids.append(getter())
+            except Exception:  # noqa: BLE001
+                pass
+    for model_id in model_ids:
         try:
-            model_id = getter()
             if model_id:
                 _stt_touch(*_resolve_stt_engine(get_stt_model(model_id)))
         except Exception:  # noqa: BLE001

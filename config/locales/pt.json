@@ -418,5 +418,6 @@
   "No New Terms": "Não foram encontrados termos novos fora do glossário nesta sessão.",
   "Terms Added": "{n} termos adicionados ao glossário «{name}».",
   "Extract Terms Failed": "Não foi possível extrair termos novos.",
-  "Live Recognition Behind": "O reconhecimento não acompanha a fala: o áudio mais antigo foi ignorado. Um modelo de reconhecimento mais rápido ajudaria."
+  "Live Recognition Behind": "O reconhecimento não acompanha a fala: o áudio mais antigo foi ignorado. Um modelo de reconhecimento mais rápido ajudaria.",
+  "Live Still Running": "A voz em tempo real continua em execução (o microfone permanece ligado). Volte à página Voz em tempo real para parar."
 }

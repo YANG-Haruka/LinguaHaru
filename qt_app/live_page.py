@@ -1353,14 +1353,15 @@ class LivePage(ScrollArea):
 
     def showEvent(self, event):
         # Refresh the mic list + active model each time the page is shown.
-        if self._source is None:
+        if not self._is_listening():        # not under a running session (it may be on the loopback)
             self._populate_mics()
         self._refresh_model_sub()
         self._refresh_glossaries()
         # Warm the local STT model in the background as soon as the page is
         # opened, so pressing Start doesn't sit through the library import +
-        # model load (~10 s on a cold start).
-        if realtime_voice_available():
+        # model load (~10 s on a cold start). (A session that is running has
+        # its models; one picked in Settings meanwhile is for the next session.)
+        if realtime_voice_available() and not self._is_listening():
             from core.pipelines.video_translation_pipeline import recognizer_ready
             if not recognizer_ready():
                 self._start_preload()
@@ -1724,7 +1725,7 @@ class LivePage(ScrollArea):
             return
         try:        # a quiet stretch uses no model: they are in use all the same (_make_room_for)
             from core.pipelines.video_translation_pipeline import stt_touch_live
-            stt_touch_live()
+            stt_touch_live([getattr(self, "_live_model", None), getattr(self, "_preview_model", None)])
         except Exception:  # noqa: BLE001
             pass
         size = (len(self.input_text.toPlainText()), len(self.output_text.toPlainText()))
@@ -1769,14 +1770,20 @@ class LivePage(ScrollArea):
             pass
 
     def hideEvent(self, event):
-        # Leaving the page must not keep the mic/loopback hot or the bar open.
         # A SPONTANEOUS hide is the window being minimized — that's exactly when
         # the floating captions are needed, so keep listening and keep the bar.
         if event.spontaneous():
             super().hideEvent(event)
             return
         if self._is_listening():
-            self.on_stop()
+            # Another page was opened: the session goes on, as it does on the web
+            # page. It used to stop here — one click on the navigation ended a
+            # day-long meeting, and starting again cleared both panes. The
+            # microphone stays on, so it is said (once each time the page is left).
+            if not getattr(self, "_shutting_down", False):
+                self._info(tr("Live Still Running", self._lang), duration=6000)
+            super().hideEvent(event)
+            return
         if self._caption_bar is not None:
             self._caption_bar.close()
             self._caption_bar = None
@@ -1848,7 +1855,8 @@ class LivePage(ScrollArea):
         # stream on partials. See video_translation_pipeline.live_commit_mode.
         try:
             from core.pipelines.video_translation_pipeline import (
-                live_commit_mode, live_preview_model)
+                live_commit_mode, live_preview_model, get_selected_live_stt_model)
+            self._live_model = get_selected_live_stt_model()
             self._final_mode = live_commit_mode() == "final"
             # Final mode: partials only preview the dim line — decode them with a
             # fast model so the GPU stays free for the finals.
@@ -2111,8 +2119,11 @@ class LivePage(ScrollArea):
         # lines are committed from partials and a re-recognized final would not
         # line up with them (and SenseVoice only names zh/en/ja/ko anyway).
         guard = is_final and getattr(self, "_final_mode", False)
-        w = LiveRecognizeWorker(pcm, _IN_RATE, is_final,
-                                model_id=None if is_final else getattr(self, "_preview_model", None),
+        # The model the session started with: other pages can be opened while it
+        # runs, and one picked there meanwhile is for the next session (a switch
+        # mid-session would also not fit the commit mode chosen at the start).
+        model = (None if is_final else getattr(self, "_preview_model", None)) or getattr(self, "_live_model", None)
+        w = LiveRecognizeWorker(pcm, _IN_RATE, is_final, model_id=model,
                                 lang_memory=getattr(self, "_lang_memory", None) if guard else None)
         gen = getattr(self, "_live_gen", 0)
         w.done.connect(lambda t, d, f: gen == getattr(self, "_live_gen", 0)
@@ -2958,5 +2969,7 @@ class LivePage(ScrollArea):
 
     def _info(self, text, error=False, duration=4000):
         bar = InfoBar.error if error else InfoBar.success
+        # a session can run while another page is shown: said there, then
+        parent = self if self.isVisible() else (self.window() or self)
         bar(tr("Real-Time Voice", self._lang), text, orient=1, isClosable=True,
-            position=InfoBarPosition.TOP, duration=duration, parent=self)
+            position=InfoBarPosition.TOP, duration=duration, parent=parent)
